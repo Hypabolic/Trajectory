@@ -118,6 +118,7 @@ public sealed class MinimalJsonlOutputAdapter : OutputSchemaAdapter<MinimalJsonl
     private static JsonWriterOptions WriterOptions(OutputProjectionOptions? options) => new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        Indented = options?.WriteIndented ?? false,
+        // JSONL remains one JSON value per physical line by contract.
+        Indented = false,
     };
 }

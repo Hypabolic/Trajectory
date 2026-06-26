@@ -17,7 +17,7 @@ public static class TrajectoryOpenTelemetryExtensions
 
     public static TracerProviderBuilder AddTrajectoryGenAiOtlp(
         this TracerProviderBuilder builder,
-        Action<OpenTelemetry.Exporter.OtlpExporterOptions>? configure = null)
+        Action<global::OpenTelemetry.Exporter.OtlpExporterOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         builder.AddSource(ActivitySourceName);
