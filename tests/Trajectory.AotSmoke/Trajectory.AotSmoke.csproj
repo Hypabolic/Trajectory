@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Trajectory/Trajectory.csproj" />
+    <ProjectReference Include="../../src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../Trajectory.Tests/Fixtures/ClaudeCode/tool-call/input.jsonl" Link="Fixtures/claude-code-tool-call.jsonl" CopyToOutputDirectory="PreserveNewest" />
