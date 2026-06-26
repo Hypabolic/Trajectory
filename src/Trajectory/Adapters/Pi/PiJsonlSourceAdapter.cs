@@ -15,9 +15,12 @@ internal sealed class PiJsonlSourceAdapter : ISourceAdapter
     {
         var diagnostics = new List<TrajectoryDiagnostic>();
         var events = new List<DecodedEvent>();
+        var modelInvocations = new List<DecodedModelInvocation>();
         string? cwd = null;
         string? sessionId = null;
         string? producerVersion = null;
+        string? requestedProvider = null;
+        string? requestedModel = null;
         DateTimeOffset? createdAt = null;
         var sawMessageRow = false;
 
@@ -32,6 +35,13 @@ internal sealed class PiJsonlSourceAdapter : ISourceAdapter
                 sessionId ??= GetString(row, "id");
                 createdAt ??= ParseTimestamp(row, "timestamp");
                 producerVersion ??= ReadScalarAsString(row, "version");
+                continue;
+            }
+
+            if (type == "model_change")
+            {
+                requestedProvider = GetString(row, "provider");
+                requestedModel = GetString(row, "modelId");
                 continue;
             }
 
@@ -82,6 +92,31 @@ internal sealed class PiJsonlSourceAdapter : ISourceAdapter
 
             if (role == "assistant")
             {
+                JsonElement usage = default;
+                var hasUsage = message.TryGetProperty("usage", out usage) &&
+                    usage.ValueKind == JsonValueKind.Object;
+                modelInvocations.Add(new DecodedModelInvocation
+                {
+                    NativeRecordId = nativeRecordId,
+                    SourceSequence = line.Line - 1L,
+                    SourceOffset = line.ByteOffset,
+                    Provider = GetString(message, "provider") ?? requestedProvider,
+                    ApiFamily = GetString(message, "api"),
+                    RequestedModel = requestedModel,
+                    ResponseModel = model,
+                    ResponseId = GetString(message, "responseId"),
+                    StopReason = GetString(message, "stopReason"),
+                    InputTokens = hasUsage ? GetInt64(usage, "input") : null,
+                    OutputTokens = hasUsage ? GetInt64(usage, "output") : null,
+                    CacheReadTokens = hasUsage ? GetInt64(usage, "cacheRead") : null,
+                    CacheWriteTokens = hasUsage ? GetInt64(usage, "cacheWrite") : null,
+                    TotalTokens = hasUsage ? GetInt64(usage, "totalTokens") : null,
+                    StartedAt = ParseTimestamp(message, "startTimestamp") ??
+                        ParseTimestamp(message, "requestTimestamp"),
+                    FirstResponseAt = ParseTimestamp(message, "firstResponseTimestamp"),
+                    CompletedAt = ParseTimestamp(message, "timestamp") ?? timestamp,
+                });
+
                 if (message.TryGetProperty("content", out var contentElement) &&
                     contentElement.ValueKind == JsonValueKind.String)
                 {
@@ -215,6 +250,7 @@ internal sealed class PiJsonlSourceAdapter : ISourceAdapter
                 CreatedAt = createdAt,
             },
             Events = events,
+            ModelInvocations = modelInvocations,
             Diagnostics = diagnostics,
         };
     }
@@ -303,7 +339,14 @@ internal sealed class PiJsonlSourceAdapter : ISourceAdapter
 
     private static bool GetBoolean(JsonElement element, string propertyName) =>
         element.TryGetProperty(propertyName, out var property) &&
-        property.ValueKind == JsonValueKind.True;
+            property.ValueKind == JsonValueKind.True;
+
+    private static long? GetInt64(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var property) &&
+        property.ValueKind == JsonValueKind.Number &&
+        property.TryGetInt64(out var value)
+            ? value
+            : null;
 
     private static string? ReadScalarAsString(JsonElement element, string propertyName)
     {

@@ -47,6 +47,49 @@ public sealed record LettaNormalizeResult
     public required IReadOnlyList<TrajectoryDiagnostic> Diagnostics { get; init; }
 }
 
+public static class LettaCompatibilityVersion
+{
+    public const string Normalizer = "0.2.0";
+    public const int CanonicalSchema = 1;
+}
+
+public sealed record LettaCanonicalResult
+{
+    public required IReadOnlyList<LettaCanonicalRecord> Records { get; init; }
+    public required IReadOnlyList<TrajectoryDiagnostic> Diagnostics { get; init; }
+    public required string NormalizerVersion { get; init; }
+    public required int CanonicalSchemaVersion { get; init; }
+    public required LettaCanonicalConfig Config { get; init; }
+}
+
+public sealed record LettaCanonicalConfig
+{
+    public required ResolvedNormalizationBounds Bounds { get; init; }
+    public required NormalizationFilters Filters { get; init; }
+}
+
+public sealed record LettaCanonicalRecord
+{
+    public required string SourceType { get; init; }
+    public required string SourceGroupId { get; init; }
+    public required string StableSourceRecordId { get; init; }
+    public required string SourceIdentityKind { get; init; }
+    public required string SourceOrderId { get; init; }
+    public required int ComponentIndex { get; init; }
+    public required string RecordType { get; init; }
+    public required string RecordId { get; init; }
+    public required string RecordHash { get; init; }
+    public required string ContentHash { get; init; }
+    public DateTimeOffset? SourceTimestamp { get; init; }
+    public DateTimeOffset? RecordTimestamp { get; init; }
+    public string? Content { get; init; }
+    public string? ToolCallId { get; init; }
+    public string? ToolName { get; init; }
+    public string? ToolArgumentsJson { get; init; }
+    public string? ToolResultJson { get; init; }
+    public required string RecordJson { get; init; }
+}
+
 public sealed record HypabolicTrajectoryV1
 {
     public required string SchemaId { get; init; }
@@ -161,4 +204,6 @@ public sealed record HypabolicHashesV1
 [JsonSerializable(typeof(LettaAssistantToolCallRecord))]
 [JsonSerializable(typeof(LettaToolResultRecord))]
 [JsonSerializable(typeof(LettaToolCall))]
+[JsonSerializable(typeof(LettaCanonicalResult))]
+[JsonSerializable(typeof(LettaCanonicalRecord))]
 public partial class TrajectoryJsonContext : JsonSerializerContext;
