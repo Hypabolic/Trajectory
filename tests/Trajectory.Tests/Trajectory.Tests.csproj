@@ -18,6 +18,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Trajectory/Trajectory.csproj" />
+    <ProjectReference Include="../../src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj" />
+    <ProjectReference Include="../../src/Trajectory.Testing/Trajectory.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Fixtures/**/*" CopyToOutputDirectory="PreserveNewest" />

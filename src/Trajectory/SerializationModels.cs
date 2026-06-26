@@ -207,4 +207,7 @@ public sealed record HypabolicHashesV1
 [JsonSerializable(typeof(LettaToolCall))]
 [JsonSerializable(typeof(LettaCanonicalResult))]
 [JsonSerializable(typeof(LettaCanonicalRecord))]
+[JsonSerializable(typeof(Adapters.OpenAi.OpenAiChatMessage))]
+[JsonSerializable(typeof(Adapters.OpenAi.OpenAiChatMessage[]))]
+[JsonSerializable(typeof(Adapters.Streaming.MinimalJsonlRecord))]
 public partial class TrajectoryJsonContext : JsonSerializerContext;

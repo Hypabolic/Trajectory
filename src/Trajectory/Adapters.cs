@@ -15,12 +15,20 @@ public interface IOutputSchemaAdapter
     Type OutputType { get; }
     object ProjectUntyped(TrajectoryIR trajectory, OutputProjectionOptions? options = null);
     string SerializeUntyped(object output, OutputProjectionOptions? options = null);
+    void WriteUntyped(
+        Stream destination,
+        object output,
+        OutputProjectionOptions? options = null);
 }
 
 public interface IOutputSchemaAdapter<TOutput> : IOutputSchemaAdapter
 {
     TOutput Project(TrajectoryIR trajectory, OutputProjectionOptions? options = null);
     string Serialize(TOutput output, OutputProjectionOptions? options = null);
+    void Write(
+        Stream destination,
+        TOutput output,
+        OutputProjectionOptions? options = null);
 }
 
 public abstract class OutputSchemaAdapter<TOutput> : IOutputSchemaAdapter<TOutput>
@@ -31,6 +39,16 @@ public abstract class OutputSchemaAdapter<TOutput> : IOutputSchemaAdapter<TOutpu
 
     public abstract TOutput Project(TrajectoryIR trajectory, OutputProjectionOptions? options = null);
     public abstract string Serialize(TOutput output, OutputProjectionOptions? options = null);
+
+    public virtual void Write(
+        Stream destination,
+        TOutput output,
+        OutputProjectionOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        var json = Serialize(output, options);
+        destination.Write(System.Text.Encoding.UTF8.GetBytes(json));
+    }
 
     object IOutputSchemaAdapter.ProjectUntyped(
         TrajectoryIR trajectory,
@@ -49,11 +67,25 @@ public abstract class OutputSchemaAdapter<TOutput> : IOutputSchemaAdapter<TOutpu
 
         return Serialize(typed, options);
     }
+
+    void IOutputSchemaAdapter.WriteUntyped(
+        Stream destination,
+        object output,
+        OutputProjectionOptions? options)
+    {
+        if (output is not TOutput typed)
+        {
+            throw new ArgumentException(
+                $"Output must be assignable to {typeof(TOutput).FullName}.",
+                nameof(output));
+        }
+
+        Write(destination, typed, options);
+    }
 }
 
-public static class OutputSchemaIds
+public interface ITrajectorySourceAdapter
 {
-    public const string LettaTrajectoryV1 = "letta-trajectory-v1";
-    public const string LettaCanonicalV1 = "letta-canonical-v1";
-    public const string HypabolicTrajectoryV1 = "hypabolic-trajectory-v1";
+    TrajectorySource Source { get; }
+    TrajectoryIR Normalize(NormalizeInput input);
 }

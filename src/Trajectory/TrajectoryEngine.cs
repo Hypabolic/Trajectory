@@ -1,9 +1,5 @@
 using System.Text;
-using Hypabolic.Trajectory.Adapters.ClaudeCode;
-using Hypabolic.Trajectory.Adapters.Codex;
-using Hypabolic.Trajectory.Adapters.Hypabolic;
 using Hypabolic.Trajectory.Adapters.Letta;
-using Hypabolic.Trajectory.Adapters.Pi;
 using Hypabolic.Trajectory.Listing;
 using Hypabolic.Trajectory.Normalization;
 
@@ -17,20 +13,13 @@ public static class TrajectoryVersion
 public sealed class TrajectoryEngine
 {
     private readonly Dictionary<TrajectorySource, ISourceAdapter> _sources = new();
+    private readonly Dictionary<TrajectorySource, ITrajectorySourceAdapter> _customSources = new();
     private readonly Dictionary<string, IOutputSchemaAdapter> _outputs = new(StringComparer.Ordinal);
     private readonly Dictionary<TrajectorySource, ITrajectoryLister> _listers = new();
     private readonly TrajectoryNormalizer _normalizer = new();
 
-    public static TrajectoryEngine CreateDefault() => new TrajectoryEngine()
-        .AddSource(new ClaudeCodeJsonlSourceAdapter())
-        .AddSource(new CodexJsonlSourceAdapter())
-        .AddSource(new PiJsonlSourceAdapter())
-        .AddOutputAdapter(new LettaTrajectoryV1OutputAdapter())
-        .AddOutputAdapter(new LettaCanonicalV1OutputAdapter())
-        .AddOutputAdapter(new HypabolicTrajectoryV1OutputAdapter())
-        .AddLister(new ClaudeCodeTrajectoryLister())
-        .AddLister(new CodexTrajectoryLister())
-        .AddLister(new PiTrajectoryLister());
+    public static TrajectoryEngine CreateDefault() =>
+        DefaultAdapterRegistry.Register(new TrajectoryEngine());
 
     public TrajectoryEngine AddOutputAdapter<TOutput>(IOutputSchemaAdapter<TOutput> adapter)
     {
@@ -44,10 +33,28 @@ public sealed class TrajectoryEngine
         return this;
     }
 
+    public TrajectoryEngine AddSourceAdapter(ITrajectorySourceAdapter adapter)
+    {
+        ArgumentNullException.ThrowIfNull(adapter);
+        if (_sources.ContainsKey(adapter.Source) || !_customSources.TryAdd(adapter.Source, adapter))
+        {
+            throw new InvalidOperationException(
+                $"A source adapter for '{adapter.Source}' is already registered.");
+        }
+
+        return this;
+    }
+
     public TrajectoryIR NormalizeToIR(NormalizeInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Transcript);
+        if (_customSources.TryGetValue(input.Source, out var customSource))
+        {
+            return customSource.Normalize(input) ?? throw new InvalidOperationException(
+                $"Source adapter for '{input.Source}' returned a null trajectory.");
+        }
+
         if (!_sources.TryGetValue(input.Source, out var sourceAdapter))
         {
             throw new TrajectoryNormalizationException(
@@ -100,6 +107,25 @@ public sealed class TrajectoryEngine
         return adapter.SerializeUntyped(output, options);
     }
 
+    public void ProjectToStream(
+        TrajectoryIR trajectory,
+        string schemaId,
+        Stream destination,
+        OutputProjectionOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(trajectory);
+        ArgumentNullException.ThrowIfNull(destination);
+        if (!_outputs.TryGetValue(schemaId, out var adapter))
+        {
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.UnknownOutputSchema,
+                $"No output adapter is registered for schema '{schemaId}'.");
+        }
+
+        var output = adapter.ProjectUntyped(trajectory, options);
+        adapter.WriteUntyped(destination, output, options);
+    }
+
     public LettaNormalizeResult NormalizeTranscript(NormalizeInput input)
     {
         var trajectory = NormalizeToIR(input);
@@ -142,13 +168,13 @@ public sealed class TrajectoryEngine
             TrajectoryPagination.Paginate(items, options.Cursor, options.Limit));
     }
 
-    private TrajectoryEngine AddSource(ISourceAdapter adapter)
+    internal TrajectoryEngine AddBuiltInSource(ISourceAdapter adapter)
     {
         _sources.Add(adapter.Source, adapter);
         return this;
     }
 
-    private TrajectoryEngine AddLister(ITrajectoryLister lister)
+    internal TrajectoryEngine AddBuiltInLister(ITrajectoryLister lister)
     {
         _listers.Add(lister.Source, lister);
         return this;

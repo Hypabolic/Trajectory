@@ -1,10 +1,15 @@
 # OpenTelemetry GenAI span output
 
-Status: proposed output and optional package plan.
+Status: implemented in Slice 10.
 
 Output schema ID: `otel-genai-spans-v1`
 
 Initial OpenTelemetry GenAI semantic-convention baseline: schema URL `https://opentelemetry.io/schemas/gen-ai/1.42.0`.
+
+The baseline remains pinned at 1.42.0. GenAI conventions moved to the separate
+`open-telemetry/semantic-conventions-genai` repository after this plan was
+written, but that repository had not published a release at implementation
+time. Advancing the pin requires an explicit compatibility update.
 
 ## Purpose
 
@@ -16,7 +21,7 @@ The output is not a Letta parity contract. It is a Trajectory.NET projection who
 
 The BCL-only core package must not acquire OpenTelemetry SDK, OTLP protobuf, or exporter dependencies.
 
-The planned package split is:
+The package split is:
 
 | Package | Responsibility |
 | --- | --- |
@@ -35,7 +40,7 @@ OpenTelemetryGenAiOutputAdapter
 OtelGenAiSpanSetV1
     |-----------------------------|
     v                             v
-OTLP trace-data conversion     ActivitySource emission
+official SDK/OTLP exporter     ActivitySource emission
 ```
 
 `Project(...)` must never contact a collector, start a live exporter, or depend on an ambient `TracerProvider`.
@@ -126,7 +131,9 @@ Emit `invoke_workflow` only when the source explicitly distinguishes a workflow/
 
 The typed projection should produce deterministic trace/span identities from stable trajectory and invocation identities so replaying the same normalized trajectory produces the same span set.
 
-Direct OTLP conversion should preserve those projected IDs. An `ActivitySource` emitter may use runtime-generated IDs where the .NET API does not permit exact projected IDs; in that mode it must retain deterministic trajectory, invocation, and record IDs as correlation attributes.
+The typed span set preserves projected IDs. `ActivitySource` uses runtime IDs
+because the .NET API does not permit assigning a span ID; emission retains the
+projected trace/span IDs as `hypabolic.projected.*` correlation attributes.
 
 Zero trace/span IDs are invalid and must never be emitted.
 
@@ -170,8 +177,9 @@ The initial planning baseline is GenAI schema `1.42.0`; implementation must veri
 The optional package should support:
 
 1. typed in-memory span data for tests and custom sinks;
-2. conversion to standard OTLP trace protobuf/JSON structures;
-3. emission through an `ActivitySource` for applications already using the OpenTelemetry .NET SDK.
+2. emission through an `ActivitySource` for applications already using the OpenTelemetry .NET SDK;
+3. `AddTrajectoryGenAiOtlp` registration that delegates OTLP conversion and
+   transport to the official OpenTelemetry .NET SDK/exporter package.
 
 OTLP wire compatibility should be delegated to official OpenTelemetry protobuf/SDK packages rather than reimplementing protobuf contracts in the core library.
 
@@ -183,7 +191,7 @@ OTLP wire compatibility should be delegated to official OpenTelemetry protobuf/S
 - Tool arguments, results, prompts, and responses are absent by default.
 - Enabling content capture is explicit, bounded, and covered by content-safety tests.
 - Token usage and provider/model fields are never synthesized from heuristics.
-- Direct OTLP conversion validates against official OpenTelemetry protobuf types.
+- OTLP registration composes with the official OpenTelemetry .NET SDK/exporter.
 - The optional package publishes and runs under Native AOT on supported targets.
 - The core package remains BCL-only and its dependency graph is unchanged.
 - Re-projecting the same `TrajectoryIR` produces identical span identities and ordering.
