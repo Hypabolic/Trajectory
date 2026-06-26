@@ -20,6 +20,7 @@ internal sealed record DecodedEvent
     public int? InputLine { get; init; }
     public DateTimeOffset? Timestamp { get; init; }
     public string? Model { get; init; }
+    public string? ProducerVersion { get; init; }
     public string? NativeRecordId { get; init; }
     public long? SourceSequence { get; init; }
     public long? SourceOffset { get; init; }
@@ -57,6 +58,7 @@ internal sealed record DecodedModelInvocation
     public string? ResponseModel { get; init; }
     public string? ResponseId { get; init; }
     public string? StopReason { get; init; }
+    public string? ProducerVersion { get; init; }
     public long? InputTokens { get; init; }
     public long? OutputTokens { get; init; }
     public long? CacheReadTokens { get; init; }

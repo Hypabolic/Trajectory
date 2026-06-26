@@ -165,6 +165,7 @@ public sealed class HypabolicTrajectoryV1OutputAdapter : OutputSchemaAdapter<Hyp
                 ComponentKey = record.Provenance.ComponentKey,
                 ComponentIndex = record.Provenance.ComponentIndex,
                 ComponentTypeOrdinal = record.Provenance.ComponentTypeOrdinal,
+                ProducerVersion = record.Provenance.ProducerVersion,
                 NativeRecordId = record.Provenance.NativeRecordId,
                 SourceSequence = record.Provenance.SourceSequence,
                 SourceOffset = record.Provenance.SourceOffset,
@@ -256,6 +257,8 @@ public sealed class HypabolicTrajectoryV1OutputAdapter : OutputSchemaAdapter<Hyp
         writer.WriteString("component_key", record.Provenance.ComponentKey);
         writer.WriteNumber("component_index", record.Provenance.ComponentIndex);
         writer.WriteNumber("component_type_ordinal", record.Provenance.ComponentTypeOrdinal);
+        if (record.Provenance.ProducerVersion is not null)
+            writer.WriteString("producer_version", record.Provenance.ProducerVersion);
         if (record.Provenance.NativeRecordId is not null)
             writer.WriteString("native_record_id", record.Provenance.NativeRecordId);
         if (record.Provenance.SourceSequence is { } sourceSequence)

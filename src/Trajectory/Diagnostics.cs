@@ -9,6 +9,8 @@ public static class DiagnosticCodes
     public const string InjectedContextDropped = "injected_context_dropped";
     public const string NoiseRecordDropped = "noise_record_dropped";
     public const string SidechainRecordDropped = "sidechain_record_dropped";
+    public const string UnknownSemanticRecord = "unknown_semantic_record";
+    public const string UnknownContentBlock = "unknown_content_block";
     public const string ToolCallIdSynthesized = "tool_call_id_synthesized";
     public const string DuplicateToolCallId = "duplicate_tool_call_id";
     public const string OrphanToolResult = "orphan_tool_result";

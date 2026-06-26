@@ -53,6 +53,7 @@ public sealed record SourceRecordProvenance
     public required string ComponentKey { get; init; }
     public required int ComponentIndex { get; init; }
     public required int ComponentTypeOrdinal { get; init; }
+    public string? ProducerVersion { get; init; }
     public string? NativeRecordId { get; init; }
     public long? SourceSequence { get; init; }
     public long? SourceOffset { get; init; }
@@ -140,6 +141,7 @@ public sealed record ModelInvocationIR
     public string? ResponseModel { get; init; }
     public string? ResponseId { get; init; }
     public string? StopReason { get; init; }
+    public string? ProducerVersion { get; init; }
     public ModelTokenUsageIR? Usage { get; init; }
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? FirstResponseAt { get; init; }
