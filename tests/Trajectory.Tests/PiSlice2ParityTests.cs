@@ -305,7 +305,244 @@ public sealed class PiSlice2ParityTests
         Assert.Equal(NormalizationErrorCode.InvalidInput, exception.Code);
     }
 
+    [Fact]
+    public void GeneratedBoundsAlwaysPreserveJsonObjectsAndCodePointLimits()
+    {
+        var random = new Random(0x5eed);
+        string[] atoms = ["a", "😀", "水", "e\u0301"];
+        for (var iteration = 0; iteration < 48; iteration++)
+        {
+            var argumentValue = string.Concat(Enumerable.Range(0, random.Next(80, 240))
+                .Select(_ => atoms[random.Next(atoms.Length)]));
+            var resultValue = string.Concat(Enumerable.Range(0, random.Next(80, 240))
+                .Select(_ => atoms[random.Next(atoms.Length)]));
+            var argumentLimit = random.Next(32, 128);
+            var resultLimit = random.Next(16, 96);
+            var strategy = iteration % 2 == 0
+                ? ToolResultTruncationStrategy.Head
+                : ToolResultTruncationStrategy.HeadTail;
+            var transcript = SingleCallTranscript(
+                $"generated-{iteration}",
+                argumentValue,
+                resultValue);
+            var trajectory = TrajectoryConverter.NormalizeToIR(
+                transcript,
+                new NormalizeOptions
+                {
+                    Bounds = new NormalizationBounds
+                    {
+                        ToolArguments = new ToolArgumentBounds
+                        {
+                            MaxCharacters = argumentLimit,
+                        },
+                        ToolResults = new ToolResultBounds
+                        {
+                            MaxCharacters = resultLimit,
+                            Strategy = strategy,
+                        },
+                    },
+                });
+
+            var arguments = Assert.Single(
+                Assert.Single(trajectory.Records.OfType<AssistantToolCallsIR>())
+                    .ToolCalls)
+                .ArgumentsJson;
+            var result = Assert.Single(trajectory.Records.OfType<ToolResultIR>());
+            using var document = JsonDocument.Parse(arguments);
+
+            Assert.Equal(JsonValueKind.Object, document.RootElement.ValueKind);
+            Assert.True(CodePoints(arguments) <= argumentLimit);
+            Assert.True(CodePoints(result.Content) <= resultLimit);
+        }
+    }
+
+    [Fact]
+    public void GeneratedDuplicateOrderingAndChunkPropertiesRemainStable()
+    {
+        for (var duplicateCount = 2; duplicateCount <= 8; duplicateCount++)
+        {
+            var calls = Enumerable.Range(0, duplicateCount)
+                .Select(index => new JsonObject
+                {
+                    ["type"] = "toolCall",
+                    ["id"] = "duplicate",
+                    ["name"] = $"tool-{index}",
+                    ["arguments"] = new JsonObject { ["index"] = index },
+                })
+                .ToArray();
+            var callMessage = new JsonObject
+            {
+                ["type"] = "message",
+                ["id"] = "calls",
+                ["timestamp"] = "2026-01-01T00:00:02Z",
+                ["message"] = new JsonObject
+                {
+                    ["role"] = "assistant",
+                    ["content"] = new JsonArray(calls),
+                },
+            }.ToJsonString();
+            var results = Enumerable.Range(0, duplicateCount)
+                .Select(index => new JsonObject
+                {
+                    ["type"] = "message",
+                    ["id"] = $"result-{index}",
+                    ["timestamp"] = $"2026-01-01T00:00:{index + 3:00}Z",
+                    ["message"] = new JsonObject
+                    {
+                        ["role"] = "toolResult",
+                        ["toolCallId"] = "duplicate",
+                        ["content"] = $"result-{index}",
+                    },
+                }.ToJsonString())
+                .ToArray();
+            var prefix = """
+                {"type":"session","id":"generated-order","timestamp":"2026-01-01T00:00:00Z"}
+                {"type":"message","id":"user","timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":"run"}}
+                """;
+            var forwardTranscript = string.Join(
+                '\n',
+                [prefix, callMessage, .. results]);
+            var reverseArrivalTranscript = string.Join(
+                '\n',
+                [prefix, .. results.Reverse(), callMessage]);
+            var forward = TrajectoryConverter.NormalizeToIR(forwardTranscript);
+            var reverseArrival = TrajectoryConverter.NormalizeToIR(
+                reverseArrivalTranscript);
+            var expectedIds = Enumerable.Range(1, duplicateCount)
+                .Select(index => index == 1
+                    ? "duplicate"
+                    : $"duplicate__{index}")
+                .ToArray();
+
+            Assert.Equal(
+                expectedIds,
+                forward.Records.OfType<AssistantToolCallsIR>()
+                    .SelectMany(static record => record.ToolCalls)
+                    .Select(static call => call.Id));
+            Assert.Equal(
+                expectedIds,
+                forward.Records.OfType<ToolResultIR>()
+                    .Select(static result => result.ToolCallId));
+            Assert.Equal(
+                expectedIds,
+                reverseArrival.Records.OfType<ToolResultIR>()
+                    .Select(static result => result.ToolCallId));
+        }
+
+        var uniqueCall = """
+            {"type":"message","id":"unique-call-message","timestamp":"2026-01-01T00:00:02Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"unique-call","name":"tool","arguments":{}}]}}
+            """;
+        var uniqueResult = """
+            {"type":"message","id":"unique-result-message","timestamp":"2026-01-01T00:00:03Z","message":{"role":"toolResult","toolCallId":"unique-call","content":"done"}}
+            """;
+        var orderingPrefix = """
+            {"type":"session","id":"generated-order","timestamp":"2026-01-01T00:00:00Z"}
+            {"type":"message","id":"unique-user","timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":"run"}}
+            """;
+        var naturalOrder = TrajectoryConverter.NormalizeToIR(string.Join(
+            '\n',
+            orderingPrefix,
+            uniqueCall,
+            uniqueResult));
+        var reverseArrivalOrder = TrajectoryConverter.NormalizeToIR(string.Join(
+            '\n',
+            orderingPrefix,
+            uniqueResult,
+            uniqueCall));
+        var naturalIdentity = naturalOrder.Records.Skip(1)
+            .ToDictionary(
+                static record => record.Provenance.NativeRecordId!,
+                static record => (record.Id, record.Provenance.SourceOrderId),
+                StringComparer.Ordinal);
+        var reverseIdentity = reverseArrivalOrder.Records.Skip(1)
+            .ToDictionary(
+                static record => record.Provenance.NativeRecordId!,
+                static record => (record.Id, record.Provenance.SourceOrderId),
+                StringComparer.Ordinal);
+
+        Assert.Equal(
+            naturalIdentity.OrderBy(static item => item.Key),
+            reverseIdentity.OrderBy(static item => item.Key));
+
+        var chunk = """
+            {"type":"message","id":"chunk-result","timestamp":"2026-01-01T00:00:03Z","message":{"role":"toolResult","toolCallId":"earlier","content":"done"}}
+            """;
+        var chunkIds = new long[] { 0, 1, 127, 512, 4_096 }
+            .Select(offset => TrajectoryConverter.NormalizeToIR(
+                chunk,
+                sourceContext: new SourceContext
+                {
+                    GroupId = "generated-chunk",
+                    BaseByteOffset = offset,
+                    Partial = true,
+                }))
+            .Select(trajectory => Assert.Single(
+                trajectory.Records.OfType<ToolResultIR>()).Id)
+            .ToArray();
+
+        Assert.All(chunkIds, id => Assert.Equal(chunkIds[0], id));
+    }
+
     private static int CodePoints(string value) => value.EnumerateRunes().Count();
+
+    private static string SingleCallTranscript(
+        string sessionId,
+        string argumentValue,
+        string resultValue) =>
+        string.Join(
+            '\n',
+            new JsonObject
+            {
+                ["type"] = "session",
+                ["id"] = sessionId,
+                ["timestamp"] = "2026-01-01T00:00:00Z",
+            }.ToJsonString(),
+            new JsonObject
+            {
+                ["type"] = "message",
+                ["id"] = "user",
+                ["timestamp"] = "2026-01-01T00:00:01Z",
+                ["message"] = new JsonObject
+                {
+                    ["role"] = "user",
+                    ["content"] = "run",
+                },
+            }.ToJsonString(),
+            new JsonObject
+            {
+                ["type"] = "message",
+                ["id"] = "assistant",
+                ["timestamp"] = "2026-01-01T00:00:02Z",
+                ["message"] = new JsonObject
+                {
+                    ["role"] = "assistant",
+                    ["content"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["type"] = "toolCall",
+                            ["id"] = "generated-call",
+                            ["name"] = "generated-tool",
+                            ["arguments"] = new JsonObject
+                            {
+                                ["value"] = argumentValue,
+                            },
+                        },
+                    },
+                },
+            }.ToJsonString(),
+            new JsonObject
+            {
+                ["type"] = "message",
+                ["id"] = "result",
+                ["timestamp"] = "2026-01-01T00:00:03Z",
+                ["message"] = new JsonObject
+                {
+                    ["role"] = "toolResult",
+                    ["toolCallId"] = "generated-call",
+                    ["content"] = resultValue,
+                },
+            }.ToJsonString());
 
     private static string Fixture(string relativePath) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", relativePath));
