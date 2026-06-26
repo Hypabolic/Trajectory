@@ -167,7 +167,14 @@ internal sealed class TrajectoryNormalizer
                         Timestamp = timestamp,
                         Content = content,
                         Provenance = provenance,
-                        Hashes = HashMessage(id, role, order, sourceEvent.Timestamp, timestamp, content, provenance),
+                        Hashes = HashMessage(
+                            id,
+                            role,
+                            order,
+                            sourceEvent.Timestamp,
+                            timestamp.Value,
+                            content,
+                            provenance),
                     });
                     break;
                 }
@@ -198,7 +205,13 @@ internal sealed class TrajectoryNormalizer
                         Timestamp = timestamp,
                         ToolCalls = [call],
                         Provenance = provenance,
-                        Hashes = HashToolCall(id, order, sourceEvent.Timestamp, timestamp, call, provenance),
+                        Hashes = HashToolCall(
+                            id,
+                            order,
+                            sourceEvent.Timestamp,
+                            timestamp.Value,
+                            call,
+                            provenance),
                     });
                     break;
                 }
@@ -222,7 +235,7 @@ internal sealed class TrajectoryNormalizer
                             id,
                             order,
                             sourceEvent.Timestamp,
-                            timestamp,
+                            timestamp.Value,
                             sourceEvent.ToolCallId!,
                             sourceEvent.ToolName,
                             content,
