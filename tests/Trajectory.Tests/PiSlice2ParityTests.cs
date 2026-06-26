@@ -86,11 +86,11 @@ public sealed class PiSlice2ParityTests
     {
         var argumentValue = string.Concat(Enumerable.Repeat("😀", 120));
         var resultValue = string.Concat(Enumerable.Repeat("🌊", 120));
-        var transcript = $$"""
+        var transcript = $$$$"""
             {"type":"session","id":"bounds","timestamp":"2026-01-01T00:00:00Z"}
             {"type":"message","id":"u","timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":"run"}}
-            {"type":"message","id":"a","timestamp":"2026-01-01T00:00:02Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"bounded","name":"bash","arguments":{"value":"{{argumentValue}}"}}]}}
-            {"type":"message","id":"r","timestamp":"2026-01-01T00:00:03Z","message":{"role":"toolResult","toolCallId":"bounded","content":"{{resultValue}}"}}
+            {"type":"message","id":"a","timestamp":"2026-01-01T00:00:02Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"bounded","name":"bash","arguments":{"value":"{{{{argumentValue}}}}"}}]}}
+            {"type":"message","id":"r","timestamp":"2026-01-01T00:00:03Z","message":{"role":"toolResult","toolCallId":"bounded","content":"{{{{resultValue}}}}"}}
             """;
         var options = new NormalizeOptions
         {
