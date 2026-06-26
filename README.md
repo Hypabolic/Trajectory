@@ -49,6 +49,7 @@ Target frameworks: `net8.0;net9.0;net10.0`.
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Pinned upstream compatibility reference](docs/upstream-reference.md)
 - [Letta parity baseline and current implementation audit](docs/parity-baseline.md)
 - [Hypabolic trajectory v1 contract](docs/hypabolic-trajectory-v1.md)
 - [Vertical-slice implementation plan](docs/implementation-plan.md)
