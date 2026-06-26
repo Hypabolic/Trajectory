@@ -20,6 +20,17 @@ source input
 
 Shared infrastructure is introduced through the first source that needs it rather than as an isolated framework-building phase.
 
+## Delivery status
+
+| Slice | Status |
+| --- | --- |
+| 1 — Correct Pi end-to-end path | Complete |
+| 2 — Pi normalization and canonical parity | Complete |
+| 3 — Claude Code end-to-end parity | Complete |
+| 4 — Codex end-to-end parity | Complete |
+| 5 — Letta Code end-to-end parity | Next |
+| 6–11 | Planned |
+
 ## Planning rules
 
 - The pinned upstream commit is the behavioural reference. The pin moves only in an explicit compatibility change.

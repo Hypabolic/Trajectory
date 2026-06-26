@@ -73,48 +73,53 @@ The upstream Python wrapper is not a separate parity requirement. The NuGet libr
 
 ### What is usable
 
-- The project already multi-targets `net8.0`, `net9.0`, and `net10.0`.
-- Trimming and AOT analyzers are enabled in the core project.
-- The core package currently has no third-party dependencies.
-- SHA-256 helpers and source-generated JSON scaffolding exist.
-- A registry-style engine, a Pi parser, an initial IR, and a static convenience facade exist.
-- The current tests establish a small executable smoke path for deterministic IDs, Pi parsing, safe diagnostics, registration, options, serialization, and one fixture.
+- The project multi-targets `net8.0`, `net9.0`, and `net10.0`.
+- Trimming and AOT analyzers are enabled and the core remains BCL-only.
+- Pi, Claude Code, and Codex have complete decode-normalize-project paths,
+  default listing, pinned upstream goldens, and Native AOT smoke coverage.
+- Exact Letta trajectory/canonical adapters and the provenance-rich Hypabolic
+  adapter share one deterministic IR, identity, canonical JSON, and SHA-256
+  implementation.
+- Partial chunks, absolute UTF-8 byte anchors, source-group conflict handling,
+  bounds, filters, timestamp policy, and tool linking are implemented in the
+  shared normalization path.
 
-These pieces are prototypes, not compatibility anchors. Public API preservation is not a priority before the first real package release.
+Public API preservation remains secondary to the documented wire and behavioural
+contracts until the first package release.
 
-### Architectural gaps
+### Architecture status
 
 | Area | Current state | Required change |
 | --- | --- | --- |
-| Adapter boundary | `ISourceAdapter.Parse` produces final IR and owns normalization policy | Source adapters decode to an internal source model; shared core owns linking, repair, bounds, filters, timestamps, validation, and diagnostics |
-| IR provenance | IR records contain normalized ID/order/time but no native identity basis, source time, component key, offset, sequence, or identity kind | Add explicit source provenance and semantic component identity |
-| Roles and record kinds | Primarily string roles and a limited polymorphic model | Typed record kind/role contracts with exact serializer mappings |
-| Engine output typing | Every output adapter returns `string` | Typed adapters plus direct UTF-8 JSON writing and a safe non-generic registry bridge |
-| Registration | Runtime dictionaries only | Keep explicit registration, add generated/default registry, avoid scanning/reflection |
-| Namespace/package | Generic `Trajectory` naming | Move to `Hypabolic.Trajectory` package and namespace before publication |
+| Adapter boundary | Source adapters decode to internal events; shared normalization owns common policy | Extend without moving common policy back into sources |
+| IR provenance | Native identity, source time/order/location, component identity, and hashes implemented | Extend additively when later sources expose new provenance |
+| Roles and record kinds | Typed IR and exact serializer mappings implemented | Keep the IR independent of output wire models |
+| Engine output typing | Typed adapters and a safe non-generic bridge implemented | Add direct stream/UTF-8 APIs in Slice 10 |
+| Registration | Explicit default registration without reflection or scanning | Add the builder/generated registry surface in Slice 10 |
+| Namespace/package | `Hypabolic.Trajectory` established | Preserve through package readiness |
 
 ### Behavioural gaps
 
 | Capability | Current state | Parity requirement |
 | --- | --- | --- |
-| Pi | Broad permissive parser with source-specific normalization embedded in one large adapter | Exact pi-coding-agent decoding fixtures plus shared normalization semantics |
-| Claude Code | Enum value only | Full decoder, listing, identity, diagnostics, and fixture parity |
-| Codex | Enum value only | Full decoder, true UTF-8 byte offsets, partial chunks, group requirement/conflict, listing |
+| Pi | Implemented through all three outputs with pinned parity fixtures | Keep covered by differential parity and regression tests |
+| Claude Code | Implemented through all three outputs with version-family fixtures and listing | Keep covered by differential parity and regression tests |
+| Codex | Implemented with true UTF-8 byte offsets, arbitrary partial chunks, group enforcement, semantic tool variants, and listing | Keep covered by differential parity and regression tests |
 | Letta Code | Enum value only | Full client transcript decoder and row/native identity rules |
 | OpenClaw | Enum value only | Full wrapper/message decoder and byte fallback identity |
 | OpenHands | Enum value only | Array/envelope event decoding and event identity |
 | Hermes | Enum value only | Array/envelope decoding and SQLite listing/export support |
 | Deep Agents | Enum value only | Optional SQLite/checkpoint package and exact checkpoint reduction |
-| Tool linking | Implemented only inside Pi parsing and dependent on local record flow | Shared pre-pass, duplicate handling, reverse-arrival linking, partial orphan policy |
-| Timestamps | Source values may remain null | Exact preservation/interpolation/synthesis with stable diagnostics |
-| Validation | No equivalent normalized schema validator | Whole/partial invariant validation and output-schema validation |
-| Bounds | Tool arguments use `MaxBytes` and source-specific truncation; defaults are not resolved | Unicode code-point limits, valid JSON object preservation, exact markers/defaults |
-| Filters | Empty marker record | `toolResults: include|omit` with resolved defaults |
-| Partial mode | Context is accepted but not implemented to upstream semantics | Relax role invariants, retain cross-chunk results, offset-controlled meta emission |
-| Byte offsets | Pi adapter treats candidate ordinal as an offset | Track actual UTF-8 byte positions while decoding JSONL |
-| Diagnostics | Free-form string codes, severity, line/path shape | Upstream-compatible code/message/line/index/count shape plus typed fatal errors |
-| Canonical identity | Absent | Full stable source identity, source ordering, component keys, hashes, flattened fields |
-| Deterministic JSON | Limited argument sorting helper | Dedicated canonical JSON writer for all hash-bearing contracts |
+| Tool linking | Shared pre-pass implements duplicate repair, reverse-arrival linking, and partial orphan policy | Extend source fixtures as later adapters introduce new native shapes |
+| Timestamps | Exact preservation/interpolation/synthesis policy implemented | Keep source-specific timestamp representations covered |
+| Validation | Whole/partial normalized validation and checked schemas implemented | Add public validation surface in Slice 10 |
+| Bounds | Unicode-code-point limits, valid object reshaping, markers, and defaults implemented | Differential regression coverage |
+| Filters | `toolResults: include|omit` implemented | Differential regression coverage |
+| Partial mode | Role relaxation, cross-chunk results, and offset-controlled canonical meta implemented | Differential regression coverage |
+| Byte offsets | Real UTF-8 byte positions implemented for current JSONL sources | Preserve for later byte-anchored sources |
+| Diagnostics | Upstream-compatible structural diagnostics and typed fatal errors implemented | Extend additively for later sources |
+| Canonical identity | Stable source identity, ordering, component keys, hashes, and flattened fields implemented | Differential regression coverage |
+| Deterministic JSON | Dedicated canonical JSON writer used by all hash-bearing contracts | Differential regression coverage |
 
 ### Output gaps
 

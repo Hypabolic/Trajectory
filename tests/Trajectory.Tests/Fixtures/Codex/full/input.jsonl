@@ -1,0 +1,14 @@
+{"timestamp":"2026-07-02T09:00:00.000Z","type":"session_meta","payload":{"id":"codex-session-1","timestamp":"2026-07-02T09:00:00.000Z","cwd":"/repo/codex","cli_version":"0.140.0","git":{"branch":"main"}}}
+{"timestamp":"2026-07-02T09:00:00.100Z","type":"turn_context","payload":{"cwd":"/repo/ignored","model":"gpt-5.2-codex"}}
+{"timestamp":"2026-07-02T09:00:00.200Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>secret transport context</environment_context>"}]}}
+{"timestamp":"2026-07-02T09:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Inspect the repository."},{"type":"image"}]}}
+{"timestamp":"2026-07-02T09:00:02.000Z","type":"event_msg","payload":{"type":"agent_reasoning","text":"I should inspect the files."}}
+{"timestamp":"2026-07-02T09:00:03.000Z","type":"response_item","payload":{"type":"function_call","call_id":"call-shell","name":"exec_command","arguments":"{\"cmd\":\"rg --files\"}"}}
+{"timestamp":"2026-07-02T09:00:04.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-shell","output":[{"type":"output_text","text":"src/App.cs"},{"type":"output_text","text":"README.md"}]}}
+{"timestamp":"2026-07-02T09:00:05.000Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"call-patch","name":"apply_patch","input":"*** Begin Patch\n*** End Patch"}}
+{"timestamp":"2026-07-02T09:00:06.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call-patch","output":{"content":"Done"}}}
+{"timestamp":"2026-07-02T09:00:07.000Z","type":"response_item","payload":{"type":"web_search_call","call_id":"call-web","status":"completed","query":"Codex rollout format","domains":["openai.com"]}}
+{"timestamp":"2026-07-02T09:00:08.000Z","type":"response_item","payload":{"type":"tool_search_call","call_id":"call-search","arguments":{"query":"compiler diagnostics","limit":3}}}
+{"timestamp":"2026-07-02T09:00:09.000Z","type":"response_item","payload":{"type":"tool_search_output","call_id":"call-search","tools":[{"name":"build","description":"Build the project"}]}}
+{"timestamp":"2026-07-02T09:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"The repository is ready."}]}}
+{"timestamp":"2026-07-02T09:00:11.000Z","type":"world_state","payload":{"opaque":true}}

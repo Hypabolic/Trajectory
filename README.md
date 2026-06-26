@@ -19,7 +19,10 @@ Claude Code / Codex / Pi / Letta Code / OpenClaw / OpenHands / Hermes / Deep Age
 
 ## Status
 
-The repository currently contains an early prototype, not a production-compatible implementation. The architecture and delivery plan now define the work required to:
+The first four vertical slices are implemented. Pi, Claude Code, and Codex
+transcripts now normalize through the shared IR into all three identity-bearing
+outputs, with source listing, pinned upstream goldens, cross-platform tests, and
+Native AOT smoke coverage. The remaining plan will:
 
 - match the original Letta trajectory and canonical formats exactly;
 - support every source and listing capability in the pinned Letta reference;
@@ -27,8 +30,6 @@ The repository currently contains an early prototype, not a production-compatibl
 - add an optional OpenTelemetry GenAI span projection without adding telemetry dependencies to the core package;
 - keep the core BCL-only, trim-safe, and Native AOT-compatible;
 - verify behaviour through golden fixtures and differential parity tests.
-
-Do not treat the existing prototype output named `letta-trajectory-v1` as compatible with the upstream Letta schema. Replacing it is part of the first implementation slice.
 
 ## Intended outputs
 
@@ -69,7 +70,7 @@ Target frameworks: `net8.0;net9.0;net10.0`.
 - diagnostics never contain raw transcript content;
 - source decoding and output projection remain independently testable.
 
-## Planned high-level API
+## High-level API
 
 ```csharp
 var engine = TrajectoryEngine.CreateDefault();
@@ -95,4 +96,6 @@ var hypabolic = engine.Project<HypabolicTrajectoryV1>(
     OutputSchemaIds.HypabolicTrajectoryV1);
 ```
 
-The exact public API will be finalized through the implementation slices; the wire-format and behavioural compatibility contracts take precedence over preserving the current prototype API.
+The API may still evolve before the first package release; the wire-format and
+behavioural compatibility contracts take precedence over preserving pre-release
+surface details.

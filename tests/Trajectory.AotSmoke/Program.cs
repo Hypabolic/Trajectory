@@ -5,6 +5,7 @@ var fixtures = new[]
 {
     (TrajectorySource.Pi, "pi-tool-calls.jsonl"),
     (TrajectorySource.ClaudeCode, "claude-code-tool-call.jsonl"),
+    (TrajectorySource.Codex, "codex-full.jsonl"),
 };
 var engine = TrajectoryEngine.CreateDefault();
 foreach (var (source, fileName) in fixtures)

@@ -1,0 +1,121 @@
+{
+  "records": [
+    {
+      "source_type": "codex",
+      "source_group_id": "codex-chunk-session",
+      "stable_source_record_id": "meta",
+      "source_identity_kind": "synthetic",
+      "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+      "component_index": 0,
+      "record_type": "meta",
+      "record_id": "606354cf1a968e9b485cfbd9ee28fb3785a00b2f40e44204f6a98e41c67e5b0e",
+      "record_hash": "7709f41f6ed578a349cd240e61b99e984cc7a14b847d0f30ff2941fc87d290f1",
+      "content_hash": "cede358baf291b5288cb2bc48ae83b3c84534065150478e7926ec2ec194ec98b",
+      "source_timestamp": null,
+      "record_timestamp": null,
+      "content": null,
+      "tool_call_id": null,
+      "tool_name": null,
+      "tool_arguments_json": null,
+      "tool_result_json": null,
+      "record_json": "{\"cwd\":\"/repo/chunks\",\"git_branch\":\"feature/chunks\",\"role\":\"meta\",\"source\":\"codex\"}"
+    },
+    {
+      "source_type": "codex",
+      "source_group_id": "codex-chunk-session",
+      "stable_source_record_id": "7adb36560d6e219a593b480109142d1b4db731cea187541936c4a8167ccaa480",
+      "source_identity_kind": "location",
+      "source_order_id": "1|2026-07-03T10:00:01.000Z|00000000000000000000|7adb36560d6e219a593b480109142d1b4db731cea187541936c4a8167ccaa480",
+      "component_index": 0,
+      "record_type": "user",
+      "record_id": "79aa2df1e3924b80279e16555fab65a8a37b5ff1428542dd3d94bb18e3aafa25",
+      "record_hash": "cc18b5de64f8f5d7d373278954c72cb0232d340bff90e1a05cba97b6b3cc6a9c",
+      "content_hash": "bfc94523262af18c15953a0463f53e080b4cf931506e4fb4ce605d0d20a37ac4",
+      "source_timestamp": "2026-07-03T10:00:01.000Z",
+      "record_timestamp": "2026-07-03T10:00:01.000Z",
+      "content": "Run the compiler.",
+      "tool_call_id": null,
+      "tool_name": null,
+      "tool_arguments_json": null,
+      "tool_result_json": null,
+      "record_json": "{\"content\":\"Run the compiler.\",\"role\":\"user\",\"timestamp\":\"2026-07-03T10:00:01.000Z\"}"
+    },
+    {
+      "source_type": "codex",
+      "source_group_id": "codex-chunk-session",
+      "stable_source_record_id": "e309bbfe4007ad4923faea46913aa4a94746483a9dd642dcbddbb404b1cc572e",
+      "source_identity_kind": "location",
+      "source_order_id": "1|2026-07-03T10:00:02.000Z|00000000000000000000|e309bbfe4007ad4923faea46913aa4a94746483a9dd642dcbddbb404b1cc572e",
+      "component_index": 0,
+      "record_type": "assistant-tool-call",
+      "record_id": "ccbb43b65ee12d6dbe6150189a7c5d1e7dd586e3cd93e570f0127c5ae9810821",
+      "record_hash": "391007d36f556de8613da3ed029e47763b6afac9193ba2720cc1f75d8a178089",
+      "content_hash": "f6be19ffac923b413718a06fadca0ed78297be24b760801a2f16dd9c4651c9a4",
+      "source_timestamp": "2026-07-03T10:00:02.000Z",
+      "record_timestamp": "2026-07-03T10:00:02.000Z",
+      "content": null,
+      "tool_call_id": "call-build",
+      "tool_name": "build",
+      "tool_arguments_json": "{\"configuration\":\"Release\"}",
+      "tool_result_json": null,
+      "record_json": "{\"content\":null,\"role\":\"assistant\",\"timestamp\":\"2026-07-03T10:00:02.000Z\",\"tool_calls\":[{\"args\":\"{\\\"configuration\\\":\\\"Release\\\"}\",\"id\":\"call-build\",\"name\":\"build\"}]}"
+    },
+    {
+      "source_type": "codex",
+      "source_group_id": "codex-chunk-session",
+      "stable_source_record_id": "207957b01d13d6c489341524bea7c1e0c1eeaea6c782f02a671be92bb432be63",
+      "source_identity_kind": "location",
+      "source_order_id": "1|2026-07-03T10:00:03.000Z|00000000000000000000|207957b01d13d6c489341524bea7c1e0c1eeaea6c782f02a671be92bb432be63",
+      "component_index": 0,
+      "record_type": "tool",
+      "record_id": "e1c5317e66d231621d39d91d400aaa665f21db13387d3326466eabdd573429a9",
+      "record_hash": "5ac24ed349788064761ca5307e17bc4393bb245e3464b1135f27ee078725f909",
+      "content_hash": "a9aa32ed7c47fbd5ad6b514bf058faf94d7efe61758ab90ad04fdf0a4c2d0faa",
+      "source_timestamp": "2026-07-03T10:00:03.000Z",
+      "record_timestamp": "2026-07-03T10:00:03.000Z",
+      "content": null,
+      "tool_call_id": "call-build",
+      "tool_name": null,
+      "tool_arguments_json": null,
+      "tool_result_json": "Build succeeded.",
+      "record_json": "{\"content\":\"Build succeeded.\",\"role\":\"tool\",\"timestamp\":\"2026-07-03T10:00:03.000Z\",\"tool_call_id\":\"call-build\"}"
+    },
+    {
+      "source_type": "codex",
+      "source_group_id": "codex-chunk-session",
+      "stable_source_record_id": "2649815edb2c0c1924d7127efb43ca400565979c8c053dbfef429aed395607ac",
+      "source_identity_kind": "location",
+      "source_order_id": "1|2026-07-03T10:00:04.000Z|00000000000000000000|2649815edb2c0c1924d7127efb43ca400565979c8c053dbfef429aed395607ac",
+      "component_index": 0,
+      "record_type": "assistant",
+      "record_id": "8ad2f032bbafe23488aec59f889c8800c69163dfb4265b67f428bd065c8e40a1",
+      "record_hash": "3554e982cf7d127fce9199ab2a109674ea43c377883ac5263b5b9615db219a24",
+      "content_hash": "241cc1451a282c24b58c159548851ac12fdb384a57f1f0a9f68192525f9a841b",
+      "source_timestamp": "2026-07-03T10:00:04.000Z",
+      "record_timestamp": "2026-07-03T10:00:04.000Z",
+      "content": "Build passed.",
+      "tool_call_id": null,
+      "tool_name": null,
+      "tool_arguments_json": null,
+      "tool_result_json": null,
+      "record_json": "{\"content\":\"Build passed.\",\"role\":\"assistant\",\"timestamp\":\"2026-07-03T10:00:04.000Z\"}"
+    }
+  ],
+  "diagnostics": [],
+  "normalizer_version": "0.2.0",
+  "canonical_schema_version": 1,
+  "config": {
+    "bounds": {
+      "toolArguments": {
+        "maxCharacters": 20000
+      },
+      "toolResults": {
+        "maxCharacters": 2500,
+        "strategy": "head-tail"
+      }
+    },
+    "filters": {
+      "toolResults": "include"
+    }
+  }
+}
