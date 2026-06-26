@@ -1,0 +1,50 @@
+{
+  "records": [
+    {
+      "role": "meta",
+      "source": "claude-code",
+      "cwd": "/workspace/mixed",
+      "git_branch": "feature/mixed",
+      "model": "claude-sonnet-4"
+    },
+    {
+      "role": "user",
+      "content": "inspect the configuration",
+      "timestamp": "2026-07-01T09:00:01.000Z"
+    },
+    {
+      "role": "reasoning",
+      "content": "I should inspect the file.",
+      "timestamp": "2026-07-01T09:00:02.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "toolu_mixed",
+          "name": "Read",
+          "args": "{\"file_path\":\"config.json\"}"
+        }
+      ],
+      "timestamp": "2026-07-01T09:00:02.000Z"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "toolu_mixed",
+      "content": "{\"enabled\":true}\n[image]",
+      "timestamp": "2026-07-01T09:00:03.000Z"
+    },
+    {
+      "role": "user",
+      "content": "Use the existing value.",
+      "timestamp": "2026-07-01T09:00:03.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "The existing configuration is enabled.",
+      "timestamp": "2026-07-01T09:00:04.000Z"
+    }
+  ],
+  "diagnostics": []
+}
