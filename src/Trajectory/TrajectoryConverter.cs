@@ -45,6 +45,18 @@ public static class TrajectoryConverter
             SourceContext = sourceContext,
         });
 
+    public static LettaCanonicalResult NormalizeToCanonical(
+        string piSessionJsonl,
+        NormalizeOptions? options = null,
+        SourceContext? sourceContext = null) =>
+        Default.NormalizeToCanonical(new NormalizeInput
+        {
+            Source = TrajectorySource.Pi,
+            Transcript = piSessionJsonl,
+            Options = options,
+            SourceContext = sourceContext,
+        });
+
     public static string NormalizeJson(
         string piTranscript,
         string schemaId = OutputSchemaIds.LettaTrajectoryV1,
