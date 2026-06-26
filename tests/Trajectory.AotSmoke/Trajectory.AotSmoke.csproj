@@ -15,6 +15,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="../Trajectory.Tests/Fixtures/ClaudeCode/tool-call/input.jsonl" Link="Fixtures/claude-code-tool-call.jsonl" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Trajectory.Tests/Fixtures/Codex/full/input.jsonl" Link="Fixtures/codex-full.jsonl" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Trajectory.Tests/Fixtures/Pi/tool-calls/input.jsonl" Link="Fixtures/pi-tool-calls.jsonl" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

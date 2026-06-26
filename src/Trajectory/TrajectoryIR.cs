@@ -117,6 +117,7 @@ public sealed record TrajectoryIR
     public required TrajectorySource Source { get; init; }
     public required string SourceName { get; init; }
     public required string GroupId { get; init; }
+    public required bool SourceGroupResolved { get; init; }
     public string? ProducerVersion { get; init; }
     public required IReadOnlyList<IRRecord> Records { get; init; }
     public required IReadOnlyList<TrajectoryDiagnostic> Diagnostics { get; init; }

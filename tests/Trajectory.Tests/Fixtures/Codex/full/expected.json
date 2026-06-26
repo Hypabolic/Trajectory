@@ -1,0 +1,99 @@
+{
+  "records": [
+    {
+      "role": "meta",
+      "source": "codex",
+      "cwd": "/repo/codex",
+      "git_branch": "main",
+      "model": "gpt-5.2-codex"
+    },
+    {
+      "role": "user",
+      "content": "Inspect the repository.\n[image]",
+      "timestamp": "2026-07-02T09:00:01.000Z"
+    },
+    {
+      "role": "reasoning",
+      "content": "I should inspect the files.",
+      "timestamp": "2026-07-02T09:00:02.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call-shell",
+          "name": "exec_command",
+          "args": "{\"cmd\":\"rg --files\"}"
+        }
+      ],
+      "timestamp": "2026-07-02T09:00:03.000Z"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call-shell",
+      "content": "src/App.cs\nREADME.md",
+      "timestamp": "2026-07-02T09:00:04.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call-patch",
+          "name": "apply_patch",
+          "args": "{\"input\":\"*** Begin Patch\\n*** End Patch\"}"
+        }
+      ],
+      "timestamp": "2026-07-02T09:00:05.000Z"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call-patch",
+      "content": "Done",
+      "timestamp": "2026-07-02T09:00:06.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call-web",
+          "name": "web_search",
+          "args": "{\"query\":\"Codex rollout format\",\"domains\":[\"openai.com\"]}"
+        }
+      ],
+      "timestamp": "2026-07-02T09:00:07.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call-search",
+          "name": "tool_search",
+          "args": "{\"query\":\"compiler diagnostics\",\"limit\":3}"
+        }
+      ],
+      "timestamp": "2026-07-02T09:00:08.000Z"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call-search",
+      "content": "[{\"name\":\"build\",\"description\":\"Build the project\"}]",
+      "timestamp": "2026-07-02T09:00:09.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "The repository is ready.",
+      "timestamp": "2026-07-02T09:00:10.000Z"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "injected_context_dropped",
+      "message": "Dropped Codex system-injected user content on line 3.",
+      "inputLine": 3
+    }
+  ]
+}

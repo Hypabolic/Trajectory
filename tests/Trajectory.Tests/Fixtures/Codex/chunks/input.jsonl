@@ -1,0 +1,5 @@
+{"timestamp":"2026-07-03T10:00:00.000Z","type":"session_meta","payload":{"id":"codex-chunk-session","timestamp":"2026-07-03T10:00:00.000Z","cwd":"/repo/chunks","cli_version":"0.144.1","git":{"branch":"feature/chunks"}}}
+{"timestamp":"2026-07-03T10:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":"Run the compiler."}}
+{"timestamp":"2026-07-03T10:00:02.000Z","type":"response_item","payload":{"type":"function_call","call_id":"call-build","name":"build","arguments":"{\"configuration\":\"Release\"}"}}
+{"timestamp":"2026-07-03T10:00:03.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-build","output":"Build succeeded."}}
+{"timestamp":"2026-07-03T10:00:04.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":"Build passed."}}
