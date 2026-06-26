@@ -1,26 +1,54 @@
-namespace Trajectory;
+using System.Text.Json.Serialization;
 
-public enum DiagnosticSeverity
+namespace Hypabolic.Trajectory;
+
+public static class DiagnosticCodes
 {
-    Info,
-    Warning,
-    Error
+    public const string InvalidJsonLine = "invalid_json_line";
+    public const string NonObjectJsonLine = "non_object_json_line";
+    public const string OrphanToolResult = "orphan_tool_result";
+    public const string TimestampsSynthesized = "timestamps_synthesized";
 }
 
-/// <summary>
-/// A data-safe diagnostic. Messages describe the failure class and never contain transcript values.
-/// </summary>
-public sealed record TrajectoryDiagnostic(
-    string Code,
-    DiagnosticSeverity Severity,
-    string Message,
-    int? Line = null,
-    string? Path = null);
-
-public sealed record NormalizationResult(
-    TrajectoryIR? IR,
-    IReadOnlyList<TrajectoryDiagnostic> Diagnostics)
+public sealed record TrajectoryDiagnostic
 {
-    public TrajectoryIR? Trajectory => IR;
-    public bool HasErrors => Diagnostics.Any(static d => d.Severity == DiagnosticSeverity.Error);
+    [JsonPropertyName("code")]
+    public required string Code { get; init; }
+
+    [JsonPropertyName("message")]
+    public required string Message { get; init; }
+
+    [JsonPropertyName("inputLine")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? InputLine { get; init; }
+
+    [JsonPropertyName("recordIndex")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? RecordIndex { get; init; }
+
+    [JsonPropertyName("count")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Count { get; init; }
+}
+
+public enum NormalizationErrorCode
+{
+    InvalidInput = 0,
+    UnknownSource,
+    UnknownOutputSchema,
+    MissingUserRecords,
+    MissingAssistantRecords,
+    InvalidNormalizedTranscript,
+    ListingUnavailable,
+}
+
+public sealed class TrajectoryNormalizationException : Exception
+{
+    public TrajectoryNormalizationException(NormalizationErrorCode code, string message)
+        : base(message)
+    {
+        Code = code;
+    }
+
+    public NormalizationErrorCode Code { get; }
 }

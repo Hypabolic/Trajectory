@@ -1,28 +1,33 @@
-namespace Trajectory;
+using System.Text;
+using Hypabolic.Trajectory.Adapters.Hypabolic;
+using Hypabolic.Trajectory.Adapters.Letta;
+using Hypabolic.Trajectory.Adapters.Pi;
+using Hypabolic.Trajectory.Listing;
+using Hypabolic.Trajectory.Normalization;
 
-/// <summary>Registry-backed normalization and schema projection pipeline.</summary>
+namespace Hypabolic.Trajectory;
+
+public static class TrajectoryVersion
+{
+    public const string Current = "0.1.0";
+}
+
 public sealed class TrajectoryEngine
 {
     private readonly Dictionary<TrajectorySource, ISourceAdapter> _sources = new();
-    private readonly Dictionary<string, IOutputSchemaAdapter> _outputs =
-        new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IOutputSchemaAdapter> _outputs = new(StringComparer.Ordinal);
+    private readonly Dictionary<TrajectorySource, ITrajectoryLister> _listers = new();
+    private readonly TrajectoryNormalizer _normalizer = new();
 
-    public TrajectoryEngine AddSourceAdapter(ISourceAdapter adapter)
+    public static TrajectoryEngine CreateDefault() => new TrajectoryEngine()
+        .AddSource(new PiJsonlSourceAdapter())
+        .AddOutputAdapter(new LettaTrajectoryV1OutputAdapter())
+        .AddOutputAdapter(new HypabolicTrajectoryV1OutputAdapter())
+        .AddLister(new PiTrajectoryLister());
+
+    public TrajectoryEngine AddOutputAdapter<TOutput>(IOutputSchemaAdapter<TOutput> adapter)
     {
         ArgumentNullException.ThrowIfNull(adapter);
-        if (!_sources.TryAdd(adapter.Source, adapter))
-        {
-            throw new InvalidOperationException(
-                $"A source adapter for '{adapter.Source}' is already registered.");
-        }
-
-        return this;
-    }
-
-    public TrajectoryEngine AddOutputAdapter(IOutputSchemaAdapter adapter)
-    {
-        ArgumentNullException.ThrowIfNull(adapter);
-        ArgumentException.ThrowIfNullOrWhiteSpace(adapter.SchemaId);
         if (!_outputs.TryAdd(adapter.SchemaId, adapter))
         {
             throw new InvalidOperationException(
@@ -36,88 +41,103 @@ public sealed class TrajectoryEngine
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Transcript);
-        if (!_sources.TryGetValue(input.Source, out var adapter))
+        if (!_sources.TryGetValue(input.Source, out var sourceAdapter))
         {
-            throw new KeyNotFoundException(
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.UnknownSource,
                 $"No source adapter is registered for '{input.Source}'.");
         }
 
-        var options = input.Options ?? new NormalizationOptions();
-        return adapter.Parse(
-            input.Transcript,
-            input.Context ?? options.SourceContext,
-            options);
+        var utf8 = Encoding.UTF8.GetBytes(input.Transcript);
+        var config = AppliedNormalizationConfig.Resolve(input.Options, input.SourceContext);
+        var decoded = sourceAdapter.Decode(utf8);
+        return _normalizer.Normalize(decoded, config, utf8);
     }
 
-    public TrajectoryIR NormalizeToIR(
-        TrajectorySource source,
-        string transcript,
-        SourceContext? context = null,
-        NormalizationOptions? options = null) =>
-        NormalizeToIR(new NormalizeInput(source, transcript, context, options));
-
-    public string Project(
+    public TOutput Project<TOutput>(
         TrajectoryIR trajectory,
-        string outputSchemaId,
+        string schemaId,
         OutputProjectionOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(trajectory);
-        ArgumentException.ThrowIfNullOrWhiteSpace(outputSchemaId);
-        if (!_outputs.TryGetValue(outputSchemaId, out var adapter))
+        if (!_outputs.TryGetValue(schemaId, out var adapter))
         {
-            throw new KeyNotFoundException(
-                $"No output adapter is registered for schema '{outputSchemaId}'.");
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.UnknownOutputSchema,
+                $"No output adapter is registered for schema '{schemaId}'.");
         }
 
-        return adapter.Project(trajectory, options);
+        if (adapter is not IOutputSchemaAdapter<TOutput> typed)
+        {
+            throw new InvalidOperationException(
+                $"Schema '{schemaId}' produces {adapter.OutputType.FullName}, not {typeof(TOutput).FullName}.");
+        }
+
+        return typed.Project(trajectory, options);
     }
 
-    public string Project(
-        string outputSchemaId,
+    public string ProjectJson(
         TrajectoryIR trajectory,
-        OutputProjectionOptions? options = null) =>
-        Project(trajectory, outputSchemaId, options);
+        string schemaId,
+        OutputProjectionOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(trajectory);
+        if (!_outputs.TryGetValue(schemaId, out var adapter))
+        {
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.UnknownOutputSchema,
+                $"No output adapter is registered for schema '{schemaId}'.");
+        }
 
-    public string Normalize(
-        TrajectorySource source,
-        string transcript,
-        string outputSchemaId,
-        SourceContext? context = null,
-        NormalizationOptions? normalizationOptions = null,
-        OutputProjectionOptions? projectionOptions = null) =>
-        Normalize(
-            new NormalizeInput(source, transcript, context, normalizationOptions),
-            outputSchemaId,
-            projectionOptions);
+        var output = adapter.ProjectUntyped(trajectory, options);
+        return adapter.SerializeUntyped(output, options);
+    }
 
-    public string Normalize(
-        NormalizeInput input,
-        string outputSchemaId,
-        OutputProjectionOptions? projectionOptions = null)
+    public LettaNormalizeResult NormalizeTranscript(NormalizeInput input)
     {
         var trajectory = NormalizeToIR(input);
-        if (trajectory.HasErrors)
+        return Project<LettaNormalizeResult>(trajectory, OutputSchemaIds.LettaTrajectoryV1);
+    }
+
+    public HypabolicTrajectoryV1 NormalizeToHypabolic(NormalizeInput input)
+    {
+        var trajectory = NormalizeToIR(input);
+        return Project<HypabolicTrajectoryV1>(trajectory, OutputSchemaIds.HypabolicTrajectoryV1);
+    }
+
+    public string NormalizeJson(
+        NormalizeInput input,
+        string schemaId,
+        OutputProjectionOptions? options = null) =>
+        ProjectJson(NormalizeToIR(input), schemaId, options);
+
+    public ValueTask<TrajectoryListingPage> ListTrajectoriesAsync(
+        ListTrajectoriesOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_listers.TryGetValue(options.Source, out var lister))
         {
-            throw new TrajectoryNormalizationException(trajectory.Diagnostics);
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.ListingUnavailable,
+                $"No trajectory lister is registered for '{options.Source}'.");
         }
 
-        return Project(trajectory, outputSchemaId, projectionOptions);
+        var items = lister.List(options.Root);
+        return ValueTask.FromResult(
+            TrajectoryPagination.Paginate(items, options.Cursor, options.Limit));
     }
 
-    public TrajectoryEngine RegisterSource(ISourceAdapter adapter) =>
-        AddSourceAdapter(adapter);
-
-    public TrajectoryEngine RegisterOutput(IOutputSchemaAdapter adapter) =>
-        AddOutputAdapter(adapter);
-}
-
-public sealed class TrajectoryNormalizationException : Exception
-{
-    public TrajectoryNormalizationException(IReadOnlyList<TrajectoryDiagnostic> diagnostics)
-        : base("Trajectory normalization failed. Inspect Diagnostics for data-safe details.")
+    private TrajectoryEngine AddSource(ISourceAdapter adapter)
     {
-        Diagnostics = diagnostics;
+        _sources.Add(adapter.Source, adapter);
+        return this;
     }
 
-    public IReadOnlyList<TrajectoryDiagnostic> Diagnostics { get; }
+    private TrajectoryEngine AddLister(ITrajectoryLister lister)
+    {
+        _listers.Add(lister.Source, lister);
+        return this;
+    }
 }

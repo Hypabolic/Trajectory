@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hypabolic.dev/schemas/trajectory/v1.json",
+  "title": "Hypabolic trajectory v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "trajectory_id",
+    "source",
+    "segment",
+    "normalizer",
+    "config",
+    "records",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema_id": { "const": "hypabolic-trajectory-v1" },
+    "schema_version": { "const": 1 },
+    "trajectory_id": { "$ref": "#/$defs/hash" },
+    "source": { "$ref": "#/$defs/source" },
+    "segment": { "$ref": "#/$defs/segment" },
+    "normalizer": { "$ref": "#/$defs/normalizer" },
+    "config": { "$ref": "#/$defs/config" },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/record" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "name", "group_id"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "group_id": { "type": "string", "minLength": 1 },
+        "producer_version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["partial", "base_byte_offset"],
+      "properties": {
+        "partial": { "type": "boolean" },
+        "base_byte_offset": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "normalizer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "Hypabolic.Trajectory" },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bounds", "filters"],
+      "properties": {
+        "bounds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tool_arguments", "tool_results"],
+          "properties": {
+            "tool_arguments": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["max_characters"],
+              "properties": {
+                "max_characters": { "type": ["integer", "null"], "minimum": 1 }
+              }
+            },
+            "tool_results": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["max_characters", "strategy"],
+              "properties": {
+                "max_characters": { "type": ["integer", "null"], "minimum": 1 },
+                "strategy": { "enum": ["head", "head-tail"] }
+              }
+            }
+          }
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tool_results"],
+          "properties": {
+            "tool_results": { "enum": ["include", "omit"] }
+          }
+        }
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "role",
+        "order",
+        "source_timestamp",
+        "timestamp",
+        "provenance",
+        "hashes"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/hash" },
+        "kind": { "enum": ["meta", "message", "assistant_tool_calls", "tool_result"] },
+        "role": { "enum": ["meta", "user", "reasoning", "assistant", "tool"] },
+        "order": { "type": "integer", "minimum": -1 },
+        "source_timestamp": { "$ref": "#/$defs/timestamp" },
+        "timestamp": { "$ref": "#/$defs/timestamp" },
+        "source_name": { "type": "string", "minLength": 1 },
+        "cwd": { "type": "string" },
+        "git_branch": { "type": "string" },
+        "model": { "type": "string" },
+        "producer_version": { "type": "string" },
+        "content": { "type": ["string", "null"] },
+        "tool_calls": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/tool_call" }
+        },
+        "tool_call_id": { "type": "string", "minLength": 1 },
+        "tool_name": { "type": "string", "minLength": 1 },
+        "is_error": { "type": "boolean" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "hashes": { "$ref": "#/$defs/hashes" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "meta" } }, "required": ["kind"] },
+          "then": { "required": ["source_name"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "message" } }, "required": ["kind"] },
+          "then": { "required": ["content"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "assistant_tool_calls" } }, "required": ["kind"] },
+          "then": {
+            "required": ["content", "tool_calls"],
+            "properties": { "content": { "type": "null" } }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "tool_result" } }, "required": ["kind"] },
+          "then": { "required": ["tool_call_id", "content", "is_error"] }
+        }
+      ]
+    },
+    "tool_call": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "arguments_json"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "arguments_json": { "type": "string" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stable_source_record_id",
+        "source_identity_kind",
+        "source_order_id",
+        "component_key",
+        "component_index",
+        "component_type_ordinal"
+      ],
+      "properties": {
+        "stable_source_record_id": { "type": "string", "minLength": 1 },
+        "source_identity_kind": { "enum": ["native", "location", "content", "synthetic"] },
+        "source_order_id": { "type": "string", "minLength": 1 },
+        "component_key": { "type": "string", "minLength": 1 },
+        "component_index": { "type": "integer", "minimum": 0 },
+        "component_type_ordinal": { "type": "integer", "minimum": 0 },
+        "native_record_id": { "type": "string", "minLength": 1 },
+        "source_sequence": { "type": "integer", "minimum": 0 },
+        "source_offset": { "type": "integer", "minimum": 0 },
+        "source_anchor_kind": { "enum": ["byte", "ordinal", "row", "sequence"] }
+      }
+    },
+    "hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_sha256", "record_sha256"],
+      "properties": {
+        "content_sha256": { "$ref": "#/$defs/hash" },
+        "record_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "input_line": { "type": "integer", "minimum": 1 },
+        "record_index": { "type": "integer", "minimum": 0 },
+        "count": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

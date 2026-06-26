@@ -1,38 +1,79 @@
-using Trajectory.Adapters.Letta;
-using Trajectory.Adapters.Pi;
+using Hypabolic.Trajectory.Listing;
 
-namespace Trajectory;
+namespace Hypabolic.Trajectory;
 
-/// <summary>Convenience entry point configured with the built-in adapters.</summary>
 public static class TrajectoryConverter
 {
-    private static readonly Lazy<TrajectoryEngine> DefaultEngine = new(CreateDefaultEngine);
+    private static readonly Lazy<TrajectoryEngine> DefaultEngine =
+        new(TrajectoryEngine.CreateDefault);
 
     public static TrajectoryEngine Default => DefaultEngine.Value;
 
-    public static TrajectoryEngine CreateDefaultEngine() =>
-        new TrajectoryEngine()
-            .AddSourceAdapter(new PiJsonlSourceAdapter())
-            .AddOutputAdapter(new LettaTrajectoryV1OutputAdapter());
-
     public static TrajectoryIR NormalizeToIR(
-        string piJsonl,
-        NormalizationOptions? options = null,
-        SourceContext? context = null) =>
-        Default.NormalizeToIR(new NormalizeInput(
-            TrajectorySource.Pi,
-            piJsonl,
-            context,
-            options));
+        string piTranscript,
+        NormalizeOptions? options = null,
+        SourceContext? sourceContext = null) =>
+        Default.NormalizeToIR(new NormalizeInput
+        {
+            Source = TrajectorySource.Pi,
+            Transcript = piTranscript,
+            Options = options,
+            SourceContext = sourceContext,
+        });
 
-    public static string Normalize(
-        string piJsonl,
-        NormalizationOptions? normalizationOptions = null,
+    public static LettaNormalizeResult NormalizeTranscript(
+        string piTranscript,
+        NormalizeOptions? options = null,
+        SourceContext? sourceContext = null) =>
+        Default.NormalizeTranscript(new NormalizeInput
+        {
+            Source = TrajectorySource.Pi,
+            Transcript = piTranscript,
+            Options = options,
+            SourceContext = sourceContext,
+        });
+
+    public static HypabolicTrajectoryV1 NormalizeToHypabolic(
+        string piTranscript,
+        NormalizeOptions? options = null,
+        SourceContext? sourceContext = null) =>
+        Default.NormalizeToHypabolic(new NormalizeInput
+        {
+            Source = TrajectorySource.Pi,
+            Transcript = piTranscript,
+            Options = options,
+            SourceContext = sourceContext,
+        });
+
+    public static string NormalizeJson(
+        string piTranscript,
+        string schemaId = OutputSchemaIds.LettaTrajectoryV1,
+        NormalizeOptions? options = null,
+        SourceContext? sourceContext = null,
         OutputProjectionOptions? projectionOptions = null) =>
-        Default.Normalize(
-            TrajectorySource.Pi,
-            piJsonl,
-            LettaTrajectoryV1OutputAdapter.AdapterName,
-            normalizationOptions: normalizationOptions,
-            projectionOptions: projectionOptions);
+        Default.NormalizeJson(
+            new NormalizeInput
+            {
+                Source = TrajectorySource.Pi,
+                Transcript = piTranscript,
+                Options = options,
+                SourceContext = sourceContext,
+            },
+            schemaId,
+            projectionOptions);
+
+    public static ValueTask<TrajectoryListingPage> ListPiTrajectoriesAsync(
+        string? root = null,
+        string? cursor = null,
+        int limit = 50,
+        CancellationToken cancellationToken = default) =>
+        Default.ListTrajectoriesAsync(
+            new ListTrajectoriesOptions
+            {
+                Source = TrajectorySource.Pi,
+                Root = root,
+                Cursor = cursor,
+                Limit = limit,
+            },
+            cancellationToken);
 }
