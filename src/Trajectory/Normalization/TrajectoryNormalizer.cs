@@ -514,13 +514,9 @@ internal sealed class TrajectoryNormalizer
 
     private static IRRecord StampAndHash(IRRecord record, DateTimeOffset timestamp)
     {
-        var stamped = record switch
+        IRRecord stamped = record switch
         {
-            MessageIR message => message with
-            {
-                Order = message.Order,
-                Timestamp = timestamp,
-            },
+            MessageIR message => message with { Timestamp = timestamp },
             AssistantToolCallsIR calls => calls with { Timestamp = timestamp },
             ToolResultIR result => result with { Timestamp = timestamp },
             _ => throw new ArgumentOutOfRangeException(nameof(record)),
