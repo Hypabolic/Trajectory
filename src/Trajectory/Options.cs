@@ -1,70 +1,95 @@
-namespace Trajectory;
+namespace Hypabolic.Trajectory;
 
-public enum TruncationMode
+public sealed record SourceContext
 {
-    None = 0,
-    Head,
-    Tail,
-    HeadAndTail
+    public string? GroupId { get; init; }
+    public long? BaseByteOffset { get; init; }
+    public bool Partial { get; init; }
 }
 
 public enum ToolResultTruncationStrategy
 {
     Head = 0,
-    HeadTail
+    HeadTail = 1,
+}
+
+public enum ToolResultPolicy
+{
+    Include = 0,
+    Omit = 1,
 }
 
 public sealed record ToolArgumentBounds
 {
-    public int? MaxBytes { get; init; }
-    public TruncationMode Truncation { get; init; } = TruncationMode.HeadAndTail;
+    public int? MaxCharacters { get; init; }
 }
 
 public sealed record ToolResultBounds
 {
     public int? MaxCharacters { get; init; }
-    public ToolResultTruncationStrategy Strategy { get; init; } =
-        ToolResultTruncationStrategy.HeadTail;
+    public ToolResultTruncationStrategy Strategy { get; init; } = ToolResultTruncationStrategy.HeadTail;
 }
 
 public sealed record NormalizationBounds
 {
-    public long? StartByteOffset { get; init; }
-    public long? EndByteOffset { get; init; }
     public ToolArgumentBounds? ToolArguments { get; init; }
     public ToolResultBounds? ToolResults { get; init; }
 }
 
-public sealed record NormalizationFilters;
+public sealed record NormalizationFilters
+{
+    public ToolResultPolicy ToolResults { get; init; } = ToolResultPolicy.Include;
+}
 
-public sealed record NormalizationOptions
+public sealed record NormalizeOptions
 {
     public NormalizationBounds? Bounds { get; init; }
     public NormalizationFilters? Filters { get; init; }
     public SourceContext? SourceContext { get; init; }
-    public bool Strict { get; init; }
 }
 
-public sealed record AppliedNormalizationConfig(
-    NormalizationBounds? Bounds,
-    NormalizationFilters? Filters,
-    SourceContext? SourceContext,
-    bool Strict);
-
-public record OutputProjectionOptions
+public sealed record ResolvedNormalizationBounds
 {
-    public bool IncludeDiagnostics { get; init; }
-    public bool IncludeTimestamps { get; init; } = true;
-    public bool OmitToolResults { get; init; }
-    public bool WriteIndented { get; init; }
-    public bool AppendFinalNewline { get; init; } = true;
+    public required ToolArgumentBounds ToolArguments { get; init; }
+    public required ToolResultBounds ToolResults { get; init; }
 }
 
-/// <summary>Compatibility name for the initial projection options type.</summary>
-public sealed record ProjectionOptions : OutputProjectionOptions;
+public sealed record AppliedNormalizationConfig
+{
+    public required ResolvedNormalizationBounds Bounds { get; init; }
+    public required NormalizationFilters Filters { get; init; }
+    public required SourceContext SourceContext { get; init; }
 
-public sealed record NormalizeInput(
-    TrajectorySource Source,
-    string Transcript,
-    SourceContext? Context = null,
-    NormalizationOptions? Options = null);
+    public static AppliedNormalizationConfig Resolve(NormalizeOptions? options, SourceContext? context)
+    {
+        options ??= new NormalizeOptions();
+        var bounds = options.Bounds;
+        return new AppliedNormalizationConfig
+        {
+            Bounds = new ResolvedNormalizationBounds
+            {
+                ToolArguments = bounds?.ToolArguments ?? new ToolArgumentBounds { MaxCharacters = 20_000 },
+                ToolResults = bounds?.ToolResults ?? new ToolResultBounds
+                {
+                    MaxCharacters = 2_500,
+                    Strategy = ToolResultTruncationStrategy.HeadTail,
+                },
+            },
+            Filters = options.Filters ?? new NormalizationFilters(),
+            SourceContext = context ?? options.SourceContext ?? new SourceContext(),
+        };
+    }
+}
+
+public sealed record NormalizeInput
+{
+    public required TrajectorySource Source { get; init; }
+    public required string Transcript { get; init; }
+    public SourceContext? SourceContext { get; init; }
+    public NormalizeOptions? Options { get; init; }
+}
+
+public sealed record OutputProjectionOptions
+{
+    public bool WriteIndented { get; init; }
+}
