@@ -1,0 +1,4 @@
+{"type":"session","id":"pi-chunk-boundaries","cwd":"/tmp/π"}
+{"type":"broken"
+{"type":"message","id":"boundary-user","timestamp":"2026-02-03T00:00:00Z","message":{"role":"user","content":"byte 😀 boundary"}}
+{"type":"message","id":"boundary-assistant","timestamp":"2026-02-03T00:00:01Z","message":{"role":"assistant","content":"done"}}

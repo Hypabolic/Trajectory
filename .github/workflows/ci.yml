@@ -147,3 +147,98 @@ jobs:
           path: aot.log
       - name: Run Native AOT smoke executable
         run: ./dotnet/tests/Trajectory.AotSmoke/bin/Release/net10.0/linux-x64/publish/Hypabolic.Trajectory.AotSmoke
+
+  typescript:
+    name: TypeScript / Node ${{ matrix.node }} / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install exact dependencies
+        run: npm ci
+      - name: Typecheck declarations and strict sources
+        run: npm run typecheck
+      - name: Build all packages
+        run: npm run build
+      - name: Run TypeScript tests
+        run: node --test test/*.test.mjs
+
+  typescript-conformance:
+    name: Shared conformance / TypeScript Pi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install and build TypeScript runner
+        working-directory: typescript
+        run: |
+          npm ci
+          npm run build
+      - name: Run every shared Pi case twice
+        run: >-
+          python3 conformance/verify.py --repository-root . --source pi --
+          node typescript/packages/trajectory-testing/dist/cli.js
+      - name: Prove checked-in identity goldens are unchanged
+        run: sha256sum --check conformance/identity-baseline.sha256
+      - name: Reject fixture mutation
+        run: git diff --exit-code -- contracts conformance
+
+  typescript-package-smoke:
+    name: TypeScript package smoke / Node 26
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - name: Install, build, and test public exports
+        working-directory: typescript
+        run: |
+          npm ci
+          npm run build
+          node --test test/workspace-smoke.test.mjs
+      - name: Inspect package contents
+        working-directory: typescript
+        shell: bash
+        run: |
+          mkdir -p ../artifacts/npm
+          npm pack --workspaces --pack-destination ../artifacts/npm
+          for package in ../artifacts/npm/*.tgz; do
+            tar -tzf "$package" | sort
+            if tar -tzf "$package" | grep -Eq '(^|/)(src|test|node_modules)/'; then
+              echo "Unexpected source, test, or dependency directory in $package"
+              exit 1
+            fi
+          done
+      - name: Install packed artifacts and import public exports
+        working-directory: typescript
+        shell: bash
+        run: |
+          install_root=$(mktemp -d)
+          npm init --prefix "$install_root" -y
+          npm install --prefix "$install_root" "$PWD"/../artifacts/npm/*.tgz --ignore-scripts
+          cd "$install_root"
+          node --input-type=module -e "
+            import { TrajectoryEngine } from '@hypabolic/trajectory';
+            import { listTrajectories } from '@hypabolic/trajectory-node';
+            import { projectOpenTelemetry } from '@hypabolic/trajectory-otel';
+            if (!TrajectoryEngine || !listTrajectories || !projectOpenTelemetry) process.exit(1);
+          "

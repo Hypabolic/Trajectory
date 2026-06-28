@@ -15,6 +15,14 @@
   "files": [
     "dist"
   ],
+  "bin": {
+    "trajectory-conformance": "./dist/cli.js"
+  },
+  "dependencies": {
+    "@hypabolic/trajectory": "0.0.0",
+    "@hypabolic/trajectory-node": "0.0.0",
+    "@hypabolic/trajectory-otel": "0.0.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "tsc -p tsconfig.json --build --clean",

@@ -10,7 +10,7 @@ wire contracts and conformance cases:
 | Runtime | Package | Status |
 | --- | --- | --- |
 | .NET | `Hypabolic.Trajectory` | Implemented |
-| TypeScript | `@hypabolic/trajectory` | Planned; ML2 is next |
+| TypeScript | `@hypabolic/trajectory` | Pi vertical path implemented; unpublished |
 | Rust | `hypabolic-trajectory` | Planned |
 
 The current .NET runtime supports Pi, Claude Code, and Codex transcripts,
@@ -25,10 +25,12 @@ deterministic projections:
 - OpenTelemetry GenAI span sets through the optional
   `Hypabolic.Trajectory.OpenTelemetry` package.
 
-Rust and TypeScript packages have not been published. The TypeScript runtime
-will be a fresh Hypabolic implementation built from this repository's
-specifications and conformance cases. The pinned `letta-ai/trajectory` package
-is used only as a black-box compatibility oracle.
+Rust and TypeScript packages have not been published. The TypeScript Pi runtime
+is a fresh Hypabolic implementation built from this repository's specifications
+and conformance cases. It supports Pi normalization, all deterministic
+projections, explicit-root Pi listing, and the private conformance protocol.
+Claude Code and Codex remain planned for TypeScript. The pinned
+`letta-ai/trajectory` package is used only as a black-box compatibility oracle.
 
 ## Architecture
 
@@ -55,6 +57,7 @@ core.
 contracts/       versioned schemas and normative behavioral specifications
 conformance/     shared native fixtures, expected outputs, stores, and protocol
 dotnet/          current .NET source, tests, AOT smoke app, and solution
+typescript/      independent TypeScript packages, tests, and private runner
 docs/            product architecture, parity baseline, and roadmap
 ```
 
@@ -96,6 +99,30 @@ dotnet publish dotnet/tests/Trajectory.AotSmoke/Trajectory.AotSmoke.csproj \
 
 The private runner protocol and case-authoring workflow are documented in
 [conformance/README.md](conformance/README.md).
+
+## Build and test TypeScript
+
+The TypeScript workspace supports Node.js 22 and newer. It is tested on Node
+22 and 24 across Linux, macOS, and Windows, with a Node 26 package smoke gate.
+
+```bash
+cd typescript
+npm ci
+npm run typecheck
+npm test
+```
+
+Run the shared Pi cases through the TypeScript runner:
+
+```bash
+python3 conformance/verify.py --repository-root . --source pi -- \
+  node typescript/packages/trajectory-testing/dist/cli.js
+```
+
+`@hypabolic/trajectory` is byte-oriented and environment-neutral.
+`@hypabolic/trajectory-node` owns filesystem listing,
+`@hypabolic/trajectory-otel` owns the optional OpenTelemetry projection, and
+`@hypabolic/trajectory-testing` owns the unpublished runner.
 
 ## .NET usage
 
@@ -150,6 +177,6 @@ See:
 
 ## Roadmap
 
-ML1 establishes the shared contract and repository foundation around the
-existing .NET runtime. ML2 is the next slice: an independent TypeScript Pi
-vertical path built from the Hypabolic specifications and conformance cases.
+ML1 established the shared foundation and ML2 adds the independent TypeScript
+Pi vertical path. ML3 is next: a native Rust Pi vertical path governed by the
+same contracts and shared cases.

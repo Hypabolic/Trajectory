@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: accepted; ML1 implemented, ML2 next
+Status: accepted; ML1 and ML2 implemented, ML3 next
 
 Planning baseline:
 
