@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: accepted; ML1–ML3 implemented, ML4 next
+Status: accepted; ML1–ML4 implemented, ML5 next
 
 Planning baseline:
 
@@ -665,7 +665,8 @@ uniform.
 
 ## Immediate next action
 
-Implement ML2: the independent TypeScript Pi vertical path. Build it from the
-Hypabolic specifications and shared conformance cases established by ML1.
-The pinned upstream TypeScript package remains a black-box compatibility oracle;
-do not vendor, fork, copy, translate, or import its implementation.
+Implement ML5: the native Rust Claude Code baseline. Build it independently
+from the Hypabolic specifications and shared conformance cases. Preserve mixed
+producer versions, sidechain and malformed-row handling, injected context,
+native UUID identity, and stable explicit-root listing without adding Node,
+.NET, FFI, or subprocess dependencies.

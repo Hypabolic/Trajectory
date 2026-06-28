@@ -12,15 +12,13 @@ import {
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repository = resolve(workspace, "..");
 
-test("TypeScript runner passes every shared Pi operation deterministically", () => {
+test("TypeScript runner passes every advertised shared operation deterministically", () => {
   const output = execFileSync(
     process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3"),
     [
       resolve(repository, "conformance/verify.py"),
       "--repository-root",
       repository,
-      "--source",
-      "pi",
       "--",
       process.execPath,
       resolve(workspace, "packages/trajectory-testing/dist/cli.js"),
@@ -30,8 +28,8 @@ test("TypeScript runner passes every shared Pi operation deterministically", () 
   assert.deepEqual(JSON.parse(output), {
     protocol_version: "1",
     status: "success",
-    cases: 7,
-    operations: 16,
+    cases: 16,
+    operations: 29,
   });
 });
 

@@ -37,10 +37,11 @@ This document remains the detailed .NET behavioural and source-acceptance baseli
 
 ML1 — shared contracts and repository foundation — ML2, the independent
 TypeScript Pi vertical path, and ML3, the native Rust Pi vertical path, are
-complete. ML4, the TypeScript Claude Code and Codex baseline, is next. Do not begin Letta Code as a
-.NET-only slice; its existing requirements below are retained and become the
-.NET portion of multi-language ML8 after Rust and TypeScript reach the Pi,
-Claude Code, and Codex baseline.
+complete. ML4 brought TypeScript to the current Pi, Claude Code, and Codex
+baseline. ML5, the native Rust Claude Code baseline, is next. Do not begin
+Letta Code as a .NET-only slice; its existing requirements below are retained
+and become the .NET portion of multi-language ML8 after Rust and TypeScript
+reach the Pi, Claude Code, and Codex baseline.
 
 ## Planning rules
 

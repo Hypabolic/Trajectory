@@ -176,7 +176,7 @@ jobs:
         run: node --test test/*.test.mjs
 
   typescript-conformance:
-    name: Shared conformance / TypeScript Pi
+    name: Shared conformance / TypeScript baseline
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -190,10 +190,17 @@ jobs:
         run: |
           npm ci
           npm run build
-      - name: Run every shared Pi case twice
+      - name: Run every advertised shared case twice
         run: >-
-          python3 conformance/verify.py --repository-root . --source pi --
+          python3 conformance/verify.py --repository-root . --
           node typescript/packages/trajectory-testing/dist/cli.js
+      - name: Upload unaccepted conformance candidates
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-conformance-candidates
+          path: artifacts/conformance-candidates
+          if-no-files-found: ignore
       - name: Prove checked-in identity goldens are unchanged
         run: sha256sum --check conformance/identity-baseline.sha256
       - name: Reject fixture mutation

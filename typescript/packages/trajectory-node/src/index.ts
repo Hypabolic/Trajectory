@@ -3,11 +3,13 @@ import { basename, join } from "node:path";
 
 import { TrajectoryNormalizationError } from "@hypabolic/trajectory";
 
-export interface PiListingOptions {
+export interface ListingOptions {
   readonly root: string;
   readonly cursor?: string;
   readonly limit?: number;
 }
+
+export type PiListingOptions = ListingOptions;
 
 export interface TrajectoryListing {
   readonly id: string;
@@ -22,44 +24,30 @@ export interface TrajectoryListingPage {
 }
 
 export async function listPiTrajectories(options: PiListingOptions): Promise<TrajectoryListingPage> {
+  return listDiscovered(options, discoverPi);
+}
+
+export async function listClaudeCodeTrajectories(
+  options: ListingOptions,
+): Promise<TrajectoryListingPage> {
+  return listDiscovered(options, discoverClaudeCode);
+}
+
+export async function listCodexTrajectories(
+  options: ListingOptions,
+): Promise<TrajectoryListingPage> {
+  return listDiscovered(options, discoverCodex);
+}
+
+async function listDiscovered(
+  options: ListingOptions,
+  discover: (root: string) => Promise<TrajectoryListing[]>,
+): Promise<TrajectoryListingPage> {
   const limit = options.limit ?? 50;
   if (limit < 1 || limit > 1_000) {
     throw new TrajectoryNormalizationError("invalid_input", "Listing limit must be between 1 and 1000.");
   }
-  const items: TrajectoryListing[] = [];
-  let projects;
-  try {
-    projects = await readdir(join(options.root, "sessions"), { withFileTypes: true });
-  } catch (error) {
-    if (isMissingOrDenied(error)) return { items: [], nextCursor: null };
-    throw error;
-  }
-  for (const project of projects) {
-    if (!project.isDirectory()) continue;
-    const directory = join(options.root, "sessions", project.name);
-    let files;
-    try {
-      files = await readdir(directory, { withFileTypes: true });
-    } catch (error) {
-      if (isMissingOrDenied(error)) continue;
-      throw error;
-    }
-    for (const file of files) {
-      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
-      const path = join(directory, file.name);
-      try {
-        const info = await stat(path);
-        items.push({
-          id: basename(file.name, ".jsonl"),
-          path,
-          updatedAt: info.mtime.toISOString(),
-          sizeBytes: info.size,
-        });
-      } catch (error) {
-        if (!isMissingOrDenied(error)) throw error;
-      }
-    }
-  }
+  const items = await discover(options.root);
   items.sort((left, right) =>
     right.updatedAt.localeCompare(left.updatedAt) || utf16Compare(left.id, right.id),
   );
@@ -77,6 +65,112 @@ export async function listPiTrajectories(options: PiListingOptions): Promise<Tra
       ? encodeCursor(page.at(-1)!.id, end - 1)
       : null,
   };
+}
+
+async function discoverPi(root: string): Promise<TrajectoryListing[]> {
+  const items: TrajectoryListing[] = [];
+  let projects;
+  try {
+    projects = await readdir(join(root, "sessions"), { withFileTypes: true });
+  } catch (error) {
+    if (isMissingOrDenied(error)) return items;
+    throw error;
+  }
+  for (const project of projects) {
+    if (!project.isDirectory()) continue;
+    const directory = join(root, "sessions", project.name);
+    let files;
+    try {
+      files = await readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if (isMissingOrDenied(error)) continue;
+      throw error;
+    }
+    for (const file of files) {
+      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
+      const path = join(directory, file.name);
+      try {
+        await addListing(items, path);
+      } catch (error) {
+        if (!isMissingOrDenied(error)) throw error;
+      }
+    }
+  }
+  return items;
+}
+
+async function discoverClaudeCode(root: string): Promise<TrajectoryListing[]> {
+  const items: TrajectoryListing[] = [];
+  let projects;
+  try {
+    projects = await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if (isMissingOrDenied(error)) return items;
+    throw error;
+  }
+  for (const project of projects) {
+    if (!project.isDirectory()) continue;
+    const directory = join(root, project.name);
+    let files;
+    try {
+      files = await readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if (isMissingOrDenied(error)) continue;
+      throw error;
+    }
+    for (const file of files) {
+      if (file.isFile() && file.name.endsWith(".jsonl")) {
+        await addListing(items, join(directory, file.name));
+      }
+    }
+  }
+  return items;
+}
+
+async function discoverCodex(root: string): Promise<TrajectoryListing[]> {
+  const items: TrajectoryListing[] = [];
+  await collectCodex(root, 4, items);
+  return items;
+}
+
+async function collectCodex(
+  directory: string,
+  remainingDepth: number,
+  items: TrajectoryListing[],
+): Promise<void> {
+  if (remainingDepth < 0) return;
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (isMissingOrDenied(error)) return;
+    throw error;
+  }
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+      await addListing(items, path);
+    } else if (entry.isDirectory() && remainingDepth > 0) {
+      await collectCodex(path, remainingDepth - 1, items);
+    }
+  }
+}
+
+async function addListing(
+  items: TrajectoryListing[],
+  path: string,
+): Promise<void> {
+  try {
+    const info = await stat(path);
+    items.push({
+      id: basename(path, ".jsonl"),
+      path,
+      updatedAt: info.mtime.toISOString(),
+      sizeBytes: info.size,
+    });
+  } catch (error) {
+    if (!isMissingOrDenied(error)) throw error;
+  }
 }
 
 export const listTrajectories = listPiTrajectories;
