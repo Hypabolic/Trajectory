@@ -141,12 +141,12 @@ pub fn canonical_value(trajectory: &Trajectory) -> Result<Value, TrajectoryError
 /// Returns the Hypabolic wire value.
 pub fn hypabolic_value(trajectory: &Trajectory) -> Result<Value, TrajectoryError> {
     let trajectory_id = sha256(&relaxed_json(&Value::Array(vec![
-        Value::String("pi".into()),
+        Value::String(trajectory.source.wire_name().into()),
         Value::String(trajectory.group_id.clone()),
     ]))?);
     let mut source = map([
-        ("type", Value::String("pi".into())),
-        ("name", Value::String("pi".into())),
+        ("type", Value::String(trajectory.source.wire_name().into())),
+        ("name", Value::String(trajectory.source_name.clone())),
         ("group_id", Value::String(trajectory.group_id.clone())),
     ]);
     if let Some(version) = &trajectory.producer_version {
@@ -264,10 +264,21 @@ pub(crate) fn to_letta_record(record: &IrRecord) -> Value {
         RecordKind::Meta => {
             let mut value = map([
                 ("role", Value::String("meta".into())),
-                ("source", Value::String("pi".into())),
+                (
+                    "source",
+                    Value::String(
+                        record
+                            .source_name
+                            .clone()
+                            .expect("meta source name is populated"),
+                    ),
+                ),
             ]);
             if let Some(cwd) = &record.cwd {
                 value.insert("cwd".into(), Value::String(cwd.clone()));
+            }
+            if let Some(git_branch) = &record.git_branch {
+                value.insert("git_branch".into(), Value::String(git_branch.clone()));
             }
             if let Some(model) = &record.model {
                 value.insert("model".into(), Value::String(model.clone()));
@@ -334,7 +345,10 @@ pub(crate) fn to_letta_record(record: &IrRecord) -> Value {
 fn canonical_record(trajectory: &Trajectory, record: &IrRecord) -> Result<Value, TrajectoryError> {
     let call = record.tool_calls.first();
     Ok(object([
-        ("source_type", Value::String("pi".into())),
+        (
+            "source_type",
+            Value::String(trajectory.source.wire_name().into()),
+        ),
         (
             "source_group_id",
             Value::String(trajectory.group_id.clone()),
@@ -429,9 +443,20 @@ fn hypabolic_record(record: &IrRecord) -> Result<Value, TrajectoryError> {
     ]);
     match record.kind {
         RecordKind::Meta => {
-            output.insert("source_name".into(), Value::String("pi".into()));
+            output.insert(
+                "source_name".into(),
+                Value::String(
+                    record
+                        .source_name
+                        .clone()
+                        .expect("meta source name is populated"),
+                ),
+            );
             if let Some(cwd) = &record.cwd {
                 output.insert("cwd".into(), Value::String(cwd.clone()));
+            }
+            if let Some(git_branch) = &record.git_branch {
+                output.insert("git_branch".into(), Value::String(git_branch.clone()));
             }
             if let Some(model) = &record.model {
                 output.insert("model".into(), Value::String(model.clone()));
@@ -497,6 +522,9 @@ fn hypabolic_record(record: &IrRecord) -> Result<Value, TrajectoryError> {
             number(record.provenance.component_type_ordinal),
         ),
     ]);
+    if let Some(version) = &record.provenance.producer_version {
+        provenance.insert("producer_version".into(), Value::String(version.clone()));
+    }
     if let Some(native_id) = &record.provenance.native_record_id {
         provenance.insert("native_record_id".into(), Value::String(native_id.clone()));
     }

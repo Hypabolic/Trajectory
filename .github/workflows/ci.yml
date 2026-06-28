@@ -301,7 +301,7 @@ jobs:
         run: cargo +stable package -p hypabolic-trajectory --locked
 
   rust-conformance:
-    name: Shared conformance / Rust Pi
+    name: Shared conformance / Rust Pi + Claude Code
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -311,14 +311,25 @@ jobs:
           workspaces: rust
       - name: Build Rust conformance runner
         run: cargo +stable build --manifest-path rust/Cargo.toml --release --locked --bin trajectory-conformance
-      - name: Run every ML3 shared Pi operation twice
+      - name: Validate Rust capability manifest
         run: >-
-          python3 conformance/verify.py --repository-root . --source pi
-          --operation normalize-letta
-          --operation normalize-canonical
-          --operation normalize-hypabolic
-          --operation list-trajectories --
-          rust/target/release/trajectory-conformance
+          jq -e
+          '.runtime == "rust" and .slice == "ML5"
+          and .normalizer_contract_version == "0.2.0"
+          and .sources == ["pi", "claude-code"]
+          and .outputs == ["letta-trajectory-v1", "letta-canonical-v1", "hypabolic-trajectory-v1"]'
+          rust/runtime-capabilities.json > /dev/null
+      - name: Run every ML5 shared Pi and Claude Code operation twice
+        shell: bash
+        run: |
+          for source in pi claude-code; do
+            python3 conformance/verify.py --repository-root . --source "$source" \
+              --operation normalize-letta \
+              --operation normalize-canonical \
+              --operation normalize-hypabolic \
+              --operation list-trajectories -- \
+              rust/target/release/trajectory-conformance
+          done
       - name: Prove checked-in identity goldens are unchanged
         run: sha256sum --check conformance/identity-baseline.sha256
       - name: Reject fixture mutation
