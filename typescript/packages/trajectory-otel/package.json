@@ -20,7 +20,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "clean": "tsc -p tsconfig.json --build --clean",
+    "clean": "tsc --build --clean tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }
