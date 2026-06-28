@@ -50,6 +50,20 @@ impl SourceAdapter for ClaudeCodeSourceAdapter {
     }
 }
 
+/// Native Codex rollout JSONL source adapter.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodexSourceAdapter;
+
+impl SourceAdapter for CodexSourceAdapter {
+    fn source(&self) -> &'static str {
+        "codex"
+    }
+
+    fn normalize(&self, request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+        normalize_codex(request)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum EventKind {
     Message,
@@ -133,6 +147,13 @@ pub fn normalize_claude_code(request: NormalizeRequest<'_>) -> Result<Trajectory
     normalize_decoded(config, decoded)
 }
 
+/// Normalizes a native Codex rollout JSONL transcript into the private Rust IR.
+pub fn normalize_codex(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+    let config = resolve_config(request)?;
+    let decoded = decode_codex(request.transcript)?;
+    normalize_decoded(config, decoded)
+}
+
 fn normalize_decoded(
     config: AppliedConfig,
     decoded: DecodedSession,
@@ -150,6 +171,7 @@ fn normalize_decoded(
             ));
         }
     }
+    let source_group_resolved = decoded.group_id.is_some() || config.source_group_id.is_some();
     let group_id = decoded
         .group_id
         .clone()
@@ -234,6 +256,7 @@ fn normalize_decoded(
         source: decoded.source,
         source_name: decoded.source_name.into(),
         group_id,
+        source_group_resolved,
         producer_version: decoded.producer_version,
         records,
         diagnostics,
@@ -579,6 +602,341 @@ fn integer_alias(object: &Map<String, Value>, names: &[&str]) -> Option<i64> {
     names
         .iter()
         .find_map(|name| object.get(*name).and_then(Value::as_i64))
+}
+
+fn decode_codex(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
+    const INJECTED_PREFIXES: &[&str] = &[
+        "<environment_context>",
+        "<user_instructions>",
+        "<permissions instructions>",
+        "<turn_context>",
+    ];
+
+    let mut events = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut group_id = None;
+    let mut cwd = None;
+    let mut git_branch = None;
+    let mut model = None;
+    let mut producer_version = None;
+    let mut created_at_ms = None;
+    let mut offset = 0_usize;
+    let mut line = 1_usize;
+
+    loop {
+        let relative_end = bytes[offset..].iter().position(|value| *value == b'\n');
+        let end = relative_end.map_or(bytes.len(), |value| offset + value);
+        let line_end = if end > offset && bytes[end - 1] == b'\r' {
+            end - 1
+        } else {
+            end
+        };
+        let slice = &bytes[offset..line_end];
+        if !slice
+            .iter()
+            .all(|value| matches!(*value, b' ' | b'\t' | b'\r'))
+        {
+            let parsed = std::str::from_utf8(slice)
+                .ok()
+                .and_then(|text| serde_json::from_str::<Value>(text).ok());
+            match parsed {
+                Some(Value::Object(row)) => {
+                    let record_type = string_value(row.get("type"));
+                    let timestamp = row.get("timestamp").and_then(parse_timestamp);
+                    let payload = row.get("payload").and_then(Value::as_object);
+                    let payload_type = payload.and_then(|value| string_value(value.get("type")));
+
+                    if record_type == Some("session_meta") {
+                        if let Some(payload) = payload {
+                            if cwd.is_none() {
+                                cwd = non_empty(string_value(payload.get("cwd")));
+                            }
+                            if group_id.is_none() {
+                                group_id = non_empty(string_value(payload.get("id")));
+                            }
+                            if producer_version.is_none() {
+                                producer_version =
+                                    non_empty_owned(scalar_string(payload.get("cli_version")));
+                            }
+                            if created_at_ms.is_none() {
+                                created_at_ms = payload
+                                    .get("timestamp")
+                                    .and_then(parse_timestamp)
+                                    .or(timestamp.clone())
+                                    .map(|value| value.0);
+                            }
+                            if git_branch.is_none() {
+                                git_branch = payload
+                                    .get("git")
+                                    .and_then(Value::as_object)
+                                    .and_then(|git| non_empty(string_value(git.get("branch"))));
+                            }
+                        }
+                    } else if record_type == Some("turn_context") {
+                        if let Some(payload) = payload {
+                            if cwd.is_none() {
+                                cwd = non_empty(string_value(payload.get("cwd")));
+                            }
+                            if model.is_none() {
+                                model = non_empty(string_value(payload.get("model")));
+                            }
+                        }
+                    } else {
+                        let source_offset = i64::try_from(offset).map_err(|_| {
+                            TrajectoryError::new(
+                                "invalid_input",
+                                "Transcript byte offset exceeds signed 64-bit range.",
+                            )
+                        })?;
+                        let mut emit =
+                            |kind: EventKind,
+                             role: Role,
+                             content: Option<String>,
+                             tool_call_id: Option<String>,
+                             tool_name: Option<String>,
+                             arguments_json: Option<String>,
+                             is_error: Option<bool>| {
+                                events.push(DecodedEvent {
+                                    kind,
+                                    role,
+                                    content,
+                                    tool_call_id,
+                                    tool_name,
+                                    arguments_json,
+                                    is_error,
+                                    native_id: None,
+                                    producer_version: producer_version.clone(),
+                                    source_sequence: None,
+                                    source_offset,
+                                    input_line: line,
+                                    timestamp_ms: timestamp.as_ref().map(|value| value.0),
+                                    timestamp_precise: timestamp
+                                        .as_ref()
+                                        .map(|value| value.1.clone()),
+                                    component_index: 0,
+                                    model: model.clone(),
+                                });
+                            };
+
+                        if record_type == Some("event_msg")
+                            && payload_type == Some("agent_reasoning")
+                        {
+                            if let Some(content) = payload
+                                .and_then(|value| string_value(value.get("text")))
+                                .filter(|value| !value.trim().is_empty())
+                            {
+                                emit(
+                                    EventKind::Reasoning,
+                                    Role::Reasoning,
+                                    Some(content.into()),
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                );
+                            }
+                        } else if record_type == Some("response_item") {
+                            let empty_payload = Map::new();
+                            let payload = payload.unwrap_or(&empty_payload);
+                            match payload_type {
+                                Some("message") => {
+                                    let role = string_value(payload.get("role"));
+                                    let content = read_blocks_text(payload.get("content"));
+                                    if role == Some("user")
+                                        && INJECTED_PREFIXES
+                                            .iter()
+                                            .any(|prefix| content.trim_start().starts_with(prefix))
+                                    {
+                                        diagnostics.push(Diagnostic {
+                                            code: "injected_context_dropped".into(),
+                                            message: format!(
+                                                "Dropped Codex system-injected user content on line {line}."
+                                            ),
+                                            input_line: Some(line),
+                                            record_index: None,
+                                            count: None,
+                                        });
+                                    } else if matches!(role, Some("user" | "assistant")) {
+                                        emit(
+                                            EventKind::Message,
+                                            if role == Some("user") {
+                                                Role::User
+                                            } else {
+                                                Role::Assistant
+                                            },
+                                            Some(content),
+                                            None,
+                                            None,
+                                            None,
+                                            None,
+                                        );
+                                    }
+                                }
+                                Some("function_call") => emit(
+                                    EventKind::ToolCall,
+                                    Role::Assistant,
+                                    None,
+                                    string_value(payload.get("call_id")).map(str::to_owned),
+                                    string_value(payload.get("name")).map(str::to_owned),
+                                    Some(
+                                        non_empty(string_value(payload.get("arguments")))
+                                            .unwrap_or_else(|| "{}".into()),
+                                    ),
+                                    None,
+                                ),
+                                Some("custom_tool_call") => {
+                                    let mut arguments = Map::new();
+                                    arguments.insert(
+                                        "input".into(),
+                                        payload
+                                            .get("input")
+                                            .filter(|value| !value.is_null())
+                                            .cloned()
+                                            .unwrap_or_else(|| Value::String(String::new())),
+                                    );
+                                    emit(
+                                        EventKind::ToolCall,
+                                        Role::Assistant,
+                                        None,
+                                        string_value(payload.get("call_id")).map(str::to_owned),
+                                        string_value(payload.get("name")).map(str::to_owned),
+                                        Some(relaxed_json(&Value::Object(arguments))?),
+                                        None,
+                                    );
+                                }
+                                Some("web_search_call") => {
+                                    let arguments = payload
+                                        .iter()
+                                        .filter(|(key, _)| {
+                                            !matches!(key.as_str(), "type" | "call_id" | "status")
+                                        })
+                                        .map(|(key, value)| (key.clone(), value.clone()))
+                                        .collect();
+                                    emit(
+                                        EventKind::ToolCall,
+                                        Role::Assistant,
+                                        None,
+                                        string_value(payload.get("call_id")).map(str::to_owned),
+                                        Some("web_search".into()),
+                                        Some(relaxed_json(&Value::Object(arguments))?),
+                                        None,
+                                    );
+                                }
+                                Some("tool_search_call") => {
+                                    let arguments = match payload.get("arguments") {
+                                        Some(Value::String(value)) if !value.is_empty() => {
+                                            value.clone()
+                                        }
+                                        Some(value) if !value.is_null() => relaxed_json(value)?,
+                                        _ => "{}".into(),
+                                    };
+                                    emit(
+                                        EventKind::ToolCall,
+                                        Role::Assistant,
+                                        None,
+                                        string_value(payload.get("call_id")).map(str::to_owned),
+                                        Some("tool_search".into()),
+                                        Some(arguments),
+                                        None,
+                                    );
+                                }
+                                Some(
+                                    "function_call_output"
+                                    | "custom_tool_call_output"
+                                    | "tool_search_output",
+                                ) => {
+                                    let content = if payload_type == Some("tool_search_output") {
+                                        relaxed_json(
+                                            payload
+                                                .get("tools")
+                                                .filter(|value| !value.is_null())
+                                                .unwrap_or(&Value::Array(Vec::new())),
+                                        )?
+                                    } else {
+                                        codex_output_text(payload.get("output"))?
+                                    };
+                                    emit(
+                                        EventKind::ToolResult,
+                                        Role::Tool,
+                                        Some(content),
+                                        string_value(payload.get("call_id")).map(str::to_owned),
+                                        None,
+                                        None,
+                                        Some(false),
+                                    );
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                Some(_) => diagnostics.push(Diagnostic {
+                    code: "non_object_json_line".into(),
+                    message: format!("Skipped non-object JSON on line {line}."),
+                    input_line: Some(line),
+                    record_index: None,
+                    count: None,
+                }),
+                None => diagnostics.push(Diagnostic {
+                    code: "invalid_json_line".into(),
+                    message: format!("Skipped invalid JSON on line {line}."),
+                    input_line: Some(line),
+                    record_index: None,
+                    count: None,
+                }),
+            }
+        }
+        if end == bytes.len() {
+            break;
+        }
+        offset = end + 1;
+        line += 1;
+    }
+
+    Ok(DecodedSession {
+        source: TrajectorySource::Codex,
+        source_name: "codex",
+        group_id,
+        cwd,
+        git_branch,
+        producer_version: Some(producer_version.unwrap_or_else(|| "unknown".into())),
+        created_at_ms,
+        events,
+        model_invocations: Vec::new(),
+        diagnostics,
+    })
+}
+
+fn codex_output_text(value: Option<&Value>) -> Result<String, TrajectoryError> {
+    match value {
+        Some(Value::String(value)) => Ok(value.clone()),
+        Some(Value::Array(_)) => {
+            let text = read_blocks_text(value);
+            if text.is_empty() {
+                relaxed_json(value.expect("array is present"))
+            } else {
+                Ok(text)
+            }
+        }
+        Some(Value::Object(object)) => {
+            if let Some(content) = non_empty(string_value(object.get("content"))) {
+                Ok(content)
+            } else {
+                relaxed_json(value.expect("object is present"))
+            }
+        }
+        Some(Value::Null) | None => Ok(String::new()),
+        Some(Value::Bool(value)) => Ok(value.to_string()),
+        Some(Value::Number(value)) => Ok(value.to_string()),
+    }
+}
+
+fn non_empty(value: Option<&str>) -> Option<String> {
+    value.filter(|value| !value.is_empty()).map(str::to_owned)
+}
+
+fn non_empty_owned(value: Option<String>) -> Option<String> {
+    value.filter(|value| !value.is_empty())
 }
 
 fn select_earlier(
@@ -1878,10 +2236,12 @@ fn quote(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
     use super::{NormalizeRequest, SourceAdapter};
     use crate::{
-        ClaudeCodeSourceAdapter, PiSourceAdapter, SourceContext, project_canonical,
-        project_hypabolic, project_letta,
+        ClaudeCodeSourceAdapter, CodexSourceAdapter, PiSourceAdapter, SourceContext,
+        project_canonical, project_hypabolic, project_letta,
     };
 
     #[test]
@@ -1973,5 +2333,107 @@ mod tests {
             error.message,
             r#"Claude Code transcript contains multiple session ids: "a", "b"."#
         );
+    }
+
+    #[test]
+    fn codex_arbitrary_chunks_preserve_whole_canonical_identity() {
+        let transcript = include_bytes!("../../../../conformance/cases/codex/chunks/input.jsonl");
+        let whole = CodexSourceAdapter
+            .normalize(NormalizeRequest {
+                transcript,
+                source_context: SourceContext::default(),
+                options: Default::default(),
+            })
+            .expect("whole Codex rollout normalizes");
+        let whole_value: Value =
+            serde_json::from_str(&project_canonical(&whole).expect("whole canonical projection"))
+                .expect("canonical JSON");
+        let expected = whole_value["records"]
+            .as_array()
+            .expect("records array")
+            .clone();
+
+        for split_after_line in [2, 3] {
+            let split = transcript
+                .iter()
+                .enumerate()
+                .filter(|(_, value)| **value == b'\n')
+                .nth(split_after_line - 1)
+                .map(|(index, _)| index + 1)
+                .expect("fixture has split line");
+            let first = CodexSourceAdapter
+                .normalize(NormalizeRequest {
+                    transcript: &transcript[..split],
+                    source_context: SourceContext {
+                        group_id: None,
+                        base_byte_offset: 0,
+                        partial: true,
+                    },
+                    options: Default::default(),
+                })
+                .expect("initial chunk normalizes");
+            let second = CodexSourceAdapter
+                .normalize(NormalizeRequest {
+                    transcript: &transcript[split..],
+                    source_context: SourceContext {
+                        group_id: Some("codex-chunk-session"),
+                        base_byte_offset: i64::try_from(split).expect("fixture offset fits i64"),
+                        partial: true,
+                    },
+                    options: Default::default(),
+                })
+                .expect("continuation chunk normalizes");
+            let mut actual = serde_json::from_str::<Value>(
+                &project_canonical(&first).expect("initial canonical projection"),
+            )
+            .expect("canonical JSON")["records"]
+                .as_array()
+                .expect("records array")
+                .clone();
+            actual.extend(
+                serde_json::from_str::<Value>(
+                    &project_canonical(&second).expect("continuation canonical projection"),
+                )
+                .expect("canonical JSON")["records"]
+                    .as_array()
+                    .expect("records array")
+                    .clone(),
+            );
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn codex_hypabolic_projection_retains_source_and_tool_families() {
+        let result = CodexSourceAdapter
+            .normalize(NormalizeRequest {
+                transcript: include_bytes!("../../../../conformance/cases/codex/full/input.jsonl"),
+                source_context: SourceContext::default(),
+                options: Default::default(),
+            })
+            .expect("full Codex rollout normalizes");
+        let output = project_hypabolic(&result).expect("Hypabolic projection");
+        assert!(output.contains(r#""type":"codex""#));
+        assert!(output.contains(r#""producer_version":"0.140.0""#));
+        assert!(output.contains(r#""name":"apply_patch""#));
+        assert!(output.contains(r#""name":"tool_search""#));
+    }
+
+    #[test]
+    fn codex_requires_a_group_only_for_canonical_identity() {
+        let trajectory = CodexSourceAdapter
+            .normalize(NormalizeRequest {
+                transcript: include_bytes!(
+                    "../../../../conformance/cases/codex/missing-group/input.jsonl"
+                ),
+                source_context: SourceContext::default(),
+                options: Default::default(),
+            })
+            .expect("non-canonical normalization permits the default group");
+        assert!(!trajectory.source_group_resolved);
+        project_letta(&trajectory).expect("Letta projection does not require canonical identity");
+        let error =
+            project_canonical(&trajectory).expect_err("canonical identity requires a group");
+        assert_eq!(error.code, "source_group_required");
     }
 }

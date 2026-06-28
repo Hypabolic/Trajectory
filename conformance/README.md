@@ -74,7 +74,7 @@ The TypeScript runner is private test infrastructure in
 
 ## Rust runner
 
-Build the workspace and run the ML5 Pi and Claude Code capability set:
+Build the workspace and run the ML6 Pi, Claude Code, and Codex capability set:
 
 ```bash
 cargo +stable build --manifest-path rust/Cargo.toml \
@@ -86,6 +86,12 @@ python3 conformance/verify.py --repository-root . --source pi \
   --operation list-trajectories -- \
   rust/target/release/trajectory-conformance
 python3 conformance/verify.py --repository-root . --source claude-code \
+  --operation normalize-letta \
+  --operation normalize-canonical \
+  --operation normalize-hypabolic \
+  --operation list-trajectories -- \
+  rust/target/release/trajectory-conformance
+python3 conformance/verify.py --repository-root . --source codex \
   --operation normalize-letta \
   --operation normalize-canonical \
   --operation normalize-hypabolic \

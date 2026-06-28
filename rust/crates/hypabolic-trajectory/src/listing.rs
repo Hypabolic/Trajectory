@@ -9,10 +9,10 @@ use crate::TrajectoryError;
 use crate::canonical::utf16_compare;
 use crate::projection::format_ms;
 
-/// Options for explicit-root Pi store discovery.
+/// Options for explicit-root store discovery.
 #[derive(Debug, Clone)]
 pub struct ListingOptions<'a> {
-    /// Pi store root. The implementation never consults the process home directory.
+    /// Store root. The implementation never consults the process home directory.
     pub root: &'a Path,
     /// Opaque cursor from a previous page.
     pub cursor: Option<&'a str>,
@@ -20,7 +20,7 @@ pub struct ListingOptions<'a> {
     pub limit: usize,
 }
 
-/// One listed Pi transcript.
+/// One listed transcript.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrajectoryListing {
     /// File stem.
@@ -56,17 +56,22 @@ pub fn list_claude_code_trajectories(
     list_project_store(options, options.root, "Claude Code")
 }
 
+/// Lists Codex rollout JSONL transcripts recursively to four directory levels.
+pub fn list_codex_trajectories(
+    options: &ListingOptions<'_>,
+) -> Result<TrajectoryListingPage, TrajectoryError> {
+    validate_limit(options.limit)?;
+    let mut items = Vec::new();
+    collect_codex(options.root, 4, &mut items)?;
+    paginate(options, items)
+}
+
 fn list_project_store(
     options: &ListingOptions<'_>,
     projects_root: &Path,
     source_name: &str,
 ) -> Result<TrajectoryListingPage, TrajectoryError> {
-    if !(1..=1_000).contains(&options.limit) {
-        return Err(TrajectoryError::new(
-            "invalid_input",
-            "Listing limit must be between 1 and 1000.",
-        ));
-    }
+    validate_limit(options.limit)?;
 
     let projects = match fs::read_dir(projects_root) {
         Ok(value) => value,
@@ -137,46 +142,111 @@ fn list_project_store(
                     ));
                 }
             };
-            let id = path
-                .file_stem()
-                .and_then(|value| value.to_str())
-                .ok_or_else(|| {
-                    TrajectoryError::new(
-                        "invalid_input",
-                        format!("A {source_name} transcript filename is not valid Unicode."),
-                    )
-                })?
-                .to_owned();
-            let modified = metadata
-                .modified()
-                .map_err(|error| {
-                    io_error(
-                        &format!("Could not read a {source_name} transcript timestamp."),
-                        &error,
-                    )
-                })?
-                .duration_since(UNIX_EPOCH)
-                .map_err(|_| {
-                    TrajectoryError::new(
-                        "invalid_input",
-                        format!("A {source_name} transcript timestamp precedes the Unix epoch."),
-                    )
-                })?;
-            let milliseconds = i64::try_from(modified.as_millis()).map_err(|_| {
-                TrajectoryError::new(
-                    "invalid_input",
-                    format!("A {source_name} transcript timestamp is out of range."),
-                )
-            })?;
-            items.push(TrajectoryListing {
-                id,
-                path,
-                updated_at: format_ms(milliseconds)?,
-                size_bytes: metadata.len(),
-            });
+            items.push(listing_from_file(path, &metadata, source_name)?);
         }
     }
 
+    paginate(options, items)
+}
+
+fn collect_codex(
+    directory: &Path,
+    remaining_depth: usize,
+    items: &mut Vec<TrajectoryListing>,
+) -> Result<(), TrajectoryError> {
+    let entries = match fs::read_dir(directory) {
+        Ok(value) => value,
+        Err(error) if missing_or_denied(&error) => return Ok(()),
+        Err(error) => return Err(io_error("Could not enumerate the Codex store.", &error)),
+    };
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| io_error("Could not enumerate the Codex store.", &error))?;
+        let file_type = match entry.file_type() {
+            Ok(value) => value,
+            Err(error) if missing_or_denied(&error) => continue,
+            Err(error) => return Err(io_error("Could not inspect a Codex store entry.", &error)),
+        };
+        if file_type.is_dir() {
+            if remaining_depth > 0 {
+                collect_codex(&entry.path(), remaining_depth - 1, items)?;
+            }
+            continue;
+        }
+        let path = entry.path();
+        if !file_type.is_file()
+            || path.extension().and_then(|value| value.to_str()) != Some("jsonl")
+        {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(error) if missing_or_denied(&error) => continue,
+            Err(error) => return Err(io_error("Could not inspect a Codex transcript.", &error)),
+        };
+        items.push(listing_from_file(path, &metadata, "Codex")?);
+    }
+    Ok(())
+}
+
+fn listing_from_file(
+    path: PathBuf,
+    metadata: &fs::Metadata,
+    source_name: &str,
+) -> Result<TrajectoryListing, TrajectoryError> {
+    let id = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| {
+            TrajectoryError::new(
+                "invalid_input",
+                format!("A {source_name} transcript filename is not valid Unicode."),
+            )
+        })?
+        .to_owned();
+    let modified = metadata
+        .modified()
+        .map_err(|error| {
+            io_error(
+                &format!("Could not read a {source_name} transcript timestamp."),
+                &error,
+            )
+        })?
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| {
+            TrajectoryError::new(
+                "invalid_input",
+                format!("A {source_name} transcript timestamp precedes the Unix epoch."),
+            )
+        })?;
+    let milliseconds = i64::try_from(modified.as_millis()).map_err(|_| {
+        TrajectoryError::new(
+            "invalid_input",
+            format!("A {source_name} transcript timestamp is out of range."),
+        )
+    })?;
+    Ok(TrajectoryListing {
+        id,
+        path,
+        updated_at: format_ms(milliseconds)?,
+        size_bytes: metadata.len(),
+    })
+}
+
+fn validate_limit(limit: usize) -> Result<(), TrajectoryError> {
+    if !(1..=1_000).contains(&limit) {
+        return Err(TrajectoryError::new(
+            "invalid_input",
+            "Listing limit must be between 1 and 1000.",
+        ));
+    }
+    Ok(())
+}
+
+fn paginate(
+    options: &ListingOptions<'_>,
+    mut items: Vec<TrajectoryListing>,
+) -> Result<TrajectoryListingPage, TrajectoryError> {
     items.sort_by(|left, right| {
         right
             .updated_at
@@ -253,7 +323,7 @@ mod tests {
     use std::fs::{self, File, FileTimes};
     use std::time::{Duration, SystemTime};
 
-    use super::{ListingOptions, list_claude_code_trajectories};
+    use super::{ListingOptions, list_claude_code_trajectories, list_codex_trajectories};
 
     #[test]
     fn claude_listing_is_stable_and_paginated_from_an_explicit_root() {
@@ -300,6 +370,44 @@ mod tests {
         .expect("list second page");
         assert_eq!(second.items[0].id, "older");
         assert!(second.next_cursor.is_none());
+
+        fs::remove_dir_all(&root).expect("remove test store");
+    }
+
+    #[test]
+    fn codex_listing_recurses_to_the_contract_depth() {
+        let root = std::env::temp_dir().join(format!(
+            "trajectory-rust-codex-listing-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let included = root
+            .join("2026")
+            .join("07")
+            .join("02")
+            .join("rollout.jsonl");
+        let ignored = root
+            .join("2026")
+            .join("07")
+            .join("02")
+            .join("nested")
+            .join("too-deep")
+            .join("ignored.jsonl");
+        fs::create_dir_all(included.parent().expect("included parent"))
+            .expect("create included directory");
+        fs::create_dir_all(ignored.parent().expect("ignored parent"))
+            .expect("create ignored directory");
+        fs::write(&included, "{}\n").expect("write included transcript");
+        fs::write(&ignored, "{}\n").expect("write ignored transcript");
+
+        let page = list_codex_trajectories(&ListingOptions {
+            root: &root,
+            cursor: None,
+            limit: 50,
+        })
+        .expect("list Codex store");
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].id, "rollout");
 
         fs::remove_dir_all(&root).expect("remove test store");
     }
