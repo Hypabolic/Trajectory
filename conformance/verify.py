@@ -41,6 +41,7 @@ def invoke(
         runner,
         input=json.dumps(request, separators=(",", ":")),
         text=True,
+        encoding="utf-8",
         stdout=subprocess.PIPE,
         stderr=None,
         check=False,
