@@ -1,0 +1,30 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1,
+  "id": "claude-code/cleanup",
+  "operation": {
+    "normalize-letta": {
+      "expected": "expected.letta.json",
+      "comparison": "json-exact"
+    }
+  },
+  "source": "claude-code",
+  "transcript": "input.jsonl",
+  "native_container": "claude-code-jsonl",
+  "source_context": {},
+  "bounds": {},
+  "filters": {},
+  "projection_options": {},
+  "mode": "whole",
+  "required_capabilities": ["normalize", "typed-diagnostics", "deterministic-rerun"],
+  "expected": {
+    "result": "diagnostics",
+    "diagnostic_codes": [
+      "invalid_json_line",
+      "sidechain_record_dropped",
+      "noise_record_dropped",
+      "timestamps_synthesized"
+    ]
+  },
+  "comparison": "json-exact"
+}

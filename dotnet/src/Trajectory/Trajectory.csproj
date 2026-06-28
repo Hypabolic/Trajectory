@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <AssemblyName>Hypabolic.Trajectory</AssemblyName>
+    <RootNamespace>Hypabolic.Trajectory</RootNamespace>
+    <PackageId>Hypabolic.Trajectory</PackageId>
+    <Version>0.1.0</Version>
+    <Description>Normalize coding-agent session transcripts into deterministic trajectory formats.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Hypabolic/Trajectory</RepositoryUrl>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../../contracts/compatibility.json"
+          Pack="true"
+          PackagePath="contentFiles/any/any/contracts/" />
+    <None Include="../../../contracts/schemas/*.json"
+          Pack="true"
+          PackagePath="contentFiles/any/any/contracts/schemas/" />
+  </ItemGroup>
+</Project>

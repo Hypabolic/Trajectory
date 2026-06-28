@@ -22,11 +22,11 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Restore
-        run: dotnet restore Trajectory.sln
-      - name: Build all library target frameworks
+        run: dotnet restore dotnet/Trajectory.sln
+      - name: Build net8.0, net9.0, and net10.0 libraries
         shell: pwsh
         run: |
-          dotnet build Trajectory.sln -c Release --no-restore 2>&1 | Tee-Object build.log
+          dotnet build dotnet/Trajectory.sln -c Release --no-restore 2>&1 | Tee-Object build.log
           exit $LASTEXITCODE
       - name: Upload failed build log
         if: failure()
@@ -35,7 +35,96 @@ jobs:
           name: build-log-${{ matrix.os }}
           path: build.log
       - name: Test
-        run: dotnet test tests/Trajectory.Tests/Trajectory.Tests.csproj -c Release --no-build
+        run: dotnet test dotnet/tests/Trajectory.Tests/Trajectory.Tests.csproj -c Release --no-build
+
+  contracts:
+    name: Contracts, schemas, and formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore dotnet/Trajectory.sln
+      - name: Verify formatting and analyzers
+        run: dotnet format dotnet/Trajectory.sln --verify-no-changes --no-restore
+      - name: Build contract tests
+        run: dotnet build dotnet/tests/Trajectory.Tests/Trajectory.Tests.csproj -c Release --no-restore
+      - name: Validate manifests and schemas
+        run: >-
+          dotnet test dotnet/tests/Trajectory.Tests/Trajectory.Tests.csproj
+          -c Release --no-build
+          --filter FullyQualifiedName~ContractsAndConformanceTests
+
+  conformance:
+    name: Shared conformance / .NET
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore dotnet/Trajectory.sln
+      - name: Build .NET conformance runner
+        run: >-
+          dotnet build
+          dotnet/tests/Trajectory.Conformance/Trajectory.Conformance.csproj
+          -c Release --no-restore
+      - name: Run every shared case twice
+        run: >-
+          python3 conformance/verify.py --repository-root . --
+          dotnet
+          dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll
+      - name: Upload unaccepted conformance candidates
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-candidates
+          path: artifacts/conformance-candidates
+          if-no-files-found: ignore
+      - name: Prove checked-in identity goldens are unchanged
+        run: sha256sum --check conformance/identity-baseline.sha256
+      - name: Reject fixture mutation
+        run: git diff --exit-code -- contracts conformance
+      - name: Publish Native AOT conformance runner
+        run: >-
+          dotnet publish
+          dotnet/tests/Trajectory.Conformance/Trajectory.Conformance.csproj
+          -c Release -r linux-x64 --self-contained true
+      - name: Smoke Native AOT conformance protocol
+        shell: bash
+        run: |
+          printf '%s' '{"protocol_version":"1","case":"pi/tool-calls","operation":"normalize-canonical","repository_root":"'"$PWD"'"}' \
+            | ./dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/linux-x64/publish/trajectory-conformance \
+            | python3 -c 'import json,sys; assert json.load(sys.stdin)["status"] == "success"'
+
+  package:
+    name: NuGet package contents and dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore dotnet/Trajectory.sln
+      - name: Assert core has no package dependency
+        shell: bash
+        run: |
+          dotnet list dotnet/src/Trajectory/Trajectory.csproj package --include-transitive | tee core-packages.txt
+          if grep '^   >' core-packages.txt | grep -qv '(A)'; then
+            echo "The core package unexpectedly has a package dependency."
+            exit 1
+          fi
+      - name: Pack runtime libraries
+        run: |
+          dotnet pack dotnet/src/Trajectory/Trajectory.csproj -c Release --no-restore -o artifacts/packages
+          dotnet pack dotnet/src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj -c Release --no-restore -o artifacts/packages
+          dotnet pack dotnet/src/Trajectory.Testing/Trajectory.Testing.csproj -c Release --no-restore -o artifacts/packages
+      - name: Check package contents
+        run: python3 conformance/check_package.py artifacts/packages
 
   aot-smoke:
     name: Native AOT smoke / Linux x64
@@ -48,7 +137,7 @@ jobs:
       - name: Publish Native AOT smoke executable
         shell: pwsh
         run: |
-          dotnet publish tests/Trajectory.AotSmoke/Trajectory.AotSmoke.csproj -c Release -r linux-x64 --self-contained true 2>&1 | Tee-Object aot.log
+          dotnet publish dotnet/tests/Trajectory.AotSmoke/Trajectory.AotSmoke.csproj -c Release -r linux-x64 --self-contained true 2>&1 | Tee-Object aot.log
           exit $LASTEXITCODE
       - name: Upload failed AOT log
         if: failure()
@@ -57,4 +146,4 @@ jobs:
           name: aot-log-linux-x64
           path: aot.log
       - name: Run Native AOT smoke executable
-        run: ./tests/Trajectory.AotSmoke/bin/Release/net10.0/linux-x64/publish/Hypabolic.Trajectory.AotSmoke
+        run: ./dotnet/tests/Trajectory.AotSmoke/bin/Release/net10.0/linux-x64/publish/Hypabolic.Trajectory.AotSmoke

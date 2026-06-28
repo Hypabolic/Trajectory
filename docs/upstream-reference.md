@@ -1,6 +1,6 @@
 # Upstream compatibility reference
 
-Trajectory.NET behavioural parity is currently planned against:
+The .NET implementation of Trajectory is behaviorally pinned to:
 
 - repository: `letta-ai/trajectory`;
 - commit: `f165ecf0af35da40512a288c4380a36b3102403c`;

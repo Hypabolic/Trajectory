@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hypabolic.dev/trajectory/contracts/conformance-case-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "case_version",
+    "id",
+    "operation",
+    "source",
+    "transcript",
+    "source_context",
+    "bounds",
+    "filters",
+    "projection_options",
+    "mode",
+    "required_capabilities",
+    "expected",
+    "comparison"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "case_version": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9/-]*$" },
+    "operation": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expected"],
+        "properties": {
+          "expected": { "type": "string", "minLength": 1 },
+          "comparison": { "enum": ["byte-exact", "json-exact", "jsonl-exact"] }
+        }
+      }
+    },
+    "source": { "enum": ["pi", "claude-code", "codex"] },
+    "transcript": { "type": "string", "minLength": 1 },
+    "native_container": { "type": ["string", "null"] },
+    "store": { "type": "string", "pattern": "^[a-z0-9][a-z0-9/-]*$" },
+    "listing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "limit": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "all_pages": { "type": "boolean" }
+      }
+    },
+    "source_context": { "type": "object" },
+    "bounds": { "type": "object" },
+    "filters": { "type": "object" },
+    "projection_options": { "type": "object" },
+    "mode": { "enum": ["whole", "partial"] },
+    "required_capabilities": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result"],
+      "properties": {
+        "result": { "enum": ["success", "diagnostics", "fatal-error"] },
+        "diagnostic_codes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "fatal_error": { "type": ["string", "null"] }
+      }
+    },
+    "comparison": { "enum": ["byte-exact", "json-exact", "jsonl-exact"] }
+  }
+}
