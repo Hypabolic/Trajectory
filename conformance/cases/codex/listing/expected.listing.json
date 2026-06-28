@@ -1,0 +1,1 @@
+[{"items":[{"id":"newer","path":"$ROOT/store/2026/04/02/newer.jsonl","updated_at":"2026-04-02T00:00:00.000Z","size_bytes":3}],"next_cursor":"MQowCm5ld2Vy"},{"items":[{"id":"older","path":"$ROOT/store/2026/04/01/older.jsonl","updated_at":"2026-04-01T00:00:00.000Z","size_bytes":3}],"next_cursor":null}]

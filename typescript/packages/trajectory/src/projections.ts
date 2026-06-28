@@ -5,6 +5,7 @@ import {
   type JsonObject,
   type JsonValue,
   relaxedJson,
+  TrajectoryNormalizationError,
   type TrajectoryIR,
   toLetta,
 } from "./internal.js";
@@ -77,6 +78,12 @@ export function projectMinimalJsonl(trajectory: TrajectoryIR): string {
 }
 
 export function projectCanonical(trajectory: TrajectoryIR): JsonObject {
+  if (trajectory.source === "codex" && !trajectory.groupResolved) {
+    throw new TrajectoryNormalizationError(
+      "source_group_required",
+      "Canonical Codex normalization requires a source group: include session_meta or pass sourceContext.groupId.",
+    );
+  }
   return {
     records: trajectory.records
       .filter((record) =>
@@ -109,10 +116,10 @@ export function projectHypabolic(trajectory: TrajectoryIR): JsonObject {
   return {
     schema_id: "hypabolic-trajectory-v1",
     schema_version: 1,
-    trajectory_id: sha256(relaxedJson(["pi", trajectory.groupId])),
+    trajectory_id: sha256(relaxedJson([trajectory.source, trajectory.groupId])),
     source: {
-      type: "pi",
-      name: "pi",
+      type: trajectory.source,
+      name: trajectory.sourceName,
       group_id: trajectory.groupId,
       ...(trajectory.producerVersion === undefined ? {} : { producer_version: trajectory.producerVersion }),
     },
@@ -150,7 +157,7 @@ export function serializeProjection(value: JsonValue, options?: ProjectionOption
 function canonicalRecord(trajectory: TrajectoryIR, record: IRRecord): JsonObject {
   const call = record.toolCalls?.[0];
   return {
-    source_type: "pi",
+    source_type: trajectory.source,
     source_group_id: trajectory.groupId,
     stable_source_record_id: record.provenance.stableSourceRecordId,
     source_identity_kind: record.provenance.sourceIdentityKind,
@@ -181,8 +188,9 @@ function hypabolicRecord(record: IRRecord): JsonObject {
     timestamp: record.timestamp === null ? null : formatMs(record.timestamp),
   };
   if (record.kind === "meta") {
-    output.source_name = "pi";
+    output.source_name = record.sourceName ?? "unknown";
     if (record.cwd !== undefined) output.cwd = record.cwd;
+    if (record.gitBranch !== undefined) output.git_branch = record.gitBranch;
     if (record.model !== undefined) output.model = record.model;
     if (record.producerVersion !== undefined) output.producer_version = record.producerVersion;
   } else if (record.kind === "assistant_tool_calls") {
