@@ -23,7 +23,7 @@ Trajectory should become one product with three native implementations:
 | --- | --- | --- |
 | .NET | `Hypabolic.Trajectory` | Existing implementation and behavioural baseline |
 | Rust | `hypabolic-trajectory` | Independent idiomatic Rust implementation |
-| TypeScript | `@hypabolic/trajectory` | Architectural fork/import of the pinned Apache-2.0 Letta TypeScript reference |
+| TypeScript | `@hypabolic/trajectory` | Independent implementation written from the Hypabolic specification and conformance suite |
 
 The Rust and TypeScript packages must not call the .NET package through a
 subprocess, FFI, WebAssembly, or a hosted service. Consumers should get the
@@ -46,16 +46,18 @@ The internal IR remains implementation-private. Making it a public interchange
 format would couple all implementations to one language's object model and
 turn internal refactoring into a wire-format migration.
 
-## Why TypeScript is not a new port
+## Why TypeScript is a fresh implementation
 
-The pinned compatibility reference is already a TypeScript package,
-`@letta-ai/trajectory`. It contains the existing source decoders,
-normalization policy, canonical identity implementation, fixtures, listing,
-and Deep Agents bridge.
+The Letta repository inspired the original product and remains a useful
+compatibility oracle, but `@hypabolic/trajectory` must be a fresh Hypabolic
+implementation. Its design and code are derived from this repository's
+language-neutral specifications, schemas, conformance cases, and architecture.
 
-The Hypabolic TypeScript implementation should import the pinned source with
-its Apache-2.0 attribution and then evolve it toward the Trajectory
-ports-and-adapters architecture:
+Do not vendor, fork, copy, translate, or incrementally refactor the upstream
+TypeScript source. Do not preserve its internal module layout or treat its
+implementation choices as architectural requirements.
+
+The TypeScript processing architecture is implemented independently:
 
 ```text
 source bytes
@@ -66,16 +68,15 @@ source bytes
   -> optional OpenTelemetry emission
 ```
 
-This preserves the most authoritative executable reference while avoiding a
-second translation of behaviour that already exists in TypeScript. Upstream
-updates remain explicit compatibility upgrades: compare the new commit, import
-changed fixtures and behaviour deliberately, and update the pin. The package
-must not track upstream `main` automatically.
+The pinned upstream release may be executed as a black-box compatibility
+oracle for Letta outputs and historical behaviour. If its behaviour exposes a
+case not covered by the Hypabolic specification, first add a normative rule and
+sanitized conformance vector, then implement that rule independently in every
+runtime. Upstream source code is not the specification.
 
-Direct convenience functions compatible with the upstream package should
-remain available where useful. New Hypabolic extension points should sit
-behind an explicit engine/registry API so source and output adapters are
-independently testable.
+Convenience functions compatible with the observable upstream API may be
+provided where useful, but they are facades over the independently designed
+Hypabolic engine and adapter registry.
 
 ## Why Rust is independent
 
@@ -334,15 +335,18 @@ Preserve upstream convenience functions such as `normalizeTranscript`,
 Do not expose the decoded session or a serialized IR as stable public
 contracts in the first release.
 
-### Upstream provenance
+### Implementation independence
 
 The first TypeScript slice must:
 
-- retain the upstream Apache-2.0 licence and notices;
-- record imported paths and the exact upstream commit;
-- retain useful upstream git history where practical;
-- identify Hypabolic changes rather than obscuring provenance;
-- provide a repeatable upstream comparison process.
+- be authored from Hypabolic specifications and conformance cases;
+- contain no copied, translated, vendored, or forked upstream implementation code;
+- use Hypabolic's ports-and-adapters boundaries rather than upstream module structure;
+- record the pinned upstream version only as a black-box compatibility reference;
+- provide a repeatable differential comparison process that does not make
+  upstream source code a build or runtime dependency;
+- resolve ambiguous behaviour by improving the shared specification before
+  implementation.
 
 ## Rust design
 
@@ -461,8 +465,9 @@ new architecture.
 
 Work:
 
-- import the relevant pinned upstream TypeScript source with provenance;
-- scaffold the workspace and engine/registry;
+- scaffold the workspace and engine/registry from the shared specification;
+- implement the Pi decoder and normalization policy independently, using the
+  pinned upstream package only for black-box differential comparison;
 - implement byte-oriented Pi decoding, shared normalization, identity, and
   Letta/canonical/Hypabolic projections;
 - add Pi listing in the Node package;
@@ -500,7 +505,7 @@ Outcome: TypeScript reaches the currently implemented .NET source baseline.
 
 Work:
 
-- import/refactor pinned Claude Code and Codex decoders;
+- implement Claude Code and Codex decoders independently from the shared source specifications;
 - preserve producer metadata and execution metadata needed by Hypabolic and
   OpenTelemetry outputs;
 - implement explicit-root listing;
@@ -640,7 +645,7 @@ uniform.
 | Risk | Mitigation |
 | --- | --- |
 | Behaviour drifts across three implementations | Shared normative spec, direct differential CI, synchronized compatibility upgrades |
-| TypeScript duplicates an existing implementation | Import/fork the pinned upstream code and retain provenance |
+| A fresh TypeScript implementation drifts from established behaviour | Make the Hypabolic specification normative and use pinned upstream execution only for black-box differential evidence |
 | Internal IR becomes an accidental wire contract | Test public outputs; keep any IR observation format private to conformance tooling |
 | JSON/Unicode/runtime defaults change hashes | Explicit canonicalization spec and adversarial vectors |
 | Repository restructuring disrupts active work | Perform it once in ML1 before new source slices |
