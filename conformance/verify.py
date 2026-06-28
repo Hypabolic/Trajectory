@@ -19,6 +19,12 @@ def parse_args() -> argparse.Namespace:
         dest="sources",
         help="only run cases for this source (repeatable)",
     )
+    parser.add_argument(
+        "--operation",
+        action="append",
+        dest="operations",
+        help="only run declared operations with this name (repeatable)",
+    )
     parser.add_argument("runner", nargs=argparse.REMAINDER)
     result = parser.parse_args()
     if result.runner[:1] == ["--"]:
@@ -111,13 +117,22 @@ def main() -> int:
         ]
     checked = 0
     candidates = 0
+    checked_manifests = 0
 
     for manifest_path in manifests:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         case_id = manifest["id"]
         expected_result = manifest["expected"]["result"]
         expected_codes = manifest["expected"].get("diagnostic_codes", [])
-        for operation_name, operation in manifest["operation"].items():
+        operations = [
+            (name, operation)
+            for name, operation in manifest["operation"].items()
+            if not args.operations or name in args.operations
+        ]
+        if not operations:
+            continue
+        checked_manifests += 1
+        for operation_name, operation in operations:
             label = f"{case_id}/{operation_name}"
             first = invoke(args.runner, repository_root, case_id, operation_name)
             second = invoke(args.runner, repository_root, case_id, operation_name)
@@ -172,7 +187,7 @@ def main() -> int:
             {
                 "protocol_version": "1",
                 "status": "success",
-                "cases": len(manifests),
+                "cases": checked_manifests,
                 "operations": checked,
             },
             separators=(",", ":"),

@@ -242,3 +242,77 @@ jobs:
             import { projectOpenTelemetry } from '@hypabolic/trajectory-otel';
             if (!TrajectoryEngine || !listTrajectories || !projectOpenTelemetry) process.exit(1);
           "
+
+  rust:
+    name: Rust ${{ matrix.rust }} / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [1.85.0, stable]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Test workspace
+        run: cargo +${{ matrix.rust }} test --manifest-path rust/Cargo.toml --workspace --locked
+
+  rust-quality:
+    name: Rust formatting, lints, docs, and package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Verify formatting
+        run: cargo +stable fmt --manifest-path rust/Cargo.toml --all -- --check
+      - name: Run Clippy
+        run: cargo +stable clippy --manifest-path rust/Cargo.toml --workspace --all-targets -- -D warnings
+      - name: Build documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo +stable doc --manifest-path rust/Cargo.toml --workspace --no-deps --locked
+      - name: Assert core integration boundaries
+        shell: bash
+        run: |
+          cargo +stable tree --manifest-path rust/Cargo.toml -p hypabolic-trajectory | tee rust-core-dependencies.txt
+          if grep -Eiq '(^|[-_])(sqlite|opentelemetry|tokio)([-_]|$)' rust-core-dependencies.txt; then
+            echo "The Rust core crate unexpectedly contains an optional integration dependency."
+            exit 1
+          fi
+      - name: Package and verify the core crate
+        working-directory: rust
+        run: cargo +stable package -p hypabolic-trajectory --locked
+
+  rust-conformance:
+    name: Shared conformance / Rust Pi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Build Rust conformance runner
+        run: cargo +stable build --manifest-path rust/Cargo.toml --release --locked --bin trajectory-conformance
+      - name: Run every ML3 shared Pi operation twice
+        run: >-
+          python3 conformance/verify.py --repository-root . --source pi
+          --operation normalize-letta
+          --operation normalize-canonical
+          --operation normalize-hypabolic
+          --operation list-trajectories --
+          rust/target/release/trajectory-conformance
+      - name: Prove checked-in identity goldens are unchanged
+        run: sha256sum --check conformance/identity-baseline.sha256
+      - name: Reject fixture mutation
+        run: git diff --exit-code -- contracts conformance

@@ -1,0 +1,18 @@
+[package]
+name = "trajectory-conformance"
+description = "Private Rust conformance runner for Trajectory"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono.workspace = true
+hypabolic-trajectory = { path = "../../crates/hypabolic-trajectory" }
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

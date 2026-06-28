@@ -1,0 +1,32 @@
+[workspace]
+members = [
+    "crates/hypabolic-trajectory",
+    "tools/trajectory-conformance",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/Hypabolic/Trajectory"
+
+[workspace.dependencies]
+base64 = "=0.22.1"
+chrono = { version = "=0.4.39", default-features = false, features = ["std"] }
+serde = { version = "=1.0.217", features = ["derive"] }
+serde_json = { version = "=1.0.138", features = ["preserve_order"] }
+sha2 = "=0.10.8"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+default_trait_access = "allow"
+missing_errors_doc = "allow"
+needless_range_loop = "allow"
+too_many_lines = "allow"
