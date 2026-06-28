@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Hypabolic.Trajectory.Adapters.OpenAi;
 
@@ -18,23 +19,40 @@ public enum OpenAiReasoningPolicy
 
 public sealed record OpenAiChatMessage
 {
+    [JsonPropertyName("role")]
     public required string Role { get; init; }
+
+    [JsonPropertyName("content")]
     public string? Content { get; init; }
+
+    [JsonPropertyName("tool_calls")]
     public IReadOnlyList<OpenAiToolCall>? ToolCalls { get; init; }
+
+    [JsonPropertyName("tool_call_id")]
     public string? ToolCallId { get; init; }
+
+    [JsonPropertyName("name")]
     public string? Name { get; init; }
 }
 
 public sealed record OpenAiToolCall
 {
+    [JsonPropertyName("id")]
     public required string Id { get; init; }
+
+    [JsonPropertyName("type")]
     public required string Type { get; init; }
+
+    [JsonPropertyName("function")]
     public required OpenAiFunctionCall Function { get; init; }
 }
 
 public sealed record OpenAiFunctionCall
 {
+    [JsonPropertyName("name")]
     public required string Name { get; init; }
+
+    [JsonPropertyName("arguments")]
     public required string Arguments { get; init; }
 }
 
@@ -118,7 +136,10 @@ public sealed class OpenAiChatMessagesOutputAdapter : OutputSchemaAdapter<OpenAi
     {
         ArgumentNullException.ThrowIfNull(destination);
         using var writer = new Utf8JsonWriter(destination, WriterOptions(options));
-        JsonSerializer.Serialize(writer, output.Messages, TrajectoryJsonContext.Default.OpenAiChatMessageArray);
+        JsonSerializer.Serialize(
+            writer,
+            output.Messages.ToArray(),
+            TrajectoryJsonContext.Default.OpenAiChatMessageArray);
     }
 
     private static void WriteJson(
@@ -127,7 +148,10 @@ public sealed class OpenAiChatMessagesOutputAdapter : OutputSchemaAdapter<OpenAi
         OutputProjectionOptions? options)
     {
         using var writer = new Utf8JsonWriter(destination, WriterOptions(options));
-        JsonSerializer.Serialize(writer, output.Messages, TrajectoryJsonContext.Default.OpenAiChatMessageArray);
+        JsonSerializer.Serialize(
+            writer,
+            output.Messages.ToArray(),
+            TrajectoryJsonContext.Default.OpenAiChatMessageArray);
     }
 
     private static JsonWriterOptions WriterOptions(OutputProjectionOptions? options) => new()

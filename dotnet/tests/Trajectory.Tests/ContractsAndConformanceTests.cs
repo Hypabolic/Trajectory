@@ -7,6 +7,10 @@ namespace Hypabolic.Trajectory.Tests;
 
 public sealed class ContractsAndConformanceTests
 {
+    private static readonly object SchemaLock = new();
+    private static readonly Dictionary<string, JsonSchema> Schemas =
+        new(StringComparer.Ordinal);
+
     [Fact]
     public void CompatibilityManifestIsValidAndMatchesRuntimeConstants()
     {
@@ -88,11 +92,19 @@ public sealed class ContractsAndConformanceTests
 
     private static void AssertValid(string schemaName, JsonElement instance)
     {
-        var schema = JsonSchema.FromText(File.ReadAllText(Path.Combine(
-            AppContext.BaseDirectory,
-            "Schemas",
-            schemaName)));
-        var result = schema.Evaluate(instance);
-        Assert.True(result.IsValid, $"{schemaName}: {result}");
+        lock (SchemaLock)
+        {
+            if (!Schemas.TryGetValue(schemaName, out var schema))
+            {
+                schema = JsonSchema.FromText(File.ReadAllText(Path.Combine(
+                    AppContext.BaseDirectory,
+                    "Schemas",
+                    schemaName)));
+                Schemas.Add(schemaName, schema);
+            }
+
+            var result = schema.Evaluate(instance);
+            Assert.True(result.IsValid, $"{schemaName}: {result}");
+        }
     }
 }
