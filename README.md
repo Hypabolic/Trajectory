@@ -33,6 +33,8 @@ package. The remaining plan will:
 - keep the core BCL-only, trim-safe, and Native AOT-compatible;
 - verify behaviour through golden fixtures and differential parity tests.
 
+The [Rust and TypeScript implementation plan](docs/multi-language-plan.md) turns this into a three-runtime product governed by shared contracts and differential conformance, while retaining native APIs and packages in each ecosystem.
+
 ## Intended outputs
 
 | Schema ID | Purpose |
@@ -61,6 +63,7 @@ Target frameworks: `net8.0;net9.0;net10.0`.
 - [Hypabolic trajectory v1 contract](docs/hypabolic-trajectory-v1.md)
 - [OpenTelemetry GenAI span output plan](docs/otel-genai-output.md)
 - [Adapter authoring](docs/adapter-authoring.md)
+- [Rust and TypeScript implementation plan](docs/multi-language-plan.md)
 - [Vertical-slice implementation plan](docs/implementation-plan.md)
 
 ## Core constraints
