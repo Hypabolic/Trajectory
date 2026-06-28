@@ -1915,9 +1915,13 @@ mod tests {
         let expected = include_str!(
             "../../../../conformance/cases/claude-code/tool-call/expected.canonical.json"
         );
+        let expected = expected
+            .strip_suffix("\r\n")
+            .or_else(|| expected.strip_suffix('\n'))
+            .unwrap_or(expected);
         assert_eq!(
             project_canonical(&result).expect("canonical projection"),
-            expected.strip_suffix('\n').unwrap_or(expected)
+            expected
         );
     }
 
