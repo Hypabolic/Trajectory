@@ -1,0 +1,42 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1,
+  "id": "pi/tool-linking",
+  "operation": {
+    "normalize-letta": {
+      "expected": "expected.letta.json",
+      "comparison": "json-exact"
+    },
+    "normalize-canonical": {
+      "expected": "expected.canonical.json",
+      "comparison": "json-exact"
+    }
+  },
+  "source": "pi",
+  "transcript": "input.jsonl",
+  "native_container": "pi-session-jsonl",
+  "source_context": {},
+  "bounds": {
+    "tool_arguments": { "max_characters": 24 },
+    "tool_results": { "max_characters": 2500, "strategy": "head-tail" }
+  },
+  "filters": { "tool_results": "include" },
+  "projection_options": {},
+  "mode": "whole",
+  "required_capabilities": [
+    "normalize",
+    "typed-diagnostics",
+    "deterministic-rerun"
+  ],
+  "expected": {
+    "result": "diagnostics",
+    "diagnostic_codes": [
+      "duplicate_tool_call_id",
+      "tool_call_id_synthesized",
+      "tool_arguments_reshaped",
+      "duplicate_tool_result",
+      "orphan_tool_result"
+    ]
+  },
+  "comparison": "json-exact"
+}

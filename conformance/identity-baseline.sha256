@@ -1,0 +1,6 @@
+70dce94fbec1f73007ed4b69af8a10c3cbe10d4e4e7f9de41013280cbe30345d  conformance/cases/pi/tool-calls/expected.letta.json
+2407c765e9e4a6b9e3f3a897442fa63e7ed82d1fc3a1eefe26a4411645cc5790  conformance/cases/pi/tool-calls/expected.canonical.json
+a6a92f3a06ebcf0e4705c4de23b88d5387a1e9b8413af8e42aacab04bfad5b7d  conformance/cases/claude-code/tool-call/expected.letta.json
+cfc8c476785991f134d7cdaf544f9964e21f3fec5b0b03fba1bf83bbe58bcbc4  conformance/cases/claude-code/tool-call/expected.canonical.json
+feee2ae51ea1ccfeef9b83b234bc7bfa908d4ebe75cbb3f042f4ec587f1554e4  conformance/cases/codex/full/expected.letta.json
+d5372a5c5a79f01a6805a39c69f7f46ac021abfcdf3293e1f6ede1daed2209d0  conformance/cases/codex/full/expected.canonical.json

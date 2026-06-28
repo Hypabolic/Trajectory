@@ -4,11 +4,11 @@ Baseline reviewed: `Hypabolic/Trajectory` `main` at merge commit `61a195d074ad6a
 
 Reference reviewed: `letta-ai/trajectory` `main`, package version `0.2.0` at the time of planning.
 
-This document defines what “feature parity” means for Trajectory.NET and records the gap between that target and the current prototype.
+This document defines what “feature parity” means for the .NET implementation of Trajectory and records the gap between that target and the current prototype.
 
 ## Parity target
 
-Trajectory.NET reaches Letta parity when the same supported source input and equivalent options produce:
+The .NET implementation of Trajectory reaches Letta parity when the same supported source input and equivalent options produce:
 
 1. structurally and semantically identical `trajectory-v1` records;
 2. identical library-owned canonical records, identity fields, ordering fields, hashes, configuration, and diagnostics;
