@@ -20,6 +20,8 @@ source input
 
 Shared infrastructure is introduced through the first source that needs it rather than as an isolated framework-building phase.
 
+This document remains the detailed .NET behavioural and source-acceptance baseline. The [Rust and TypeScript implementation plan](multi-language-plan.md) now governs cross-runtime sequencing, shared conformance, repository layout, and release policy.
+
 ## Delivery status
 
 | Slice | Status |
@@ -28,8 +30,12 @@ Shared infrastructure is introduced through the first source that needs it rathe
 | 2 — Pi normalization and canonical parity | Complete |
 | 3 — Claude Code end-to-end parity | Complete |
 | 4 — Codex end-to-end parity | Complete |
-| 5 — Letta Code end-to-end parity | Next |
-| 6–11 | Planned |
+| 5 — Letta Code end-to-end parity | Re-sequenced as multi-language ML8 |
+| 6–9 — Remaining source integrations | Re-sequenced as multi-language ML9–ML12 |
+| 10 — Additional projections, OpenTelemetry, and extension API | Complete |
+| 11 — Differential parity, performance, and package readiness | Expanded by ML1–ML7 and ML13 |
+
+ML1 — shared contracts and repository foundation — is now the next slice. Do not begin Letta Code as a .NET-only slice; its existing requirements below are retained and become the .NET portion of multi-language ML8 after Rust and TypeScript reach the Pi, Claude Code, and Codex baseline.
 
 ## Planning rules
 
