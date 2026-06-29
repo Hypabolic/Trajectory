@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: accepted; ML1–ML7 implemented, ML8 next
+Status: accepted; ML1–ML7 implemented, ML9 next
 
 Planning baseline:
 
@@ -108,9 +108,10 @@ The recommended order is:
 3. add future sources across all three implementations, one source family at
    a time.
 
-Accordingly, the current .NET Slice 5 (Letta Code) should become the first
-multi-language source slice after baseline convergence rather than landing as
-another .NET-only capability.
+Future source adapters should land across all three runtimes rather than as
+.NET-only capabilities. For the v1 release, OpenClaw and Hermes follow the
+baseline convergence work. Letta Code, OpenHands, and Deep Agents checkpoint
+support are retained as post-v1 backlog goals.
 
 ## Repository shape
 
@@ -421,7 +422,8 @@ from prose or model-name heuristics. Missing source metadata remains absent.
 ## Deep Agents and SQLite
 
 Deep Agents checkpoint compatibility is an integration boundary, not a reason
-to contaminate each core package.
+to contaminate each core package. It is a post-v1 backlog goal under ML12, not
+a v1 release requirement.
 
 The existing upstream investigation found that the Python-produced checkpoint
 serializer is not automatically interoperable with the official JavaScript
@@ -560,7 +562,9 @@ Acceptance:
 
 ### ML8 — Letta Code across all runtimes
 
-This replaces the current .NET-only Slice 5.
+Status: deferred to the post-v1 backlog.
+
+This may replace the current .NET-only Slice 5 after v1.
 
 Acceptance retains the existing Slice 5 source requirements and adds:
 
@@ -576,8 +580,11 @@ rules where valid without conflating the Pi and OpenClaw source contracts.
 
 ### ML10 — OpenHands across all runtimes
 
-This replaces the current .NET-only Slice 7. Both array and API-envelope inputs,
-action/observation linkage, rejection, and error semantics must conform.
+Status: deferred to the post-v1 backlog.
+
+This may replace the current .NET-only Slice 7 after v1. Both array and
+API-envelope inputs, action/observation linkage, rejection, and error semantics
+must conform.
 
 ### ML11 — Hermes across all runtimes
 
@@ -587,9 +594,12 @@ testable.
 
 ### ML12 — Deep Agents checkpoint integrations
 
-This replaces the current .NET-only Slice 9. All three optional integration
-packages validate against the same official Python-produced checkpoint fixture,
-thread isolation, checkpoint selection, pending writes, and reducer semantics.
+Status: deferred to the post-v1 backlog.
+
+This may replace the current .NET-only Slice 9 after v1. All three optional
+integration packages must validate against the same official Python-produced
+checkpoint fixture, thread isolation, checkpoint selection, pending writes,
+and reducer semantics.
 
 ### ML13 — 1.0 parity and release hardening
 
@@ -623,6 +633,10 @@ A source capability is complete only when that implementation supports:
 
 The repository's product-level 1.0 requires the common required capability set
 to pass in all three ecosystems.
+
+The v1 required source set is Pi, Claude Code, Codex, OpenClaw, and Hermes.
+Letta Code, OpenHands, and Deep Agents are not v1 release blockers and must not
+be advertised as v1 capabilities until their post-v1 slices are implemented.
 
 ## Performance policy
 
@@ -661,11 +675,29 @@ uniform.
 - a stable serialized internal IR;
 - browser/Wasm support;
 - automatic upstream-main synchronization;
-- cloud ingestion worker, tenancy, or storage responsibilities.
+- cloud ingestion worker, tenancy, or storage responsibilities;
+- Letta Code source support;
+- OpenHands source support;
+- Deep Agents checkpoint and SQLite integrations.
+
+## Post-v1 source backlog
+
+The following accepted goals remain deliberately outside the v1 release:
+
+1. ML8 — Letta Code across .NET, TypeScript, and Rust;
+2. ML10 — OpenHands across .NET, TypeScript, and Rust;
+3. ML12 — Deep Agents checkpoint integrations across the three optional
+   ecosystem packages.
+
+When scheduled, each item must still satisfy the shared contract, fixture,
+identity, diagnostics, listing, packaging, and cross-runtime parity policies.
+Deferral does not authorize a single-runtime implementation or a weakened
+compatibility claim.
 
 ## Immediate next action
 
-Implement ML8: Letta Code across all three runtimes. Preserve native,
-source-line, and row-position identity, completed/failed/unfinished tool
-semantics, explicit-root listing behavior, and the shared diagnostic contract
-without introducing a shared native core, FFI, or subprocess wrappers.
+Implement ML9: OpenClaw across all three runtimes. Keep the OpenClaw source
+contract distinct from Pi while sharing only genuinely common semantic block
+decoding. Add shared fixtures, identity and diagnostic vectors, explicit-root
+listing, and all currently implemented projections without introducing a
+shared native core, FFI, or subprocess wrappers.

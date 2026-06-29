@@ -27,7 +27,7 @@ Primary uses include:
 | Package | Responsibility | Runtime dependencies |
 | --- | --- | --- |
 | `Hypabolic.Trajectory` | IR, normalization, built-in transcript adapters, Letta and Hypabolic projections, listing abstractions | BCL only |
-| `Hypabolic.Trajectory.Sqlite` | Deep Agents / LangGraph checkpoint discovery and decoding | SQLite and checkpoint-codec dependencies allowed |
+| `Hypabolic.Trajectory.Sqlite` | Post-v1 Deep Agents / LangGraph checkpoint discovery and decoding | SQLite and checkpoint-codec dependencies allowed |
 | `Hypabolic.Trajectory.Testing` | Optional fixture/parity helpers for adapter authors | Test-only dependencies allowed |
 
 Target frameworks are `net8.0;net9.0;net10.0`. The core package must build with trimming and Native AOT analyzers enabled and must pass published AOT smoke tests.
