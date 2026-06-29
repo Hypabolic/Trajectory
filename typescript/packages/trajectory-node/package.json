@@ -1,7 +1,15 @@
 {
   "name": "@hypabolic/trajectory-node",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Explicit-root local trajectory listing for Node.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hypabolic/Trajectory.git",
+    "directory": "typescript/packages/trajectory-node"
+  },
+  "sideEffects": false,
+  "publishConfig": { "access": "public", "provenance": true },
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -16,7 +24,7 @@
     "dist"
   ],
   "dependencies": {
-    "@hypabolic/trajectory": "0.0.0"
+    "@hypabolic/trajectory": "0.1.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

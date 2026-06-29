@@ -10,8 +10,8 @@ wire contracts and conformance cases:
 | Runtime | Package | Status |
 | --- | --- | --- |
 | .NET | `Hypabolic.Trajectory` | Implemented |
-| TypeScript | `@hypabolic/trajectory` | Pi, Claude Code, and Codex baseline implemented; unpublished |
-| Rust | `hypabolic-trajectory` | Pi, Claude Code, and Codex baseline implemented; unpublished |
+| TypeScript | `@hypabolic/trajectory` | ML7 source/output parity implemented; unpublished |
+| Rust | `hypabolic-trajectory` | ML7 source/output parity implemented; unpublished |
 
 The current .NET runtime supports Pi, Claude Code, and Codex transcripts,
 explicit-root local-store listing, trimming and Native AOT, and these
@@ -28,11 +28,12 @@ deterministic projections:
 Rust and TypeScript packages have not been published. Both are independent
 implementations built from this repository's specifications and conformance
 cases. TypeScript supports the current .NET Pi, Claude Code, and Codex source
-baseline and all deterministic projections. Rust ML6 supports the same Pi,
-Claude Code, and Codex source baseline with the three identity-bearing
-projections. Both provide explicit-root listing for their advertised sources
-and the private conformance protocol. The pinned `letta-ai/trajectory` package
-is used only as a black-box compatibility oracle.
+baseline and all deterministic projections. Rust ML7 supports the same source
+and output set. Both provide explicit-root listing, ecosystem-native writer
+surfaces, synchronized `0.1.0` preview metadata, and the private conformance
+protocol. Optional OpenTelemetry packages remain outside each core package.
+The pinned `letta-ai/trajectory` package is used only as a black-box
+compatibility oracle.
 
 ## Architecture
 
@@ -115,10 +116,10 @@ npm run typecheck
 npm test
 ```
 
-Run the shared Pi cases through the TypeScript runner:
+Run every applicable shared case through the TypeScript runner:
 
 ```bash
-python3 conformance/verify.py --repository-root . --source pi -- \
+python3 conformance/verify.py --repository-root . -- \
   node typescript/packages/trajectory-testing/dist/cli.js
 ```
 
@@ -139,35 +140,41 @@ cargo +stable clippy --manifest-path rust/Cargo.toml \
   --workspace --all-targets -- -D warnings
 ```
 
-Run ML6's identity-bearing source baseline and listing through the Rust runner:
+Run the complete ML7 source/output set through the Rust runner:
 
 ```bash
 cargo +stable build --manifest-path rust/Cargo.toml \
   --release --bin trajectory-conformance
-python3 conformance/verify.py --repository-root . --source pi \
-  --operation normalize-letta \
-  --operation normalize-canonical \
-  --operation normalize-hypabolic \
-  --operation list-trajectories -- \
-  rust/target/release/trajectory-conformance
-python3 conformance/verify.py --repository-root . --source claude-code \
-  --operation normalize-letta \
-  --operation normalize-canonical \
-  --operation normalize-hypabolic \
-  --operation list-trajectories -- \
-  rust/target/release/trajectory-conformance
-python3 conformance/verify.py --repository-root . --source codex \
-  --operation normalize-letta \
-  --operation normalize-canonical \
-  --operation normalize-hypabolic \
-  --operation list-trajectories -- \
+python3 conformance/verify.py --repository-root . -- \
   rust/target/release/trajectory-conformance
 ```
 
 The core crate owns the byte-oriented source and projection traits, typed
 models/errors, canonical identity, and synchronous explicit-root listing. It
-does not depend on SQLite or OpenTelemetry. See [rust/README.md](rust/README.md)
-for the package boundary and full validation commands.
+does not depend on SQLite or OpenTelemetry.
+`hypabolic-trajectory-opentelemetry` provides the optional deterministic span
+projection and an application-owned SDK sink boundary. See
+[rust/README.md](rust/README.md) for the package boundary and full validation
+commands.
+
+## Preview release evidence
+
+The three ecosystems use synchronized `0.1.0` package metadata while remaining
+unpublished. CI dry-runs NuGet, npm, and the Rust core package, installs
+artifacts in empty consumer projects where the ecosystem supports it, records
+the optional Rust telemetry crate's exact publish file set (its sibling core is
+not yet present in crates.io), records dependency inventories, hashes every
+archive, and uploads a provenance manifest. Validate the synchronized metadata
+locally with:
+
+```bash
+python3 tools/validate_release_metadata.py --repository-root .
+```
+
+Representative dependency-free benchmarks live under each runtime. They report
+throughput and output size; .NET additionally reports managed allocation and
+TypeScript reports heap delta. These are regression measurements, not
+cross-runtime performance contracts.
 
 ## .NET usage
 
@@ -225,5 +232,6 @@ See:
 ML1 established the shared foundation; ML2 and ML3 added independent
 TypeScript and Rust Pi vertical paths; ML4 brought TypeScript to the current
 .NET Pi, Claude Code, and Codex source baseline; ML5 and ML6 brought Rust to
-the same source baseline. ML7 is next: complete output and distribution parity
-across all three implementations.
+the same source baseline; ML7 completed output and preview-distribution parity
+across all three implementations. ML8 is next: add Letta Code across all three
+runtimes.

@@ -23,8 +23,10 @@ pub use normalize::{
     normalize_claude_code, normalize_codex, normalize_pi,
 };
 pub use projection::{
-    OutputAdapter, canonical_value, hypabolic_value, letta_value, project_canonical,
-    project_hypabolic, project_letta, project_schema, serialize_projection,
+    OutputAdapter, canonical_value, hypabolic_value, letta_value, openai_value,
+    opentelemetry_value, project_canonical, project_hypabolic, project_letta,
+    project_minimal_jsonl, project_openai, project_opentelemetry, project_schema,
+    serialize_projection, write_minimal_jsonl, write_schema,
 };
 
 /// Language-neutral normalizer contract version.
@@ -38,4 +40,10 @@ pub mod schema_ids {
     pub const LETTA_CANONICAL_V1: &str = "letta-canonical-v1";
     /// Hypabolic trajectory output.
     pub const HYPOBOLIC_TRAJECTORY_V1: &str = "hypabolic-trajectory-v1";
+    /// `OpenAI` chat message output.
+    pub const OPENAI_CHAT_MESSAGES_V1: &str = "openai-chat-messages";
+    /// Streaming minimal JSONL output.
+    pub const MINIMAL_JSONL_V1: &str = "jsonl-minimal";
+    /// Deterministic OpenTelemetry `GenAI` span-set output.
+    pub const OTEL_GENAI_SPANS_V1: &str = "otel-genai-spans-v1";
 }

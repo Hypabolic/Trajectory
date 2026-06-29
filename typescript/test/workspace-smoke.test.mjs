@@ -33,14 +33,17 @@ test("workspace packages install and import through public exports", () => {
 test("runtime capabilities match the authoritative compatibility manifest", async () => {
   const workspace = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const capabilities = JSON.parse(
-    await readFile(resolve(workspace, "runtime-capabilities.json"), "utf8"),
+    await readFile(
+      resolve(workspace, "packages/trajectory/runtime-capabilities.json"),
+      "utf8",
+    ),
   );
   const compatibility = JSON.parse(
     await readFile(resolve(workspace, "../contracts/compatibility.json"), "utf8"),
   );
 
   assert.equal(capabilities.runtime, "typescript");
-  assert.equal(capabilities.slice, "ML4");
+  assert.equal(capabilities.slice, "ML7");
   assert.equal(capabilities.normalizer_contract_version, NORMALIZER_CONTRACT_VERSION);
   assert.deepEqual(capabilities.sources, [...ImplementedSources]);
   assert.deepEqual(capabilities.sources, compatibility.implemented.sources);
