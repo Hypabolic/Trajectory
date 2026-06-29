@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: accepted; ML1 implemented, ML2 next
+Status: accepted; ML1–ML5 implemented, ML6 next
 
 Planning baseline:
 
@@ -665,7 +665,8 @@ uniform.
 
 ## Immediate next action
 
-Implement ML2: the independent TypeScript Pi vertical path. Build it from the
-Hypabolic specifications and shared conformance cases established by ML1.
-The pinned upstream TypeScript package remains a black-box compatibility oracle;
-do not vendor, fork, copy, translate, or import its implementation.
+Implement ML6: the native Rust Codex baseline. Build it independently from the
+Hypabolic specifications and shared conformance cases. Preserve full and
+append-only chunk identity, source-group requirements and conflicts,
+tool-search/custom-tool semantics, reasoning, calls, results, and UTF-8 byte
+anchors without adding Node, .NET, FFI, or subprocess dependencies.

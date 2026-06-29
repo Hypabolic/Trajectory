@@ -55,6 +55,44 @@ python3 conformance/verify.py --repository-root . -- \
   dotnet dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll
 ```
 
-Future Rust and TypeScript implementations provide executables that consume the
-same request schema and produce the same response schema. The verifier command
-is then repeated with each runner; no case or protocol redesign is required.
+## TypeScript runner
+
+Build the workspace, then run the sources implemented by the current slice:
+
+```bash
+cd typescript && npm ci && npm run build && cd ..
+python3 conformance/verify.py --repository-root . --source pi -- \
+  node typescript/packages/trajectory-testing/dist/cli.js
+```
+
+`--source` is repeatable and selects only manifests a runtime currently
+advertises. `--operation` is also repeatable and selects the operations
+implemented by the current capability slice. Omitting either filter preserves
+the original behavior for that dimension.
+The TypeScript runner is private test infrastructure in
+`@hypabolic/trajectory-testing`; it is not a public interchange API.
+
+## Rust runner
+
+Build the workspace and run the ML5 Pi and Claude Code capability set:
+
+```bash
+cargo +stable build --manifest-path rust/Cargo.toml \
+  --release --bin trajectory-conformance
+python3 conformance/verify.py --repository-root . --source pi \
+  --operation normalize-letta \
+  --operation normalize-canonical \
+  --operation normalize-hypabolic \
+  --operation list-trajectories -- \
+  rust/target/release/trajectory-conformance
+python3 conformance/verify.py --repository-root . --source claude-code \
+  --operation normalize-letta \
+  --operation normalize-canonical \
+  --operation normalize-hypabolic \
+  --operation list-trajectories -- \
+  rust/target/release/trajectory-conformance
+```
+
+The executable is unpublished private test infrastructure. Later Rust and
+TypeScript slices consume the same request and response schemas; runners add
+operations and sources without a protocol redesign.

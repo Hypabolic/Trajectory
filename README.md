@@ -10,8 +10,8 @@ wire contracts and conformance cases:
 | Runtime | Package | Status |
 | --- | --- | --- |
 | .NET | `Hypabolic.Trajectory` | Implemented |
-| TypeScript | `@hypabolic/trajectory` | Planned; ML2 is next |
-| Rust | `hypabolic-trajectory` | Planned |
+| TypeScript | `@hypabolic/trajectory` | Pi, Claude Code, and Codex baseline implemented; unpublished |
+| Rust | `hypabolic-trajectory` | Pi and Claude Code baseline implemented; unpublished |
 
 The current .NET runtime supports Pi, Claude Code, and Codex transcripts,
 explicit-root local-store listing, trimming and Native AOT, and these
@@ -25,10 +25,14 @@ deterministic projections:
 - OpenTelemetry GenAI span sets through the optional
   `Hypabolic.Trajectory.OpenTelemetry` package.
 
-Rust and TypeScript packages have not been published. The TypeScript runtime
-will be a fresh Hypabolic implementation built from this repository's
-specifications and conformance cases. The pinned `letta-ai/trajectory` package
-is used only as a black-box compatibility oracle.
+Rust and TypeScript packages have not been published. Both are independent
+implementations built from this repository's specifications and conformance
+cases. TypeScript supports the current .NET Pi, Claude Code, and Codex source
+baseline and all deterministic projections. Rust ML5 supports Pi and Claude
+Code with the three identity-bearing projections. Both provide explicit-root
+listing for their advertised sources and the private conformance protocol.
+Codex remains planned for Rust. The pinned `letta-ai/trajectory` package is
+used only as a black-box compatibility oracle.
 
 ## Architecture
 
@@ -55,6 +59,8 @@ core.
 contracts/       versioned schemas and normative behavioral specifications
 conformance/     shared native fixtures, expected outputs, stores, and protocol
 dotnet/          current .NET source, tests, AOT smoke app, and solution
+rust/            independent Rust workspace, core crate, and private runner
+typescript/      independent TypeScript packages, tests, and private runner
 docs/            product architecture, parity baseline, and roadmap
 ```
 
@@ -96,6 +102,67 @@ dotnet publish dotnet/tests/Trajectory.AotSmoke/Trajectory.AotSmoke.csproj \
 
 The private runner protocol and case-authoring workflow are documented in
 [conformance/README.md](conformance/README.md).
+
+## Build and test TypeScript
+
+The TypeScript workspace supports Node.js 22 and newer. It is tested on Node
+22 and 24 across Linux, macOS, and Windows, with a Node 26 package smoke gate.
+
+```bash
+cd typescript
+npm ci
+npm run typecheck
+npm test
+```
+
+Run the shared Pi cases through the TypeScript runner:
+
+```bash
+python3 conformance/verify.py --repository-root . --source pi -- \
+  node typescript/packages/trajectory-testing/dist/cli.js
+```
+
+`@hypabolic/trajectory` is byte-oriented and environment-neutral.
+`@hypabolic/trajectory-node` owns filesystem listing,
+`@hypabolic/trajectory-otel` owns the optional OpenTelemetry projection, and
+`@hypabolic/trajectory-testing` owns the unpublished runner.
+
+## Build and test Rust
+
+The Rust workspace uses Rust 2024, has an MSRV of 1.85, and is tested on MSRV
+and stable across Linux, macOS, and Windows.
+
+```bash
+cargo +1.85.0 test --manifest-path rust/Cargo.toml --workspace --locked
+cargo +stable fmt --manifest-path rust/Cargo.toml --all -- --check
+cargo +stable clippy --manifest-path rust/Cargo.toml \
+  --workspace --all-targets -- -D warnings
+```
+
+Run ML5's identity-bearing Pi and Claude Code operations and listing through
+the Rust runner:
+
+```bash
+cargo +stable build --manifest-path rust/Cargo.toml \
+  --release --bin trajectory-conformance
+python3 conformance/verify.py --repository-root . --source pi \
+  --operation normalize-letta \
+  --operation normalize-canonical \
+  --operation normalize-hypabolic \
+  --operation list-trajectories -- \
+  rust/target/release/trajectory-conformance
+python3 conformance/verify.py --repository-root . --source claude-code \
+  --operation normalize-letta \
+  --operation normalize-canonical \
+  --operation normalize-hypabolic \
+  --operation list-trajectories -- \
+  rust/target/release/trajectory-conformance
+```
+
+The core crate owns the byte-oriented source and projection traits, typed
+models/errors, canonical identity, and synchronous explicit-root listing. It
+does not depend on SQLite or OpenTelemetry. See [rust/README.md](rust/README.md)
+for the package boundary and full validation commands.
 
 ## .NET usage
 
@@ -150,6 +217,8 @@ See:
 
 ## Roadmap
 
-ML1 establishes the shared contract and repository foundation around the
-existing .NET runtime. ML2 is the next slice: an independent TypeScript Pi
-vertical path built from the Hypabolic specifications and conformance cases.
+ML1 established the shared foundation; ML2 and ML3 added independent
+TypeScript and Rust Pi vertical paths; ML4 brought TypeScript to the current
+.NET Pi, Claude Code, and Codex source baseline; ML5 added native Rust Claude
+Code normalization and listing. ML6 is next: add the native Rust Codex
+baseline.

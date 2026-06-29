@@ -1,0 +1,1 @@
+export const CONFORMANCE_PROTOCOL_VERSION = "1";

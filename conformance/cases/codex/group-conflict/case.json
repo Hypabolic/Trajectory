@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1,
+  "id": "codex/group-conflict",
+  "operation": {
+    "normalize-canonical": {
+      "expected": "expected.error.json",
+      "comparison": "json-exact"
+    }
+  },
+  "source": "codex",
+  "transcript": "input.jsonl",
+  "native_container": "codex-rollout-jsonl",
+  "source_context": {
+    "group_id": "provided-session"
+  },
+  "bounds": {},
+  "filters": {},
+  "projection_options": {},
+  "mode": "whole",
+  "required_capabilities": ["normalize", "typed-fatal-errors"],
+  "expected": {
+    "result": "fatal-error",
+    "diagnostic_codes": [],
+    "fatal_error": "source_group_conflict"
+  },
+  "comparison": "json-exact"
+}
