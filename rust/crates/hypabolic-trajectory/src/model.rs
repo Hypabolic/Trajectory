@@ -143,6 +143,8 @@ pub enum TrajectorySource {
     Pi,
     /// Claude Code project JSONL.
     ClaudeCode,
+    /// Codex rollout JSONL.
+    Codex,
 }
 
 impl TrajectorySource {
@@ -150,6 +152,7 @@ impl TrajectorySource {
         match self {
             Self::Pi => "pi",
             Self::ClaudeCode => "claude-code",
+            Self::Codex => "codex",
         }
     }
 }
@@ -351,6 +354,8 @@ pub struct Trajectory {
     pub source_name: String,
     /// Resolved source group.
     pub group_id: String,
+    /// Whether the source group came from native or caller-supplied context.
+    pub source_group_resolved: bool,
     /// Producer version if present.
     pub producer_version: Option<String>,
     /// Synthetic meta followed by normalized body records.

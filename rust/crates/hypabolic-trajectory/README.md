@@ -2,9 +2,9 @@
 
 Native Rust implementation of the language-neutral Trajectory contracts.
 
-ML5 provides exact byte-oriented Pi and Claude Code normalization, typed
-errors and diagnostics, deterministic canonical identity, the three
-identity-bearing wire projections, retained Claude execution metadata, and
+ML6 provides exact byte-oriented Pi, Claude Code, and Codex normalization,
+typed errors and diagnostics, deterministic canonical identity, the three
+identity-bearing wire projections, retained source execution metadata, and
 synchronous explicit-root listing. The crate uses Rust 2024, supports Rust
 1.85 and newer, forbids unsafe code, and has no SQLite or OpenTelemetry
 dependency.

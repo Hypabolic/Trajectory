@@ -1,8 +1,8 @@
 {
   "runtime": "rust",
-  "slice": "ML5",
+  "slice": "ML6",
   "normalizer_contract_version": "0.2.0",
-  "sources": ["pi", "claude-code"],
+  "sources": ["pi", "claude-code", "codex"],
   "outputs": [
     "letta-trajectory-v1",
     "letta-canonical-v1",
