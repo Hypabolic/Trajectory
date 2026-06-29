@@ -314,14 +314,21 @@ jobs:
       - name: Build Rust conformance runner
         run: cargo +stable build --manifest-path rust/Cargo.toml --release --locked --bin trajectory-conformance
       - name: Validate Rust capability manifest
-        run: >-
-          jq -e
-          '.runtime == "rust" and .slice == "ML7"
-          and .normalizer_contract_version == "0.2.0"
-          and .sources == ["pi", "claude-code", "codex"]
-          and .outputs == ["letta-trajectory-v1", "letta-canonical-v1", "hypabolic-trajectory-v1",
-            "openai-chat-messages", "jsonl-minimal", "otel-genai-spans-v1"]'
-          rust/crates/hypabolic-trajectory/runtime-capabilities.json > /dev/null
+        run: |
+          jq -e '
+            .runtime == "rust"
+            and .slice == "ML7"
+            and .normalizer_contract_version == "0.2.0"
+            and .sources == ["pi", "claude-code", "codex"]
+            and .outputs == [
+              "letta-trajectory-v1",
+              "letta-canonical-v1",
+              "hypabolic-trajectory-v1",
+              "openai-chat-messages",
+              "jsonl-minimal",
+              "otel-genai-spans-v1"
+            ]
+          ' rust/crates/hypabolic-trajectory/runtime-capabilities.json > /dev/null
       - name: Run every advertised shared case and output twice
         run: >-
           python3 conformance/verify.py --repository-root . --
