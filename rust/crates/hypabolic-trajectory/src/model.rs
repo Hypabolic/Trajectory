@@ -279,6 +279,12 @@ pub struct ModelInvocation {
     pub native_record_id: Option<String>,
     /// Absolute source byte offset.
     pub source_offset: Option<i64>,
+    /// Provider name.
+    pub provider: Option<String>,
+    /// Source API family.
+    pub api_family: Option<String>,
+    /// Caller-requested model.
+    pub requested_model: Option<String>,
     /// Response model.
     pub response_model: Option<String>,
     /// Provider response ID.
@@ -289,6 +295,10 @@ pub struct ModelInvocation {
     pub producer_version: Option<String>,
     /// Token usage when present.
     pub usage: Option<ModelTokenUsage>,
+    /// Request start time in Unix milliseconds.
+    pub started_at_ms: Option<i64>,
+    /// Source-native seven-digit request start representation.
+    pub started_at_precise: Option<String>,
     /// Completion time in Unix milliseconds.
     pub completed_at_ms: Option<i64>,
     /// Source-native seven-digit UTC representation.

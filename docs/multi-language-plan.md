@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: accepted; ML1–ML6 implemented, ML7 next
+Status: accepted; ML1–ML7 implemented, ML8 next
 
 Planning baseline:
 
@@ -665,9 +665,7 @@ uniform.
 
 ## Immediate next action
 
-Implement ML7: output and distribution parity. Add the remaining OpenAI chat,
-minimal JSONL, and deterministic GenAI span projections where absent; keep
-OpenTelemetry SDK dependencies optional; add ecosystem-appropriate streaming
-surfaces, synchronized package metadata, preview publishing dry runs,
-provenance/SBOM evidence, and representative benchmarks without changing
-identity-bearing contract bytes.
+Implement ML8: Letta Code across all three runtimes. Preserve native,
+source-line, and row-position identity, completed/failed/unfinished tool
+semantics, explicit-root listing behavior, and the shared diagnostic contract
+without introducing a shared native core, FFI, or subprocess wrappers.

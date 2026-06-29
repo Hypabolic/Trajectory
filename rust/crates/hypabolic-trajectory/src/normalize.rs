@@ -109,11 +109,16 @@ struct DecodedSession {
 struct DecodedModelInvocation {
     native_id: Option<String>,
     source_offset: Option<i64>,
+    provider: Option<String>,
+    api_family: Option<String>,
+    requested_model: Option<String>,
     response_model: Option<String>,
     response_id: Option<String>,
     stop_reason: Option<String>,
     producer_version: Option<String>,
     usage: Option<ModelTokenUsage>,
+    started_at_ms: Option<i64>,
+    started_at_precise: Option<String>,
     completed_at_ms: Option<i64>,
     completed_at_precise: Option<String>,
 }
@@ -271,7 +276,10 @@ fn decode_pi(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
     let mut group_id = None;
     let mut cwd = None;
     let mut producer_version = None;
+    let mut requested_provider = None;
+    let mut requested_model = None;
     let mut created_at_ms = None;
+    let mut model_invocations = Vec::new();
     let mut saw_message = false;
     let mut offset = 0_usize;
     let mut line = 1_usize;
@@ -311,21 +319,28 @@ fn decode_pi(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
                         if producer_version.is_none() {
                             producer_version = scalar_string(row.get("version"));
                         }
+                    } else if row_type == Some("model_change") {
+                        requested_provider = string_value(row.get("provider")).map(str::to_owned);
+                        requested_model = string_value(row.get("modelId")).map(str::to_owned);
                     } else if row_type == Some("message") {
                         if let Some(Value::Object(message)) = row.get("message") {
                             saw_message = true;
-                            decode_message(
-                                &row,
-                                message,
-                                line,
-                                i64::try_from(offset).map_err(|_| {
-                                    TrajectoryError::new(
-                                        "invalid_input",
-                                        "Transcript byte offset exceeds signed 64-bit range.",
-                                    )
-                                })?,
-                                &mut events,
-                            )?;
+                            let source_offset = i64::try_from(offset).map_err(|_| {
+                                TrajectoryError::new(
+                                    "invalid_input",
+                                    "Transcript byte offset exceeds signed 64-bit range.",
+                                )
+                            })?;
+                            if string_value(message.get("role")) == Some("assistant") {
+                                model_invocations.push(decode_pi_invocation(
+                                    &row,
+                                    message,
+                                    source_offset,
+                                    requested_provider.as_deref(),
+                                    requested_model.as_deref(),
+                                ));
+                            }
+                            decode_message(&row, message, line, source_offset, &mut events)?;
                         }
                     }
                 }
@@ -367,9 +382,54 @@ fn decode_pi(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
         producer_version,
         created_at_ms,
         events,
-        model_invocations: Vec::new(),
+        model_invocations,
         diagnostics,
     })
+}
+
+fn decode_pi_invocation(
+    row: &Map<String, Value>,
+    message: &Map<String, Value>,
+    source_offset: i64,
+    requested_provider: Option<&str>,
+    requested_model: Option<&str>,
+) -> DecodedModelInvocation {
+    let usage = message
+        .get("usage")
+        .and_then(Value::as_object)
+        .map(|usage| ModelTokenUsage {
+            input_tokens: integer_alias(usage, &["input"]),
+            output_tokens: integer_alias(usage, &["output"]),
+            cache_read_tokens: integer_alias(usage, &["cacheRead"]),
+            cache_write_tokens: integer_alias(usage, &["cacheWrite"]),
+            total_tokens: integer_alias(usage, &["totalTokens"]),
+        });
+    let started = message
+        .get("startTimestamp")
+        .or_else(|| message.get("requestTimestamp"))
+        .and_then(parse_timestamp);
+    let completed = message
+        .get("timestamp")
+        .and_then(parse_timestamp)
+        .or_else(|| row.get("timestamp").and_then(parse_timestamp));
+    DecodedModelInvocation {
+        native_id: string_value(row.get("id")).map(str::to_owned),
+        source_offset: Some(source_offset),
+        provider: string_value(message.get("provider"))
+            .or(requested_provider)
+            .map(str::to_owned),
+        api_family: string_value(message.get("api")).map(str::to_owned),
+        requested_model: requested_model.map(str::to_owned),
+        response_model: string_value(message.get("model")).map(str::to_owned),
+        response_id: string_value(message.get("responseId")).map(str::to_owned),
+        stop_reason: string_value(message.get("stopReason")).map(str::to_owned),
+        producer_version: None,
+        usage,
+        started_at_ms: started.as_ref().map(|value| value.0),
+        started_at_precise: started.map(|value| value.1),
+        completed_at_ms: completed.as_ref().map(|value| value.0),
+        completed_at_precise: completed.map(|value| value.1),
+    }
 }
 
 #[derive(Debug)]
@@ -586,6 +646,9 @@ fn decode_claude_invocation(
     DecodedModelInvocation {
         native_id: string_value(row.get("uuid")).map(str::to_owned),
         source_offset: Some(source_offset),
+        provider: Some("anthropic".into()),
+        api_family: None,
+        requested_model: None,
         response_model: string_value(message.get("model")).map(str::to_owned),
         response_id: string_value(message.get("id")).map(str::to_owned),
         stop_reason: string_value(message.get("stop_reason"))
@@ -593,6 +656,8 @@ fn decode_claude_invocation(
             .map(str::to_owned),
         producer_version: scalar_string(row.get("version")),
         usage,
+        started_at_ms: None,
+        started_at_precise: None,
         completed_at_ms: timestamp.map(|value| value.0),
         completed_at_precise: timestamp.map(|value| value.1.clone()),
     }
@@ -1707,6 +1772,9 @@ fn normalize_execution(
                 ]))?),
                 native_record_id: invocation.native_id.clone(),
                 source_offset,
+                provider: invocation.provider.clone(),
+                api_family: invocation.api_family.clone(),
+                requested_model: invocation.requested_model.clone(),
                 response_model: invocation.response_model.clone(),
                 response_id: invocation.response_id.clone(),
                 stop_reason: invocation.stop_reason.clone(),
@@ -1718,6 +1786,8 @@ fn normalize_execution(
                         || usage.cache_write_tokens.is_some()
                         || usage.total_tokens.is_some()
                 }),
+                started_at_ms: invocation.started_at_ms,
+                started_at_precise: invocation.started_at_precise.clone(),
                 completed_at_ms: invocation.completed_at_ms,
                 completed_at_precise: invocation.completed_at_precise.clone(),
             })

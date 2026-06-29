@@ -69,11 +69,16 @@ import {
   projectMinimalJsonl,
   projectOpenAI,
   type ProjectionOptions,
+  type ProjectionWriter,
   serializeProjection,
+  minimalJsonlChunks,
+  writeMinimalJsonl,
+  writeSerializedProjection,
 } from "./projections.js";
 
 export type { TrajectoryIR };
 export type { ProjectionOptions };
+export type { ProjectionWriter };
 export { TrajectoryNormalizationError };
 
 function normalizedRequest(request: NormalizeRequest): NormalizeRequest & { transcriptBytes: Uint8Array } {
@@ -111,6 +116,9 @@ export {
   projectMinimalJsonl,
   projectOpenAI,
   serializeProjection,
+  minimalJsonlChunks,
+  writeMinimalJsonl,
+  writeSerializedProjection,
 };
 
 export class TrajectoryEngine {

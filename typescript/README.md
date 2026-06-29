@@ -39,7 +39,9 @@ python3 conformance/verify.py --repository-root . -- \
   node typescript/packages/trajectory-testing/dist/cli.js
 ```
 
-ML4 advertises Pi, Claude Code, and Codex. The same private protocol and
+ML7 advertises Pi, Claude Code, and Codex with all six deterministic outputs.
+`minimalJsonlChunks` and `writeMinimalJsonl` provide incremental output without
+materializing the complete JSONL document. The same private protocol and
 language-neutral cases are used by every runtime; source filters remain useful
 for focused development.
 

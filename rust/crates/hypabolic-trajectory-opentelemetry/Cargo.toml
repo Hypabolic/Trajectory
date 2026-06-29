@@ -1,0 +1,18 @@
+[package]
+name = "hypabolic-trajectory-opentelemetry"
+description = "Optional deterministic OpenTelemetry GenAI projection for Hypabolic Trajectory"
+readme = "README.md"
+keywords = ["opentelemetry", "agents", "observability", "genai"]
+categories = ["development-tools::debugging"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+hypabolic-trajectory.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
