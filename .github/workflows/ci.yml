@@ -299,6 +299,7 @@ jobs:
       - name: Package and verify the core crate
         run: |
           python3 tools/prepare_rust_package.py
+          test -z "$(git status --porcelain --untracked-files=all)"
           cargo +stable package --manifest-path rust/Cargo.toml -p hypabolic-trajectory --locked --allow-dirty
           cargo +stable package --manifest-path rust/Cargo.toml -p hypabolic-trajectory-opentelemetry --list
 
@@ -389,6 +390,7 @@ jobs:
       - name: Build and dry-run crates
         run: |
           python3 tools/prepare_rust_package.py
+          test -z "$(git status --porcelain --untracked-files=all)"
           cargo +stable package --manifest-path rust/Cargo.toml -p hypabolic-trajectory --locked --allow-dirty
           cargo +stable package --manifest-path rust/Cargo.toml \
             -p hypabolic-trajectory-opentelemetry --list \
