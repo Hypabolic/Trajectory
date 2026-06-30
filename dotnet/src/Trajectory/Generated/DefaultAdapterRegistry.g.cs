@@ -4,6 +4,7 @@ using Hypabolic.Trajectory.Adapters.Codex;
 using Hypabolic.Trajectory.Adapters.Hypabolic;
 using Hypabolic.Trajectory.Adapters.Letta;
 using Hypabolic.Trajectory.Adapters.OpenAi;
+using Hypabolic.Trajectory.Adapters.OpenClaw;
 using Hypabolic.Trajectory.Adapters.Pi;
 using Hypabolic.Trajectory.Adapters.Streaming;
 
@@ -14,6 +15,7 @@ internal static class DefaultAdapterRegistry
     public static TrajectoryEngine Register(TrajectoryEngine engine) => engine
         .AddBuiltInSource(new ClaudeCodeJsonlSourceAdapter())
         .AddBuiltInSource(new CodexJsonlSourceAdapter())
+        .AddBuiltInSource(new OpenClawJsonlSourceAdapter())
         .AddBuiltInSource(new PiJsonlSourceAdapter())
         .AddOutputAdapter(new LettaTrajectoryV1OutputAdapter())
         .AddOutputAdapter(new LettaCanonicalV1OutputAdapter())
@@ -22,5 +24,6 @@ internal static class DefaultAdapterRegistry
         .AddOutputAdapter(new MinimalJsonlOutputAdapter())
         .AddBuiltInLister(new ClaudeCodeTrajectoryLister())
         .AddBuiltInLister(new CodexTrajectoryLister())
+        .AddBuiltInLister(new OpenClawTrajectoryLister())
         .AddBuiltInLister(new PiTrajectoryLister());
 }

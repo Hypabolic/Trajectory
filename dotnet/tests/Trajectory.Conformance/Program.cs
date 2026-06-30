@@ -195,7 +195,7 @@ internal static class ConformanceProgram
                 }
             }
 
-            var listingRoot = source == TrajectorySource.Pi
+            var listingRoot = source is TrajectorySource.Pi or TrajectorySource.OpenClaw
                 ? temporaryRoot
                 : Path.Combine(temporaryRoot, "store");
             var hasListing = manifest.TryGetProperty("listing", out var listing);
@@ -411,6 +411,7 @@ internal static class ConformanceProgram
         "pi" => TrajectorySource.Pi,
         "claude-code" => TrajectorySource.ClaudeCode,
         "codex" => TrajectorySource.Codex,
+        "openclaw" => TrajectorySource.OpenClaw,
         _ => throw new ProtocolException($"Unsupported conformance source '{source}'."),
     };
 

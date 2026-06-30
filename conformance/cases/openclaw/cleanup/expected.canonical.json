@@ -1,0 +1,153 @@
+{
+  "records": [
+    {
+      "source_type": "openclaw",
+      "source_group_id": "openclaw-session-0002",
+      "stable_source_record_id": "meta",
+      "source_identity_kind": "synthetic",
+      "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+      "component_index": 0,
+      "record_type": "meta",
+      "record_id": "eaf10d2c3092e0a26e2f4780a580f4d05b5cadf3238a0ba7e453f46917cefc40",
+      "record_hash": "6d9cf4e597ae0c94d105fbab790006c9d99e4ecbfd4b453289c745ea3d309d66",
+      "content_hash": "c49576d70a8e55ab3c4e1f19af6ee4f8d872ba2230c6fd8a8a36d0bad8572a45",
+      "source_timestamp": null,
+      "record_timestamp": null,
+      "content": null,
+      "tool_call_id": null,
+      "tool_name": null,
+      "tool_arguments_json": null,
+      "tool_result_json": null,
+      "record_json": "{\"cwd\":\"/home/user/notes\",\"model\":\"claude-opus-4-8\",\"role\":\"meta\",\"source\":\"openclaw\"}"
+    },
+    {
+      "source_type": "openclaw",
+      "source_group_id": "openclaw-session-0002",
+      "stable_source_record_id": "entry-10",
+      "source_identity_kind": "native",
+      "source_order_id": "1|2026-07-06T14:00:01.000Z|00000000000000000001|entry-10",
+      "component_index": 0,
+      "record_type": "user",
+      "record_id": "91a461e2a47f026e375f6c84e573ac520dc724690d7c69bbb58c6c3cf831df7c",
+      "record_hash": "d0cfcd6a67eec5975272ceef05d2bfdc971e5e186a2d7dcbdc0e510feda2d31a",
+      "content_hash": "c8cd4d8789d3816599fa223d2a5661f2e2262455aeb396fe5c1d8cc0056a4274",
+      "source_timestamp": "2026-07-06T14:00:01.000Z",
+      "record_timestamp": "2026-07-06T14:00:01.000Z",
+      "content": "Summarize the meeting photo I sent.\n[image]",
+      "tool_call_id": null,
+      "tool_name": null,
+      "tool_arguments_json": null,
+      "tool_result_json": null,
+      "record_json": "{\"content\":\"Summarize the meeting photo I sent.\\n[image]\",\"role\":\"user\",\"timestamp\":\"2026-07-06T14:00:01.000Z\"}"
+    },
+    {
+      "source_type": "openclaw",
+      "source_group_id": "openclaw-session-0002",
+      "stable_source_record_id": "entry-12",
+      "source_identity_kind": "native",
+      "source_order_id": "1|2026-07-06T14:00:05.000Z|00000000000000000004|entry-12",
+      "component_index": 0,
+      "record_type": "assistant-tool-call",
+      "record_id": "0c29a809c35e2a190327fa1d805572d06631c1df8e64a4b6054cc96bfd7e60b3",
+      "record_hash": "761858e7c2d879dbe9dc1eb0183f39f75326b8922c760992ff2c90427602025e",
+      "content_hash": "960339193f1e1e1b7cde269dadc8b16eeb74d0ff3f45163078e59913990554d9",
+      "source_timestamp": "2026-07-06T14:00:05.000Z",
+      "record_timestamp": "2026-07-06T14:00:05.000Z",
+      "content": null,
+      "tool_call_id": "call_oc_err",
+      "tool_name": "image_describe",
+      "tool_arguments_json": "{\"target\":\"latest\"}",
+      "tool_result_json": null,
+      "record_json": "{\"content\":null,\"role\":\"assistant\",\"timestamp\":\"2026-07-06T14:00:05.000Z\",\"tool_calls\":[{\"args\":\"{\\\"target\\\":\\\"latest\\\"}\",\"id\":\"call_oc_err\",\"name\":\"image_describe\"}]}"
+    },
+    {
+      "source_type": "openclaw",
+      "source_group_id": "openclaw-session-0002",
+      "stable_source_record_id": "entry-13",
+      "source_identity_kind": "native",
+      "source_order_id": "1|2026-07-06T14:00:06.000Z|00000000000000000005|entry-13",
+      "component_index": 0,
+      "record_type": "tool",
+      "record_id": "f2ab6675bd32d77660ee93c1efa7f939b86dfd07a06ab657aa5e4fcd80963d05",
+      "record_hash": "f5a58eafcbd4dd2c109b26c8d93879b014eaf1e6b3f432d598bc86b721ff42a2",
+      "content_hash": "fa3f883a7dc856d845f9b85dbeec34d3c3d0d720f5a4627a6224c2bdf1dfb41d",
+      "source_timestamp": "2026-07-06T14:00:06.000Z",
+      "record_timestamp": "2026-07-06T14:00:06.000Z",
+      "content": null,
+      "tool_call_id": "call_oc_err",
+      "tool_name": null,
+      "tool_arguments_json": null,
+      "tool_result_json": "Error: no image attachment found",
+      "record_json": "{\"content\":\"Error: no image attachment found\",\"role\":\"tool\",\"timestamp\":\"2026-07-06T14:00:06.000Z\",\"tool_call_id\":\"call_oc_err\"}"
+    },
+    {
+      "source_type": "openclaw",
+      "source_group_id": "openclaw-session-0002",
+      "stable_source_record_id": "entry-14",
+      "source_identity_kind": "native",
+      "source_order_id": "1|2026-07-06T14:00:08.000Z|00000000000000000006|entry-14",
+      "component_index": 0,
+      "record_type": "assistant",
+      "record_id": "f4691ef6d41a35e464b2640c866b545ffbde8e2cdff9cdd999990ca802dc6f88",
+      "record_hash": "99e072669fd1fd1c64417fb93d826719a9b80ee0539d15808be390c3ca8dc398",
+      "content_hash": "f6ef6469cb4415b2b4da16c47d01ebaefa98c9d21cef782db66ad2d477b11f2d",
+      "source_timestamp": "2026-07-06T14:00:08.000Z",
+      "record_timestamp": "2026-07-06T14:00:08.000Z",
+      "content": "I could not find the photo attachment; could you resend it?",
+      "tool_call_id": null,
+      "tool_name": null,
+      "tool_arguments_json": null,
+      "tool_result_json": null,
+      "record_json": "{\"content\":\"I could not find the photo attachment; could you resend it?\",\"role\":\"assistant\",\"timestamp\":\"2026-07-06T14:00:08.000Z\"}"
+    },
+    {
+      "source_type": "openclaw",
+      "source_group_id": "openclaw-session-0002",
+      "stable_source_record_id": "f44ff9fe302314306a42333bd1362169b0a1d7f5d717472ac3646e62a4d92fb0",
+      "source_identity_kind": "location",
+      "source_order_id": "1|2026-07-06T14:00:10.000Z|00000000000000000007|f44ff9fe302314306a42333bd1362169b0a1d7f5d717472ac3646e62a4d92fb0",
+      "component_index": 0,
+      "record_type": "assistant",
+      "record_id": "ebe8c102a11f85a09df475ac3a699b57bdcddcaec631ed89df7c47aef9002138",
+      "record_hash": "0e317baa1f05ae531e515d606b9fe4566e8a71ca3af49e7c4fdda5f1349803c2",
+      "content_hash": "7c535fc7633fde7c24f16107e9acd5046c2ec7a50e327da762729ab1e47edddd",
+      "source_timestamp": "2026-07-06T14:00:10.000Z",
+      "record_timestamp": "2026-07-06T14:00:10.000Z",
+      "content": "Reminder sent: meeting notes are due at 5pm.",
+      "tool_call_id": null,
+      "tool_name": null,
+      "tool_arguments_json": null,
+      "tool_result_json": null,
+      "record_json": "{\"content\":\"Reminder sent: meeting notes are due at 5pm.\",\"role\":\"assistant\",\"timestamp\":\"2026-07-06T14:00:10.000Z\"}"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "invalid_json_line",
+      "message": "Skipped invalid JSON on line 3.",
+      "inputLine": 3
+    },
+    {
+      "code": "orphan_tool_result",
+      "message": "Dropped a tool result without a preceding call for \"call_oc_gone\".",
+      "inputLine": 9,
+      "recordIndex": 6
+    }
+  ],
+  "normalizer_version": "0.2.0",
+  "canonical_schema_version": 1,
+  "config": {
+    "bounds": {
+      "toolArguments": {
+        "maxCharacters": 20000
+      },
+      "toolResults": {
+        "maxCharacters": 2500,
+        "strategy": "head-tail"
+      }
+    },
+    "filters": {
+      "toolResults": "include"
+    }
+  }
+}

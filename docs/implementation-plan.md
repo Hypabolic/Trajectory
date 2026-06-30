@@ -31,7 +31,7 @@ This document remains the detailed .NET behavioural and source-acceptance baseli
 | 3 — Claude Code end-to-end parity | Complete |
 | 4 — Codex end-to-end parity | Complete |
 | 5 — Letta Code end-to-end parity | Post-v1 backlog as multi-language ML8 |
-| 6 — OpenClaw end-to-end parity | Re-sequenced as v1 multi-language ML9 |
+| 6 — OpenClaw end-to-end parity | Complete as multi-language ML9 |
 | 7 — OpenHands end-to-end parity | Post-v1 backlog as multi-language ML10 |
 | 8 — Hermes end-to-end parity | Re-sequenced as v1 multi-language ML11 |
 | 9 — Deep Agents optional SQLite package | Post-v1 backlog as multi-language ML12 |
@@ -42,9 +42,9 @@ ML1 — shared contracts and repository foundation — ML2, the independent
 TypeScript Pi vertical path, and ML3, the native Rust Pi vertical path, are
 complete. ML4 brought TypeScript to the current Pi, Claude Code, and Codex
 baseline, ML5–ML6 brought Rust to the same source baseline, and ML7 completed
-output and preview-distribution parity. ML9, OpenClaw across all three runtimes,
-is next. Letta Code (ML8), OpenHands (ML10), and Deep Agents checkpoint
-integrations (ML12) are retained below as post-v1 behavioural backlogs. Do not
+output and preview-distribution parity. ML9 OpenClaw is complete across all three
+runtimes. ML11 Hermes is next. Letta Code (ML8), OpenHands (ML10), and Deep Agents
+checkpoint integrations (ML12) are retained below as post-v1 behavioural backlogs. Do not
 begin any of them as a .NET-only slice.
 
 ## Planning rules

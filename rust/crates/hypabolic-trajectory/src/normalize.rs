@@ -36,6 +36,20 @@ impl SourceAdapter for PiSourceAdapter {
     }
 }
 
+/// Native OpenClaw JSONL source adapter (Pi-family with delivery-mirror masking).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct OpenClawSourceAdapter;
+
+impl SourceAdapter for OpenClawSourceAdapter {
+    fn source(&self) -> &'static str {
+        "openclaw"
+    }
+
+    fn normalize(&self, request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+        normalize_openclaw(request)
+    }
+}
+
 /// Native Claude Code JSONL source adapter.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ClaudeCodeSourceAdapter;
@@ -141,7 +155,14 @@ struct Plan {
 /// Normalizes a native Pi JSONL transcript into the private Rust IR.
 pub fn normalize_pi(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
     let config = resolve_config(request)?;
-    let decoded = decode_pi(request.transcript)?;
+    let decoded = decode_pi_session(request.transcript, PiFamilyOptions::pi())?;
+    normalize_decoded(config, decoded)
+}
+
+/// Normalizes a native OpenClaw JSONL transcript into the private Rust IR.
+pub fn normalize_openclaw(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+    let config = resolve_config(request)?;
+    let decoded = decode_pi_session(request.transcript, PiFamilyOptions::openclaw())?;
     normalize_decoded(config, decoded)
 }
 
@@ -270,7 +291,48 @@ fn normalize_decoded(
     })
 }
 
-fn decode_pi(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
+#[derive(Debug, Clone, Copy)]
+struct PiFamilyOptions {
+    source: TrajectorySource,
+    source_name: &'static str,
+    source_label: &'static str,
+    excluded_models: &'static [&'static str],
+}
+
+impl PiFamilyOptions {
+    const fn pi() -> Self {
+        Self {
+            source: TrajectorySource::Pi,
+            source_name: "pi",
+            source_label: "Pi",
+            excluded_models: &[],
+        }
+    }
+
+    const fn openclaw() -> Self {
+        Self {
+            source: TrajectorySource::OpenClaw,
+            source_name: "openclaw",
+            source_label: "OpenClaw",
+            excluded_models: &["delivery-mirror"],
+        }
+    }
+
+    fn exclude_model(self, model: Option<&str>) -> Option<String> {
+        model.and_then(|value| {
+            if self.excluded_models.iter().any(|excluded| *excluded == value) {
+                None
+            } else {
+                Some(value.to_owned())
+            }
+        })
+    }
+}
+
+fn decode_pi_session(
+    bytes: &[u8],
+    options: PiFamilyOptions,
+) -> Result<DecodedSession, TrajectoryError> {
     let mut events = Vec::new();
     let mut diagnostics = Vec::new();
     let mut group_id = None;
@@ -338,9 +400,17 @@ fn decode_pi(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
                                     source_offset,
                                     requested_provider.as_deref(),
                                     requested_model.as_deref(),
+                                    options,
                                 ));
                             }
-                            decode_message(&row, message, line, source_offset, &mut events)?;
+                            decode_message(
+                                &row,
+                                message,
+                                line,
+                                source_offset,
+                                options,
+                                &mut events,
+                            )?;
                         }
                     }
                 }
@@ -370,12 +440,15 @@ fn decode_pi(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
     if !saw_message && group_id.is_none() {
         return Err(TrajectoryError::new(
             "invalid_input",
-            "Pi transcript must be session JSONL containing a session header or message entries.",
+            format!(
+                "{} transcript must be session JSONL containing a session header or message entries.",
+                options.source_label
+            ),
         ));
     }
     Ok(DecodedSession {
-        source: TrajectorySource::Pi,
-        source_name: "pi",
+        source: options.source,
+        source_name: options.source_name,
         group_id,
         cwd,
         git_branch: None,
@@ -393,6 +466,7 @@ fn decode_pi_invocation(
     source_offset: i64,
     requested_provider: Option<&str>,
     requested_model: Option<&str>,
+    options: PiFamilyOptions,
 ) -> DecodedModelInvocation {
     let usage = message
         .get("usage")
@@ -420,7 +494,7 @@ fn decode_pi_invocation(
             .map(str::to_owned),
         api_family: string_value(message.get("api")).map(str::to_owned),
         requested_model: requested_model.map(str::to_owned),
-        response_model: string_value(message.get("model")).map(str::to_owned),
+        response_model: options.exclude_model(string_value(message.get("model"))),
         response_id: string_value(message.get("responseId")).map(str::to_owned),
         stop_reason: string_value(message.get("stopReason")).map(str::to_owned),
         producer_version: None,
@@ -438,7 +512,6 @@ struct ContextCandidate {
     timestamp: i64,
     tie: String,
 }
-
 fn decode_claude_code(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
     const TRANSPORT_TYPES: &[&str] = &[
         "progress",
@@ -1213,6 +1286,7 @@ fn decode_message(
     message: &Map<String, Value>,
     line: usize,
     offset: i64,
+    options: PiFamilyOptions,
     events: &mut Vec<DecodedEvent>,
 ) -> Result<(), TrajectoryError> {
     let role = string_value(message.get("role"));
@@ -1221,7 +1295,7 @@ fn decode_message(
         .get("timestamp")
         .and_then(parse_timestamp)
         .or_else(|| message.get("timestamp").and_then(parse_timestamp));
-    let model = string_value(message.get("model")).map(str::to_owned);
+    let model = options.exclude_model(string_value(message.get("model")));
     let source_sequence = i64::try_from(line - 1).map_err(|_| {
         TrajectoryError::new(
             "invalid_input",
