@@ -79,8 +79,9 @@ The upstream Python wrapper is not a separate parity requirement. The NuGet libr
 
 - The project multi-targets `net8.0`, `net9.0`, and `net10.0`.
 - Trimming and AOT analyzers are enabled and the core remains BCL-only.
-- Pi, Claude Code, Codex, and OpenClaw have complete decode-normalize-project paths,
-  default listing, pinned upstream goldens, and Native AOT smoke coverage.
+- Pi, Claude Code, Codex, OpenClaw, and Hermes have complete decode-normalize-project
+  paths, default listing (Hermes is empty when the SQLite store is missing), pinned
+  upstream goldens, and Native AOT smoke coverage where applicable.
 - Exact Letta trajectory/canonical adapters and the provenance-rich Hypabolic
   adapter share one deterministic IR, identity, canonical JSON, and SHA-256
   implementation.
@@ -112,7 +113,7 @@ contracts until the first package release.
 | Letta Code | Enum value only; post-v1 backlog | Full client transcript decoder and row/native identity rules |
 | OpenClaw | Implemented through built-in outputs with shared fixtures, delivery-mirror masking, and listing | Keep covered by differential parity and regression tests |
 | OpenHands | Enum value only; post-v1 backlog | Array/envelope event decoding and event identity |
-| Hermes | Enum value only | Array/envelope decoding and SQLite listing/export support |
+| Hermes | Implemented through built-in outputs with array/envelope fixtures; SQLite listing is empty without a provider | Keep covered by differential parity; optional SQLite provider for sessions-table listing |
 | Deep Agents | Enum value only; post-v1 backlog | Optional SQLite/checkpoint package and exact checkpoint reduction |
 | Tool linking | Shared pre-pass implements duplicate repair, reverse-arrival linking, and partial orphan policy | Extend source fixtures as later adapters introduce new native shapes |
 | Timestamps | Exact preservation/interpolation/synthesis policy implemented | Keep source-specific timestamp representations covered |

@@ -5,6 +5,13 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## 0.1.0 — Unreleased
 
+- Added Hermes source adapters and shared conformance fixtures across .NET,
+  TypeScript, and Rust. Message-row arrays and session envelopes normalize with
+  soft-delete filtering, AUTOINCREMENT ordering, multimodal `\u0000json:` content,
+  reasoning aliases, OpenAI and id-less tool-call shapes, and epoch-second
+  timestamps. Wire source name is always `hermes`. Core packages remain
+  SQLite-free; missing Hermes stores list as empty pages.
+
 - Added OpenClaw (Pi-family) source adapters, listing, and shared conformance
   fixtures across .NET, TypeScript, and Rust. Delivery-mirror model placeholders
   keep assistant prose but are excluded from model metadata.

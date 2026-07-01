@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use chrono::{SecondsFormat, TimeZone as _, Utc};
+use chrono::{DateTime, SecondsFormat, TimeZone as _, Utc};
 use serde_json::{Map, Value};
 
 use crate::canonical::{canonical_json, relaxed_json, utf16_compare};
@@ -99,7 +99,7 @@ struct DecodedEvent {
     producer_version: Option<String>,
     source_sequence: Option<i64>,
     source_offset: i64,
-    input_line: usize,
+    input_line: Option<usize>,
     timestamp_ms: Option<i64>,
     timestamp_precise: Option<String>,
     component_index: usize,
@@ -112,6 +112,7 @@ struct DecodedSession {
     group_id: Option<String>,
     cwd: Option<String>,
     git_branch: Option<String>,
+    model: Option<String>,
     producer_version: Option<String>,
     created_at_ms: Option<i64>,
     events: Vec<DecodedEvent>,
@@ -163,6 +164,27 @@ pub fn normalize_pi(request: NormalizeRequest<'_>) -> Result<Trajectory, Traject
 pub fn normalize_openclaw(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
     let config = resolve_config(request)?;
     let decoded = decode_pi_session(request.transcript, PiFamilyOptions::openclaw())?;
+    normalize_decoded(config, decoded)
+}
+
+/// Native Hermes message-row / session-envelope source adapter.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct HermesSourceAdapter;
+
+impl SourceAdapter for HermesSourceAdapter {
+    fn source(&self) -> &'static str {
+        "hermes"
+    }
+
+    fn normalize(&self, request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+        normalize_hermes(request)
+    }
+}
+
+/// Normalizes a Hermes session export (message-row array or session envelope).
+pub fn normalize_hermes(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+    let config = resolve_config(request)?;
+    let decoded = decode_hermes(request.transcript)?;
     normalize_decoded(config, decoded)
 }
 
@@ -263,7 +285,10 @@ fn normalize_decoded(
             .cmp(&left.1)
             .then_with(|| utf16_compare(&left.0, &right.0))
     });
-    let model = model_counts.first().map(|value| value.0.clone());
+    let model = decoded
+        .model
+        .clone()
+        .or_else(|| model_counts.first().map(|value| value.0.clone()));
     let execution = normalize_execution(
         &decoded.model_invocations,
         &group_id,
@@ -452,6 +477,7 @@ fn decode_pi_session(
         group_id,
         cwd,
         git_branch: None,
+        model: None,
         producer_version,
         created_at_ms,
         events,
@@ -686,6 +712,7 @@ fn decode_claude_code(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
         group_id: session_ids.into_iter().next(),
         cwd: cwd.map(|value: ContextCandidate| value.value),
         git_branch: git_branch.map(|value: ContextCandidate| value.value),
+        model: None,
         producer_version: Some(
             producer_version
                 .map_or_else(|| "unknown".into(), |value: ContextCandidate| value.value),
@@ -846,7 +873,7 @@ fn decode_codex(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
                                     producer_version: producer_version.clone(),
                                     source_sequence: None,
                                     source_offset,
-                                    input_line: line,
+                                    input_line: Some(line),
                                     timestamp_ms: timestamp.as_ref().map(|value| value.0),
                                     timestamp_precise: timestamp
                                         .as_ref()
@@ -1037,12 +1064,488 @@ fn decode_codex(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
         group_id,
         cwd,
         git_branch,
+        model: None,
         producer_version: Some(producer_version.unwrap_or_else(|| "unknown".into())),
         created_at_ms,
         events,
         model_invocations: Vec::new(),
         diagnostics,
     })
+}
+
+const HERMES_CONTENT_JSON_PREFIX: &str = "\u{0000}json:";
+
+fn decode_hermes(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
+    let mut diagnostics = Vec::new();
+    let mut events = Vec::new();
+    let parsed = parse_hermes_transcript(bytes)?;
+    let mut rows: Vec<Value> = parsed
+        .messages
+        .into_iter()
+        .filter(|row| !hermes_is_inactive(row))
+        .collect();
+    order_hermes_rows(&mut rows);
+    let calls_by_row = plan_hermes_tool_calls(&rows, &mut diagnostics)?;
+
+    for (index, row) in rows.iter().enumerate() {
+        let timestamp_ms = hermes_timestamp(row.get("timestamp"));
+        let native = hermes_row_id(row);
+        let mut component_index = 0usize;
+        let mut emit = |mut event: DecodedEvent| {
+            event.component_index = component_index;
+            component_index += 1;
+            if let Some((text, numeric)) = &native {
+                event.native_id = Some(text.clone());
+                event.source_sequence = *numeric;
+                event.source_offset = 0;
+            } else {
+                event.source_offset = i64::try_from(index).unwrap_or(0);
+                event.source_sequence = Some(i64::try_from(index).unwrap_or(0));
+            }
+            events.push(event);
+        };
+
+        let role = string_value(row.get("role")).unwrap_or_default();
+        if role == "user" {
+            let content = hermes_content_text(row.get("content"))?;
+            if !content.is_empty() {
+                emit(DecodedEvent {
+                    kind: EventKind::Message,
+                    role: Role::User,
+                    content: Some(content),
+                    tool_call_id: None,
+                    tool_name: None,
+                    arguments_json: None,
+                    is_error: None,
+                    native_id: None,
+                    producer_version: None,
+                    source_sequence: None,
+                    source_offset: 0,
+                    input_line: None,
+                    timestamp_ms,
+                    timestamp_precise: None,
+                    component_index: 0,
+                    model: None,
+                });
+            }
+            continue;
+        }
+        if role == "assistant" {
+            let reasoning = hermes_reasoning_text(row);
+            if !reasoning.is_empty() {
+                emit(DecodedEvent {
+                    kind: EventKind::Reasoning,
+                    role: Role::Reasoning,
+                    content: Some(reasoning),
+                    tool_call_id: None,
+                    tool_name: None,
+                    arguments_json: None,
+                    is_error: None,
+                    native_id: None,
+                    producer_version: None,
+                    source_sequence: None,
+                    source_offset: 0,
+                    input_line: None,
+                    timestamp_ms,
+                    timestamp_precise: None,
+                    component_index: 0,
+                    model: None,
+                });
+            }
+            let content = hermes_content_text(row.get("content"))?;
+            if !content.is_empty() {
+                emit(DecodedEvent {
+                    kind: EventKind::Message,
+                    role: Role::Assistant,
+                    content: Some(content),
+                    tool_call_id: None,
+                    tool_name: None,
+                    arguments_json: None,
+                    is_error: None,
+                    native_id: None,
+                    producer_version: None,
+                    source_sequence: None,
+                    source_offset: 0,
+                    input_line: None,
+                    timestamp_ms,
+                    timestamp_precise: None,
+                    component_index: 0,
+                    model: None,
+                });
+            }
+            if let Some(calls) = calls_by_row.get(&index) {
+                for call in calls {
+                    emit(DecodedEvent {
+                        kind: EventKind::ToolCall,
+                        role: Role::Assistant,
+                        content: None,
+                        tool_call_id: call.id.clone(),
+                        tool_name: call.name.clone(),
+                        arguments_json: Some(call.args.clone()),
+                        is_error: None,
+                        native_id: None,
+                        producer_version: None,
+                        source_sequence: None,
+                        source_offset: 0,
+                        input_line: None,
+                        timestamp_ms,
+                        timestamp_precise: None,
+                        component_index: 0,
+                        model: None,
+                    });
+                }
+            }
+            continue;
+        }
+        if role == "tool" {
+            emit(DecodedEvent {
+                kind: EventKind::ToolResult,
+                role: Role::Tool,
+                content: Some(hermes_content_text(row.get("content"))?),
+                tool_call_id: string_value(row.get("tool_call_id")).map(str::to_owned),
+                tool_name: string_value(row.get("tool_name")).map(str::to_owned),
+                arguments_json: None,
+                is_error: None,
+                native_id: None,
+                producer_version: None,
+                source_sequence: None,
+                source_offset: 0,
+                input_line: None,
+                timestamp_ms,
+                timestamp_precise: None,
+                component_index: 0,
+                model: None,
+            });
+        }
+    }
+
+    let session = parsed.session.as_ref();
+    let model = session
+        .and_then(|value| string_value(value.get("model")))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let cwd = session
+        .and_then(|value| string_value(value.get("cwd")))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let created_at_ms = session.and_then(|value| hermes_timestamp(value.get("started_at")));
+    let group_id = resolve_hermes_group_id(session, &parsed.raw_messages);
+
+    Ok(DecodedSession {
+        source: TrajectorySource::Hermes,
+        source_name: "hermes",
+        group_id,
+        cwd,
+        git_branch: None,
+        model,
+        producer_version: None,
+        created_at_ms,
+        events,
+        model_invocations: Vec::new(),
+        diagnostics,
+    })
+}
+
+struct ParsedHermesTranscript {
+    session: Option<Value>,
+    messages: Vec<Value>,
+    raw_messages: Vec<Value>,
+}
+
+fn parse_hermes_transcript(bytes: &[u8]) -> Result<ParsedHermesTranscript, TrajectoryError> {
+    let parsed: Value = serde_json::from_slice(bytes).map_err(|_| invalid_hermes_transcript())?;
+    if let Value::Array(items) = parsed {
+        if !items.iter().all(Value::is_object) {
+            return Err(invalid_hermes_transcript());
+        }
+        return Ok(ParsedHermesTranscript {
+            session: None,
+            messages: items.clone(),
+            raw_messages: items,
+        });
+    }
+    if let Value::Object(map) = &parsed {
+        if let Some(Value::Array(items)) = map.get("messages") {
+            if !items.iter().all(Value::is_object) {
+                return Err(invalid_hermes_transcript());
+            }
+            let session = map
+                .get("session")
+                .filter(|value| value.is_object())
+                .cloned();
+            return Ok(ParsedHermesTranscript {
+                session,
+                messages: items.clone(),
+                raw_messages: items.clone(),
+            });
+        }
+    }
+    Err(invalid_hermes_transcript())
+}
+
+fn order_hermes_rows(rows: &mut [Value]) {
+    if !rows
+        .iter()
+        .all(|row| row.get("id").and_then(Value::as_i64).is_some())
+    {
+        return;
+    }
+    let mut indexed: Vec<(usize, Value)> = rows.iter().cloned().enumerate().collect();
+    indexed.sort_by(|left, right| {
+        let left_id = left.1.get("id").and_then(Value::as_i64).unwrap_or(0);
+        let right_id = right.1.get("id").and_then(Value::as_i64).unwrap_or(0);
+        left_id.cmp(&right_id).then(left.0.cmp(&right.0))
+    });
+    for (slot, (_, value)) in rows.iter_mut().zip(indexed) {
+        *slot = value;
+    }
+}
+
+#[derive(Debug, Clone)]
+struct HermesToolCall {
+    id: Option<String>,
+    name: Option<String>,
+    args: String,
+}
+
+fn plan_hermes_tool_calls(
+    rows: &[Value],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<HashMap<usize, Vec<HermesToolCall>>, TrajectoryError> {
+    let mut plan = HashMap::new();
+    for (index, row) in rows.iter().enumerate() {
+        if string_value(row.get("role")) != Some("assistant") {
+            continue;
+        }
+        let mut calls = hermes_row_tool_calls(row, index, diagnostics)?;
+        if calls.is_empty() {
+            continue;
+        }
+        let idless_count = calls.iter().filter(|call| call.id.is_none()).count();
+        if idless_count > 0 {
+            let claimed: HashSet<String> =
+                calls.iter().filter_map(|call| call.id.clone()).collect();
+            let mut available = Vec::new();
+            for next in rows.iter().skip(index + 1) {
+                if string_value(next.get("role")) != Some("tool") {
+                    break;
+                }
+                if let Some(tool_call_id) =
+                    string_value(next.get("tool_call_id")).filter(|value| !value.is_empty())
+                {
+                    if !claimed.contains(tool_call_id) {
+                        available.push(tool_call_id.to_owned());
+                    }
+                }
+            }
+            if available.len() == idless_count {
+                let mut position = 0usize;
+                for call in &mut calls {
+                    if call.id.is_none() {
+                        call.id = Some(available[position].clone());
+                        position += 1;
+                    }
+                }
+            }
+        }
+        plan.insert(index, calls);
+    }
+    Ok(plan)
+}
+
+fn hermes_row_tool_calls(
+    row: &Value,
+    index: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Vec<HermesToolCall>, TrajectoryError> {
+    let Some(tool_calls) = row.get("tool_calls") else {
+        return Ok(Vec::new());
+    };
+    let parsed = if let Value::String(text) = tool_calls {
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        if let Ok(value) = serde_json::from_str::<Value>(text) {
+            value
+        } else {
+            diagnostics.push(Diagnostic {
+                code: "invalid_json_line".into(),
+                message: format!("Skipped undecodable tool_calls on message {}.", index + 1),
+                input_line: Some(index + 1),
+                record_index: None,
+                count: None,
+            });
+            return Ok(Vec::new());
+        }
+    } else {
+        tool_calls.clone()
+    };
+    let Value::Array(entries) = parsed else {
+        return Ok(Vec::new());
+    };
+    let mut calls = Vec::new();
+    for entry in entries {
+        let Value::Object(map) = entry else {
+            continue;
+        };
+        let function = map.get("function").and_then(|value| value.as_object());
+        let name = first_string(
+            function
+                .and_then(|value| value.get("name"))
+                .and_then(Value::as_str),
+            map.get("name").and_then(Value::as_str),
+        );
+        let id = first_string(
+            map.get("id").and_then(Value::as_str),
+            map.get("call_id").and_then(Value::as_str),
+        );
+        let args_value = if let Some(function) = function {
+            function.get("arguments")
+        } else {
+            map.get("arguments")
+        };
+        let args = match args_value {
+            Some(Value::String(text)) if !text.is_empty() => text.clone(),
+            Some(value) => relaxed_json(value)?,
+            None => "{}".into(),
+        };
+        calls.push(HermesToolCall {
+            id: id.map(str::to_owned),
+            name: name.map(str::to_owned),
+            args,
+        });
+    }
+    Ok(calls)
+}
+
+fn hermes_content_text(value: Option<&Value>) -> Result<String, TrajectoryError> {
+    match value {
+        None | Some(Value::Null) => Ok(String::new()),
+        Some(Value::String(text)) => {
+            if let Some(encoded) = text.strip_prefix(HERMES_CONTENT_JSON_PREFIX) {
+                match serde_json::from_str::<Value>(encoded) {
+                    Ok(parsed) => hermes_content_text(Some(&parsed)),
+                    Err(_) => Ok(encoded.to_owned()),
+                }
+            } else {
+                Ok(text.clone())
+            }
+        }
+        Some(Value::Array(items)) => Ok(blocks_text_from_array(items)),
+        Some(Value::Object(_)) => relaxed_json(value.unwrap()),
+        Some(other) => Ok(other.to_string()),
+    }
+}
+
+fn blocks_text_from_array(items: &[Value]) -> String {
+    let mut parts = Vec::new();
+    for item in items {
+        let Some(object) = item.as_object() else {
+            continue;
+        };
+        let type_name = object.get("type").and_then(Value::as_str);
+        if matches!(
+            type_name,
+            Some("text" | "input_text" | "output_text") | None
+        ) {
+            if let Some(text) = object
+                .get("text")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+            {
+                parts.push(text.to_owned());
+            }
+        } else if type_name == Some("image") {
+            parts.push("[image]".into());
+        }
+    }
+    parts.join("\n")
+}
+
+fn hermes_reasoning_text(row: &Value) -> String {
+    if let Some(text) =
+        string_value(row.get("reasoning_content")).filter(|value| !value.trim().is_empty())
+    {
+        return text.to_owned();
+    }
+    if let Some(text) = string_value(row.get("reasoning")).filter(|value| !value.trim().is_empty())
+    {
+        return text.to_owned();
+    }
+    String::new()
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn hermes_timestamp(value: Option<&Value>) -> Option<i64> {
+    if let Some(number) = value
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite() && *value > 0.0)
+    {
+        let milliseconds = if number > 1e11 {
+            number
+        } else {
+            number * 1_000.0
+        };
+        // Epoch seconds/millis for Hermes stay well within i64 after rounding.
+        return Some(milliseconds.round() as i64);
+    }
+    value.and_then(|item| match item {
+        Value::String(text) => DateTime::parse_from_rfc3339(text)
+            .ok()
+            .map(|value| value.timestamp_millis())
+            .or_else(|| {
+                // Accept values without zone by treating them as UTC.
+                chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S%.f")
+                    .ok()
+                    .map(|value| value.and_utc().timestamp_millis())
+            }),
+        _ => None,
+    })
+}
+
+fn hermes_row_id(row: &Value) -> Option<(String, Option<i64>)> {
+    if let Some(number) = row.get("id").and_then(Value::as_i64) {
+        return Some((number.to_string(), Some(number)));
+    }
+    if let Some(text) = string_value(row.get("id")).filter(|value| !value.is_empty()) {
+        return Some((text.to_owned(), None));
+    }
+    None
+}
+
+fn resolve_hermes_group_id(session: Option<&Value>, messages: &[Value]) -> Option<String> {
+    if let Some(id) = session
+        .and_then(|value| string_value(value.get("id")))
+        .filter(|value| !value.is_empty())
+    {
+        return Some(id.to_owned());
+    }
+    for row in messages {
+        if let Some(id) = string_value(row.get("session_id")).filter(|value| !value.is_empty()) {
+            return Some(id.to_owned());
+        }
+    }
+    None
+}
+
+fn hermes_is_inactive(row: &Value) -> bool {
+    match row.get("active") {
+        Some(Value::Bool(false)) => true,
+        Some(Value::Number(number)) => number.as_i64() == Some(0),
+        _ => false,
+    }
+}
+
+fn first_string<'a>(left: Option<&'a str>, right: Option<&'a str>) -> Option<&'a str> {
+    left.filter(|value| !value.is_empty())
+        .or_else(|| right.filter(|value| !value.is_empty()))
+}
+
+fn invalid_hermes_transcript() -> TrajectoryError {
+    TrajectoryError::new(
+        "invalid_input",
+        "Hermes transcript must be a JSON array of session-store message rows or an object with a messages array.",
+    )
 }
 
 fn codex_output_text(value: Option<&Value>) -> Result<String, TrajectoryError> {
@@ -1133,7 +1636,7 @@ fn decode_claude_message(
             producer_version: producer_version.clone(),
             source_sequence: None,
             source_offset: offset,
-            input_line: line,
+            input_line: Some(line),
             timestamp_ms: timestamp.map(|value| value.0),
             timestamp_precise: timestamp.map(|value| value.1.clone()),
             component_index,
@@ -1322,7 +1825,7 @@ fn decode_message(
             producer_version: None,
             source_sequence: Some(source_sequence),
             source_offset: offset,
-            input_line: line,
+            input_line: Some(line),
             timestamp_ms: timestamp.as_ref().map(|value| value.0),
             timestamp_precise: timestamp.as_ref().map(|value| value.1.clone()),
             component_index,
@@ -2368,7 +2871,7 @@ fn event_diagnostic(
     Diagnostic {
         code: code.into(),
         message,
-        input_line: Some(event.input_line),
+        input_line: event.input_line,
         record_index: Some(record_index),
         count: None,
     }

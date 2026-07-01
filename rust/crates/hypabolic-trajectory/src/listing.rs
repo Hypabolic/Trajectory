@@ -66,6 +66,34 @@ pub fn list_codex_trajectories(
     paginate(options, items)
 }
 
+/// Lists Hermes sessions from a `SQLite` store locator.
+///
+/// Core packages stay SQLite-free: a missing store yields an empty page. Full
+/// sessions-table enumeration is optional and provider-side. `root` may be the
+/// `state.db` path or the directory containing it (default `~/.hermes`).
+pub fn list_hermes_trajectories(
+    options: &ListingOptions<'_>,
+) -> Result<TrajectoryListingPage, TrajectoryError> {
+    validate_limit(options.limit)?;
+    let _store = resolve_hermes_store_path(options.root);
+    // Without an embedded SQLite reader, presence alone cannot yield rows.
+    Ok(TrajectoryListingPage {
+        items: Vec::new(),
+        next_cursor: None,
+    })
+}
+
+fn resolve_hermes_store_path(root: &Path) -> PathBuf {
+    if root
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("db"))
+    {
+        root.to_path_buf()
+    } else {
+        root.join("state.db")
+    }
+}
+
 /// Lists `OpenClaw` JSONL transcripts below `<root>/agents/*/sessions`.
 pub fn list_openclaw_trajectories(
     options: &ListingOptions<'_>,

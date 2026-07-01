@@ -13,8 +13,8 @@ wire contracts and conformance cases:
 | TypeScript | `@hypabolic/trajectory` | ML7 source/output parity implemented; unpublished |
 | Rust | `hypabolic-trajectory` | ML7 source/output parity implemented; unpublished |
 
-The current .NET runtime supports Pi, Claude Code, Codex, and OpenClaw transcripts,
-explicit-root local-store listing, trimming and Native AOT, and these
+The current .NET runtime supports Pi, Claude Code, Codex, OpenClaw, and Hermes
+transcripts, explicit-root local-store listing, trimming and Native AOT, and these
 deterministic projections:
 
 - Letta trajectory v1;
@@ -27,13 +27,12 @@ deterministic projections:
 
 Rust and TypeScript packages have not been published. Both are independent
 implementations built from this repository's specifications and conformance
-cases. TypeScript supports the current .NET Pi, Claude Code, Codex, and OpenClaw source
-baseline and all deterministic projections. Rust ML7 supports the same source
-and output set. Both provide explicit-root listing, ecosystem-native writer
-surfaces, synchronized `0.1.0` preview metadata, and the private conformance
-protocol. Optional OpenTelemetry packages remain outside each core package.
-The pinned `letta-ai/trajectory` package is used only as a black-box
-compatibility oracle.
+cases. TypeScript and Rust support the same Pi, Claude Code, Codex, OpenClaw, and
+Hermes source baseline and all deterministic projections. Both provide
+explicit-root listing, ecosystem-native writer surfaces, synchronized `0.1.0`
+preview metadata, and the private conformance protocol. Optional OpenTelemetry
+packages remain outside each core package. The pinned `letta-ai/trajectory`
+package is used only as a black-box compatibility oracle.
 
 ## Architecture
 
@@ -233,7 +232,7 @@ ML1 established the shared foundation; ML2 and ML3 added independent
 TypeScript and Rust Pi vertical paths; ML4 brought TypeScript to the current
 .NET Pi, Claude Code, and Codex source baseline; ML5 and ML6 brought Rust to
 the same source baseline; ML7 completed output and preview-distribution parity
-across all three implementations. ML9 OpenClaw is complete across all three
-runtimes. ML11 Hermes is next for the remaining v1 source. Letta Code (ML8), OpenHands (ML10), and Deep Agents checkpoint
-integrations (ML12) remain accepted post-v1 support goals and are not part of
-the v1 required capability set.
+across all three implementations. ML9 OpenClaw and ML11 Hermes are complete across
+all three runtimes. ML13 1.0 parity and release hardening is next. Letta Code (ML8),
+OpenHands (ML10), and Deep Agents checkpoint integrations (ML12) remain accepted
+post-v1 support goals and are not part of the v1 required capability set.

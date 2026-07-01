@@ -23,7 +23,7 @@ interface DecodedEvent {
   nativeId?: string;
   sourceSequence: number;
   sourceOffset: bigint;
-  inputLine: number;
+  inputLine?: number;
   timestamp?: number;
   timestampPrecise?: string;
   componentIndex: number;
@@ -41,6 +41,7 @@ interface DecodedSession {
   groupResolved: boolean;
   cwd?: string;
   gitBranch?: string;
+  model?: string;
   producerVersion?: string;
   createdAt?: number;
   events: DecodedEvent[];
@@ -188,6 +189,10 @@ export function normalizeCodex(request: NormalizeRequest & { transcriptBytes: Ui
   return normalizeDecoded(request, decodeCodex(request.transcriptBytes));
 }
 
+export function normalizeHermes(request: NormalizeRequest & { transcriptBytes: Uint8Array }): TrajectoryIR {
+  return normalizeDecoded(request, decodeHermes(request.transcriptBytes));
+}
+
 function normalizeDecoded(
   request: NormalizeRequest & { transcriptBytes: Uint8Array },
   decoded: DecodedSession,
@@ -243,7 +248,7 @@ function normalizeDecoded(
     record.hashes = hashRecord(record, decoded.source);
   }
 
-  const model = [...modelCounts].sort((left, right) =>
+  const model = decoded.model ?? [...modelCounts].sort((left, right) =>
     right[1] - left[1] || utf16Compare(left[0], right[0]),
   )[0]?.[0];
   const meta = createMeta(
@@ -838,6 +843,287 @@ function decodeCodex(bytes: Uint8Array): DecodedSession {
   };
 }
 
+const HERMES_CONTENT_JSON_PREFIX = "\u0000json:";
+
+function decodeHermes(bytes: Uint8Array): DecodedSession {
+  const diagnostics: TrajectoryDiagnostic[] = [];
+  const events: DecodedEvent[] = [];
+  const parsed = parseHermesTranscript(bytes);
+  const rows = orderHermesRows(
+    parsed.messages.filter((row) => row.active !== 0 && row.active !== false),
+  );
+  const callsByRow = planHermesToolCalls(rows, diagnostics);
+
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index]!;
+    const timestamp = hermesTimestamp(row.timestamp);
+    const id = hermesRowId(row);
+    let componentIndex = 0;
+    const emit = (
+      event: Omit<DecodedEvent, "nativeId" | "sourceSequence" | "sourceOffset" | "componentIndex">,
+    ): void => {
+      events.push({
+        ...event,
+        ...(id === undefined
+          ? { sourceOffset: BigInt(index), sourceSequence: index }
+          : {
+              nativeId: id.text,
+              sourceSequence: id.numeric ?? 0,
+              sourceOffset: 0n,
+            }),
+        componentIndex: componentIndex++,
+      });
+    };
+
+    if (row.role === "user") {
+      const content = hermesContentText(row.content);
+      if (content) emit({ kind: "message", role: "user", content, ...(timestamp === undefined ? {} : { timestamp }) });
+      continue;
+    }
+    if (row.role === "assistant") {
+      const reasoning = hermesReasoningText(row);
+      if (reasoning) {
+        emit({ kind: "reasoning", role: "reasoning", content: reasoning, ...(timestamp === undefined ? {} : { timestamp }) });
+      }
+      const content = hermesContentText(row.content);
+      if (content) {
+        emit({ kind: "message", role: "assistant", content, ...(timestamp === undefined ? {} : { timestamp }) });
+      }
+      for (const call of callsByRow.get(index) ?? []) {
+        emit({
+          kind: "tool-call",
+          role: "assistant",
+          argumentsJson: call.args,
+          ...(call.id === undefined ? {} : { toolCallId: call.id }),
+          ...(call.name === undefined ? {} : { toolName: call.name }),
+          ...(timestamp === undefined ? {} : { timestamp }),
+        });
+      }
+      continue;
+    }
+    if (row.role === "tool") {
+      emit({
+        kind: "tool-result",
+        role: "tool",
+        content: hermesContentText(row.content),
+        ...(typeof row.tool_call_id === "string" && row.tool_call_id
+          ? { toolCallId: row.tool_call_id }
+          : {}),
+        ...(typeof row.tool_name === "string" && row.tool_name
+          ? { toolName: row.tool_name }
+          : {}),
+        ...(timestamp === undefined ? {} : { timestamp }),
+      });
+    }
+  }
+
+  const session = parsed.session ?? {};
+  const model = typeof session.model === "string" && session.model ? session.model : undefined;
+  const cwd = typeof session.cwd === "string" && session.cwd ? session.cwd : undefined;
+  const createdAt = hermesTimestamp(session.started_at);
+  const groupId = resolveHermesGroupId(session, parsed.messages);
+
+  return {
+    source: "hermes",
+    sourceName: "hermes",
+    groupResolved: groupId !== undefined,
+    events,
+    modelInvocations: [],
+    diagnostics,
+    ...(groupId === undefined ? {} : { groupId }),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(model === undefined ? {} : { model }),
+    ...(createdAt === undefined ? {} : { createdAt }),
+  };
+}
+
+function parseHermesTranscript(bytes: Uint8Array): {
+  session?: JsonObject;
+  messages: JsonObject[];
+} {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw new TrajectoryNormalizationError(
+      "invalid_input",
+      "Hermes transcript must be a JSON array of session-store message rows or an object with a messages array.",
+    );
+  }
+  if (Array.isArray(parsed)) {
+    if (!parsed.every(isObject)) {
+      throw new TrajectoryNormalizationError(
+        "invalid_input",
+        "Hermes transcript must be a JSON array of session-store message rows or an object with a messages array.",
+      );
+    }
+    return { messages: parsed as JsonObject[] };
+  }
+  if (isObject(parsed) && Array.isArray(parsed.messages)) {
+    if (!parsed.messages.every(isObject)) {
+      throw new TrajectoryNormalizationError(
+        "invalid_input",
+        "Hermes transcript must be a JSON array of session-store message rows or an object with a messages array.",
+      );
+    }
+    return {
+      messages: parsed.messages as JsonObject[],
+      ...(isObject(parsed.session) ? { session: parsed.session as JsonObject } : {}),
+    };
+  }
+  throw new TrajectoryNormalizationError(
+    "invalid_input",
+    "Hermes transcript must be a JSON array of session-store message rows or an object with a messages array.",
+  );
+}
+
+function orderHermesRows(rows: JsonObject[]): JsonObject[] {
+  if (!rows.every((row) => typeof row.id === "number")) return rows;
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => (left.row.id as number) - (right.row.id as number) || left.index - right.index)
+    .map(({ row }) => row);
+}
+
+interface HermesToolCall {
+  id?: string;
+  name?: string;
+  args: string;
+}
+
+function planHermesToolCalls(
+  rows: JsonObject[],
+  diagnostics: TrajectoryDiagnostic[],
+): Map<number, HermesToolCall[]> {
+  const plan = new Map<number, HermesToolCall[]>();
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index]!;
+    if (row.role !== "assistant") continue;
+    const calls = hermesRowToolCalls(row, index, diagnostics);
+    if (calls.length === 0) continue;
+    const idless = calls.filter((call) => !call.id);
+    if (idless.length > 0) {
+      const claimed = new Set(calls.flatMap((call) => (call.id ? [call.id] : [])));
+      const available: string[] = [];
+      for (let cursor = index + 1; cursor < rows.length; cursor++) {
+        const next = rows[cursor]!;
+        if (next.role !== "tool") break;
+        if (typeof next.tool_call_id === "string" && next.tool_call_id && !claimed.has(next.tool_call_id)) {
+          available.push(next.tool_call_id);
+        }
+      }
+      if (available.length === idless.length) {
+        for (let position = 0; position < idless.length; position++) {
+          const adopted = available[position];
+          if (adopted !== undefined) idless[position]!.id = adopted;
+        }
+      }
+    }
+    plan.set(index, calls);
+  }
+  return plan;
+}
+
+function hermesRowToolCalls(
+  row: JsonObject,
+  index: number,
+  diagnostics: TrajectoryDiagnostic[],
+): HermesToolCall[] {
+  let raw: JsonValue | undefined = row.tool_calls;
+  if (typeof raw === "string" && raw) {
+    try {
+      raw = JSON.parse(raw) as JsonValue;
+    } catch {
+      diagnostics.push({
+        code: "invalid_json_line",
+        message: `Skipped undecodable tool_calls on message ${index + 1}.`,
+        inputLine: index + 1,
+      });
+      return [];
+    }
+  }
+  if (!Array.isArray(raw)) return [];
+  const calls: HermesToolCall[] = [];
+  for (const entry of raw) {
+    if (!isObject(entry)) continue;
+    const fn = isObject(entry.function) ? entry.function : undefined;
+    const name = firstString(fn === undefined ? undefined : stringValue(fn.name), stringValue(entry.name));
+    const id = firstString(stringValue(entry.id), stringValue(entry.call_id));
+    const argsValue = fn !== undefined ? fn.arguments : entry.arguments;
+    const args = typeof argsValue === "string" && argsValue
+      ? argsValue
+      : compactJson((argsValue as JsonValue | undefined) ?? {});
+    calls.push({
+      args,
+      ...(id === undefined ? {} : { id }),
+      ...(name === undefined ? {} : { name }),
+    });
+  }
+  return calls;
+}
+
+function hermesContentText(content: JsonValue | undefined): string {
+  if (typeof content === "string") {
+    if (content.startsWith(HERMES_CONTENT_JSON_PREFIX)) {
+      const encoded = content.slice(HERMES_CONTENT_JSON_PREFIX.length);
+      try {
+        return hermesContentText(JSON.parse(encoded) as JsonValue);
+      } catch {
+        return encoded;
+      }
+    }
+    return content;
+  }
+  if (Array.isArray(content)) return readBlocksText(content);
+  if (content === null || content === undefined) return "";
+  if (isObject(content)) return compactJson(content);
+  return String(content);
+}
+
+function hermesReasoningText(row: JsonObject): string {
+  if (typeof row.reasoning_content === "string" && row.reasoning_content.trim()) {
+    return row.reasoning_content;
+  }
+  if (typeof row.reasoning === "string" && row.reasoning.trim()) {
+    return row.reasoning;
+  }
+  return "";
+}
+
+function hermesTimestamp(value: JsonValue | undefined): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    const milliseconds = value > 1e11 ? value : value * 1_000;
+    const date = new Date(Math.round(milliseconds));
+    return Number.isNaN(date.valueOf()) ? undefined : date.valueOf();
+  }
+  return parseTimestamp(value)?.milliseconds;
+}
+
+function hermesRowId(row: JsonObject): { text: string; numeric?: number } | undefined {
+  if (typeof row.id === "number" && Number.isFinite(row.id)) {
+    return { text: String(row.id), numeric: row.id };
+  }
+  if (typeof row.id === "string" && row.id) {
+    return { text: row.id };
+  }
+  return undefined;
+}
+
+function resolveHermesGroupId(session: JsonObject, messages: JsonObject[]): string | undefined {
+  if (typeof session.id === "string" && session.id) return session.id;
+  for (const row of messages) {
+    if (typeof row.session_id === "string" && row.session_id) return row.session_id;
+  }
+  return undefined;
+}
+
+function firstString(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    if (value) return value;
+  }
+  return undefined;
+}
+
 function forEachJsonLine(
   bytes: Uint8Array,
   diagnostics: TrajectoryDiagnostic[],
@@ -985,8 +1271,8 @@ function normalizeEvent(
       diagnostics.push({
         code: "noise_record_dropped",
         message: "Dropped a harness-noise user record.",
-        inputLine: event.inputLine,
         recordIndex,
+        ...(event.inputLine === undefined ? {} : { inputLine: event.inputLine }),
       });
       return undefined;
     }
@@ -1440,7 +1726,12 @@ function recordTypeName(record: IRRecord): string {
 }
 
 function diag(code: string, message: string, event: DecodedEvent, recordIndex: number): TrajectoryDiagnostic {
-  return { code, message, inputLine: event.inputLine, recordIndex };
+  return {
+    code,
+    message,
+    recordIndex,
+    ...(event.inputLine === undefined ? {} : { inputLine: event.inputLine }),
+  };
 }
 
 function parseTimestamp(value: JsonValue | undefined): { milliseconds: number; precise: string } | undefined {

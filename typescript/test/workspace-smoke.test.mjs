@@ -18,13 +18,17 @@ test("workspace packages install and import through public exports", () => {
   assert.equal(NORMALIZER_CONTRACT_VERSION, "0.2.0");
   assert.equal(CONFORMANCE_PROTOCOL_VERSION, "1");
   assert.equal(OTEL_GENAI_SCHEMA_VERSION, "1");
-  assert.deepEqual(Object.keys(TrajectoryNode), [
-    "listClaudeCodeTrajectories",
-    "listCodexTrajectories",
-    "listOpenClawTrajectories",
-    "listPiTrajectories",
-    "listTrajectories",
-  ]);
+  assert.deepEqual(
+    Object.keys(TrajectoryNode).sort(),
+    [
+      "listClaudeCodeTrajectories",
+      "listCodexTrajectories",
+      "listHermesTrajectories",
+      "listOpenClawTrajectories",
+      "listPiTrajectories",
+      "listTrajectories",
+    ],
+  );
   assert.deepEqual(
     [...transcriptBytes("😀")],
     [0xf0, 0x9f, 0x98, 0x80],
@@ -44,7 +48,7 @@ test("runtime capabilities match the authoritative compatibility manifest", asyn
   );
 
   assert.equal(capabilities.runtime, "typescript");
-  assert.equal(capabilities.slice, "ML9");
+  assert.equal(capabilities.slice, "ML11");
   assert.equal(capabilities.normalizer_contract_version, NORMALIZER_CONTRACT_VERSION);
   assert.deepEqual(capabilities.sources, [...ImplementedSources]);
   assert.deepEqual(capabilities.sources, compatibility.implemented.sources);
