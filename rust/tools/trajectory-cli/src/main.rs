@@ -48,7 +48,6 @@ impl SourceArg {
             Self::Hermes => "hermes",
         }
     }
-
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -344,38 +343,36 @@ fn print_summary(
     }
 
     match format {
-        FormatArg::Both | FormatArg::Hypabolic => {
-            match project_hypabolic(&trajectory) {
-                Ok(json) => match serde_json::from_str::<serde_json::Value>(&json) {
-                    Ok(value) => {
-                        let trajectory_id = value
-                            .get("trajectoryId")
-                            .or_else(|| value.get("trajectory_id"))
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("?");
-                        let schema_id = value
-                            .get("schemaId")
-                            .or_else(|| value.get("schema_id"))
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("?");
-                        let schema_version = value
-                            .get("schemaVersion")
-                            .or_else(|| value.get("schema_version"))
-                            .cloned()
-                            .unwrap_or(serde_json::Value::Null);
-                        let records = value
-                            .get("records")
-                            .and_then(serde_json::Value::as_array)
-                            .map_or(0, Vec::len);
-                        println!(
-                            "\nHypabolic trajectoryId={trajectory_id} schema={schema_id} v{schema_version} records={records}"
-                        );
-                    }
-                    Err(_) => println!("\nHypabolic projection produced {} bytes", json.len()),
-                },
-                Err(error) => println!("Hypabolic projection skipped: {}", error.message),
-            }
-        }
+        FormatArg::Both | FormatArg::Hypabolic => match project_hypabolic(&trajectory) {
+            Ok(json) => match serde_json::from_str::<serde_json::Value>(&json) {
+                Ok(value) => {
+                    let trajectory_id = value
+                        .get("trajectoryId")
+                        .or_else(|| value.get("trajectory_id"))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("?");
+                    let schema_id = value
+                        .get("schemaId")
+                        .or_else(|| value.get("schema_id"))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("?");
+                    let schema_version = value
+                        .get("schemaVersion")
+                        .or_else(|| value.get("schema_version"))
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
+                    let records = value
+                        .get("records")
+                        .and_then(serde_json::Value::as_array)
+                        .map_or(0, Vec::len);
+                    println!(
+                        "\nHypabolic trajectoryId={trajectory_id} schema={schema_id} v{schema_version} records={records}"
+                    );
+                }
+                Err(_) => println!("\nHypabolic projection produced {} bytes", json.len()),
+            },
+            Err(error) => println!("Hypabolic projection skipped: {}", error.message),
+        },
         FormatArg::Letta => {}
     }
 
@@ -401,9 +398,7 @@ fn print_summary(
     }
 
     if show_content {
-        println!(
-            "\nWARNING: --show-content prints transcript-derived text. Treat as private."
-        );
+        println!("\nWARNING: --show-content prints transcript-derived text. Treat as private.");
         for (index, record) in trajectory.records.iter().enumerate().take(40) {
             let snippet = snippet_for(record);
             println!(
@@ -415,10 +410,7 @@ fn print_summary(
             );
         }
         if trajectory.records.len() > 40 {
-            println!(
-                "Showing first 40 of {} records.",
-                trajectory.records.len()
-            );
+            println!("Showing first 40 of {} records.", trajectory.records.len());
         }
     } else {
         println!("Content omitted (privacy). Re-run with --show-content to include snippets.");
@@ -516,7 +508,8 @@ fn resolve_root(source: SourceArg, root_override: Option<&Path>) -> PathBuf {
         SourceArg::ClaudeCode => home.join(".claude").join("projects"),
         SourceArg::Codex => home.join(".codex").join("sessions"),
         SourceArg::Openclaw => {
-            if let Ok(value) = env::var("OPENCLAW_STATE_DIR").or_else(|_| env::var("CLAWDBOT_STATE_DIR"))
+            if let Ok(value) =
+                env::var("OPENCLAW_STATE_DIR").or_else(|_| env::var("CLAWDBOT_STATE_DIR"))
             {
                 if !value.trim().is_empty() {
                     return PathBuf::from(expand_home(value.trim()));
@@ -538,13 +531,18 @@ fn describe_default(source: SourceArg) -> &'static str {
         SourceArg::Pi => "~/.pi/agent (or PI_CODING_AGENT_DIR)",
         SourceArg::ClaudeCode => "~/.claude/projects",
         SourceArg::Codex => "~/.codex/sessions",
-        SourceArg::Openclaw => "~/.openclaw if present, else ~/.clawdbot (or OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR)",
+        SourceArg::Openclaw => {
+            "~/.openclaw if present, else ~/.clawdbot (or OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR)"
+        }
         SourceArg::Hermes => "~/.hermes/state.db",
     }
 }
 
 fn prompt_source() -> Result<SourceArg, TrajectoryError> {
-    let labels: Vec<&str> = SourceArg::ALL.iter().map(|source| source.wire_name()).collect();
+    let labels: Vec<&str> = SourceArg::ALL
+        .iter()
+        .map(|source| source.wire_name())
+        .collect();
     let selection = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Which agent source should we browse?")
         .items(&labels)
@@ -555,10 +553,7 @@ fn prompt_source() -> Result<SourceArg, TrajectoryError> {
 }
 
 fn print_listing(items: &[TrajectoryListing]) {
-    println!(
-        "{:<36}  {:<24}  {:>8}  Path",
-        "Id", "Updated (UTC)", "Size"
-    );
+    println!("{:<36}  {:<24}  {:>8}  Path", "Id", "Updated (UTC)", "Size");
     println!("{}", "-".repeat(90));
     for item in items {
         println!(
