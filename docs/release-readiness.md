@@ -175,11 +175,15 @@ ML13 completes the engineering readiness work; the remaining items are
 - [x] Live multi-registry publish path (tag `v*.*.*` or dispatch with
       `dry_run=false`) documented in [publishing.md](publishing.md).
 - [x] npm provenance (`id-token`) and GitHub Release asset attachment wired.
-- [ ] Repository secrets configured: `NUGET_API_KEY`, `NPM_TOKEN`,
-      `CARGO_REGISTRY_TOKEN`.
 - [ ] GitHub Environment `release` created (optional reviewers/branch rules).
+- [ ] npm `@hypabolic` org exists; packages bootstrapped once via
+      **npm bootstrap** workflow + `NPM_TOKEN`, then Trusted Publisher (OIDC)
+      configured for `release.yml` / environment `release` (see
+      [publishing.md](publishing.md)); bootstrap token revoked.
+- [ ] Repository secrets for live multi-registry release: `NUGET_API_KEY`,
+      `CARGO_REGISTRY_TOKEN` (no long-lived `NPM_TOKEN` after OIDC is set).
 - [ ] Explicit product decision to cut the first public tag (e.g. `v0.1.0`).
-- [ ] First live publish of synchronized NuGet, npm, and crates artifacts.
+- [ ] First live multi-registry publish (NuGet + npm OIDC + crates).
 - [ ] Optional: broaden property/fuzz corpus beyond the current representative
       suites if production traffic surfaces new classes of input.
 
