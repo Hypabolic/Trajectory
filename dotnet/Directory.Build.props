@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <Authors>Hypabolic</Authors>
+    <Company>Hypabolic</Company>
+    <Copyright>Copyright (c) 2026 Hypabolic</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/Hypabolic/Trajectory</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Hypabolic/Trajectory</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+</Project>

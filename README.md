@@ -9,9 +9,9 @@ wire contracts and conformance cases:
 
 | Runtime | Package | Status |
 | --- | --- | --- |
-| .NET | `Hypabolic.Trajectory` | v1 sources/outputs (ML13); unpublished `0.1.0` |
-| TypeScript | `@hypabolic/trajectory` | v1 sources/outputs (ML13); unpublished `0.1.0` |
-| Rust | `hypabolic-trajectory` | v1 sources/outputs (ML13); unpublished `0.1.0` |
+| .NET | `Hypabolic.Trajectory` | v1 sources/outputs (ML13); `0.1.0` (publish via Release workflow) |
+| TypeScript | `@hypabolic/trajectory` | v1 sources/outputs (ML13); `0.1.0` (publish via Release workflow) |
+| Rust | `hypabolic-trajectory` | v1 sources/outputs (ML13); `0.1.0` (publish via Release workflow) |
 
 All three runtimes support Pi, Claude Code, Codex, OpenClaw, and Hermes
 transcripts, explicit-root local-store listing, and these
@@ -26,12 +26,13 @@ deterministic projections:
   (`Hypabolic.Trajectory.OpenTelemetry`, `@hypabolic/trajectory-otel`,
   `hypabolic-trajectory-opentelemetry`).
 
-No packages have been published. All three runtimes are independent
-implementations built from this repository's specifications and conformance
-cases. They share the v1 source baseline, deterministic projections,
-explicit-root listing, synchronized `0.1.0` preview metadata, and the private
-conformance protocol. Optional OpenTelemetry packages remain outside each core
-package. The pinned `letta-ai/trajectory` package is used only as a black-box
+All three runtimes are independent implementations built from this repository's
+specifications and conformance cases. They share the v1 source baseline,
+deterministic projections, explicit-root listing, synchronized `0.1.0` package
+metadata, and the private conformance protocol. Optional OpenTelemetry packages
+remain outside each core package. First public registry publishes are cut with
+the Release workflow (see [docs/publishing.md](docs/publishing.md)). The pinned
+`letta-ai/trajectory` package is used only as a black-box
 compatibility oracle. Preview packaging is dry-run only; see
 [docs/release-readiness.md](docs/release-readiness.md).
 
@@ -189,18 +190,26 @@ projection and an application-owned SDK sink boundary. See
 [rust/README.md](rust/README.md) for the package boundary and full validation
 commands.
 
-## Preview release evidence
+## Publishing packages
 
-The three ecosystems use synchronized `0.1.0` package metadata while remaining
-unpublished. CI dry-runs NuGet, npm, and the Rust core package, installs
-artifacts in empty consumer projects where the ecosystem supports it, records
-the optional Rust telemetry crate's exact publish file set (its sibling core is
-not yet present in crates.io), records dependency inventories, hashes every
-archive, and uploads a provenance manifest. Validate the synchronized metadata
-locally with:
+Package versions are synchronized across NuGet, npm, and crates.io. Every PR
+and main build dry-runs packaging; live publishes use the **Release** workflow
+when you push a `v*.*.*` tag (or run the workflow with `dry_run=false`).
+
+| Ecosystem | Public packages |
+| --- | --- |
+| NuGet | `Hypabolic.Trajectory`, `.OpenTelemetry`, `.Testing` |
+| npm | `@hypabolic/trajectory`, `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
+| crates.io | `hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry` |
+
+Operator setup (secrets, tag steps, consumer install):
+[docs/publishing.md](docs/publishing.md).
+
+Validate synchronized metadata locally:
 
 ```bash
 python3 tools/validate_release_metadata.py --repository-root .
+python3 tools/assert_release_version.py --repository-root . --version 0.1.0
 ```
 
 Representative dependency-free benchmarks live under each runtime. They report
@@ -255,6 +264,7 @@ See:
 - [architecture](docs/architecture.md);
 - [compatibility and multi-language roadmap](docs/multi-language-plan.md);
 - [release readiness, privacy, upgrade, intentional differences](docs/release-readiness.md);
+- [publishing packages to NuGet, npm, and crates.io](docs/publishing.md);
 - [detailed .NET behavior baseline](docs/implementation-plan.md);
 - [pinned parity baseline](docs/parity-baseline.md);
 - [.NET adapter authoring](dotnet/docs/adapter-authoring.md);
@@ -267,9 +277,10 @@ TypeScript and Rust Pi vertical paths; ML4 brought TypeScript to the current
 .NET Pi, Claude Code, and Codex source baseline; ML5 and ML6 brought Rust to
 the same source baseline; ML7 completed output and preview-distribution parity
 across all three implementations. ML9 OpenClaw, ML11 Hermes, and ML13 1.0
-parity and release hardening are complete. Packages remain unpublished at
-synchronized `0.1.0` with CI dry-run packaging. Letta Code (ML8), OpenHands
-(ML10), and Deep Agents checkpoint integrations (ML12) remain accepted
-post-v1 support goals and are not part of the v1 required capability set.
-Publish decision and 1.0 process gates are in
+parity and release hardening are complete. Packaging is dry-run gated on every
+CI build; live multi-registry publish is available via the Release workflow
+([docs/publishing.md](docs/publishing.md)). Letta Code (ML8), OpenHands (ML10),
+and Deep Agents checkpoint integrations (ML12) remain accepted post-v1 support
+goals and are not part of the v1 required capability set. Remaining process
+gates (secrets, first tag) are in
 [docs/release-readiness.md](docs/release-readiness.md).

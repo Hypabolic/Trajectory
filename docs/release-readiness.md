@@ -5,8 +5,11 @@ preview packaging policy, provenance, privacy, upgrade guidance, intentional
 differences from the pinned upstream oracle, and the criteria that must hold
 before a product-level 1.0.
 
-Packages are **not** published from this repository yet. CI dry-runs NuGet, npm,
-and crates packaging only.
+CI dry-runs NuGet, npm, and crates packaging on every main/PR build. Live
+publishes are performed by the **Release** workflow (`.github/workflows/release.yml`)
+when a `v*.*.*` tag is pushed or when `workflow_dispatch` is run with
+`dry_run=false`. See [publishing.md](publishing.md) for secrets, tag process,
+and consumer install commands.
 
 ## Current preview status
 
@@ -165,14 +168,18 @@ ML13 completes the engineering readiness work; the remaining items are
 - [x] Post-v1 sources (Letta Code, OpenHands, Deep Agents) are **not**
       advertised as v1 capabilities.
 
-### Publish process (remaining for an actual 1.0/0.1 publish)
+### Publish process
 
-- [ ] Explicit product decision to publish packages (still dry-run only).
-- [ ] Signed or otherwise attested release from one tagged commit.
-- [ ] Live publish of synchronized NuGet, npm, and crates artifacts with
-      matching versions and the same normalizer contract version.
-- [ ] Public package READMEs and registry metadata point at this repository's
-      contracts and pin.
+- [x] Synchronized package metadata and `tools/validate_release_metadata.py` gate.
+- [x] Release workflow packs NuGet, npm, and crates with content checks.
+- [x] Live multi-registry publish path (tag `v*.*.*` or dispatch with
+      `dry_run=false`) documented in [publishing.md](publishing.md).
+- [x] npm provenance (`id-token`) and GitHub Release asset attachment wired.
+- [ ] Repository secrets configured: `NUGET_API_KEY`, `NPM_TOKEN`,
+      `CARGO_REGISTRY_TOKEN`.
+- [ ] GitHub Environment `release` created (optional reviewers/branch rules).
+- [ ] Explicit product decision to cut the first public tag (e.g. `v0.1.0`).
+- [ ] First live publish of synchronized NuGet, npm, and crates artifacts.
 - [ ] Optional: broaden property/fuzz corpus beyond the current representative
       suites if production traffic surfaces new classes of input.
 
