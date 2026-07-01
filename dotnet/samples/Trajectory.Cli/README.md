@@ -17,7 +17,7 @@ Default store roots (override with `--root` or env):
 | `pi` | `~/.pi/agent` | `TRAJECTORY_PI_ROOT` or `PI_CODING_AGENT_DIR` |
 | `claude-code` | `~/.claude/projects` | `TRAJECTORY_CLAUDE_CODE_ROOT` |
 | `codex` | `~/.codex/sessions` | `TRAJECTORY_CODEX_ROOT` |
-| `openclaw` | `~/.openclaw` | `TRAJECTORY_OPENCLAW_ROOT` or `OPENCLAW_STATE_DIR` |
+| `openclaw` | `~/.openclaw` if present, else `~/.clawdbot` | `TRAJECTORY_OPENCLAW_ROOT`, `OPENCLAW_STATE_DIR`, or `CLAWDBOT_STATE_DIR` |
 | `hermes` | `~/.hermes` | `TRAJECTORY_HERMES_ROOT` |
 
 Hermes core listing is SQLite-free and returns empty pages. Export message JSON from Hermes and use `show --path`.

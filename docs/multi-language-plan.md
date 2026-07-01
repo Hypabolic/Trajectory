@@ -283,12 +283,17 @@ CI has two layers:
 
 1. each implementation runs its unit, property, integration, packaging, and
    platform tests;
-2. the cross-language job runs every shared case through all implementations,
-   compares each result with the checked-in golden, and then compares the
-   implementation results directly.
+2. shared conformance: each runtime job runs every shared case through that
+   implementation and compares results to the checked-in goldens
+   (`conformance/verify.py` for .NET, TypeScript, and Rust).
 
-The cross-language job runs on Ubuntu for fast classification. Runtime-specific
-tests then cover:
+Independent golden equality is the accepted substitute for a single
+cross-language job that also compares implementation outputs pairwise. Because
+every runtime must match the same immutable goldens (and identity baselines are
+hashed), pairwise runtime equality is implied when all three pass. A dedicated
+pairwise differential job remains optional future tightening, not a v1 gate.
+
+Runtime-specific tests then cover:
 
 - .NET: existing target frameworks and Native AOT platforms;
 - Rust: MSRV plus stable on Linux, macOS, and Windows;

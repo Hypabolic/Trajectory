@@ -133,7 +133,7 @@ cargo run -p trajectory-cli -- list --source pi
 ```
 
 Default store roots: `~/.pi/agent`, `~/.claude/projects`, `~/.codex/sessions`,
-`~/.openclaw`, `~/.hermes`. Override with `--root` or `TRAJECTORY_<SOURCE>_ROOT`.
+`~/.openclaw` (else legacy `~/.clawdbot`), `~/.hermes`. Override with `--root` or `TRAJECTORY_<SOURCE>_ROOT`.
 Content is omitted unless `--show-content` (prints a privacy warning).
 
 ## Build and test TypeScript

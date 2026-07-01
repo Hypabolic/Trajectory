@@ -1,0 +1,21 @@
+{
+  "session": {
+    "id": "hermes-session-no-assistant",
+    "source": "tui",
+    "model": "gpt-5.2",
+    "cwd": "/workspace/demo",
+    "started_at": 1783200000.0,
+    "title": "User-only session"
+  },
+  "messages": [
+    {
+      "id": 301,
+      "session_id": "hermes-session-no-assistant",
+      "role": "user",
+      "content": "Is anyone there?",
+      "timestamp": 1783200001.0,
+      "observed": 0,
+      "active": 1
+    }
+  ]
+}

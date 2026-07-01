@@ -8,7 +8,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
 import { readFile, access } from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, existsSync } from "node:fs";
 
 import {
   normalizeToHypabolic,
@@ -170,7 +170,10 @@ function defaultRoot(source: SourceName): string {
     case "openclaw": {
       const openclaw = process.env.OPENCLAW_STATE_DIR?.trim() || process.env.CLAWDBOT_STATE_DIR?.trim();
       if (openclaw) return expandHome(openclaw);
-      return join(home, ".openclaw");
+      // Prefer ~/.openclaw when present; otherwise fall back to legacy ~/.clawdbot.
+      const openclawHome = join(home, ".openclaw");
+      if (existsSync(openclawHome)) return openclawHome;
+      return join(home, ".clawdbot");
     }
     case "hermes":
       return join(home, ".hermes");
@@ -186,7 +189,7 @@ function describeDefault(source: SourceName): string {
     case "codex":
       return "~/.codex/sessions";
     case "openclaw":
-      return "~/.openclaw (or OPENCLAW_STATE_DIR)";
+      return "~/.openclaw if present, else ~/.clawdbot (or OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR)";
     case "hermes":
       return "~/.hermes/state.db";
   }
@@ -534,10 +537,11 @@ Default roots:
   pi           ~/.pi/agent
   claude-code  ~/.claude/projects
   codex        ~/.codex/sessions
-  openclaw     ~/.openclaw
+  openclaw     ~/.openclaw if present, else ~/.clawdbot
   hermes       ~/.hermes
 
 Root overrides: --root or TRAJECTORY_<SOURCE>_ROOT (e.g. TRAJECTORY_PI_ROOT).
+OpenClaw also honors OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR.
 Privacy: content is omitted unless --show-content (prints a warning).
 `);
 }
