@@ -93,17 +93,21 @@ fi
 
 echo
 echo "Publishing ${#WORKSPACES[@]} packages to npmjs.com as $(npm whoami)..."
+echo "Note: local bootstrap does not attach npm provenance (CI-only)."
 (
   cd typescript
+  # Provenance requires a supported CI provider (GitHub Actions OIDC, etc.).
+  # Do not pass --provenance here; package.json also omits publishConfig.provenance
+  # so a laptop publish is not forced into the CI path.
   for workspace in "${WORKSPACES[@]}"; do
     echo "==== Publishing $workspace ===="
-    npm publish --workspace "$workspace" --access public --provenance
+    npm publish --workspace "$workspace" --access public
   done
 )
 
 cat <<'EOF'
 
-Bootstrap publish finished.
+Bootstrap publish finished (no provenance attestation — expected for local CLI).
 
 Configure Trusted Publishing on npmjs.com for EACH package:
   @hypabolic/trajectory
@@ -116,6 +120,5 @@ Package settings → Trusted Publisher → GitHub Actions:
   Workflow filename    : release.yml
   Environment name     : release
 
-Then use the Release workflow / version tags for all later publishes (OIDC only).
-Do not leave a long-lived publish token in GitHub Actions secrets.
+Later releases from GitHub Actions use OIDC + --provenance.
 EOF
