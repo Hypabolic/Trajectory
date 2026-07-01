@@ -11,10 +11,11 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
   content checks, npm provenance, crates.io ordered publish with index retry,
   GitHub Release notes/assets, MIT `LICENSE`, shared NuGet metadata
   (`dotnet/Directory.Build.props`), and `tools/assert_release_version.py`.
-  Steady-state npm uses **OIDC trusted publishing**; **npm bootstrap**
-  workflow (`.github/workflows/npm-bootstrap.yml`) publishes the first
-  `@hypabolic/*` packages with a short-lived `NPM_TOKEN` so Trusted Publisher
-  can be configured afterward. Operator guide: `docs/publishing.md`.
+  Steady-state npm uses **OIDC trusted publishing**. First-time
+  `@hypabolic/*` package creation is a local CLI bootstrap
+  (`./tools/bootstrap_npm_packages.sh` / `npm publish` from a logged-in
+  machine) so Trusted Publisher can be configured afterward—no long-lived
+  npm token in GitHub. Operator guide: `docs/publishing.md`.
 
 - Completed ML13 1.0 parity and release hardening. Runtime capability manifests
   advertise slice `ML13` with the full v1 source set (`pi`, `claude-code`,

@@ -176,10 +176,10 @@ ML13 completes the engineering readiness work; the remaining items are
       `dry_run=false`) documented in [publishing.md](publishing.md).
 - [x] npm provenance (`id-token`) and GitHub Release asset attachment wired.
 - [ ] GitHub Environment `release` created (optional reviewers/branch rules).
-- [ ] npm `@hypabolic` org exists; packages bootstrapped once via
-      **npm bootstrap** workflow + `NPM_TOKEN`, then Trusted Publisher (OIDC)
-      configured for `release.yml` / environment `release` (see
-      [publishing.md](publishing.md)); bootstrap token revoked.
+- [ ] npm `@hypabolic` org exists; packages bootstrapped once from a developer
+      machine (`./tools/bootstrap_npm_packages.sh --publish` or manual
+      `npm publish`), then Trusted Publisher (OIDC) configured for
+      `release.yml` / environment `release` (see [publishing.md](publishing.md)).
 - [ ] Repository secrets for live multi-registry release: `NUGET_API_KEY`,
       `CARGO_REGISTRY_TOKEN` (no long-lived `NPM_TOKEN` after OIDC is set).
 - [ ] Explicit product decision to cut the first public tag (e.g. `v0.1.0`).
