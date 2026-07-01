@@ -11,8 +11,8 @@ use hypabolic_trajectory::{
     ListingOptions, NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError,
     TruncationStrategy, list_claude_code_trajectories, list_codex_trajectories,
     list_openclaw_trajectories, list_pi_trajectories, normalize_claude_code, normalize_codex,
-    normalize_openclaw, normalize_pi, project_canonical,
-    project_hypabolic, project_letta, project_minimal_jsonl, project_openai, project_opentelemetry,
+    normalize_openclaw, normalize_pi, project_canonical, project_hypabolic, project_letta,
+    project_minimal_jsonl, project_openai, project_opentelemetry,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -138,7 +138,10 @@ fn run() -> Result<Value, String> {
             request.case, request.operation
         ));
     }
-    if !matches!(manifest.source.as_str(), "pi" | "claude-code" | "codex" | "openclaw") {
+    if !matches!(
+        manifest.source.as_str(),
+        "pi" | "claude-code" | "codex" | "openclaw"
+    ) {
         return Err(format!(
             "Rust ML7 does not support source '{}'.",
             manifest.source

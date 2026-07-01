@@ -82,16 +82,12 @@ pub fn list_openclaw_trajectories(
             });
         }
         Err(error) => {
-            return Err(io_error(
-                "Could not enumerate the OpenClaw store.",
-                &error,
-            ));
+            return Err(io_error("Could not enumerate the OpenClaw store.", &error));
         }
     };
     for agent in agents {
-        let agent = agent.map_err(|error| {
-            io_error("Could not enumerate the OpenClaw store.", &error)
-        })?;
+        let agent =
+            agent.map_err(|error| io_error("Could not enumerate the OpenClaw store.", &error))?;
         let file_type = match agent.file_type() {
             Ok(value) => value,
             Err(error) if missing_or_denied(&error) => continue,
