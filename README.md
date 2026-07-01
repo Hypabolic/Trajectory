@@ -13,7 +13,7 @@ wire contracts and conformance cases:
 | TypeScript | `@hypabolic/trajectory` | ML7 source/output parity implemented; unpublished |
 | Rust | `hypabolic-trajectory` | ML7 source/output parity implemented; unpublished |
 
-The current .NET runtime supports Pi, Claude Code, and Codex transcripts,
+The current .NET runtime supports Pi, Claude Code, Codex, and OpenClaw transcripts,
 explicit-root local-store listing, trimming and Native AOT, and these
 deterministic projections:
 
@@ -27,7 +27,7 @@ deterministic projections:
 
 Rust and TypeScript packages have not been published. Both are independent
 implementations built from this repository's specifications and conformance
-cases. TypeScript supports the current .NET Pi, Claude Code, and Codex source
+cases. TypeScript supports the current .NET Pi, Claude Code, Codex, and OpenClaw source
 baseline and all deterministic projections. Rust ML7 supports the same source
 and output set. Both provide explicit-root listing, ecosystem-native writer
 surfaces, synchronized `0.1.0` preview metadata, and the private conformance
@@ -233,7 +233,7 @@ ML1 established the shared foundation; ML2 and ML3 added independent
 TypeScript and Rust Pi vertical paths; ML4 brought TypeScript to the current
 .NET Pi, Claude Code, and Codex source baseline; ML5 and ML6 brought Rust to
 the same source baseline; ML7 completed output and preview-distribution parity
-across all three implementations. ML9 is next: add OpenClaw across all three
-runtimes. Letta Code (ML8), OpenHands (ML10), and Deep Agents checkpoint
+across all three implementations. ML9 OpenClaw is complete across all three
+runtimes. ML11 Hermes is next for the remaining v1 source. Letta Code (ML8), OpenHands (ML10), and Deep Agents checkpoint
 integrations (ML12) remain accepted post-v1 support goals and are not part of
 the v1 required capability set.

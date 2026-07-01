@@ -41,14 +41,21 @@ def main() -> None:
     if compatibility["implemented"]["outputs"] != OUTPUTS:
         raise SystemExit("Compatibility output order differs from the release output set.")
 
+    expected_sources = compatibility["implemented"]["sources"]
     runtime_manifests = [
         root / "typescript/packages/trajectory/runtime-capabilities.json",
         root / "rust/crates/hypabolic-trajectory/runtime-capabilities.json",
     ]
     for path in runtime_manifests:
         manifest = load_json(path)
-        if manifest["slice"] != "ML7" or manifest["outputs"] != OUTPUTS:
-            raise SystemExit(f"{path.relative_to(root)} does not advertise ML7 output parity.")
+        if (
+            manifest.get("slice") != "ML9"
+            or manifest.get("outputs") != OUTPUTS
+            or manifest.get("sources") != expected_sources
+        ):
+            raise SystemExit(
+                f"{path.relative_to(root)} does not advertise ML9 source/output parity."
+            )
 
     npm_paths = [
         root / "typescript/package.json",

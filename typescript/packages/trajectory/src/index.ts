@@ -3,7 +3,7 @@
  * adapters derive byte anchors from this UTF-8 encoding, never UTF-16 indices.
  */
 export type TranscriptInput = Uint8Array | string;
-export type TrajectorySource = "pi" | "claude-code" | "codex";
+export type TrajectorySource = "pi" | "claude-code" | "codex" | "openclaw";
 
 export interface SourceContext {
   readonly groupId?: string;
@@ -39,7 +39,7 @@ export interface TrajectoryDiagnostic {
 }
 
 export const NORMALIZER_CONTRACT_VERSION = "0.2.0";
-export const ImplementedSources = ["pi", "claude-code", "codex"] as const;
+export const ImplementedSources = ["pi", "claude-code", "codex", "openclaw"] as const;
 export const OutputSchemaIds = {
   lettaTrajectoryV1: "letta-trajectory-v1",
   lettaCanonicalV1: "letta-canonical-v1",
@@ -58,6 +58,7 @@ export function transcriptBytes(input: TranscriptInput): Uint8Array {
 import {
   normalizeClaudeCode,
   normalizeCodex,
+  normalizeOpenClaw,
   normalizePi,
   type TrajectoryIR,
   TrajectoryNormalizationError,
@@ -92,6 +93,7 @@ export function normalizeToIR(request: NormalizeRequest): TrajectoryIR {
   if (request.source === "pi") return normalizePi(normalized);
   if (request.source === "claude-code") return normalizeClaudeCode(normalized);
   if (request.source === "codex") return normalizeCodex(normalized);
+  if (request.source === "openclaw") return normalizeOpenClaw(normalized);
   throw new TrajectoryNormalizationError("unknown_source", `No source adapter is registered for '${String(request.source)}'.`);
 }
 

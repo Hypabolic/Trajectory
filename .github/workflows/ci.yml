@@ -319,9 +319,9 @@ jobs:
         run: |
           jq -e '
             .runtime == "rust"
-            and .slice == "ML7"
+            and .slice == "ML9"
             and .normalizer_contract_version == "0.2.0"
-            and .sources == ["pi", "claude-code", "codex"]
+            and .sources == ["pi", "claude-code", "codex", "openclaw"]
             and .outputs == [
               "letta-trajectory-v1",
               "letta-canonical-v1",
