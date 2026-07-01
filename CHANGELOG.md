@@ -5,6 +5,12 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## 0.1.0 — Unreleased
 
+- Added unpublished sample CLIs for local session browsing across .NET
+  (`dotnet/samples/Trajectory.Cli`), TypeScript (`@hypabolic/trajectory-cli`),
+  and Rust (`trajectory-cli`). Each lists default agent-store roots, supports
+  `--root` / env overrides, interactive session pick, and privacy-safe Letta
+  and Hypabolic summaries (`--show-content` is opt-in with a warning).
+
 - Added Hermes source adapters and shared conformance fixtures across .NET,
   TypeScript, and Rust. Message-row arrays and session envelopes normalize with
   soft-delete filtering, AUTOINCREMENT ordering, multimodal `\u0000json:` content,

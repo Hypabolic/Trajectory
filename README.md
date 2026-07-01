@@ -58,9 +58,9 @@ core.
 ```text
 contracts/       versioned schemas and normative behavioral specifications
 conformance/     shared native fixtures, expected outputs, stores, and protocol
-dotnet/          current .NET source, tests, AOT smoke app, and solution
-rust/            independent Rust workspace, core crate, and private runner
-typescript/      independent TypeScript packages, tests, and private runner
+dotnet/          current .NET source, tests, AOT smoke app, sample CLI, and solution
+rust/            independent Rust workspace, core crate, private runner, sample CLI
+typescript/      independent TypeScript packages, tests, private runner, sample CLI
 docs/            product architecture, parity baseline, and roadmap
 ```
 
@@ -102,6 +102,38 @@ dotnet publish dotnet/tests/Trajectory.AotSmoke/Trajectory.AotSmoke.csproj \
 
 The private runner protocol and case-authoring workflow are documented in
 [conformance/README.md](conformance/README.md).
+
+## Sample CLIs (local demos)
+
+Unpublished sample TUIs let you list local agent sessions and normalize one into
+a privacy-safe Letta/Hypabolic summary. They depend on workspace packages only
+and are not part of the published surface.
+
+| Runtime | Sample | Docs |
+| --- | --- | --- |
+| .NET | `dotnet/samples/Trajectory.Cli` | [README](dotnet/samples/Trajectory.Cli/README.md) |
+| TypeScript | `typescript/packages/trajectory-cli` | [README](typescript/packages/trajectory-cli/README.md) |
+| Rust | `rust/tools/trajectory-cli` | [README](rust/tools/trajectory-cli/README.md) |
+
+Quick starts:
+
+```bash
+# .NET
+dotnet run --project dotnet/samples/Trajectory.Cli -- list --source pi
+dotnet run --project dotnet/samples/Trajectory.Cli -- show \
+  --source pi --path conformance/cases/pi/tool-calls/input.jsonl
+
+# TypeScript (from typescript/)
+npm install && npm run build
+node packages/trajectory-cli/dist/cli.js list --source pi
+
+# Rust (from rust/)
+cargo run -p trajectory-cli -- list --source pi
+```
+
+Default store roots: `~/.pi/agent`, `~/.claude/projects`, `~/.codex/sessions`,
+`~/.openclaw`, `~/.hermes`. Override with `--root` or `TRAJECTORY_<SOURCE>_ROOT`.
+Content is omitted unless `--show-content` (prints a privacy warning).
 
 ## Build and test TypeScript
 

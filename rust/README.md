@@ -52,3 +52,16 @@ Run the dependency-free representative benchmark:
 cargo +stable run --manifest-path rust/Cargo.toml \
   -p hypabolic-trajectory --example benchmark --release
 ```
+
+## Sample CLI
+
+The unpublished `trajectory-cli` tool lists local agent stores and prints
+privacy-safe trajectory summaries. See
+[tools/trajectory-cli/README.md](tools/trajectory-cli/README.md).
+
+```bash
+cargo run --manifest-path rust/Cargo.toml -p trajectory-cli -- list --source pi
+cargo run --manifest-path rust/Cargo.toml -p trajectory-cli -- show \
+  --source pi \
+  --path conformance/cases/pi/tool-calls/input.jsonl
+```
