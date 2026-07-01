@@ -1,8 +1,8 @@
 {
   "runtime": "typescript",
-  "slice": "ML9",
+  "slice": "ML13",
   "normalizer_contract_version": "0.2.0",
-  "sources": ["pi", "claude-code", "codex", "openclaw"],
+  "sources": ["pi", "claude-code", "codex", "openclaw", "hermes"],
   "outputs": [
     "letta-trajectory-v1",
     "letta-canonical-v1",

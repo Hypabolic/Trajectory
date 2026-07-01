@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>trajectory</AssemblyName>
+    <RootNamespace>Hypabolic.Trajectory.Cli</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Sample only: not published with the product packages. -->
+    <Description>Local sample TUI for browsing agent sessions with Hypabolic.Trajectory.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.50.0" />
+    <PackageReference Include="Spectre.Console.Cli" Version="0.50.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Trajectory/Trajectory.csproj" />
+  </ItemGroup>
+</Project>

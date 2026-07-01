@@ -190,6 +190,22 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Validate TypeScript capability manifest
+        run: |
+          jq -e '
+            .runtime == "typescript"
+            and .slice == "ML13"
+            and .normalizer_contract_version == "0.2.0"
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes"]
+            and .outputs == [
+              "letta-trajectory-v1",
+              "letta-canonical-v1",
+              "hypabolic-trajectory-v1",
+              "openai-chat-messages",
+              "jsonl-minimal",
+              "otel-genai-spans-v1"
+            ]
+          ' typescript/packages/trajectory/runtime-capabilities.json > /dev/null
       - name: Run every advertised shared case twice
         run: >-
           python3 conformance/verify.py --repository-root . --
@@ -319,9 +335,9 @@ jobs:
         run: |
           jq -e '
             .runtime == "rust"
-            and .slice == "ML9"
+            and .slice == "ML13"
             and .normalizer_contract_version == "0.2.0"
-            and .sources == ["pi", "claude-code", "codex", "openclaw"]
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes"]
             and .outputs == [
               "letta-trajectory-v1",
               "letta-canonical-v1",
@@ -381,13 +397,16 @@ jobs:
         run: |
           npm run build
           mkdir -p ../artifacts/preview/npm
+          # Pack only — `npm publish --dry-run` fails once 0.1.0 already exists
+          # on the registry (bootstrap), even though no publish occurs.
           npm pack --workspace @hypabolic/trajectory \
             --workspace @hypabolic/trajectory-node \
             --workspace @hypabolic/trajectory-otel \
             --pack-destination ../artifacts/preview/npm
-          npm publish --dry-run --workspace @hypabolic/trajectory \
-            --workspace @hypabolic/trajectory-node \
-            --workspace @hypabolic/trajectory-otel
+          for package in ../artifacts/preview/npm/*.tgz; do
+            echo "Packed $package"
+            tar -tzf "$package" | head -20
+          done
       - name: Build and dry-run crates
         run: |
           python3 tools/prepare_rust_package.py
@@ -415,5 +434,5 @@ jobs:
       - name: Upload preview evidence
         uses: actions/upload-artifact@v4
         with:
-          name: ml7-preview-release
+          name: ml13-preview-release
           path: artifacts

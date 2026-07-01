@@ -33,6 +33,11 @@ additional items remain.
   directory level under each agent. The default state root is
   `OPENCLAW_STATE_DIR` or legacy `CLAWDBOT_STATE_DIR` when non-empty; otherwise
   `~/.openclaw` when present, else legacy `~/.clawdbot`.
+- Hermes: SQLite store at `~/.hermes/state.db` (or a caller-supplied `.db` path
+  or directory containing `state.db`). Item IDs are session IDs from the
+  `sessions` table; `path` is the store locator used when exporting message
+  rows. Core packages stay SQLite-free, so missing stores list as empty and
+  full sessions-table enumeration is optional/provider-side.
 
 Missing stores return an empty page. Inaccessible or concurrently removed
 subtrees are skipped. A source without an installed lister fails with

@@ -8,10 +8,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import tomllib
 import xml.etree.ElementTree as ET
 
 VERSION = "0.1.0"
+SLICE = "ML13"
 OUTPUTS = [
     "letta-trajectory-v1",
     "letta-canonical-v1",
@@ -20,6 +20,7 @@ OUTPUTS = [
     "jsonl-minimal",
     "otel-genai-spans-v1",
 ]
+EXPECTED_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes"]
 
 
 def load_json(path: Path) -> dict:
@@ -28,6 +29,48 @@ def load_json(path: Path) -> dict:
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_toml(path: Path) -> dict:
+    """Load TOML. Prefer stdlib tomllib (3.11+); fall back to a tiny subset parser."""
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        return _load_toml_subset(path.read_text(encoding="utf-8"))
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_toml_subset(text: str) -> dict:
+    """Parse the nested tables this script needs from Cargo.toml.
+
+    Supports string values and records dependency keys whose values are tables
+    or other non-string forms (values stored as None; only keys are checked).
+    """
+    root: dict = {}
+    section: list[str] = []
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = [part.strip() for part in line[1:-1].split(".")]
+            cursor = root
+            for part in section:
+                cursor = cursor.setdefault(part, {})
+            continue
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        cursor = root
+        for part in section:
+            cursor = cursor.setdefault(part, {})
+        if value.startswith('"') and value.endswith('"'):
+            cursor[key] = value[1:-1]
+        else:
+            cursor[key] = None
+    return root
 
 
 def main() -> None:
@@ -40,6 +83,11 @@ def main() -> None:
     compatibility = load_json(root / "contracts/compatibility.json")
     if compatibility["implemented"]["outputs"] != OUTPUTS:
         raise SystemExit("Compatibility output order differs from the release output set.")
+    if compatibility["implemented"]["sources"] != EXPECTED_SOURCES:
+        raise SystemExit(
+            "Compatibility implemented sources must be the v1 set "
+            f"{EXPECTED_SOURCES}."
+        )
 
     expected_sources = compatibility["implemented"]["sources"]
     runtime_manifests = [
@@ -49,12 +97,14 @@ def main() -> None:
     for path in runtime_manifests:
         manifest = load_json(path)
         if (
-            manifest.get("slice") != "ML9"
+            manifest.get("slice") != SLICE
             or manifest.get("outputs") != OUTPUTS
             or manifest.get("sources") != expected_sources
+            or "hermes" not in manifest.get("sources", [])
         ):
             raise SystemExit(
-                f"{path.relative_to(root)} does not advertise ML9 source/output parity."
+                f"{path.relative_to(root)} does not advertise ML13 source/output parity "
+                f"(slice={SLICE}, sources including hermes)."
             )
 
     npm_paths = [
@@ -73,10 +123,10 @@ def main() -> None:
         if package.get("private", False):
             raise SystemExit(f"{path.relative_to(root)} cannot participate in a preview dry run.")
 
-    cargo = tomllib.loads((root / "rust/Cargo.toml").read_text(encoding="utf-8"))
+    cargo = load_toml(root / "rust/Cargo.toml")
     if cargo["workspace"]["package"]["version"] != VERSION:
         raise SystemExit("Rust workspace package version is not synchronized.")
-    core_dependencies = cargo["workspace"]["dependencies"]
+    core_dependencies = cargo["workspace"].get("dependencies", {})
     if any("opentelemetry" in name.lower() for name in core_dependencies):
         raise SystemExit("The Rust core dependency catalog contains OpenTelemetry.")
 
@@ -99,12 +149,16 @@ def main() -> None:
         root / "rust/Cargo.lock",
         *projects,
     ]
+    source_commit = os.environ.get("GITHUB_SHA") or os.environ.get("SOURCE_COMMIT")
     evidence = {
         "format": "trajectory-preview-provenance-v1",
         "version": VERSION,
+        "slice": SLICE,
         "normalizer_contract_version": compatibility["contracts"]["normalizer"],
         "upstream_commit": compatibility["upstream"]["commit"],
-        "source_commit": os.environ.get("GITHUB_SHA"),
+        "source_commit": source_commit,
+        "implemented_sources": expected_sources,
+        "implemented_outputs": OUTPUTS,
         "manifests": {
             str(path.relative_to(root)): sha256(path)
             for path in sorted(inputs)
@@ -116,7 +170,17 @@ def main() -> None:
             json.dumps(evidence, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-    print(json.dumps({"status": "success", "version": VERSION, "manifests": len(inputs)}))
+    print(
+        json.dumps(
+            {
+                "status": "success",
+                "version": VERSION,
+                "slice": SLICE,
+                "manifests": len(inputs),
+                "source_commit": source_commit,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

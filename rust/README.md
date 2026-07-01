@@ -1,11 +1,13 @@
 # Trajectory for Rust
 
 `hypabolic-trajectory` is the independent native Rust implementation of the
-Trajectory contracts. ML7 implements the complete Pi, Claude Code, and Codex
-source/output paths:
+Trajectory contracts. ML13 advertises the complete v1 source/output paths:
 
-- byte-oriented Pi, Claude Code, and Codex JSONL decoding and normalization;
+- byte-oriented Pi, Claude Code, Codex, OpenClaw, and Hermes decoding and
+  normalization;
 - Claude Code producer/context and model-invocation metadata retention;
+- Hermes array/envelope decode with SQLite-free empty-page listing when no
+  store is present;
 - typed diagnostics and fatal errors;
 - all six shared deterministic projections, including OpenAI chat, streaming
   minimal JSONL, and GenAI span sets;
@@ -32,7 +34,7 @@ cargo +stable doc --manifest-path rust/Cargo.toml \
   --workspace --no-deps
 ```
 
-Build the runner and execute every ML7 shared operation twice:
+Build the runner and execute every advertised shared operation twice:
 
 ```bash
 cargo +stable build --manifest-path rust/Cargo.toml \
@@ -41,14 +43,28 @@ python3 conformance/verify.py --repository-root . -- \
   rust/target/release/trajectory-conformance
 ```
 
-`runtime-capabilities.json` is the machine-readable declaration of the three
-implemented sources and six implemented outputs. `write_schema` and
-`write_minimal_jsonl` provide `std::io::Write` surfaces; the latter emits one
-record at a time without materializing the full JSONL document.
+`runtime-capabilities.json` is the machine-readable declaration of the five
+implemented sources and six implemented outputs (slice `ML13`). `write_schema`
+and `write_minimal_jsonl` provide `std::io::Write` surfaces; the latter emits
+one record at a time without materializing the full JSONL document. Packages
+remain unpublished; see [docs/release-readiness.md](../docs/release-readiness.md).
 
 Run the dependency-free representative benchmark:
 
 ```bash
 cargo +stable run --manifest-path rust/Cargo.toml \
   -p hypabolic-trajectory --example benchmark --release
+```
+
+## Sample CLI
+
+The unpublished `trajectory-cli` tool lists local agent stores and prints
+privacy-safe trajectory summaries. See
+[tools/trajectory-cli/README.md](tools/trajectory-cli/README.md).
+
+```bash
+cargo run --manifest-path rust/Cargo.toml -p trajectory-cli -- list --source pi
+cargo run --manifest-path rust/Cargo.toml -p trajectory-cli -- show \
+  --source pi \
+  --path conformance/cases/pi/tool-calls/input.jsonl
 ```

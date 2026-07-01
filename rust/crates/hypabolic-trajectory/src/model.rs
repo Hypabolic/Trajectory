@@ -147,6 +147,8 @@ pub enum TrajectorySource {
     Codex,
     /// `OpenClaw` session JSONL (Pi-family).
     OpenClaw,
+    /// Hermes message-row array or session envelope.
+    Hermes,
 }
 
 impl TrajectorySource {
@@ -156,6 +158,7 @@ impl TrajectorySource {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
             Self::OpenClaw => "openclaw",
+            Self::Hermes => "hermes",
         }
     }
 }

@@ -1,0 +1,35 @@
+{
+  "name": "@hypabolic/trajectory-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local sample TUI for browsing agent sessions with @hypabolic/trajectory",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "trajectory": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "dependencies": {
+    "@hypabolic/trajectory": "0.1.0",
+    "@hypabolic/trajectory-node": "0.1.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "tsc --build --clean tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/cli.js",
+    "trajectory": "node dist/cli.js"
+  }
+}

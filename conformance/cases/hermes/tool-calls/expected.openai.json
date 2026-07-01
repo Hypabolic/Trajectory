@@ -1,0 +1,1 @@
+[{"role":"user","content":"Check the current directory."},{"role":"assistant","tool_calls":[{"id":"call_hermes_1","type":"function","function":{"name":"terminal","arguments":"{\"command\":\"pwd\"}"}}]},{"role":"tool","content":"/workspace/demo","tool_call_id":"call_hermes_1","name":"terminal"},{"role":"assistant","content":"You are in /workspace/demo."}]

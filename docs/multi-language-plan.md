@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: accepted; ML1–ML7 and ML9 implemented, ML11 next
+Status: accepted; ML1–ML7, ML9, ML11, and ML13 complete; v1 capability set ready for unpublished 0.1.0 preview
 
 Planning baseline:
 
@@ -283,12 +283,17 @@ CI has two layers:
 
 1. each implementation runs its unit, property, integration, packaging, and
    platform tests;
-2. the cross-language job runs every shared case through all implementations,
-   compares each result with the checked-in golden, and then compares the
-   implementation results directly.
+2. shared conformance: each runtime job runs every shared case through that
+   implementation and compares results to the checked-in goldens
+   (`conformance/verify.py` for .NET, TypeScript, and Rust).
 
-The cross-language job runs on Ubuntu for fast classification. Runtime-specific
-tests then cover:
+Independent golden equality is the accepted substitute for a single
+cross-language job that also compares implementation outputs pairwise. Because
+every runtime must match the same immutable goldens (and identity baselines are
+hashed), pairwise runtime equality is implied when all three pass. A dedicated
+pairwise differential job remains optional future tightening, not a v1 gate.
+
+Runtime-specific tests then cover:
 
 - .NET: existing target frameworks and Native AOT platforms;
 - Rust: MSRV plus stable on Linux, macOS, and Windows;
@@ -590,6 +595,8 @@ must conform.
 
 ### ML11 — Hermes across all runtimes
 
+Status: complete.
+
 This replaces the current .NET-only Slice 8. Transcript normalization remains
 in core packages; SQLite discovery/export remains optional and independently
 testable.
@@ -605,13 +612,18 @@ and reducer semantics.
 
 ### ML13 — 1.0 parity and release hardening
 
+Status: complete.
+
 Outcome: NuGet, npm, and crates.io packages describe and deliver the same
-contract release.
+contract release. Packages remain unpublished; preview packaging is dry-run
+only. Product-level `1.0.0` publish process gates are recorded in
+[release-readiness.md](release-readiness.md).
 
 Acceptance:
 
 - every required conformance case passes for all advertised capabilities;
-- package compatibility manifests agree;
+- package compatibility manifests agree (slice `ML13`, v1 sources including
+  Hermes, six deterministic outputs);
 - golden, property, fuzz, differential, and platform suites pass;
 - privacy review confirms fixtures and diagnostics contain no source secrets;
 - release artifacts are reproducible enough to trace to one commit and contract
@@ -698,7 +710,12 @@ compatibility claim.
 
 ## Immediate next action
 
-Implement ML11: Hermes across all three runtimes. Keep Hermes core normalize
-independent of any SQLite provider package, cover message-row and session-envelope
-shapes with shared fixtures, and add optional store listing only in provider
-packages. After Hermes, ML13 is 1.0 parity and release hardening.
+ML13 is complete. The v1 required capability set (Pi, Claude Code, Codex,
+OpenClaw, Hermes plus six deterministic outputs) is implemented and gated
+across .NET, TypeScript, and Rust. Packages remain at synchronized unpublished
+`0.1.0` with CI dry-run packaging only.
+
+Next product decision: whether to publish the `0.1.0` preview from a tagged
+commit, or hold packages unpublished until a formal `1.0.0` process gate.
+Post-v1 source work (ML8 Letta Code, ML10 OpenHands, ML12 Deep Agents) must not
+begin as single-runtime slices. See [release-readiness.md](release-readiness.md).

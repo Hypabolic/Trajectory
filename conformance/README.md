@@ -36,6 +36,27 @@ Implementation-specific parser/unit fixtures belong under that runtime, not
 here. Shared cases are copied directly into runtime test output only for test
 execution; they remain authoritative at this path.
 
+## Fixture sanitization and privacy
+
+Shared fixtures are synthetic or rewritten so they never carry real user
+secrets. Required rules:
+
+- no live API keys, tokens, passwords, cookies, or private keys;
+- no production home directories, org names, emails, or hostnames — use
+  portable placeholders such as `/workspace/demo` and fixed session IDs;
+- no pasting of production prompts, tool arguments, or tool results;
+- multimodal or base64-looking payloads must be non-functional synthetic data;
+- listing cases use declarative stores under `stores/`; comparison rewrites the
+  temporary root to `$ROOT` so developer paths never appear in goldens;
+- diagnostic and fatal messages obey content-safety rules in
+  `contracts/spec/diagnostics.md` (no transcript prose, raw JSON, secrets, or
+  paths).
+
+When behaviour is discovered against a real transcript or the upstream oracle,
+rewrite it into a minimal sanitized vector before check-in. See
+[docs/release-readiness.md](../docs/release-readiness.md) for the ML13 privacy
+review and product release policy.
+
 ## .NET runner
 
 Build the solution, then send one protocol request:
@@ -57,48 +78,33 @@ python3 conformance/verify.py --repository-root . -- \
 
 ## TypeScript runner
 
-Build the workspace, then run the sources implemented by the current slice:
+Build the workspace, then run every advertised shared case:
 
 ```bash
 cd typescript && npm ci && npm run build && cd ..
-python3 conformance/verify.py --repository-root . --source pi -- \
+python3 conformance/verify.py --repository-root . -- \
   node typescript/packages/trajectory-testing/dist/cli.js
 ```
 
 `--source` is repeatable and selects only manifests a runtime currently
-advertises. `--operation` is also repeatable and selects the operations
-implemented by the current capability slice. Omitting either filter preserves
-the original behavior for that dimension.
-The TypeScript runner is private test infrastructure in
-`@hypabolic/trajectory-testing`; it is not a public interchange API.
+advertises. `--operation` is also repeatable and selects specific operations.
+Omitting either filter runs the full advertised set. The TypeScript runner is
+private test infrastructure in `@hypabolic/trajectory-testing`; it is not a
+public interchange API.
 
 ## Rust runner
 
-Build the workspace and run the ML6 Pi, Claude Code, and Codex capability set:
+Build the workspace and run every advertised shared case (ML13 v1 sources):
 
 ```bash
 cargo +stable build --manifest-path rust/Cargo.toml \
   --release --bin trajectory-conformance
-python3 conformance/verify.py --repository-root . --source pi \
-  --operation normalize-letta \
-  --operation normalize-canonical \
-  --operation normalize-hypabolic \
-  --operation list-trajectories -- \
-  rust/target/release/trajectory-conformance
-python3 conformance/verify.py --repository-root . --source claude-code \
-  --operation normalize-letta \
-  --operation normalize-canonical \
-  --operation normalize-hypabolic \
-  --operation list-trajectories -- \
-  rust/target/release/trajectory-conformance
-python3 conformance/verify.py --repository-root . --source codex \
-  --operation normalize-letta \
-  --operation normalize-canonical \
-  --operation normalize-hypabolic \
-  --operation list-trajectories -- \
+python3 conformance/verify.py --repository-root . -- \
   rust/target/release/trajectory-conformance
 ```
 
-The executable is unpublished private test infrastructure. Later Rust and
-TypeScript slices consume the same request and response schemas; runners add
-operations and sources without a protocol redesign.
+Focused filters remain available (`--source pi --source hermes`,
+`--operation normalize-letta`, and so on). The executable is unpublished
+private test infrastructure. All three runtimes share the same request and
+response schemas; runners add operations and sources without a protocol
+redesign.

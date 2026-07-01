@@ -8,9 +8,16 @@
     "url": "git+https://github.com/Hypabolic/Trajectory.git",
     "directory": "typescript/packages/trajectory"
   },
-  "keywords": ["agents", "transcripts", "observability", "jsonl"],
+  "keywords": [
+    "agents",
+    "transcripts",
+    "observability",
+    "jsonl"
+  ],
   "sideEffects": false,
-  "publishConfig": { "access": "public", "provenance": true },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -31,5 +38,6 @@
     "clean": "tsc --build --clean tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepack": "node ../../tools/copy-contracts.mjs"
-  }
+  },
+  "author": "Hypabolic"
 }

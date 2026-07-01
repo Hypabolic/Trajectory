@@ -302,7 +302,7 @@ Fatal contract failures use `TrajectoryNormalizationException` with a typed erro
 
 Listing is a discovery capability beside normalization, not part of transcript parsing. `ListTrajectoriesAsync` returns source-native IDs and filesystem locators, newest first, with opaque cursor pagination.
 
-A missing default store returns an empty page. Invalid input, an unavailable optional integration, or an unreadable configured store returns a typed error.
+A missing default store returns an empty page. Invalid input or an unavailable optional integration returns a typed error. Transcript-backed stores may surface I/O errors for an unreadable configured path; Hermes SQLite-backed discovery without a provider lists empty (core packages stay SQLite-free), matching `contracts/spec/listing.md`.
 
 Each source implementation owns its default store discovery and metadata extraction while a common paginator owns cursor validation and page semantics.
 

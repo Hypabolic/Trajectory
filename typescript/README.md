@@ -8,15 +8,17 @@ The pinned `letta-ai/trajectory` release is a black-box compatibility oracle.
 Its implementation source must not be copied, translated, vendored, imported,
 or used as this workspace's module structure.
 
-The implementation retains four package boundaries:
+The implementation retains these package boundaries:
 
-- `@hypabolic/trajectory`: byte-oriented core, Pi, Claude Code, and Codex
-  normalization, lossless source-native invocation metadata, identity, and
-  projections;
-- `@hypabolic/trajectory-node`: explicit-root local-store listing for all three
-  implemented sources;
+- `@hypabolic/trajectory`: byte-oriented core, Pi, Claude Code, Codex, OpenClaw,
+  and Hermes normalization, lossless source-native invocation metadata,
+  identity, and projections;
+- `@hypabolic/trajectory-node`: explicit-root local-store listing for implemented
+  sources;
 - `@hypabolic/trajectory-otel`: optional OpenTelemetry projection and emission;
-- `@hypabolic/trajectory-testing`: conformance and adapter-authoring helpers.
+- `@hypabolic/trajectory-testing`: conformance and adapter-authoring helpers;
+- `@hypabolic/trajectory-cli`: unpublished local sample TUI for browsing agent
+  sessions (private workspace package).
 
 Node filesystem APIs, SQLite, and OpenTelemetry dependencies stay outside the
 core package.
@@ -39,11 +41,12 @@ python3 conformance/verify.py --repository-root . -- \
   node typescript/packages/trajectory-testing/dist/cli.js
 ```
 
-ML7 advertises Pi, Claude Code, and Codex with all six deterministic outputs.
-`minimalJsonlChunks` and `writeMinimalJsonl` provide incremental output without
-materializing the complete JSONL document. The same private protocol and
-language-neutral cases are used by every runtime; source filters remain useful
-for focused development.
+ML13 advertises Pi, Claude Code, Codex, OpenClaw, and Hermes with all six
+deterministic outputs. `minimalJsonlChunks` and `writeMinimalJsonl` provide
+incremental output without materializing the complete JSONL document. The same
+private protocol and language-neutral cases are used by every runtime; source
+filters remain useful for focused development. Packages remain unpublished;
+see [docs/release-readiness.md](../docs/release-readiness.md).
 
 ## Core API
 
@@ -75,3 +78,17 @@ const hypabolic = normalizeToHypabolic(request);
 
 String transcript input is a UTF-8 convenience. The decoder always computes
 anchors from the encoded bytes, never from UTF-16 string indices.
+
+## Sample CLI
+
+The private `@hypabolic/trajectory-cli` package lists local agent stores and
+prints privacy-safe trajectory summaries. See
+[packages/trajectory-cli/README.md](packages/trajectory-cli/README.md).
+
+```bash
+npm run build
+node packages/trajectory-cli/dist/cli.js list --source pi
+node packages/trajectory-cli/dist/cli.js show \
+  --source pi \
+  --path ../conformance/cases/pi/tool-calls/input.jsonl
+```

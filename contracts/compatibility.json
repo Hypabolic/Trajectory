@@ -61,7 +61,8 @@
       "pi",
       "claude-code",
       "codex",
-      "openclaw"
+      "openclaw",
+      "hermes"
     ],
     "outputs": [
       "letta-trajectory-v1",

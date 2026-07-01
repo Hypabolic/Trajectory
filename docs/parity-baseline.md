@@ -79,8 +79,9 @@ The upstream Python wrapper is not a separate parity requirement. The NuGet libr
 
 - The project multi-targets `net8.0`, `net9.0`, and `net10.0`.
 - Trimming and AOT analyzers are enabled and the core remains BCL-only.
-- Pi, Claude Code, Codex, and OpenClaw have complete decode-normalize-project paths,
-  default listing, pinned upstream goldens, and Native AOT smoke coverage.
+- Pi, Claude Code, Codex, OpenClaw, and Hermes have complete decode-normalize-project
+  paths, default listing (Hermes is empty when the SQLite store is missing), pinned
+  upstream goldens, and Native AOT smoke coverage where applicable.
 - Exact Letta trajectory/canonical adapters and the provenance-rich Hypabolic
   adapter share one deterministic IR, identity, canonical JSON, and SHA-256
   implementation.
@@ -112,7 +113,7 @@ contracts until the first package release.
 | Letta Code | Enum value only; post-v1 backlog | Full client transcript decoder and row/native identity rules |
 | OpenClaw | Implemented through built-in outputs with shared fixtures, delivery-mirror masking, and listing | Keep covered by differential parity and regression tests |
 | OpenHands | Enum value only; post-v1 backlog | Array/envelope event decoding and event identity |
-| Hermes | Enum value only | Array/envelope decoding and SQLite listing/export support |
+| Hermes | Implemented through built-in outputs with array/envelope fixtures; SQLite listing is empty without a provider | Keep covered by differential parity; optional SQLite provider for sessions-table listing |
 | Deep Agents | Enum value only; post-v1 backlog | Optional SQLite/checkpoint package and exact checkpoint reduction |
 | Tool linking | Shared pre-pass implements duplicate repair, reverse-arrival linking, and partial orphan policy | Extend source fixtures as later adapters introduce new native shapes |
 | Timestamps | Exact preservation/interpolation/synthesis policy implemented | Keep source-specific timestamp representations covered |
@@ -169,15 +170,30 @@ Required output work:
 
 ## Definition of parity complete
 
-Parity is complete when all of the following are true:
+### v1 product parity (ML13 complete)
+
+For the v1 required capability set, parity is complete when:
+
+- Pi, Claude Code, Codex, OpenClaw, and Hermes are supported across .NET,
+  TypeScript, and Rust with matching shared conformance cases;
+- source listing is supported for transcript-backed sources; Hermes core
+  listing remains empty without an optional SQLite provider;
+- Letta trajectory and canonical fixtures for implemented sources match exactly;
+- bounds, filters, diagnostics, errors, partial mode, chunk identity, and
+  arrival-order tests pass for covered sources;
+- the Hypabolic projection has a published JSON Schema and golden coverage;
+- Native AOT smoke tests execute successfully for the .NET core package;
+- each core path keeps optional integrations (SQLite, OpenTelemetry) out of
+  core package dependency graphs;
+- package documentation identifies the pinned upstream compatibility version
+  and known intentional differences ([release-readiness.md](release-readiness.md)).
+
+### Full upstream-surface parity (includes post-v1 backlog)
+
+Full historical upstream surface parity additionally requires:
 
 - all eight upstream sources are supported;
 - source listing is supported for all eight sources;
-- transcript and checkpoint normalization match the pinned upstream reference;
-- Letta trajectory and canonical fixtures match exactly;
-- bounds, filters, diagnostics, errors, partial mode, chunk identity, and arrival-order tests pass;
-- the Hypabolic projection has a published JSON Schema and complete golden suite;
-- Native AOT smoke tests execute successfully for the core package;
-- the core path has no required runtime dependency outside the BCL;
-- the optional SQLite package does not leak dependencies into the core package;
-- package documentation identifies the pinned upstream compatibility version and known intentional differences.
+- transcript and checkpoint normalization match the pinned upstream reference
+  for Deep Agents and remaining deferred sources;
+- Letta Code, OpenHands, and Deep Agents post-v1 slices are complete.
