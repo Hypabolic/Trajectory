@@ -105,16 +105,6 @@ enum Commands {
 }
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(code) => code,
-        Err(error) => {
-            eprintln!("error: {error}");
-            ExitCode::from(1)
-        }
-    }
-}
-
-fn run() -> Result<ExitCode, Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let command = cli.command.clone().unwrap_or(Commands::Browse);
     let result = match command {
@@ -123,10 +113,10 @@ fn run() -> Result<ExitCode, Box<dyn std::error::Error>> {
         Commands::Show { path, id, format } => run_show(&cli, path, id, format),
     };
     match result {
-        Ok(code) => Ok(code),
+        Ok(code) => code,
         Err(error) => {
             eprintln!("{}: {}", error.code, error.message);
-            Ok(ExitCode::from(2))
+            ExitCode::from(2)
         }
     }
 }
@@ -577,18 +567,24 @@ fn print_empty(source: SourceArg) {
 
 fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
-    let mut value = bytes as f64;
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut scaled = bytes;
     let mut unit = 0usize;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
+    // Keep one fractional decimal via integer tenths to avoid f64 cast warnings.
+    while scaled >= 1024 * 1024 && unit < UNITS.len() - 2 {
+        scaled /= 1024;
         unit += 1;
     }
-    if unit == 0 {
-        format!("{bytes} B")
-    } else if value >= 10.0 {
-        format!("{value:.0} {}", UNITS[unit])
+    // scaled is in current unit; convert one more step for display.
+    let whole = scaled / 1024;
+    let tenths = ((scaled % 1024) * 10) / 1024;
+    unit += 1;
+    if whole >= 10 || tenths == 0 {
+        format!("{whole} {}", UNITS[unit])
     } else {
-        format!("{value:.1} {}", UNITS[unit])
+        format!("{whole}.{tenths} {}", UNITS[unit])
     }
 }
 
