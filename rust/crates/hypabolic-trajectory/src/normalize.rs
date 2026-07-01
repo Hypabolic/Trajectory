@@ -36,7 +36,7 @@ impl SourceAdapter for PiSourceAdapter {
     }
 }
 
-/// Native OpenClaw JSONL source adapter (Pi-family with delivery-mirror masking).
+/// Native `OpenClaw` JSONL source adapter (Pi-family with delivery-mirror masking).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OpenClawSourceAdapter;
 
@@ -159,7 +159,7 @@ pub fn normalize_pi(request: NormalizeRequest<'_>) -> Result<Trajectory, Traject
     normalize_decoded(config, decoded)
 }
 
-/// Normalizes a native OpenClaw JSONL transcript into the private Rust IR.
+/// Normalizes a native `OpenClaw` JSONL transcript into the private Rust IR.
 pub fn normalize_openclaw(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
     let config = resolve_config(request)?;
     let decoded = decode_pi_session(request.transcript, PiFamilyOptions::openclaw())?;
@@ -320,11 +320,7 @@ impl PiFamilyOptions {
 
     fn exclude_model(self, model: Option<&str>) -> Option<String> {
         model.and_then(|value| {
-            if self
-                .excluded_models
-                .iter()
-                .any(|excluded| *excluded == value)
-            {
+            if self.excluded_models.contains(&value) {
                 None
             } else {
                 Some(value.to_owned())

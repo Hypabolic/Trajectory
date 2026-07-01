@@ -66,7 +66,7 @@ pub fn list_codex_trajectories(
     paginate(options, items)
 }
 
-/// Lists OpenClaw JSONL transcripts below `<root>/agents/*/sessions`.
+/// Lists `OpenClaw` JSONL transcripts below `<root>/agents/*/sessions`.
 pub fn list_openclaw_trajectories(
     options: &ListingOptions<'_>,
 ) -> Result<TrajectoryListingPage, TrajectoryError> {

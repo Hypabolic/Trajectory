@@ -145,7 +145,7 @@ pub enum TrajectorySource {
     ClaudeCode,
     /// Codex rollout JSONL.
     Codex,
-    /// OpenClaw session JSONL (Pi-family).
+    /// `OpenClaw` session JSONL (Pi-family).
     OpenClaw,
 }
 
