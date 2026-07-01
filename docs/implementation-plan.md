@@ -42,10 +42,12 @@ ML1 — shared contracts and repository foundation — ML2, the independent
 TypeScript Pi vertical path, and ML3, the native Rust Pi vertical path, are
 complete. ML4 brought TypeScript to the current Pi, Claude Code, and Codex
 baseline, ML5–ML6 brought Rust to the same source baseline, and ML7 completed
-output and preview-distribution parity. ML9 OpenClaw and ML11 Hermes are complete
-across all three runtimes. ML13 1.0 parity and release hardening is next. Letta Code
-(ML8), OpenHands (ML10), and Deep Agents checkpoint integrations (ML12) are retained
-below as post-v1 behavioural backlogs. Do not begin any of them as a .NET-only slice.
+output and preview-distribution parity. ML9 OpenClaw, ML11 Hermes, and ML13
+1.0 parity and release hardening are complete across all three runtimes.
+Packages remain unpublished at synchronized `0.1.0`; see
+[release-readiness.md](release-readiness.md). Letta Code (ML8), OpenHands
+(ML10), and Deep Agents checkpoint integrations (ML12) are retained below as
+post-v1 behavioural backlogs. Do not begin any of them as a .NET-only slice.
 
 ## Planning rules
 

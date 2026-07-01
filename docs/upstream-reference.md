@@ -22,3 +22,9 @@ A pull request that updates the upstream pin must:
 6. update this file, the parity baseline, and any affected implementation slices.
 
 An upstream package-version change alone is not sufficient reason to move the pin. The repository commit is the compatibility identity.
+
+Known intentional differences between Trajectory and this pin (implementation
+independence, v1 source set, OpenClaw delivery-mirror masking, Hermes
+SQLite-free core listing, canonical JSON algorithm, Hypabolic output, and
+optional OTEL packages) are recorded in
+[release-readiness.md](release-readiness.md).

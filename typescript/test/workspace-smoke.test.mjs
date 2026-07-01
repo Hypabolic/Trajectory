@@ -48,7 +48,7 @@ test("runtime capabilities match the authoritative compatibility manifest", asyn
   );
 
   assert.equal(capabilities.runtime, "typescript");
-  assert.equal(capabilities.slice, "ML11");
+  assert.equal(capabilities.slice, "ML13");
   assert.equal(capabilities.normalizer_contract_version, NORMALIZER_CONTRACT_VERSION);
   assert.deepEqual(capabilities.sources, [...ImplementedSources]);
   assert.deepEqual(capabilities.sources, compatibility.implemented.sources);

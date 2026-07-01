@@ -9,12 +9,12 @@ wire contracts and conformance cases:
 
 | Runtime | Package | Status |
 | --- | --- | --- |
-| .NET | `Hypabolic.Trajectory` | Implemented |
-| TypeScript | `@hypabolic/trajectory` | ML7 source/output parity implemented; unpublished |
-| Rust | `hypabolic-trajectory` | ML7 source/output parity implemented; unpublished |
+| .NET | `Hypabolic.Trajectory` | v1 sources/outputs (ML13); unpublished `0.1.0` |
+| TypeScript | `@hypabolic/trajectory` | v1 sources/outputs (ML13); unpublished `0.1.0` |
+| Rust | `hypabolic-trajectory` | v1 sources/outputs (ML13); unpublished `0.1.0` |
 
-The current .NET runtime supports Pi, Claude Code, Codex, OpenClaw, and Hermes
-transcripts, explicit-root local-store listing, trimming and Native AOT, and these
+All three runtimes support Pi, Claude Code, Codex, OpenClaw, and Hermes
+transcripts, explicit-root local-store listing, and these
 deterministic projections:
 
 - Letta trajectory v1;
@@ -22,17 +22,18 @@ deterministic projections:
 - Hypabolic trajectory v1;
 - OpenAI chat messages;
 - minimal JSONL;
-- OpenTelemetry GenAI span sets through the optional
-  `Hypabolic.Trajectory.OpenTelemetry` package.
+- OpenTelemetry GenAI span sets through optional ecosystem packages
+  (`Hypabolic.Trajectory.OpenTelemetry`, `@hypabolic/trajectory-otel`,
+  `hypabolic-trajectory-opentelemetry`).
 
-Rust and TypeScript packages have not been published. Both are independent
+No packages have been published. All three runtimes are independent
 implementations built from this repository's specifications and conformance
-cases. TypeScript and Rust support the same Pi, Claude Code, Codex, OpenClaw, and
-Hermes source baseline and all deterministic projections. Both provide
-explicit-root listing, ecosystem-native writer surfaces, synchronized `0.1.0`
-preview metadata, and the private conformance protocol. Optional OpenTelemetry
-packages remain outside each core package. The pinned `letta-ai/trajectory`
-package is used only as a black-box compatibility oracle.
+cases. They share the v1 source baseline, deterministic projections,
+explicit-root listing, synchronized `0.1.0` preview metadata, and the private
+conformance protocol. Optional OpenTelemetry packages remain outside each core
+package. The pinned `letta-ai/trajectory` package is used only as a black-box
+compatibility oracle. Preview packaging is dry-run only; see
+[docs/release-readiness.md](docs/release-readiness.md).
 
 ## Architecture
 
@@ -171,7 +172,7 @@ cargo +stable clippy --manifest-path rust/Cargo.toml \
   --workspace --all-targets -- -D warnings
 ```
 
-Run the complete ML7 source/output set through the Rust runner:
+Run the complete advertised source/output set through the Rust runner:
 
 ```bash
 cargo +stable build --manifest-path rust/Cargo.toml \
@@ -253,6 +254,7 @@ See:
 
 - [architecture](docs/architecture.md);
 - [compatibility and multi-language roadmap](docs/multi-language-plan.md);
+- [release readiness, privacy, upgrade, intentional differences](docs/release-readiness.md);
 - [detailed .NET behavior baseline](docs/implementation-plan.md);
 - [pinned parity baseline](docs/parity-baseline.md);
 - [.NET adapter authoring](dotnet/docs/adapter-authoring.md);
@@ -264,7 +266,10 @@ ML1 established the shared foundation; ML2 and ML3 added independent
 TypeScript and Rust Pi vertical paths; ML4 brought TypeScript to the current
 .NET Pi, Claude Code, and Codex source baseline; ML5 and ML6 brought Rust to
 the same source baseline; ML7 completed output and preview-distribution parity
-across all three implementations. ML9 OpenClaw and ML11 Hermes are complete across
-all three runtimes. ML13 1.0 parity and release hardening is next. Letta Code (ML8),
-OpenHands (ML10), and Deep Agents checkpoint integrations (ML12) remain accepted
+across all three implementations. ML9 OpenClaw, ML11 Hermes, and ML13 1.0
+parity and release hardening are complete. Packages remain unpublished at
+synchronized `0.1.0` with CI dry-run packaging. Letta Code (ML8), OpenHands
+(ML10), and Deep Agents checkpoint integrations (ML12) remain accepted
 post-v1 support goals and are not part of the v1 required capability set.
+Publish decision and 1.0 process gates are in
+[docs/release-readiness.md](docs/release-readiness.md).
