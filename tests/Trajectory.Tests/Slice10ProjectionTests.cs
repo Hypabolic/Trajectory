@@ -6,6 +6,7 @@ using Hypabolic.Trajectory.Adapters.Streaming;
 using Hypabolic.Trajectory.OpenTelemetry;
 using Hypabolic.Trajectory.Testing;
 using OpenTelemetry;
+using OpenTelemetry.Trace;
 
 namespace Hypabolic.Trajectory.Tests;
 
