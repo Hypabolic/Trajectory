@@ -19,15 +19,17 @@ Claude Code / Codex / Pi / Letta Code / OpenClaw / OpenHands / Hermes / Deep Age
 
 ## Status
 
-The first four vertical slices are implemented. Pi, Claude Code, and Codex
+Slices 1 through 4 and Slice 10 are implemented. Pi, Claude Code, and Codex
 transcripts now normalize through the shared IR into all three identity-bearing
 outputs, with source listing, pinned upstream goldens, cross-platform tests, and
-Native AOT smoke coverage. The remaining plan will:
+Native AOT smoke coverage. Slice 10 also supplies OpenAI chat and minimal JSONL
+stream projections, public adapter registration, and an optional OpenTelemetry
+package. The remaining plan will:
 
 - match the original Letta trajectory and canonical formats exactly;
 - support every source and listing capability in the pinned Letta reference;
 - add a richer, provenance-preserving Hypabolic export;
-- add an optional OpenTelemetry GenAI span projection without adding telemetry dependencies to the core package;
+- retain the optional OpenTelemetry GenAI package without adding telemetry dependencies to the core package;
 - keep the core BCL-only, trim-safe, and Native AOT-compatible;
 - verify behaviour through golden fixtures and differential parity tests.
 
@@ -58,6 +60,7 @@ Target frameworks: `net8.0;net9.0;net10.0`.
 - [Letta parity baseline and current implementation audit](docs/parity-baseline.md)
 - [Hypabolic trajectory v1 contract](docs/hypabolic-trajectory-v1.md)
 - [OpenTelemetry GenAI span output plan](docs/otel-genai-output.md)
+- [Adapter authoring](docs/adapter-authoring.md)
 - [Vertical-slice implementation plan](docs/implementation-plan.md)
 
 ## Core constraints
