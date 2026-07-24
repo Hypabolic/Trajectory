@@ -17,6 +17,14 @@ public sealed class LettaCanonicalV1OutputAdapter : OutputSchemaAdapter<LettaCan
         OutputProjectionOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(trajectory);
+        if (trajectory.Source == TrajectorySource.Codex &&
+            !trajectory.SourceGroupResolved)
+        {
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.SourceGroupRequired,
+                "Canonical Codex normalization requires a source group: include session_meta or pass sourceContext.groupId.");
+        }
+
         var emitMeta = (trajectory.Config.SourceContext.BaseByteOffset ?? 0L) == 0L;
         var records = trajectory.Records
             .Where(record => emitMeta || record.Role != TrajectoryRole.Meta)

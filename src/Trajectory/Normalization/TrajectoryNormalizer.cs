@@ -37,6 +37,9 @@ internal sealed class TrajectoryNormalizer
         var groupId = ResolveGroupId(
             context.SourceGroupId,
             config.SourceContext.GroupId);
+        var sourceGroupResolved =
+            !string.IsNullOrEmpty(context.SourceGroupId) ||
+            !string.IsNullOrEmpty(config.SourceContext.GroupId);
         var partial = config.SourceContext.Partial ||
             (config.SourceContext.BaseByteOffset ?? 0L) > 0L;
         var diagnostics = decoded.Diagnostics.ToList();
@@ -113,6 +116,7 @@ internal sealed class TrajectoryNormalizer
             Source = context.Source,
             SourceName = context.SourceName,
             GroupId = groupId,
+            SourceGroupResolved = sourceGroupResolved,
             ProducerVersion = context.ProducerVersion,
             Records = [meta, .. body],
             Diagnostics = diagnostics,
