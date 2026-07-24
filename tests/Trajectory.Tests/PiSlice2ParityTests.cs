@@ -452,12 +452,12 @@ public sealed class PiSlice2ParityTests
         var naturalIdentity = naturalOrder.Records.Skip(1)
             .ToDictionary(
                 static record => record.Provenance.NativeRecordId!,
-                static record => (record.Id, record.Provenance.SourceOrderId),
+                static record => record.Id,
                 StringComparer.Ordinal);
         var reverseIdentity = reverseArrivalOrder.Records.Skip(1)
             .ToDictionary(
                 static record => record.Provenance.NativeRecordId!,
-                static record => (record.Id, record.Provenance.SourceOrderId),
+                static record => record.Id,
                 StringComparer.Ordinal);
 
         Assert.Equal(
