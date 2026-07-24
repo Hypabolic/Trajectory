@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Json.Schema;
 using Xunit;
@@ -15,8 +16,9 @@ public sealed class HypabolicProjectionTests
             OutputSchemaIds.HypabolicTrajectoryV1);
         var schema = JsonSchema.FromText(
             File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Schemas", "hypabolic-trajectory-v1.schema.json")));
+        using var document = JsonDocument.Parse(json);
+        var evaluation = schema.Evaluate(document.RootElement);
         var instance = JsonNode.Parse(json)!;
-        var evaluation = schema.Evaluate(instance);
 
         Assert.True(evaluation.IsValid, evaluation.ToString());
         Assert.Equal("hypabolic-trajectory-v1", instance["schema_id"]!.GetValue<string>());
