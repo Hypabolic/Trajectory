@@ -1,92 +1,158 @@
+using System.Buffers;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
-namespace Trajectory.Adapters.Letta;
+namespace Hypabolic.Trajectory.Adapters.Letta;
 
-/// <summary>Writes one letta-trajectory-v1 trajectory record as JSONL.</summary>
-public sealed class LettaTrajectoryV1OutputAdapter : IOutputSchemaAdapter
+public sealed class LettaTrajectoryV1OutputAdapter : OutputSchemaAdapter<LettaNormalizeResult>
 {
-    public const string AdapterName = "letta-trajectory-v1";
-    public const string CurrentSchemaVersion = "1";
+    public override string SchemaId => OutputSchemaIds.LettaTrajectoryV1;
+    public override string SchemaVersion => "1";
 
-    public string SchemaId => AdapterName;
-    public string SchemaVersion => CurrentSchemaVersion;
-
-    public string Project(TrajectoryIR trajectory, OutputProjectionOptions? options = null)
+    public override LettaNormalizeResult Project(
+        TrajectoryIR trajectory,
+        OutputProjectionOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(trajectory);
-        options ??= new OutputProjectionOptions();
-
-        var messages = new List<LettaMessage>();
-        foreach (var item in trajectory.Records)
+        var records = new List<LettaRecord>(trajectory.Records.Count);
+        foreach (var record in trajectory.Records)
         {
-            switch (item)
+            switch (record)
             {
-                case AssistantToolCallsIR assistant:
-                    messages.Add(new LettaMessage(
-                        assistant.Id,
-                        assistant.Order,
-                        TrajectoryRoles.Assistant,
-                        assistant.Content,
-                        options.IncludeTimestamps ? assistant.Timestamp : null,
-                        assistant.ToolCalls.Select(static call => new LettaToolCall(
-                            call.Id,
-                            call.Name,
-                            call.ArgumentsJson)).ToArray(),
-                        null));
+                case MetaIR meta:
+                    records.Add(new LettaMetaRecord
+                    {
+                        Role = "meta",
+                        Source = trajectory.SourceName,
+                        Cwd = meta.Cwd,
+                        GitBranch = meta.GitBranch,
+                        Model = meta.Model,
+                    });
                     break;
                 case MessageIR message:
-                    messages.Add(new LettaMessage(
-                        message.Id,
-                        message.Order,
-                        message.Role,
-                        message.Content,
-                        options.IncludeTimestamps ? message.Timestamp : null,
-                        null,
-                        null));
-                    break;
-                case ToolResultIR result:
-                    if (options.OmitToolResults)
+                    records.Add(new LettaMessageRecord
                     {
-                        break;
-                    }
-
-                    messages.Add(new LettaMessage(
-                        result.Id,
-                        result.Order,
-                        TrajectoryRoles.Tool,
-                        result.Content,
-                        options.IncludeTimestamps ? result.Timestamp : null,
-                        null,
-                        new LettaToolResult(
-                            result.ToolCallId,
-                            result.ToolName,
-                            result.Content,
-                            result.IsError)));
+                        Role = RoleName(message.Role),
+                        Content = message.Content,
+                        Timestamp = RequireTimestamp(message),
+                    });
                     break;
+                case AssistantToolCallsIR assistant:
+                    records.Add(new LettaAssistantToolCallRecord
+                    {
+                        Role = "assistant",
+                        ToolCalls = assistant.ToolCalls.Select(static call => new LettaToolCall
+                        {
+                            Id = call.Id,
+                            Name = call.Name,
+                            Args = call.ArgumentsJson,
+                        }).ToArray(),
+                        Timestamp = RequireTimestamp(assistant),
+                    });
+                    break;
+                case ToolResultIR tool:
+                    records.Add(new LettaToolResultRecord
+                    {
+                        Role = "tool",
+                        ToolCallId = tool.ToolCallId,
+                        Content = tool.Content,
+                        Timestamp = RequireTimestamp(tool),
+                    });
+                    break;
+                default:
+                    throw new TrajectoryNormalizationException(
+                        NormalizationErrorCode.InvalidNormalizedTranscript,
+                        $"Unsupported IR record type {record.GetType().Name}.");
             }
         }
 
-        var record = new LettaTrajectoryRecord(
-            AdapterName,
-            trajectory.GroupId ?? DeterministicIdentity.Create(
-                "trajectory",
-                trajectory.Source,
-                string.Join("\n", trajectory.Records.Select(static record => record.Id))),
-            trajectory.Source,
-            messages,
-            options.IncludeDiagnostics ? trajectory.Diagnostics : null);
+        return new LettaNormalizeResult
+        {
+            Records = records,
+            Diagnostics = trajectory.Diagnostics,
+        };
+    }
 
-        var serializerOptions = new JsonSerializerOptions
+    public override string Serialize(
+        LettaNormalizeResult output,
+        OutputProjectionOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions
         {
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            WriteIndented = options.WriteIndented,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-        };
-        var context = new TrajectoryJsonContext(serializerOptions);
-        var json = JsonSerializer.Serialize(record, context.LettaTrajectoryRecord);
+            Indented = options?.WriteIndented ?? false,
+        }))
+        {
+            writer.WriteStartArray();
+            foreach (var record in output.Records)
+            {
+                WriteRecord(writer, record);
+            }
+            writer.WriteEndArray();
+        }
 
-        return options.AppendFinalNewline ? string.Concat(json, "\n") : json;
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
+
+    private static void WriteRecord(Utf8JsonWriter writer, LettaRecord record)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("role", record.Role);
+        switch (record)
+        {
+            case LettaMetaRecord meta:
+                writer.WriteString("source", meta.Source);
+                if (meta.Cwd is not null) writer.WriteString("cwd", meta.Cwd);
+                if (meta.GitBranch is not null) writer.WriteString("git_branch", meta.GitBranch);
+                if (meta.Model is not null) writer.WriteString("model", meta.Model);
+                break;
+            case LettaMessageRecord message:
+                writer.WriteString("content", message.Content);
+                writer.WriteString("timestamp", FormatTimestamp(message.Timestamp));
+                break;
+            case LettaAssistantToolCallRecord assistant:
+                writer.WriteNull("content");
+                writer.WriteStartArray("tool_calls");
+                foreach (var call in assistant.ToolCalls)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("id", call.Id);
+                    writer.WriteString("name", call.Name);
+                    writer.WriteString("args", call.Args);
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+                writer.WriteString("timestamp", FormatTimestamp(assistant.Timestamp));
+                break;
+            case LettaToolResultRecord tool:
+                writer.WriteString("tool_call_id", tool.ToolCallId);
+                writer.WriteString("content", tool.Content);
+                writer.WriteString("timestamp", FormatTimestamp(tool.Timestamp));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(record));
+        }
+        writer.WriteEndObject();
+    }
+
+    private static DateTimeOffset RequireTimestamp(IRRecord record) =>
+        record.Timestamp ?? throw new TrajectoryNormalizationException(
+            NormalizationErrorCode.InvalidNormalizedTranscript,
+            "Non-meta Letta records require a timestamp.");
+
+    private static string RoleName(TrajectoryRole role) => role switch
+    {
+        TrajectoryRole.User => "user",
+        TrajectoryRole.Reasoning => "reasoning",
+        TrajectoryRole.Assistant => "assistant",
+        TrajectoryRole.Tool => "tool",
+        TrajectoryRole.Meta => "meta",
+        _ => throw new ArgumentOutOfRangeException(nameof(role)),
+    };
+
+    private static string FormatTimestamp(DateTimeOffset value) =>
+        value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'");
 }
