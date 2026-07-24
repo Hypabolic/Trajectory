@@ -1,0 +1,4 @@
+{"type":"session","version":3,"id":"session-42","timestamp":"2026-01-02T03:04:05Z"}
+{"type":"message","id":"m1","timestamp":"2026-01-02T03:04:05Z","message":{"role":"user","content":[{"type":"text","text":"Read the README"}]}}
+{"type":"message","id":"m2","timestamp":"2026-01-02T03:04:06Z","message":{"role":"assistant","content":[{"type":"text","text":"I'll inspect it."},{"type":"toolCall","id":"call-1","name":"read","arguments":{"path":"README.md","line":1}}]}}
+{"type":"message","id":"m3","timestamp":"2026-01-02T03:04:07Z","message":{"role":"toolResult","toolCallId":"call-1","toolName":"read","content":[{"type":"text","text":"# Trajectory"}],"isError":false}}
