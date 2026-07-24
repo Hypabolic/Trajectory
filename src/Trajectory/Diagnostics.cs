@@ -6,8 +6,19 @@ public static class DiagnosticCodes
 {
     public const string InvalidJsonLine = "invalid_json_line";
     public const string NonObjectJsonLine = "non_object_json_line";
+    public const string InjectedContextDropped = "injected_context_dropped";
+    public const string NoiseRecordDropped = "noise_record_dropped";
+    public const string SidechainRecordDropped = "sidechain_record_dropped";
+    public const string ToolCallIdSynthesized = "tool_call_id_synthesized";
+    public const string DuplicateToolCallId = "duplicate_tool_call_id";
     public const string OrphanToolResult = "orphan_tool_result";
+    public const string DuplicateToolResult = "duplicate_tool_result";
+    public const string UnknownToolName = "unknown_tool_name";
+    public const string ToolArgumentsReshaped = "tool_arguments_reshaped";
+    public const string ToolArgumentsTruncated = "tool_arguments_truncated";
+    public const string ToolResultTruncated = "tool_result_truncated";
     public const string TimestampsSynthesized = "timestamps_synthesized";
+    public const string TimestampsInterpolated = "timestamps_interpolated";
 }
 
 public sealed record TrajectoryDiagnostic
@@ -40,6 +51,8 @@ public enum NormalizationErrorCode
     MissingAssistantRecords,
     InvalidNormalizedTranscript,
     ListingUnavailable,
+    SourceGroupConflict,
+    SourceGroupRequired,
 }
 
 public sealed class TrajectoryNormalizationException : Exception

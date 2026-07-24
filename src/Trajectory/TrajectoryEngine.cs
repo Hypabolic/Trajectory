@@ -22,6 +22,7 @@ public sealed class TrajectoryEngine
     public static TrajectoryEngine CreateDefault() => new TrajectoryEngine()
         .AddSource(new PiJsonlSourceAdapter())
         .AddOutputAdapter(new LettaTrajectoryV1OutputAdapter())
+        .AddOutputAdapter(new LettaCanonicalV1OutputAdapter())
         .AddOutputAdapter(new HypabolicTrajectoryV1OutputAdapter())
         .AddLister(new PiTrajectoryLister());
 
@@ -51,7 +52,7 @@ public sealed class TrajectoryEngine
         var utf8 = Encoding.UTF8.GetBytes(input.Transcript);
         var config = AppliedNormalizationConfig.Resolve(input.Options, input.SourceContext);
         var decoded = sourceAdapter.Decode(utf8);
-        return _normalizer.Normalize(decoded, config, utf8);
+        return _normalizer.Normalize(decoded, config);
     }
 
     public TOutput Project<TOutput>(
@@ -103,6 +104,12 @@ public sealed class TrajectoryEngine
     {
         var trajectory = NormalizeToIR(input);
         return Project<HypabolicTrajectoryV1>(trajectory, OutputSchemaIds.HypabolicTrajectoryV1);
+    }
+
+    public LettaCanonicalResult NormalizeToCanonical(NormalizeInput input)
+    {
+        var trajectory = NormalizeToIR(input);
+        return Project<LettaCanonicalResult>(trajectory, OutputSchemaIds.LettaCanonicalV1);
     }
 
     public string NormalizeJson(
