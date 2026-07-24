@@ -128,6 +128,16 @@ public sealed record TrajectoryIR
 public sealed record TrajectoryExecutionIR
 {
     public required IReadOnlyList<ModelInvocationIR> ModelInvocations { get; init; }
+    public IReadOnlyList<WorkflowInvocationIR> WorkflowInvocations { get; init; } = [];
+}
+
+public sealed record WorkflowInvocationIR
+{
+    public required string Id { get; init; }
+    public string? Name { get; init; }
+    public string? NativeRecordId { get; init; }
+    public DateTimeOffset? StartedAt { get; init; }
+    public DateTimeOffset? CompletedAt { get; init; }
 }
 
 public sealed record ModelInvocationIR
