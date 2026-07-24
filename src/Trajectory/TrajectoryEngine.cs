@@ -51,7 +51,8 @@ public sealed class TrajectoryEngine
         ArgumentNullException.ThrowIfNull(input.Transcript);
         if (_customSources.TryGetValue(input.Source, out var customSource))
         {
-            return customSource.Normalize(input);
+            return customSource.Normalize(input) ?? throw new InvalidOperationException(
+                $"Source adapter for '{input.Source}' returned a null trajectory.");
         }
 
         if (!_sources.TryGetValue(input.Source, out var sourceAdapter))

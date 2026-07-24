@@ -38,6 +38,7 @@ public sealed class OpenTelemetryGenAiOutputAdapter : OutputSchemaAdapter<OtelGe
             TraceId = traceId,
             InstrumentationScope = OtelGenAiConventions.InstrumentationScope,
             InstrumentationVersion = TrajectoryVersion.Current,
+            ResourceAttributes = [],
             Spans = spans
                 .OrderBy(static span => span.StartTime)
                 .ThenBy(static span => span.Name, StringComparer.Ordinal)
@@ -135,6 +136,7 @@ public sealed class OpenTelemetryGenAiOutputAdapter : OutputSchemaAdapter<OtelGe
                 Status = "UNSET",
                 Attributes = attributes.Build(),
                 Links = [],
+                Events = [],
             });
             turns.Add(new AgentTurn(first.index, nextIndex, start, end, spanId));
         }
@@ -195,6 +197,7 @@ public sealed class OpenTelemetryGenAiOutputAdapter : OutputSchemaAdapter<OtelGe
                 Status = "UNSET",
                 Attributes = attributes.Build(),
                 Links = [],
+                Events = [],
             });
         }
     }
@@ -267,6 +270,7 @@ public sealed class OpenTelemetryGenAiOutputAdapter : OutputSchemaAdapter<OtelGe
                     Status = result.IsError ? "ERROR" : "UNSET",
                     Attributes = attributes.Build(),
                     Links = [],
+                    Events = [],
                 });
             }
         }
@@ -310,6 +314,7 @@ public sealed class OpenTelemetryGenAiOutputAdapter : OutputSchemaAdapter<OtelGe
                 Status = "UNSET",
                 Attributes = attributes.Build(),
                 Links = [],
+                Events = [],
             });
         }
     }

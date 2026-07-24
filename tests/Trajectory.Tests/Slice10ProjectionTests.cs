@@ -40,7 +40,11 @@ public sealed class Slice10ProjectionTests
         var engine = TrajectoryEngine.CreateDefault();
         using var stream = new MemoryStream();
 
-        engine.ProjectToStream(trajectory, OutputSchemaIds.JsonlMinimal, stream);
+        engine.ProjectToStream(
+            trajectory,
+            OutputSchemaIds.JsonlMinimal,
+            stream,
+            new OutputProjectionOptions { WriteIndented = true });
         var streamed = Encoding.UTF8.GetString(stream.ToArray());
         var materialized = engine.ProjectJson(trajectory, OutputSchemaIds.JsonlMinimal);
 

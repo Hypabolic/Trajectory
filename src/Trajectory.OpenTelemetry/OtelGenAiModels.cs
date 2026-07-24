@@ -15,6 +15,7 @@ public sealed record OtelGenAiSpanSetV1
     public required string TraceId { get; init; }
     public required string InstrumentationScope { get; init; }
     public required string InstrumentationVersion { get; init; }
+    public required IReadOnlyList<OtelAttributeV1> ResourceAttributes { get; init; }
     public required IReadOnlyList<OtelGenAiSpanV1> Spans { get; init; }
     public required IReadOnlyList<OtelProjectionDiagnostic> Diagnostics { get; init; }
     public required OtelContentPolicy ContentPolicy { get; init; }
@@ -32,6 +33,14 @@ public sealed record OtelGenAiSpanV1
     public required string Status { get; init; }
     public required IReadOnlyList<OtelAttributeV1> Attributes { get; init; }
     public required IReadOnlyList<OtelSpanLinkV1> Links { get; init; }
+    public required IReadOnlyList<OtelSpanEventV1> Events { get; init; }
+}
+
+public sealed record OtelSpanEventV1
+{
+    public required string Name { get; init; }
+    public required DateTimeOffset Timestamp { get; init; }
+    public required IReadOnlyList<OtelAttributeV1> Attributes { get; init; }
 }
 
 public sealed record OtelSpanLinkV1
