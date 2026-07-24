@@ -2,7 +2,7 @@
 
 ## Objective
 
-Deliver a production-quality Trajectory.NET library with behavioural parity to the pinned `letta-ai/trajectory` reference, exact Letta trajectory and canonical outputs, and the additional `hypabolic-trajectory-v1` output.
+Deliver a production-quality Trajectory.NET library with behavioural parity to the pinned `letta-ai/trajectory` reference, exact Letta trajectory and canonical outputs, the additional `hypabolic-trajectory-v1` output, and an optional OpenTelemetry GenAI span projection.
 
 The plan is intentionally organized as vertical slices. Each source slice ends with a usable public API path:
 
@@ -14,6 +14,7 @@ source input
   -> Letta canonical output
   -> Hypabolic output
   -> source listing
+  -> retained execution metadata for later telemetry projection
   -> parity fixtures and AOT-safe execution
 ```
 
@@ -26,8 +27,10 @@ Shared infrastructure is introduced through the first source that needs it rathe
 - Every slice adds sanitized fixtures and golden outputs before or with implementation.
 - Every completed source is covered by all three identity-bearing outputs.
 - Source adapters decode; the normalization core owns common policy.
+- Source adapters preserve source-exposed invocation metadata such as provider, model, response IDs, finish reasons, usage, and reliable timing boundaries even when no current compatibility output uses it.
 - Listing support ships with each source rather than as a late cross-cutting phase.
 - Core changes must keep trimming/AOT analyzers clean.
+- Optional SQLite and OpenTelemetry integrations must not add runtime dependencies to the BCL-only core package.
 - A slice is not complete with placeholders, skipped tests, synthetic-only happy paths, or unverified schema claims.
 
 ## Slice 1 — Correct Pi end-to-end path
@@ -82,6 +85,7 @@ Pi is fully parity-complete across normalization policy, canonical identity, chu
 - Implement canonical JSON, source identity kinds, source order IDs, semantic component keys, and SHA-256 hashes.
 - Add exact `letta-canonical-v1` models, result envelope, version constants, and JSON Schema validation.
 - Make Hypabolic IDs/provenance/hashes use the same identity basis without embedding Letta `record_json`.
+- Preserve Pi provider, API family, requested/response model, response ID, stop reason, token usage, cache usage, and reliable invocation timing as source-neutral execution metadata for later projections.
 
 ### Acceptance criteria
 
@@ -92,6 +96,7 @@ Pi is fully parity-complete across normalization policy, canonical identity, chu
 - Offset-zero partial input emits meta; continuation chunks do not emit canonical meta.
 - Diagnostics match upstream code and structural fields and contain no source content.
 - Property tests cover truncation limits, valid argument JSON, duplicate IDs, chunk boundaries, and ordering.
+- Pi invocation metadata round-trips through the IR without being synthesized from model-name or content heuristics.
 
 ## Slice 3 — Claude Code end-to-end parity
 
@@ -264,21 +269,30 @@ A consumer can list Deep Agents threads and normalize the latest selected LangGr
 - Core package dependency graph is unchanged.
 - Package capability limitations are explicit and tested on Windows, Linux, and macOS.
 
-## Slice 10 — Additional projections and extension API
+## Slice 10 — Additional projections, OpenTelemetry, and extension API
 
 ### Outcome
 
-The adapter model is proven beyond Letta/Hypabolic by shipping OpenAI and minimal JSONL projections and a documented custom adapter path.
+The adapter model is proven beyond Letta/Hypabolic by shipping OpenAI, minimal JSONL, and OpenTelemetry GenAI projections together with a documented custom adapter path.
 
 ### Work
 
 - Add `openai-chat-messages` projection with explicit reasoning/tool mapping policy.
 - Add streaming `jsonl-minimal` projection.
+- Add the optional `Hypabolic.Trajectory.OpenTelemetry` package.
+- Add `otel-genai-spans-v1` as a deterministic, side-effect-free typed span-set projection.
+- Pin an OpenTelemetry GenAI semantic-convention schema URL; the initial planning baseline is `https://opentelemetry.io/schemas/gen-ai/1.42.0`, subject to verification immediately before implementation.
+- Map logical agent turns to `invoke_agent`, reliable model calls to GenAI inference operations, linked tool calls/results to `execute_tool`, and explicit workflow constructs to `invoke_workflow`.
+- Preserve and project provider, model, response ID, finish reason, usage, conversation, agent, and timing metadata only when source-native values exist.
+- Disable prompt, response, system-instruction, tool-definition, tool-argument, and tool-result content attributes by default; add explicit bounded/redacted content-capture options.
+- Add conversion to official OTLP trace data and optional `ActivitySource` emission without making projection depend on an ambient OpenTelemetry pipeline.
+- Use span links for causal relationships that cannot be represented honestly as one parent edge, including concurrent subagent activity.
 - Finalize typed `IOutputSchemaAdapter<TOutput>` and non-generic registry bridge.
 - Add direct `Utf8JsonWriter` / stream APIs to avoid intermediate strings.
 - Add explicit builder registration for custom source and output adapters.
 - Add generated default registry and schema ID constants.
 - Publish an adapter-authoring guide and test kit.
+- Publish the detailed mapping and privacy contract in `otel-genai-output.md`.
 
 ### Acceptance criteria
 
@@ -287,6 +301,13 @@ The adapter model is proven beyond Letta/Hypabolic by shipping OpenAI and minima
 - Typed projection rejects output-type/schema mismatches clearly.
 - Streaming output works under Native AOT.
 - OpenAI and JSONL fixtures are deterministic and documented as Trajectory.NET contracts rather than Letta parity claims.
+- Pi and at least one second source produce deterministic OpenTelemetry agent/tool span goldens.
+- OpenTelemetry span names, kinds, attributes, parentage, links, and schema URL pass tests pinned to the selected GenAI semantic-convention version.
+- Model inference spans are omitted rather than assigned fabricated durations when reliable invocation timing is unavailable.
+- Provider/model/usage values are never synthesized from model-name, content-length, or other heuristics.
+- Content-bearing GenAI attributes are absent by default and explicit content capture remains bounded and content-safe.
+- OTLP conversion uses official OpenTelemetry protobuf/SDK contracts and the optional package publishes and runs under Native AOT.
+- `Hypabolic.Trajectory` remains BCL-only and its dependency graph is unchanged.
 
 ## Slice 11 — Differential parity, performance, and package readiness
 
@@ -326,6 +347,7 @@ Every implementation slice must add or update:
 - exact Letta trajectory golden files;
 - exact Letta canonical golden files;
 - Hypabolic golden files and schema validation;
+- invocation/execution metadata tests when the source exposes provider, response, usage, agent, workflow, or timing information;
 - content-safety tests for diagnostics;
 - deterministic rerun tests;
 - listing tests using temporary stores;
@@ -340,6 +362,7 @@ The following properties remain continuously enforced after Slice 2:
 - identity is independent of input arrival order when native/location anchors permit it;
 - non-zero byte offsets do not affect ordinal anchors;
 - content hashes exclude transport metadata and timestamps;
+- source-native provider, model, response, usage, and timing metadata are preserved without heuristic synthesis;
 - diagnostic strings never contain fixture secrets.
 
 ## Suggested issue structure
