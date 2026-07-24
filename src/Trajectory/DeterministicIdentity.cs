@@ -1,33 +1,47 @@
+using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 
-namespace Trajectory;
+namespace Hypabolic.Trajectory;
 
-/// <summary>Creates culture-independent identities from length-delimited UTF-8 values.</summary>
-public static class DeterministicIdentity
+internal static class DeterministicIdentity
 {
-    public static string Sha256Hex(string value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
-    }
+    public static string Sha256Hex(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
-    public static string Create(string prefix, params string?[] parts)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(prefix);
-        ArgumentNullException.ThrowIfNull(parts);
+    public static string Sha256Hex(ReadOnlySpan<byte> value) =>
+        Convert.ToHexString(SHA256.HashData(value)).ToLowerInvariant();
 
-        using var stream = new MemoryStream();
-        Span<byte> length = stackalloc byte[4];
-        foreach (var part in parts)
+    public static string RecordId(string groupId, string stableSourceRecordId, string componentKey) =>
+        HashJson(writer =>
         {
-            var bytes = Encoding.UTF8.GetBytes(part ?? string.Empty);
-            System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(length, bytes.Length);
-            stream.Write(length);
-            stream.Write(bytes);
+            writer.WriteStartArray();
+            writer.WriteStringValue(groupId);
+            writer.WriteStringValue(stableSourceRecordId);
+            writer.WriteStringValue(componentKey);
+            writer.WriteEndArray();
+        });
+
+    public static string HashJson(Action<Utf8JsonWriter> write)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            Indented = false,
+        }))
+        {
+            write(writer);
         }
 
-        var hash = SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length)));
-        return string.Concat(prefix, "_", Convert.ToHexString(hash).ToLowerInvariant());
+        return Sha256Hex(buffer.WrittenSpan);
     }
+
+    public static string StableGroupId(TrajectorySource source, ReadOnlySpan<byte> transcriptUtf8) =>
+        $"derived:{source.ToString().ToLowerInvariant()}:{Sha256Hex(transcriptUtf8)}";
+
+    public static string LocationId(string groupId, SourceAnchorKind anchorKind, long sourceOffset) =>
+        Sha256Hex($"{groupId}|{anchorKind.ToString().ToLowerInvariant()}|{sourceOffset}");
 }
