@@ -10,10 +10,11 @@ Claude Code / Codex / Pi / Letta Code / OpenClaw / OpenHands / Hermes / Deep Age
                                       v
                          Internal Trajectory IR
                                       |
-                +---------------------+---------------------+
-                |                     |                     |
-                v                     v                     v
-       Letta trajectory v1   Letta canonical v1   Hypabolic trajectory v1
+          +---------------------------+---------------------------+
+          |                           |                           |
+          v                           v                           v
+ Letta compatibility          Hypabolic trajectory v1     OpenTelemetry GenAI spans
+ trajectory + canonical
 ```
 
 ## Status
@@ -23,6 +24,7 @@ The repository currently contains an early prototype, not a production-compatibl
 - match the original Letta trajectory and canonical formats exactly;
 - support every source and listing capability in the pinned Letta reference;
 - add a richer, provenance-preserving Hypabolic export;
+- add an optional OpenTelemetry GenAI span projection without adding telemetry dependencies to the core package;
 - keep the core BCL-only, trim-safe, and Native AOT-compatible;
 - verify behaviour through golden fixtures and differential parity tests.
 
@@ -35,6 +37,7 @@ Do not treat the existing prototype output named `letta-trajectory-v1` as compat
 | `letta-trajectory-v1` | Exact Letta normalized trajectory record array |
 | `letta-canonical-v1` | Exact library-owned Letta canonical ingestion contract |
 | `hypabolic-trajectory-v1` | Loss-minimizing Hypabolic format with provenance, identity, hashes, resolved configuration, and diagnostics |
+| `otel-genai-spans-v1` | Deterministic OpenTelemetry GenAI span projection with optional OTLP and `ActivitySource` emission |
 | `openai-chat-messages` | OpenAI-compatible message projection |
 | `jsonl-minimal` | Compact streaming JSONL projection |
 
@@ -42,6 +45,7 @@ Do not treat the existing prototype output named `letta-trajectory-v1` as compat
 
 - `Hypabolic.Trajectory` — BCL-only normalization core, transcript adapters, output adapters, and listing abstractions.
 - `Hypabolic.Trajectory.Sqlite` — optional Deep Agents / LangGraph checkpoint support.
+- `Hypabolic.Trajectory.OpenTelemetry` — optional OpenTelemetry GenAI projection, OTLP conversion, and emission support.
 - `Hypabolic.Trajectory.Testing` — optional fixture and adapter-authoring helpers.
 
 Target frameworks: `net8.0;net9.0;net10.0`.
@@ -52,6 +56,7 @@ Target frameworks: `net8.0;net9.0;net10.0`.
 - [Pinned upstream compatibility reference](docs/upstream-reference.md)
 - [Letta parity baseline and current implementation audit](docs/parity-baseline.md)
 - [Hypabolic trajectory v1 contract](docs/hypabolic-trajectory-v1.md)
+- [OpenTelemetry GenAI span output plan](docs/otel-genai-output.md)
 - [Vertical-slice implementation plan](docs/implementation-plan.md)
 
 ## Core constraints
