@@ -197,6 +197,7 @@
         "component_key": { "type": "string", "minLength": 1 },
         "component_index": { "type": "integer", "minimum": 0 },
         "component_type_ordinal": { "type": "integer", "minimum": 0 },
+        "producer_version": { "type": "string", "minLength": 1 },
         "native_record_id": { "type": "string", "minLength": 1 },
         "source_sequence": { "type": "integer", "minimum": 0 },
         "source_offset": { "type": "integer", "minimum": 0 },

@@ -177,6 +177,7 @@ public sealed record HypabolicProvenanceV1
     public required string ComponentKey { get; init; }
     public required int ComponentIndex { get; init; }
     public required int ComponentTypeOrdinal { get; init; }
+    public string? ProducerVersion { get; init; }
     public string? NativeRecordId { get; init; }
     public long? SourceSequence { get; init; }
     public long? SourceOffset { get; init; }
