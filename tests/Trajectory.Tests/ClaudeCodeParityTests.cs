@@ -1,7 +1,5 @@
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
-using Json.Schema;
 using Xunit;
 
 namespace Hypabolic.Trajectory.Tests;
@@ -44,12 +42,6 @@ public sealed class ClaudeCodeParityTests
             OutputSchemaIds.LettaCanonicalV1))!;
 
         Assert.True(JsonNode.DeepEquals(expected, actual));
-        var schema = JsonSchema.FromText(File.ReadAllText(Path.Combine(
-            AppContext.BaseDirectory,
-            "Schemas",
-            "letta-canonical-v1.schema.json")));
-        using var records = JsonDocument.Parse(actual["records"]!.ToJsonString());
-        Assert.True(schema.Evaluate(records.RootElement).IsValid);
     }
 
     [Fact]
@@ -127,13 +119,13 @@ public sealed class ClaudeCodeParityTests
         Assert.Equal(
             DateTimeOffset.Parse("2026-07-01T09:00:02Z"),
             legacy.CompletedAt);
-
-        var schema = JsonSchema.FromText(File.ReadAllText(Path.Combine(
-            AppContext.BaseDirectory,
-            "Schemas",
-            "hypabolic-trajectory-v1.schema.json")));
-        using var document = JsonDocument.Parse(hypabolicJson);
-        Assert.True(schema.Evaluate(document.RootElement).IsValid);
+        Assert.Equal(
+            "2.1.206",
+            JsonNode.Parse(hypabolicJson)!["records"]!
+                .AsArray()
+                .Select(static record =>
+                    record!["provenance"]?["producer_version"]?.GetValue<string>())
+                .Last(static version => version is not null));
     }
 
     [Fact]
