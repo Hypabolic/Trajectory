@@ -1,4 +1,5 @@
 using System.Text;
+using Hypabolic.Trajectory.Adapters.ClaudeCode;
 using Hypabolic.Trajectory.Adapters.Hypabolic;
 using Hypabolic.Trajectory.Adapters.Letta;
 using Hypabolic.Trajectory.Adapters.Pi;
@@ -20,10 +21,12 @@ public sealed class TrajectoryEngine
     private readonly TrajectoryNormalizer _normalizer = new();
 
     public static TrajectoryEngine CreateDefault() => new TrajectoryEngine()
+        .AddSource(new ClaudeCodeJsonlSourceAdapter())
         .AddSource(new PiJsonlSourceAdapter())
         .AddOutputAdapter(new LettaTrajectoryV1OutputAdapter())
         .AddOutputAdapter(new LettaCanonicalV1OutputAdapter())
         .AddOutputAdapter(new HypabolicTrajectoryV1OutputAdapter())
+        .AddLister(new ClaudeCodeTrajectoryLister())
         .AddLister(new PiTrajectoryLister());
 
     public TrajectoryEngine AddOutputAdapter<TOutput>(IOutputSchemaAdapter<TOutput> adapter)

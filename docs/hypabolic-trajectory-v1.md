@@ -61,6 +61,8 @@ The format retains the semantic records expected by Letta compatibility outputs 
 - `source.name` is the adapter-reported source name and allows compatible aliases or future source variants.
 - `source.group_id` is required in this format. Sources without a native group use the normalization core's deterministic group sentinel/derivation policy.
 - `producer_version` is present only when the source exposes it.
+- `records[].provenance.producer_version` retains the originating row version
+  when a source can contain mixed producer releases in one logical session.
 - `segment` records the caller's chunking context. A non-zero `base_byte_offset` implies `partial: true`.
 - `config` contains the fully resolved output-affecting configuration, including defaults.
 - `records` preserve normalized semantic order. Consumers that combine chunks use each record's `source_order_id` and `component_index`.
