@@ -28,8 +28,8 @@ jobs:
         run: |
           dotnet build Trajectory.sln -c Release --no-restore 2>&1 | Tee-Object build.log
           exit $LASTEXITCODE
-      - name: Upload build log
-        if: always()
+      - name: Upload failed build log
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: build-log-${{ matrix.os }}
@@ -50,8 +50,8 @@ jobs:
         run: |
           dotnet publish tests/Trajectory.AotSmoke/Trajectory.AotSmoke.csproj -c Release -r linux-x64 --self-contained true 2>&1 | Tee-Object aot.log
           exit $LASTEXITCODE
-      - name: Upload AOT log
-        if: always()
+      - name: Upload failed AOT log
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: aot-log-linux-x64
