@@ -119,5 +119,38 @@ public sealed record TrajectoryIR
     public string? ProducerVersion { get; init; }
     public required IReadOnlyList<IRRecord> Records { get; init; }
     public required IReadOnlyList<TrajectoryDiagnostic> Diagnostics { get; init; }
+    public required TrajectoryExecutionIR Execution { get; init; }
     public required AppliedNormalizationConfig Config { get; init; }
+}
+
+public sealed record TrajectoryExecutionIR
+{
+    public required IReadOnlyList<ModelInvocationIR> ModelInvocations { get; init; }
+}
+
+public sealed record ModelInvocationIR
+{
+    public required string Id { get; init; }
+    public string? NativeRecordId { get; init; }
+    public long? SourceSequence { get; init; }
+    public long? SourceOffset { get; init; }
+    public string? Provider { get; init; }
+    public string? ApiFamily { get; init; }
+    public string? RequestedModel { get; init; }
+    public string? ResponseModel { get; init; }
+    public string? ResponseId { get; init; }
+    public string? StopReason { get; init; }
+    public ModelTokenUsageIR? Usage { get; init; }
+    public DateTimeOffset? StartedAt { get; init; }
+    public DateTimeOffset? FirstResponseAt { get; init; }
+    public DateTimeOffset? CompletedAt { get; init; }
+}
+
+public sealed record ModelTokenUsageIR
+{
+    public long? InputTokens { get; init; }
+    public long? OutputTokens { get; init; }
+    public long? CacheReadTokens { get; init; }
+    public long? CacheWriteTokens { get; init; }
+    public long? TotalTokens { get; init; }
 }

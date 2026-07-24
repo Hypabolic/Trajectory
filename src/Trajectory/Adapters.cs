@@ -54,5 +54,6 @@ public abstract class OutputSchemaAdapter<TOutput> : IOutputSchemaAdapter<TOutpu
 public static class OutputSchemaIds
 {
     public const string LettaTrajectoryV1 = "letta-trajectory-v1";
+    public const string LettaCanonicalV1 = "letta-canonical-v1";
     public const string HypabolicTrajectoryV1 = "hypabolic-trajectory-v1";
 }
