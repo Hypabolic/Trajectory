@@ -172,4 +172,16 @@ public static class TrajectoryConverter
             cursor,
             limit,
             cancellationToken);
+
+    public static ValueTask<TrajectoryListingPage> ListCodexTrajectoriesAsync(
+        string? root = null,
+        string? cursor = null,
+        int limit = 50,
+        CancellationToken cancellationToken = default) =>
+        ListTrajectoriesAsync(
+            TrajectorySource.Codex,
+            root,
+            cursor,
+            limit,
+            cancellationToken);
 }
