@@ -13,6 +13,12 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository-root", type=Path, required=True)
+    parser.add_argument(
+        "--source",
+        action="append",
+        dest="sources",
+        help="only run cases for this source (repeatable)",
+    )
     parser.add_argument("runner", nargs=argparse.REMAINDER)
     result = parser.parse_args()
     if result.runner[:1] == ["--"]:
@@ -95,6 +101,13 @@ def main() -> int:
     repository_root = args.repository_root.resolve()
     cases_root = repository_root / "conformance" / "cases"
     manifests = sorted(cases_root.glob("**/case.json"))
+    if args.sources:
+        manifests = [
+            path
+            for path in manifests
+            if json.loads(path.read_text(encoding="utf-8"))["source"]
+            in args.sources
+        ]
     checked = 0
     candidates = 0
 

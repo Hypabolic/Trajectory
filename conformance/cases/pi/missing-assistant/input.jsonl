@@ -1,0 +1,2 @@
+{"type":"session","id":"pi-missing-assistant"}
+{"type":"message","id":"only-user","timestamp":"2026-02-03T00:00:00Z","message":{"role":"user","content":"No assistant follows."}}

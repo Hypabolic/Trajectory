@@ -55,6 +55,21 @@ python3 conformance/verify.py --repository-root . -- \
   dotnet dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll
 ```
 
-Future Rust and TypeScript implementations provide executables that consume the
-same request schema and produce the same response schema. The verifier command
-is then repeated with each runner; no case or protocol redesign is required.
+## TypeScript runner
+
+Build the workspace, then run the sources implemented by the current slice:
+
+```bash
+cd typescript && npm ci && npm run build && cd ..
+python3 conformance/verify.py --repository-root . --source pi -- \
+  node typescript/packages/trajectory-testing/dist/cli.js
+```
+
+`--source` is repeatable and selects only manifests a runtime currently
+advertises. Omitting it preserves the original behavior and runs every case.
+The TypeScript runner is private test infrastructure in
+`@hypabolic/trajectory-testing`; it is not a public interchange API.
+
+Future Rust and later TypeScript source slices consume the same request schema
+and produce the same response schema. The verifier command is repeated with
+each runner; no case or protocol redesign is required.

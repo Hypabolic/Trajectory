@@ -18,3 +18,54 @@ ML2 starts with four package boundaries:
 
 Node filesystem APIs, SQLite, and OpenTelemetry dependencies stay outside the
 core package.
+
+## Build and verify
+
+```bash
+npm ci
+npm run typecheck
+npm test
+```
+
+The test command builds all four packages, exercises typed failures and partial
+segments, and runs every shared Pi operation through the private runner twice.
+From the repository root, the runner can also be invoked directly:
+
+```bash
+python3 conformance/verify.py --repository-root . --source pi -- \
+  node typescript/packages/trajectory-testing/dist/cli.js
+```
+
+The `--source pi` filter is intentional: ML2 advertises only the source it
+implements. Later slices can add sources without changing the protocol.
+
+## Core API
+
+Pass exact bytes when identity or byte anchors matter:
+
+```ts
+import {
+  normalizeToIR,
+  normalizeToCanonical,
+  normalizeToHypabolic,
+  normalizeToLetta,
+} from "@hypabolic/trajectory";
+
+const request = {
+  source: "pi" as const,
+  transcriptBytes,
+  sourceContext: {
+    groupId: "session-id",
+    baseByteOffset: 0n,
+    partial: false,
+  },
+};
+
+const ir = normalizeToIR(request);
+const letta = normalizeToLetta(request);
+const canonical = normalizeToCanonical(request);
+const hypabolic = normalizeToHypabolic(request);
+```
+
+String transcript input is a UTF-8 convenience. The decoder always computes
+anchors from the encoded bytes, never from UTF-16 string indices.
