@@ -1,0 +1,20 @@
+{
+  "store_version": 1,
+  "files": [
+    {
+      "path": "store/2026/04/01/older.jsonl",
+      "content": "{}\n",
+      "updated_at": "2026-04-01T00:00:00.000Z"
+    },
+    {
+      "path": "store/2026/04/02/newer.jsonl",
+      "content": "{}\n",
+      "updated_at": "2026-04-02T00:00:00.000Z"
+    },
+    {
+      "path": "store/2026/04/02/ignored.txt",
+      "content": "not a trajectory",
+      "updated_at": "2026-04-03T00:00:00.000Z"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import type {
   NormalizeRequest,
   NormalizationOptions,
   TrajectoryDiagnostic,
+  TrajectorySource,
 } from "./index.js";
 
 export type JsonObject = { [key: string]: JsonValue };
@@ -29,13 +30,46 @@ interface DecodedEvent {
   model?: string;
 }
 
+type DecodedEventValues = {
+  [Key in keyof DecodedEvent]?: DecodedEvent[Key] | undefined;
+};
+
 interface DecodedSession {
+  source: TrajectorySource;
+  sourceName: string;
   groupId?: string;
+  groupResolved: boolean;
   cwd?: string;
+  gitBranch?: string;
   producerVersion?: string;
   createdAt?: number;
   events: DecodedEvent[];
+  modelInvocations: DecodedModelInvocation[];
   diagnostics: TrajectoryDiagnostic[];
+}
+
+interface DecodedModelInvocation {
+  nativeId?: string;
+  sourceSequence?: number;
+  sourceOffset?: bigint;
+  provider?: string;
+  apiFamily?: string;
+  requestedModel?: string;
+  responseModel?: string;
+  responseId?: string;
+  stopReason?: string;
+  producerVersion?: string;
+  inputTokens?: bigint;
+  outputTokens?: bigint;
+  cacheReadTokens?: bigint;
+  cacheWriteTokens?: bigint;
+  totalTokens?: bigint;
+  startedAt?: number;
+  startedAtPrecise?: string;
+  firstResponseAt?: number;
+  firstResponseAtPrecise?: string;
+  completedAt?: number;
+  completedAtPrecise?: string;
 }
 
 export interface AppliedConfig {
@@ -75,6 +109,7 @@ export interface IRRecord {
   content?: string;
   sourceName?: string;
   cwd?: string;
+  gitBranch?: string;
   model?: string;
   producerVersion?: string;
   toolCalls?: { id: string; name: string; argumentsJson: string }[];
@@ -86,13 +121,45 @@ export interface IRRecord {
 }
 
 export interface TrajectoryIR {
-  source: "pi";
-  sourceName: "pi";
+  source: TrajectorySource;
+  sourceName: string;
   groupId: string;
+  groupResolved: boolean;
   producerVersion?: string;
   records: IRRecord[];
   diagnostics: TrajectoryDiagnostic[];
+  execution: {
+    modelInvocations: ModelInvocationIR[];
+    workflowInvocations: readonly [];
+  };
   config: AppliedConfig;
+}
+
+export interface ModelInvocationIR {
+  id: string;
+  nativeRecordId?: string;
+  sourceSequence?: number;
+  sourceOffset?: bigint;
+  provider?: string;
+  apiFamily?: string;
+  requestedModel?: string;
+  responseModel?: string;
+  responseId?: string;
+  stopReason?: string;
+  producerVersion?: string;
+  usage?: {
+    inputTokens?: bigint;
+    outputTokens?: bigint;
+    cacheReadTokens?: bigint;
+    cacheWriteTokens?: bigint;
+    totalTokens?: bigint;
+  };
+  startedAt?: number;
+  startedAtPrecise?: string;
+  firstResponseAt?: number;
+  firstResponseAtPrecise?: string;
+  completedAt?: number;
+  completedAtPrecise?: string;
 }
 
 interface PlannedCall {
@@ -106,8 +173,22 @@ interface PlannedCall {
 const syntheticBase = Date.parse("2026-01-01T00:00:00.000Z");
 
 export function normalizePi(request: NormalizeRequest & { transcriptBytes: Uint8Array }): TrajectoryIR {
+  return normalizeDecoded(request, decodePi(request.transcriptBytes));
+}
+
+export function normalizeClaudeCode(request: NormalizeRequest & { transcriptBytes: Uint8Array }): TrajectoryIR {
+  return normalizeDecoded(request, decodeClaudeCode(request.transcriptBytes));
+}
+
+export function normalizeCodex(request: NormalizeRequest & { transcriptBytes: Uint8Array }): TrajectoryIR {
+  return normalizeDecoded(request, decodeCodex(request.transcriptBytes));
+}
+
+function normalizeDecoded(
+  request: NormalizeRequest & { transcriptBytes: Uint8Array },
+  decoded: DecodedSession,
+): TrajectoryIR {
   const config = resolveConfig(request.options, request.sourceContext);
-  const decoded = decodePi(request.transcriptBytes);
   const detected = decoded.groupId;
   const provided = config.sourceContext.groupId;
   if (detected && provided && detected !== provided) {
@@ -117,6 +198,7 @@ export function normalizePi(request: NormalizeRequest & { transcriptBytes: Uint8
     );
   }
   const groupId = detected ?? provided ?? "default";
+  const groupResolved = detected !== undefined || provided !== undefined;
   const partial = config.sourceContext.partial || config.sourceContext.baseByteOffset > 0n;
   const diagnostics = [...decoded.diagnostics];
   const plan = planEvents(decoded.events);
@@ -154,30 +236,46 @@ export function normalizePi(request: NormalizeRequest & { transcriptBytes: Uint8
   for (let index = 0; index < records.length; index++) {
     const record = records[index]!;
     record.timestamp = timestamps[index]!;
-    record.hashes = hashRecord(record);
+    record.hashes = hashRecord(record, decoded.source);
   }
 
   const model = [...modelCounts].sort((left, right) =>
     right[1] - left[1] || utf16Compare(left[0], right[0]),
   )[0]?.[0];
-  const meta = createMeta(groupId, decoded.cwd, model, decoded.producerVersion);
-  return {
-    source: "pi",
-    sourceName: "pi",
+  const meta = createMeta(
+    decoded.source,
+    decoded.sourceName,
     groupId,
+    decoded.cwd,
+    decoded.gitBranch,
+    model,
+    decoded.producerVersion,
+  );
+  const modelInvocations = decoded.modelInvocations.map((invocation) =>
+    normalizeInvocation(invocation, groupId, config.sourceContext.baseByteOffset)
+  );
+  return {
+    source: decoded.source,
+    sourceName: decoded.sourceName,
+    groupId,
+    groupResolved,
     ...(decoded.producerVersion === undefined ? {} : { producerVersion: decoded.producerVersion }),
     records: [meta, ...records],
     diagnostics,
+    execution: { modelInvocations, workflowInvocations: [] },
     config,
   };
 }
 
 function decodePi(bytes: Uint8Array): DecodedSession {
   const events: DecodedEvent[] = [];
+  const modelInvocations: DecodedModelInvocation[] = [];
   const diagnostics: TrajectoryDiagnostic[] = [];
   let groupId: string | undefined;
   let cwd: string | undefined;
   let producerVersion: string | undefined;
+  let requestedProvider: string | undefined;
+  let requestedModel: string | undefined;
   let createdAt: number | undefined;
   let sawMessage = false;
   const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -192,8 +290,10 @@ function decodePi(bytes: Uint8Array): DecodedSession {
     const slice = bytes.subarray(offset, lineEnd);
     if (!isAsciiWhitespace(slice)) {
       let row: JsonObject | undefined;
+      let rawLine: string | undefined;
       try {
-        const parsed: unknown = JSON.parse(decoder.decode(slice));
+        rawLine = decoder.decode(slice);
+        const parsed: unknown = JSON.parse(rawLine);
         if (!isObject(parsed)) {
           diagnostics.push({
             code: "non_object_json_line",
@@ -217,6 +317,9 @@ function decodePi(bytes: Uint8Array): DecodedSession {
           groupId ??= stringValue(row.id);
           createdAt ??= timestampValue(row.timestamp);
           producerVersion ??= scalarString(row.version);
+        } else if (type === "model_change") {
+          requestedProvider = stringValue(row.provider);
+          requestedModel = stringValue(row.modelId);
         } else if (type === "message" && isObject(row.message)) {
           sawMessage = true;
           const message = row.message as JsonObject;
@@ -242,6 +345,45 @@ function decodePi(bytes: Uint8Array): DecodedSession {
             const content = readBlocksText(message.content);
             if (content) emit({ kind: "message", role: "user", content, ...(timestamp === undefined ? {} : { timestamp }) });
           } else if (role === "assistant") {
+            const usage = readTokenUsage(message, rawLine!, {
+              inputTokens: ["input"],
+              outputTokens: ["output"],
+              cacheReadTokens: ["cacheRead"],
+              cacheWriteTokens: ["cacheWrite"],
+              totalTokens: ["totalTokens"],
+            });
+            const provider = stringValue(message.provider) ?? requestedProvider;
+            const apiFamily = stringValue(message.api);
+            const responseId = stringValue(message.responseId);
+            const stopReason = stringValue(message.stopReason);
+            const started = parseTimestamp(message.startTimestamp) ??
+              parseTimestamp(message.requestTimestamp);
+            const firstResponse = parseTimestamp(message.firstResponseTimestamp);
+            const completed = parseTimestamp(message.timestamp) ?? timestampData;
+            modelInvocations.push({
+              ...(nativeId === undefined ? {} : { nativeId }),
+              sourceSequence: line - 1,
+              sourceOffset: BigInt(offset),
+              ...(provider === undefined ? {} : { provider }),
+              ...(apiFamily === undefined ? {} : { apiFamily }),
+              ...(requestedModel === undefined ? {} : { requestedModel }),
+              ...(model === undefined ? {} : { responseModel: model }),
+              ...(responseId === undefined ? {} : { responseId }),
+              ...(stopReason === undefined ? {} : { stopReason }),
+              ...usage,
+              ...(started === undefined ? {} : {
+                startedAt: started.milliseconds,
+                startedAtPrecise: started.precise,
+              }),
+              ...(firstResponse === undefined ? {} : {
+                firstResponseAt: firstResponse.milliseconds,
+                firstResponseAtPrecise: firstResponse.precise,
+              }),
+              ...(completed === undefined ? {} : {
+                completedAt: completed.milliseconds,
+                completedAtPrecise: completed.precise,
+              }),
+            });
             const content = message.content;
             if (typeof content === "string") {
               if (content) emit({ kind: "message", role: "assistant", content, ...(timestamp === undefined ? {} : { timestamp }), ...(model === undefined ? {} : { model }) });
@@ -302,13 +444,495 @@ function decodePi(bytes: Uint8Array): DecodedSession {
     fail("invalid_input", "Pi transcript must be session JSONL containing a session header or message entries.");
   }
   return {
+    source: "pi",
+    sourceName: "pi",
+    groupResolved: groupId !== undefined,
     events,
+    modelInvocations,
     diagnostics,
     ...(groupId === undefined ? {} : { groupId }),
     ...(cwd === undefined ? {} : { cwd }),
     ...(producerVersion === undefined ? {} : { producerVersion }),
     ...(createdAt === undefined ? {} : { createdAt }),
   };
+}
+
+function decodeClaudeCode(bytes: Uint8Array): DecodedSession {
+  const diagnostics: TrajectoryDiagnostic[] = [];
+  const events: DecodedEvent[] = [];
+  const modelInvocations: DecodedModelInvocation[] = [];
+  const sessionIds = new Set<string>();
+  let cwd: string | undefined;
+  let gitBranch: string | undefined;
+  let producerVersion: string | undefined;
+  const transportTypes = new Set([
+    "progress", "queue-operation", "file-history-snapshot", "summary", "system",
+    "pr-link", "last-prompt", "custom-title", "ai-title", "agent-name",
+    "permission-mode", "attachment", "mode",
+  ]);
+
+  forEachJsonLine(bytes, diagnostics, (row, inputLine, sourceOffset, rawLine) => {
+    const rowType = stringValue(row.type);
+    if (row.isSidechain === true) {
+      diagnostics.push({
+        code: "sidechain_record_dropped",
+        message: `Dropped a Claude Code sidechain record on line ${inputLine}.`,
+        inputLine,
+      });
+      return;
+    }
+    if (rowType !== undefined && transportTypes.has(rowType)) return;
+
+    cwd ??= stringValue(row.cwd);
+    gitBranch ??= stringValue(row.gitBranch);
+    producerVersion ??= scalarString(row.version);
+    const sessionId = stringValue(row.sessionId);
+    if (sessionId) sessionIds.add(sessionId);
+    if (rowType !== "user" && rowType !== "assistant") {
+      if (rowType) {
+        diagnostics.push({
+          code: "unknown_semantic_record",
+          message: `Skipped an unknown Claude Code semantic record on line ${inputLine}.`,
+          inputLine,
+        });
+      }
+      return;
+    }
+    if (!isObject(row.message)) return;
+    const message = row.message;
+    const nativeId = stringValue(row.uuid);
+    const timestampData = parseTimestamp(row.timestamp);
+    const model = stringValue(message.model);
+    let componentIndex = 0;
+    const emit = (
+      kind: EventKind,
+      role: Role,
+      values: DecodedEventValues,
+    ): void => {
+      const defined = Object.fromEntries(
+        Object.entries(values).filter((entry) => entry[1] !== undefined),
+      ) as Partial<DecodedEvent>;
+      events.push({
+        kind,
+        role,
+        sourceSequence: 0,
+        sourceOffset,
+        inputLine,
+        componentIndex: componentIndex++,
+        ...(nativeId === undefined ? {} : { nativeId }),
+        ...(timestampData === undefined ? {} : {
+          timestamp: timestampData.milliseconds,
+          timestampPrecise: timestampData.precise,
+        }),
+        ...defined,
+      });
+    };
+    const content = message.content;
+    if (rowType === "user") {
+      if (typeof content === "string") {
+        emit("message", "user", { content });
+        return;
+      }
+      if (!Array.isArray(content)) return;
+      const textParts: string[] = [];
+      for (const value of content) {
+        if (!isObject(value)) continue;
+        const blockType = stringValue(value.type);
+        if (blockType === "tool_result") {
+          emit("tool-result", "tool", {
+            toolCallId: stringValue(value.tool_use_id),
+            content: readBlocksText(value.content),
+            isError: value.is_error === true,
+          });
+        } else if (blockType === "text") {
+          const text = stringValue(value.text);
+          if (text) textParts.push(text);
+        } else if (blockType === "image") {
+          textParts.push("[image]");
+        } else {
+          diagnostics.push({
+            code: "unknown_content_block",
+            message: `Skipped an unknown Claude Code user content block on line ${inputLine}.`,
+            inputLine,
+          });
+        }
+      }
+      if (textParts.length > 0) {
+        emit("message", "user", { content: textParts.join("\n") });
+      }
+      return;
+    }
+    const usage = readTokenUsage(message, rawLine, {
+      inputTokens: ["input_tokens", "input"],
+      outputTokens: ["output_tokens", "output"],
+      cacheReadTokens: ["cache_read_input_tokens", "cacheRead"],
+      cacheWriteTokens: ["cache_creation_input_tokens", "cacheWrite"],
+      totalTokens: ["total_tokens"],
+    });
+    const responseId = stringValue(message.id);
+    const stopReason = stringValue(message.stop_reason) ?? stringValue(message.stopReason);
+    const invocationProducerVersion = scalarString(row.version);
+    modelInvocations.push({
+      ...(nativeId === undefined ? {} : { nativeId }),
+      sourceOffset,
+      ...(model === undefined ? {} : { responseModel: model }),
+      ...(responseId === undefined ? {} : { responseId }),
+      ...(stopReason === undefined ? {} : { stopReason }),
+      ...(invocationProducerVersion === undefined ? {} : {
+        producerVersion: invocationProducerVersion,
+      }),
+      ...usage,
+      ...(timestampData === undefined ? {} : {
+        completedAt: timestampData.milliseconds,
+        completedAtPrecise: timestampData.precise,
+      }),
+    });
+    if (typeof content === "string") {
+      if (content.trim()) emit("message", "assistant", { content, model });
+      return;
+    }
+    if (!Array.isArray(content)) return;
+    for (const value of content) {
+      if (!isObject(value)) continue;
+      const blockType = stringValue(value.type);
+      if (blockType === "thinking") {
+        emit("reasoning", "reasoning", {
+          content: stringValue(value.thinking) ?? "",
+          model,
+        });
+      } else if (blockType === "text") {
+        emit("message", "assistant", {
+          content: stringValue(value.text) ?? "",
+          model,
+        });
+      } else if (blockType === "tool_use") {
+        emit("tool-call", "assistant", {
+          toolCallId: stringValue(value.id),
+          toolName: stringValue(value.name),
+          argumentsJson: value.input === undefined ? "{}" : compactJson(value.input),
+          model,
+        });
+      } else if (blockType !== "fallback") {
+        diagnostics.push({
+          code: "unknown_content_block",
+          message: `Skipped an unknown Claude Code assistant content block on line ${inputLine}.`,
+          inputLine,
+        });
+      }
+    }
+  });
+
+  if (sessionIds.size > 1) {
+    const formatted = [...sessionIds].sort(utf16Compare).map(quote).join(", ");
+    fail(
+      "source_group_conflict",
+      `Claude Code transcript contains multiple session ids: ${formatted}.`,
+    );
+  }
+  const groupId = sessionIds.values().next().value as string | undefined;
+  return {
+    source: "claude-code",
+    sourceName: "claude-code",
+    groupResolved: groupId !== undefined,
+    events,
+    modelInvocations,
+    diagnostics,
+    ...(groupId === undefined ? {} : { groupId }),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(gitBranch === undefined ? {} : { gitBranch }),
+    producerVersion: producerVersion ?? "unknown",
+  };
+}
+
+function decodeCodex(bytes: Uint8Array): DecodedSession {
+  const diagnostics: TrajectoryDiagnostic[] = [];
+  const events: DecodedEvent[] = [];
+  let groupId: string | undefined;
+  let cwd: string | undefined;
+  let gitBranch: string | undefined;
+  let model: string | undefined;
+  let producerVersion: string | undefined;
+  let createdAt: number | undefined;
+  const injectedPrefixes = [
+    "<environment_context>",
+    "<user_instructions>",
+    "<permissions instructions>",
+    "<turn_context>",
+  ];
+
+  forEachJsonLine(bytes, diagnostics, (row, inputLine, sourceOffset) => {
+    const recordType = stringValue(row.type);
+    const timestampData = parseTimestamp(row.timestamp);
+    const payload = isObject(row.payload) ? row.payload : {};
+    const payloadType = stringValue(payload.type);
+    const emit = (
+      kind: EventKind,
+      role: Role,
+      values: DecodedEventValues,
+    ): void => {
+      const defined = Object.fromEntries(
+        Object.entries(values).filter((entry) => entry[1] !== undefined),
+      ) as Partial<DecodedEvent>;
+      events.push({
+        kind,
+        role,
+        sourceSequence: 0,
+        sourceOffset,
+        inputLine,
+        componentIndex: 0,
+        ...(timestampData === undefined ? {} : {
+          timestamp: timestampData.milliseconds,
+          timestampPrecise: timestampData.precise,
+        }),
+        ...defined,
+      });
+    };
+
+    if (recordType === "session_meta") {
+      cwd ??= nonEmpty(stringValue(payload.cwd));
+      groupId ??= nonEmpty(stringValue(payload.id));
+      producerVersion ??= nonEmpty(scalarString(payload.cli_version));
+      createdAt ??= parseTimestamp(payload.timestamp)?.milliseconds ??
+        timestampData?.milliseconds;
+      if (isObject(payload.git)) gitBranch ??= nonEmpty(stringValue(payload.git.branch));
+      return;
+    }
+    if (recordType === "turn_context") {
+      cwd ??= nonEmpty(stringValue(payload.cwd));
+      model ??= nonEmpty(stringValue(payload.model));
+      return;
+    }
+    if (recordType === "event_msg") {
+      const content = stringValue(payload.text);
+      if (payloadType === "agent_reasoning" && content?.trim()) {
+        emit("reasoning", "reasoning", { content, model });
+      }
+      return;
+    }
+    if (recordType !== "response_item") return;
+    if (payloadType === "message") {
+      const role = stringValue(payload.role);
+      const content = readBlocksText(payload.content);
+      if (role === "user") {
+        const head = content.trimStart();
+        if (injectedPrefixes.some((prefix) => head.startsWith(prefix))) {
+          diagnostics.push({
+            code: "injected_context_dropped",
+            message: `Dropped Codex system-injected user content on line ${inputLine}.`,
+            inputLine,
+          });
+        } else {
+          emit("message", "user", { content, model });
+        }
+      } else if (role === "assistant") {
+        emit("message", "assistant", { content, model });
+      }
+      return;
+    }
+    if (payloadType === "function_call") {
+      emit("tool-call", "assistant", {
+        toolCallId: stringValue(payload.call_id),
+        toolName: stringValue(payload.name),
+        argumentsJson: nonEmpty(stringValue(payload.arguments)) ?? "{}",
+        model,
+      });
+      return;
+    }
+    if (payloadType === "custom_tool_call") {
+      emit("tool-call", "assistant", {
+        toolCallId: stringValue(payload.call_id),
+        toolName: stringValue(payload.name),
+        argumentsJson: compactJson({ input: payload.input ?? "" }),
+        model,
+      });
+      return;
+    }
+    if (payloadType === "web_search_call") {
+      const filtered: JsonObject = {};
+      for (const [key, value] of Object.entries(payload)) {
+        if (key !== "type" && key !== "call_id" && key !== "status") {
+          filtered[key] = value;
+        }
+      }
+      emit("tool-call", "assistant", {
+        toolCallId: stringValue(payload.call_id),
+        toolName: "web_search",
+        argumentsJson: compactJson(filtered),
+        model,
+      });
+      return;
+    }
+    if (payloadType === "tool_search_call") {
+      const argumentsValue = payload.arguments;
+      emit("tool-call", "assistant", {
+        toolCallId: stringValue(payload.call_id),
+        toolName: "tool_search",
+        argumentsJson: typeof argumentsValue === "string" && argumentsValue
+          ? argumentsValue
+          : compactJson(argumentsValue ?? null),
+        model,
+      });
+      return;
+    }
+    if (
+      payloadType === "function_call_output" ||
+      payloadType === "custom_tool_call_output" ||
+      payloadType === "tool_search_output"
+    ) {
+      const content = payloadType === "tool_search_output"
+        ? compactJson(payload.tools ?? [])
+        : outputText(payload.output);
+      emit("tool-result", "tool", {
+        toolCallId: stringValue(payload.call_id),
+        content,
+        model,
+      });
+    }
+  });
+
+  return {
+    source: "codex",
+    sourceName: "codex",
+    groupResolved: groupId !== undefined,
+    events,
+    modelInvocations: [],
+    diagnostics,
+    ...(groupId === undefined ? {} : { groupId }),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(gitBranch === undefined ? {} : { gitBranch }),
+    ...(producerVersion === undefined ? {} : { producerVersion }),
+    ...(createdAt === undefined ? {} : { createdAt }),
+  };
+}
+
+function forEachJsonLine(
+  bytes: Uint8Array,
+  diagnostics: TrajectoryDiagnostic[],
+  visit: (
+    row: JsonObject,
+    inputLine: number,
+    sourceOffset: bigint,
+    rawLine: string,
+  ) => void,
+): void {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let offset = 0;
+  let line = 1;
+  while (offset <= bytes.length) {
+    let end = bytes.indexOf(0x0a, offset);
+    if (end < 0) end = bytes.length;
+    let lineEnd = end;
+    if (lineEnd > offset && bytes[lineEnd - 1] === 0x0d) lineEnd--;
+    const slice = bytes.subarray(offset, lineEnd);
+    if (!isAsciiWhitespace(slice)) {
+      try {
+        const rawLine = decoder.decode(slice);
+        const parsed: unknown = JSON.parse(rawLine);
+        if (isObject(parsed)) {
+          visit(parsed, line, BigInt(offset), rawLine);
+        } else {
+          diagnostics.push({
+            code: "non_object_json_line",
+            message: `Skipped non-object JSON on line ${line}.`,
+            inputLine: line,
+          });
+        }
+      } catch {
+        diagnostics.push({
+          code: "invalid_json_line",
+          message: `Skipped invalid JSON on line ${line}.`,
+          inputLine: line,
+        });
+      }
+    }
+    if (end === bytes.length) break;
+    offset = end + 1;
+    line++;
+  }
+}
+
+function outputText(value: JsonValue | undefined): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return readBlocksText(value) || compactJson(value);
+  if (isObject(value)) return nonEmpty(stringValue(value.content)) ?? compactJson(value);
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  return value ? value : undefined;
+}
+
+function readTokenUsage(
+  message: JsonObject,
+  rawLine: string,
+  names: Record<
+    "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheWriteTokens" | "totalTokens",
+    string[]
+  >,
+): Partial<DecodedModelInvocation> {
+  if (!isObject(message.usage)) return {};
+  const rawUsage = rawObjectProperty(rawLine, "usage");
+  const usage: Partial<DecodedModelInvocation> = {};
+  for (const [target, sourceNames] of Object.entries(names) as [
+    keyof Pick<
+      DecodedModelInvocation,
+      "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheWriteTokens" | "totalTokens"
+    >,
+    string[],
+  ][]) {
+    for (const sourceName of sourceNames) {
+      const raw = rawUsage === undefined
+        ? undefined
+        : rawSignedIntegerProperty(rawUsage, sourceName);
+      const parsed = raw ?? safeInteger(message.usage[sourceName]);
+      if (parsed !== undefined) {
+        usage[target] = parsed;
+        break;
+      }
+    }
+  }
+  return usage;
+}
+
+function rawObjectProperty(json: string, property: string): string | undefined {
+  const key = `"${property.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")}"`;
+  const match = new RegExp(`${key}\\s*:\\s*\\{`).exec(json);
+  if (!match) return undefined;
+  const start = match.index + match[0].lastIndexOf("{");
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < json.length; index++) {
+    const character = json[index]!;
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === "\"") quoted = false;
+      continue;
+    }
+    if (character === "\"") quoted = true;
+    else if (character === "{") depth++;
+    else if (character === "}" && --depth === 0) return json.slice(start, index + 1);
+  }
+  return undefined;
+}
+
+function rawSignedIntegerProperty(json: string, property: string): bigint | undefined {
+  const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`"${escaped}"\\s*:\\s*(-?\\d+)(?=\\s*[,}])`).exec(json);
+  if (!match) return undefined;
+  const value = BigInt(match[1]!);
+  return value >= -9_223_372_036_854_775_808n &&
+      value <= 9_223_372_036_854_775_807n
+    ? value
+    : undefined;
+}
+
+function safeInteger(value: JsonValue | undefined): bigint | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value)
+    ? BigInt(value)
+    : undefined;
 }
 
 function normalizeEvent(
@@ -324,9 +948,18 @@ function normalizeEvent(
   if (event.kind === "message" || event.kind === "reasoning") {
     const content = event.content ?? "";
     if (!content.trim()) return undefined;
+    if (event.role === "user" && isHarnessNoise(content)) {
+      diagnostics.push({
+        code: "noise_record_dropped",
+        message: "Dropped a harness-noise user record.",
+        inputLine: event.inputLine,
+        recordIndex,
+      });
+      return undefined;
+    }
     const role = event.kind === "reasoning" ? "reasoning" : event.role;
     const bucket = event.kind === "reasoning" ? "reasoning" : "message";
-    return createRecord(event, eventIndex, recordIndex, groupId, plan.ordinals[eventIndex]!, `${bucket}:${plan.ordinals[eventIndex]!}`, role, content);
+    return createRecord(event, eventIndex, recordIndex, groupId, config.sourceContext.baseByteOffset, plan.ordinals[eventIndex]!, `${bucket}:${plan.ordinals[eventIndex]!}`, role, content);
   }
   if (event.kind === "tool-call") {
     const callPlan = plan.calls.get(eventIndex)!;
@@ -337,7 +970,7 @@ function normalizeEvent(
     const shrunk = shrinkArguments(event.argumentsJson, config.bounds.toolArguments.maxCharacters);
     if (shrunk.reshaped) diagnostics.push(diag("tool_arguments_reshaped", `Reshaped arguments for tool call ${quote(callPlan.finalId)} into a JSON object.`, event, recordIndex));
     if (shrunk.truncated) diagnostics.push(diag("tool_arguments_truncated", `Truncated arguments for tool call ${quote(callPlan.finalId)} to at most ${config.bounds.toolArguments.maxCharacters} Unicode code points.`, event, recordIndex));
-    return createRecord(event, eventIndex, recordIndex, groupId, plan.ordinals[eventIndex]!, `tool-call:${callPlan.finalId}`, "assistant", undefined, {
+    return createRecord(event, eventIndex, recordIndex, groupId, config.sourceContext.baseByteOffset, plan.ordinals[eventIndex]!, `tool-call:${callPlan.finalId}`, "assistant", undefined, {
       toolCalls: [{ id: callPlan.finalId, name, argumentsJson: shrunk.arguments }],
     });
   }
@@ -368,11 +1001,72 @@ function normalizeEvent(
     event,
     recordIndex,
   ));
-  return createRecord(event, eventIndex, recordIndex, groupId, plan.ordinals[eventIndex]!, `tool-result:${finalId}`, "tool", content, {
+  return createRecord(event, eventIndex, recordIndex, groupId, config.sourceContext.baseByteOffset, plan.ordinals[eventIndex]!, `tool-result:${finalId}`, "tool", content, {
     toolCallId: finalId,
     ...(event.toolName === undefined ? {} : { toolName: event.toolName }),
     isError: event.isError ?? false,
   });
+}
+
+function normalizeInvocation(
+  invocation: DecodedModelInvocation,
+  groupId: string,
+  baseByteOffset: bigint,
+): ModelInvocationIR {
+  const absoluteOffset = invocation.sourceOffset === undefined
+    ? undefined
+    : invocation.sourceOffset + baseByteOffset;
+  const identity = invocation.nativeId ??
+    (absoluteOffset === undefined
+      ? invocation.responseId ?? "model-invocation"
+      : sha256(`${groupId}|byte|${absoluteOffset}`));
+  const usage = {
+    ...(invocation.inputTokens === undefined ? {} : { inputTokens: invocation.inputTokens }),
+    ...(invocation.outputTokens === undefined ? {} : { outputTokens: invocation.outputTokens }),
+    ...(invocation.cacheReadTokens === undefined ? {} : {
+      cacheReadTokens: invocation.cacheReadTokens,
+    }),
+    ...(invocation.cacheWriteTokens === undefined ? {} : {
+      cacheWriteTokens: invocation.cacheWriteTokens,
+    }),
+    ...(invocation.totalTokens === undefined ? {} : { totalTokens: invocation.totalTokens }),
+  };
+  return {
+    id: sha256(compactJson([groupId, identity, "model-invocation"])),
+    ...(invocation.nativeId === undefined ? {} : { nativeRecordId: invocation.nativeId }),
+    ...(invocation.sourceSequence === undefined ? {} : {
+      sourceSequence: invocation.sourceSequence,
+    }),
+    ...(absoluteOffset === undefined ? {} : { sourceOffset: absoluteOffset }),
+    ...(invocation.provider === undefined ? {} : { provider: invocation.provider }),
+    ...(invocation.apiFamily === undefined ? {} : { apiFamily: invocation.apiFamily }),
+    ...(invocation.requestedModel === undefined ? {} : {
+      requestedModel: invocation.requestedModel,
+    }),
+    ...(invocation.responseModel === undefined ? {} : {
+      responseModel: invocation.responseModel,
+    }),
+    ...(invocation.responseId === undefined ? {} : { responseId: invocation.responseId }),
+    ...(invocation.stopReason === undefined ? {} : { stopReason: invocation.stopReason }),
+    ...(invocation.producerVersion === undefined ? {} : {
+      producerVersion: invocation.producerVersion,
+    }),
+    ...(Object.keys(usage).length === 0 ? {} : { usage }),
+    ...(invocation.startedAt === undefined ? {} : { startedAt: invocation.startedAt }),
+    ...(invocation.startedAtPrecise === undefined ? {} : {
+      startedAtPrecise: invocation.startedAtPrecise,
+    }),
+    ...(invocation.firstResponseAt === undefined ? {} : {
+      firstResponseAt: invocation.firstResponseAt,
+    }),
+    ...(invocation.firstResponseAtPrecise === undefined ? {} : {
+      firstResponseAtPrecise: invocation.firstResponseAtPrecise,
+    }),
+    ...(invocation.completedAt === undefined ? {} : { completedAt: invocation.completedAt }),
+    ...(invocation.completedAtPrecise === undefined ? {} : {
+      completedAtPrecise: invocation.completedAtPrecise,
+    }),
+  };
 }
 
 function createRecord(
@@ -380,13 +1074,15 @@ function createRecord(
   eventIndex: number,
   recordIndex: number,
   groupId: string,
+  baseByteOffset: bigint,
   ordinal: number,
   componentKey: string,
   role: Role,
   content?: string,
   extra: Partial<IRRecord> = {},
 ): IRRecord {
-  const stableId = event.nativeId ?? sha256(`${groupId}|byte|${event.sourceOffset}`);
+  const absoluteOffset = event.sourceOffset + baseByteOffset;
+  const stableId = event.nativeId ?? sha256(`${groupId}|byte|${absoluteOffset}`);
   const provenance: Provenance = {
     stableSourceRecordId: stableId,
     sourceIdentityKind: event.nativeId ? "native" : "location",
@@ -396,7 +1092,7 @@ function createRecord(
     componentTypeOrdinal: ordinal,
     ...(event.nativeId === undefined ? {} : { nativeRecordId: event.nativeId }),
     sourceSequence: event.sourceSequence,
-    sourceOffset: event.sourceOffset,
+    sourceOffset: event.nativeId === undefined ? absoluteOffset : event.sourceOffset,
     sourceAnchorKind: "byte",
   };
   const kind = extra.toolCalls ? "assistant_tool_calls" : role === "tool" ? "tool_result" : "message";
@@ -415,7 +1111,15 @@ function createRecord(
   };
 }
 
-function createMeta(groupId: string, cwd?: string, model?: string, producerVersion?: string): IRRecord {
+function createMeta(
+  source: TrajectorySource,
+  sourceName: string,
+  groupId: string,
+  cwd?: string,
+  gitBranch?: string,
+  model?: string,
+  producerVersion?: string,
+): IRRecord {
   const record: IRRecord = {
     id: sha256(compactJson([groupId, "meta", "meta"])),
     kind: "meta",
@@ -423,8 +1127,9 @@ function createMeta(groupId: string, cwd?: string, model?: string, producerVersi
     order: -1,
     sourceTimestamp: null,
     timestamp: null,
-    sourceName: "pi",
+    sourceName,
     ...(cwd === undefined ? {} : { cwd }),
+    ...(gitBranch === undefined ? {} : { gitBranch }),
     ...(model === undefined ? {} : { model }),
     ...(producerVersion === undefined ? {} : { producerVersion }),
     provenance: {
@@ -437,14 +1142,14 @@ function createMeta(groupId: string, cwd?: string, model?: string, producerVersi
     },
     hashes: { contentSha256: "", recordSha256: "" },
   };
-  record.hashes = hashRecord(record);
+  record.hashes = hashRecord(record, source);
   return record;
 }
 
-function hashRecord(record: IRRecord): IRRecord["hashes"] {
+function hashRecord(record: IRRecord, source: TrajectorySource): IRRecord["hashes"] {
   const recordType = recordTypeName(record);
   const semantic = record.kind === "meta"
-    ? withoutUndefined({ source: "pi", cwd: record.cwd, git_branch: undefined, model: record.model })
+    ? withoutUndefined({ source, cwd: record.cwd, git_branch: record.gitBranch, model: record.model })
     : record.kind === "assistant_tool_calls"
       ? { name: record.toolCalls![0]!.name, args: record.toolCalls![0]!.argumentsJson }
       : { content: record.content ?? "" };
@@ -456,7 +1161,13 @@ function hashRecord(record: IRRecord): IRRecord["hashes"] {
 
 export function toLetta(record: IRRecord): JsonObject {
   if (record.kind === "meta") {
-    return withoutUndefined({ role: "meta", source: "pi", cwd: record.cwd, model: record.model });
+    return withoutUndefined({
+      role: "meta",
+      source: record.sourceName,
+      cwd: record.cwd,
+      git_branch: record.gitBranch,
+      model: record.model,
+    });
   }
   if (record.kind === "assistant_tool_calls") {
     const call = record.toolCalls![0]!;
@@ -758,6 +1469,18 @@ function scalarString(value: JsonValue | undefined): string | undefined {
 
 function codePointLength(value: string): number {
   return [...value].length;
+}
+
+function isHarnessNoise(value: string): boolean {
+  const head = value.trimStart();
+  return [
+    "<local-command-caveat>",
+    "<command-name>",
+    "<command-message>",
+    "<local-command-stdout>",
+    "<local-command-stderr>",
+    "<task-notification",
+  ].some((prefix) => head.startsWith(prefix));
 }
 
 function utf16Compare(left: string, right: string): number {

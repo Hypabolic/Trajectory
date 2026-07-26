@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1,
+  "id": "codex/partial-location",
+  "operation": {
+    "normalize-canonical": {
+      "expected": "expected.canonical.json",
+      "comparison": "json-exact"
+    }
+  },
+  "source": "codex",
+  "transcript": "input.jsonl",
+  "native_container": "codex-rollout-jsonl-chunk",
+  "source_context": {
+    "group_id": "codex-partial-session",
+    "base_byte_offset": 4096,
+    "partial": true
+  },
+  "bounds": {},
+  "filters": {},
+  "projection_options": {},
+  "mode": "partial",
+  "required_capabilities": [
+    "normalize",
+    "normalize-partial",
+    "typed-diagnostics",
+    "deterministic-rerun"
+  ],
+  "expected": {
+    "result": "success",
+    "diagnostic_codes": []
+  },
+  "comparison": "json-exact"
+}

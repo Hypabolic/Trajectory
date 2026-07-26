@@ -10,7 +10,7 @@ wire contracts and conformance cases:
 | Runtime | Package | Status |
 | --- | --- | --- |
 | .NET | `Hypabolic.Trajectory` | Implemented |
-| TypeScript | `@hypabolic/trajectory` | Pi vertical path implemented; unpublished |
+| TypeScript | `@hypabolic/trajectory` | Pi, Claude Code, and Codex baseline implemented; unpublished |
 | Rust | `hypabolic-trajectory` | Pi vertical path implemented; unpublished |
 
 The current .NET runtime supports Pi, Claude Code, and Codex transcripts,
@@ -25,13 +25,14 @@ deterministic projections:
 - OpenTelemetry GenAI span sets through the optional
   `Hypabolic.Trajectory.OpenTelemetry` package.
 
-Rust and TypeScript packages have not been published. Both Pi runtimes are
-independent implementations built from this repository's specifications and
-conformance cases. TypeScript supports all deterministic projections; Rust ML3
-supports the three identity-bearing projections. Both provide explicit-root Pi
-listing and the private conformance protocol. Claude Code and Codex remain
-planned for both runtimes. The pinned `letta-ai/trajectory` package is used
-only as a black-box compatibility oracle.
+Rust and TypeScript packages have not been published. Both are independent
+implementations built from this repository's specifications and conformance
+cases. TypeScript supports the current .NET Pi, Claude Code, and Codex source
+baseline and all deterministic projections. Rust ML3 supports Pi and the three
+identity-bearing projections. Both provide explicit-root listing for their
+advertised sources and the private conformance protocol. Claude Code and Codex
+remain planned for Rust. The pinned `letta-ai/trajectory` package is used only
+as a black-box compatibility oracle.
 
 ## Architecture
 
@@ -209,6 +210,7 @@ See:
 
 ## Roadmap
 
-ML1 established the shared foundation; ML2 and ML3 add independent TypeScript
-and Rust Pi vertical paths. ML4 is next: bring TypeScript to the current
-Claude Code and Codex source baseline.
+ML1 established the shared foundation; ML2 and ML3 added independent
+TypeScript and Rust Pi vertical paths; ML4 brought TypeScript to the current
+.NET Pi, Claude Code, and Codex source baseline. ML5 is next: add native Rust
+Claude Code normalization and listing.
