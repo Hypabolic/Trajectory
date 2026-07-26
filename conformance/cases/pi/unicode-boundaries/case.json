@@ -48,8 +48,8 @@
   "expected": {
     "result": "diagnostics",
     "diagnostic_codes": [
-      "tool_arguments_truncated",
-      "tool_result_truncated"
+      "tool_result_truncated",
+      "tool_arguments_truncated"
     ]
   },
   "comparison": "byte-exact"

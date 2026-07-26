@@ -164,8 +164,13 @@ public sealed record HypabolicRecordV1
 
 public sealed record HypabolicToolCallV1
 {
+    [JsonPropertyName("id")]
     public required string Id { get; init; }
+
+    [JsonPropertyName("name")]
     public required string Name { get; init; }
+
+    [JsonPropertyName("arguments_json")]
     public required string ArgumentsJson { get; init; }
 }
 

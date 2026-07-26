@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Hypabolic.Trajectory.Adapters.Streaming;
 
@@ -12,15 +13,34 @@ public sealed record MinimalJsonlProjection
 
 public sealed record MinimalJsonlRecord
 {
+    [JsonPropertyName("id")]
     public required string Id { get; init; }
+
+    [JsonPropertyName("order")]
     public required int Order { get; init; }
+
+    [JsonPropertyName("kind")]
     public required string Kind { get; init; }
+
+    [JsonPropertyName("role")]
     public required string Role { get; init; }
+
+    [JsonPropertyName("timestamp")]
     public DateTimeOffset? Timestamp { get; init; }
+
+    [JsonPropertyName("content")]
     public string? Content { get; init; }
+
+    [JsonPropertyName("tool_calls")]
     public IReadOnlyList<HypabolicToolCallV1>? ToolCalls { get; init; }
+
+    [JsonPropertyName("tool_call_id")]
     public string? ToolCallId { get; init; }
+
+    [JsonPropertyName("tool_name")]
     public string? ToolName { get; init; }
+
+    [JsonPropertyName("is_error")]
     public bool? IsError { get; init; }
 }
 
