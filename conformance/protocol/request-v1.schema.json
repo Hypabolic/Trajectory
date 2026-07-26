@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hypabolic.dev/trajectory/conformance/request-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "case", "operation", "repository_root"],
+  "properties": {
+    "protocol_version": { "const": "1" },
+    "case": { "type": "string", "pattern": "^[a-z0-9][a-z0-9/-]*$" },
+    "operation": {
+      "enum": [
+        "normalize-letta",
+        "normalize-canonical",
+        "normalize-hypabolic",
+        "project-openai",
+        "project-minimal-jsonl",
+        "project-otel",
+        "list-trajectories"
+      ]
+    },
+    "repository_root": { "type": "string", "minLength": 1 }
+  }
+}

@@ -1,0 +1,24 @@
+[
+  {
+    "items": [
+      {
+        "id": "newer",
+        "path": "$ROOT/sessions/project-b/newer.jsonl",
+        "updated_at": "2026-01-02T00:00:00.000Z",
+        "size_bytes": 3
+      }
+    ],
+    "next_cursor": "MQowCm5ld2Vy"
+  },
+  {
+    "items": [
+      {
+        "id": "older",
+        "path": "$ROOT/sessions/project-a/older.jsonl",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "size_bytes": 3
+      }
+    ],
+    "next_cursor": null
+  }
+]

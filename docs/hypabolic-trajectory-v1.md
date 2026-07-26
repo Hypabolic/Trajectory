@@ -1,18 +1,18 @@
 # Hypabolic trajectory v1
 
-Status: proposed contract for the first Trajectory.NET release.
+Status: proposed contract for the first .NET release of Trajectory.
 
 Schema ID: `hypabolic-trajectory-v1`
 
 ## Purpose
 
-The Hypabolic format is the loss-minimizing, provenance-rich output of Trajectory.NET. It is intended for Hypabolic memory, Context Compiler, Evidence Graph, replay, evaluation, and experience-processing pipelines.
+The Hypabolic format is the loss-minimizing, provenance-rich output of the .NET implementation of Trajectory. It is intended for Hypabolic memory, Context Compiler, Evidence Graph, replay, evaluation, and experience-processing pipelines.
 
 It is deliberately separate from the internal C# IR:
 
 - the IR may evolve through normal library versioning;
 - the Hypabolic wire contract changes only through an explicit schema version;
-- consumers do not need to reference Trajectory.NET assemblies;
+- consumers do not need to reference Trajectory .NET assemblies;
 - a format upgrade can be implemented as another output adapter without destabilizing source decoding.
 
 The format retains the semantic records expected by Letta compatibility outputs while adding the provenance, identity, configuration, and diagnostics needed by downstream systems.

@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: proposed
+Status: accepted; ML1 implemented, ML2 next
 
 Planning baseline:
 
@@ -665,8 +665,7 @@ uniform.
 
 ## Immediate next action
 
-Implement ML1 before the current .NET Slice 5. Its first pull request should
-contain only the repository move, shared contract/conformance extraction, the
-.NET runner, and documentation changes. It must prove that all existing .NET
-outputs and tests remain unchanged before either new language implementation
-begins.
+Implement ML2: the independent TypeScript Pi vertical path. Build it from the
+Hypabolic specifications and shared conformance cases established by ML1.
+The pinned upstream TypeScript package remains a black-box compatibility oracle;
+do not vendor, fork, copy, translate, or import its implementation.

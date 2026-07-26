@@ -1,8 +1,8 @@
-# Trajectory.NET architecture
+# Trajectory architecture (.NET runtime)
 
 ## Purpose
 
-Trajectory.NET is a high-performance, Native AOT-compatible C# library for turning native coding-agent session transcripts into a stable internal trajectory representation and projecting that representation into multiple output schemas.
+The .NET implementation of Trajectory is a high-performance, Native AOT-compatible C# library for turning native coding-agent session transcripts into a stable internal trajectory representation and projecting that representation into multiple output schemas.
 
 It is a functional and behavioural port of [`letta-ai/trajectory`](https://github.com/letta-ai/trajectory), not a line-for-line translation. The Letta wire contracts remain first-class compatibility targets, while the internal design follows ports and adapters so that source decoding, normalization, identity, listing, and output projection can evolve independently.
 
@@ -318,7 +318,7 @@ Each source implementation owns its default store discovery and metadata extract
 ## Recommended source layout
 
 ```text
-src/
+dotnet/src/
   Hypabolic.Trajectory/
     Abstractions/
     Models/IR/
@@ -336,11 +336,11 @@ src/
   Hypabolic.Trajectory.Sqlite/
     DeepAgents/
     Json/
-tests/
+dotnet/tests/
   Hypabolic.Trajectory.Tests/
   Hypabolic.Trajectory.ParityTests/
   Hypabolic.Trajectory.AotSmoke/
-benchmarks/
+dotnet/benchmarks/
   Hypabolic.Trajectory.Benchmarks/
 ```
 

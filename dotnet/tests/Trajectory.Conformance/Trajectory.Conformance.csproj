@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>trajectory-conformance</AssemblyName>
+    <RootNamespace>Hypabolic.Trajectory.Conformance</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PublishAot>true</PublishAot>
+    <PublishTrimmed>true</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Trajectory/Trajectory.csproj" />
+    <ProjectReference Include="../../src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj" />
+  </ItemGroup>
+</Project>

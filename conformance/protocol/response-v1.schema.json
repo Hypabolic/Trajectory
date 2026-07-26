@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hypabolic.dev/trajectory/conformance/response-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "case", "operation", "status"],
+  "properties": {
+    "protocol_version": { "const": "1" },
+    "case": { "type": "string" },
+    "operation": { "type": "string" },
+    "status": { "enum": ["success", "fatal-error", "protocol-error"] },
+    "output_text": { "type": ["string", "null"] },
+    "diagnostics": { "type": "array", "items": { "type": "object" } },
+    "fatal_error": {
+      "type": ["object", "null"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    }
+  }
+}
