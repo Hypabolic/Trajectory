@@ -114,7 +114,7 @@ jobs:
         shell: bash
         run: |
           dotnet list dotnet/src/Trajectory/Trajectory.csproj package --include-transitive | tee core-packages.txt
-          if grep -q '^   >' core-packages.txt; then
+          if grep '^   >' core-packages.txt | grep -qv '(A)'; then
             echo "The core package unexpectedly has a package dependency."
             exit 1
           fi

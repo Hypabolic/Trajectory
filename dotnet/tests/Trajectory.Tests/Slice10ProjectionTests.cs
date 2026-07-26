@@ -7,6 +7,7 @@ using Hypabolic.Trajectory.OpenTelemetry;
 using Hypabolic.Trajectory.Testing;
 using OpenTelemetry;
 using OpenTelemetry.Trace;
+using Xunit;
 
 namespace Hypabolic.Trajectory.Tests;
 
