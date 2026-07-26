@@ -146,233 +146,233 @@ internal sealed class TrajectoryNormalizer
         switch (sourceEvent.Kind)
         {
             case DecodedEventKind.Message:
-            {
-                var content = sourceEvent.Content ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(content))
                 {
-                    return null;
-                }
-
-                var role = sourceEvent.Role ?? TrajectoryRole.Assistant;
-                if (role == TrajectoryRole.User &&
-                    NoisePrefixes.Any(prefix =>
-                        content.TrimStart().StartsWith(prefix, StringComparison.Ordinal)))
-                {
-                    diagnostics.Add(new TrajectoryDiagnostic
+                    var content = sourceEvent.Content ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(content))
                     {
-                        Code = DiagnosticCodes.NoiseRecordDropped,
-                        Message = "Dropped a harness-noise user record.",
-                        RecordIndex = recordIndex,
-                        InputLine = sourceEvent.InputLine,
-                    });
-                    return null;
-                }
+                        return null;
+                    }
 
-                return CreateMessage(
-                    sourceEvent,
-                    role,
-                    content,
-                    eventIndex,
-                    recordIndex - 1,
-                    groupId,
-                    config,
-                    plan);
-            }
-            case DecodedEventKind.Reasoning:
-            {
-                var content = sourceEvent.Content ?? string.Empty;
-                return string.IsNullOrWhiteSpace(content)
-                    ? null
-                    : CreateMessage(
+                    var role = sourceEvent.Role ?? TrajectoryRole.Assistant;
+                    if (role == TrajectoryRole.User &&
+                        NoisePrefixes.Any(prefix =>
+                            content.TrimStart().StartsWith(prefix, StringComparison.Ordinal)))
+                    {
+                        diagnostics.Add(new TrajectoryDiagnostic
+                        {
+                            Code = DiagnosticCodes.NoiseRecordDropped,
+                            Message = "Dropped a harness-noise user record.",
+                            RecordIndex = recordIndex,
+                            InputLine = sourceEvent.InputLine,
+                        });
+                        return null;
+                    }
+
+                    return CreateMessage(
                         sourceEvent,
-                        TrajectoryRole.Reasoning,
+                        role,
                         content,
                         eventIndex,
                         recordIndex - 1,
                         groupId,
                         config,
                         plan);
-            }
+                }
+            case DecodedEventKind.Reasoning:
+                {
+                    var content = sourceEvent.Content ?? string.Empty;
+                    return string.IsNullOrWhiteSpace(content)
+                        ? null
+                        : CreateMessage(
+                            sourceEvent,
+                            TrajectoryRole.Reasoning,
+                            content,
+                            eventIndex,
+                            recordIndex - 1,
+                            groupId,
+                            config,
+                            plan);
+                }
             case DecodedEventKind.ToolCall:
-            {
-                var entry = plan.Calls[eventIndex];
-                if (entry.Synthesized)
                 {
-                    diagnostics.Add(new TrajectoryDiagnostic
+                    var entry = plan.Calls[eventIndex];
+                    if (entry.Synthesized)
                     {
-                        Code = DiagnosticCodes.ToolCallIdSynthesized,
-                        Message = $"Synthesized tool-call ID {Quote(entry.SourceId)}.",
-                        RecordIndex = recordIndex,
-                        InputLine = sourceEvent.InputLine,
-                    });
-                }
+                        diagnostics.Add(new TrajectoryDiagnostic
+                        {
+                            Code = DiagnosticCodes.ToolCallIdSynthesized,
+                            Message = $"Synthesized tool-call ID {Quote(entry.SourceId)}.",
+                            RecordIndex = recordIndex,
+                            InputLine = sourceEvent.InputLine,
+                        });
+                    }
 
-                if (entry.Renamed)
-                {
-                    diagnostics.Add(new TrajectoryDiagnostic
+                    if (entry.Renamed)
                     {
-                        Code = DiagnosticCodes.DuplicateToolCallId,
-                        Message = $"Renamed duplicate tool-call ID {Quote(entry.SourceId)} to {Quote(entry.FinalId)}.",
-                        RecordIndex = recordIndex,
-                        InputLine = sourceEvent.InputLine,
-                    });
-                }
+                        diagnostics.Add(new TrajectoryDiagnostic
+                        {
+                            Code = DiagnosticCodes.DuplicateToolCallId,
+                            Message = $"Renamed duplicate tool-call ID {Quote(entry.SourceId)} to {Quote(entry.FinalId)}.",
+                            RecordIndex = recordIndex,
+                            InputLine = sourceEvent.InputLine,
+                        });
+                    }
 
-                var name = string.IsNullOrEmpty(sourceEvent.ToolName)
-                    ? "unknown_tool"
-                    : sourceEvent.ToolName;
-                if (string.IsNullOrEmpty(sourceEvent.ToolName))
-                {
-                    diagnostics.Add(new TrajectoryDiagnostic
+                    var name = string.IsNullOrEmpty(sourceEvent.ToolName)
+                        ? "unknown_tool"
+                        : sourceEvent.ToolName;
+                    if (string.IsNullOrEmpty(sourceEvent.ToolName))
                     {
-                        Code = DiagnosticCodes.UnknownToolName,
-                        Message = $"Substituted {Quote(name)} for a missing tool name.",
-                        RecordIndex = recordIndex,
-                        InputLine = sourceEvent.InputLine,
-                    });
-                }
+                        diagnostics.Add(new TrajectoryDiagnostic
+                        {
+                            Code = DiagnosticCodes.UnknownToolName,
+                            Message = $"Substituted {Quote(name)} for a missing tool name.",
+                            RecordIndex = recordIndex,
+                            InputLine = sourceEvent.InputLine,
+                        });
+                    }
 
-                var arguments = NormalizationText.ShrinkArguments(
-                    sourceEvent.ToolArgumentsJson,
-                    config.Bounds.ToolArguments.MaxCharacters);
-                if (arguments.Reshaped)
-                {
-                    diagnostics.Add(new TrajectoryDiagnostic
+                    var arguments = NormalizationText.ShrinkArguments(
+                        sourceEvent.ToolArgumentsJson,
+                        config.Bounds.ToolArguments.MaxCharacters);
+                    if (arguments.Reshaped)
                     {
-                        Code = DiagnosticCodes.ToolArgumentsReshaped,
-                        Message = $"Reshaped arguments for tool call {Quote(entry.FinalId)} into a JSON object.",
-                        RecordIndex = recordIndex,
-                        InputLine = sourceEvent.InputLine,
-                    });
-                }
+                        diagnostics.Add(new TrajectoryDiagnostic
+                        {
+                            Code = DiagnosticCodes.ToolArgumentsReshaped,
+                            Message = $"Reshaped arguments for tool call {Quote(entry.FinalId)} into a JSON object.",
+                            RecordIndex = recordIndex,
+                            InputLine = sourceEvent.InputLine,
+                        });
+                    }
 
-                if (arguments.Truncated)
-                {
-                    diagnostics.Add(new TrajectoryDiagnostic
+                    if (arguments.Truncated)
                     {
-                        Code = DiagnosticCodes.ToolArgumentsTruncated,
-                        Message = $"Truncated arguments for tool call {Quote(entry.FinalId)} to at most {config.Bounds.ToolArguments.MaxCharacters} Unicode code points.",
-                        RecordIndex = recordIndex,
-                        InputLine = sourceEvent.InputLine,
-                    });
-                }
+                        diagnostics.Add(new TrajectoryDiagnostic
+                        {
+                            Code = DiagnosticCodes.ToolArgumentsTruncated,
+                            Message = $"Truncated arguments for tool call {Quote(entry.FinalId)} to at most {config.Bounds.ToolArguments.MaxCharacters} Unicode code points.",
+                            RecordIndex = recordIndex,
+                            InputLine = sourceEvent.InputLine,
+                        });
+                    }
 
-                var call = new ToolCallIR
-                {
-                    Id = entry.FinalId,
-                    Name = name,
-                    ArgumentsJson = arguments.Arguments,
-                };
-                var semanticHash = ContentHashForToolCall(call);
-                var provenance = BuildProvenance(
-                    sourceEvent,
-                    eventIndex,
-                    groupId,
-                    config,
-                    plan,
-                    semanticHash,
-                    $"tool-call:{entry.FinalId}");
-                return new AssistantToolCallsIR
-                {
-                    Id = DeterministicIdentity.RecordId(
+                    var call = new ToolCallIR
+                    {
+                        Id = entry.FinalId,
+                        Name = name,
+                        ArgumentsJson = arguments.Arguments,
+                    };
+                    var semanticHash = ContentHashForToolCall(call);
+                    var provenance = BuildProvenance(
+                        sourceEvent,
+                        eventIndex,
                         groupId,
-                        provenance.StableSourceRecordId,
-                        provenance.ComponentKey),
-                    Kind = IRRecordKind.AssistantToolCalls,
-                    Role = TrajectoryRole.Assistant,
-                    Order = recordIndex - 1,
-                    SourceTimestamp = sourceEvent.Timestamp,
-                    Timestamp = null,
-                    ToolCalls = [call],
-                    Provenance = provenance,
-                    Hashes = EmptyHashes,
-                };
-            }
+                        config,
+                        plan,
+                        semanticHash,
+                        $"tool-call:{entry.FinalId}");
+                    return new AssistantToolCallsIR
+                    {
+                        Id = DeterministicIdentity.RecordId(
+                            groupId,
+                            provenance.StableSourceRecordId,
+                            provenance.ComponentKey),
+                        Kind = IRRecordKind.AssistantToolCalls,
+                        Role = TrajectoryRole.Assistant,
+                        Order = recordIndex - 1,
+                        SourceTimestamp = sourceEvent.Timestamp,
+                        Timestamp = null,
+                        ToolCalls = [call],
+                        Provenance = provenance,
+                        Hashes = EmptyHashes,
+                    };
+                }
             case DecodedEventKind.ToolResult:
-            {
-                var sourceId = sourceEvent.ToolCallId ?? string.Empty;
-                plan.OpenCalls.TryGetValue(sourceId, out var entries);
-                var openEntry = entries?.FirstOrDefault(static item => !item.Consumed);
-                var crossChunk = openEntry is null &&
-                    partial &&
-                    sourceId.Length > 0 &&
-                    (entries is null || entries.Count == 0);
-                if (openEntry is null && !crossChunk)
                 {
-                    var duplicate = entries is { Count: > 0 };
-                    diagnostics.Add(new TrajectoryDiagnostic
+                    var sourceId = sourceEvent.ToolCallId ?? string.Empty;
+                    plan.OpenCalls.TryGetValue(sourceId, out var entries);
+                    var openEntry = entries?.FirstOrDefault(static item => !item.Consumed);
+                    var crossChunk = openEntry is null &&
+                        partial &&
+                        sourceId.Length > 0 &&
+                        (entries is null || entries.Count == 0);
+                    if (openEntry is null && !crossChunk)
                     {
-                        Code = duplicate
-                            ? DiagnosticCodes.DuplicateToolResult
-                            : DiagnosticCodes.OrphanToolResult,
-                        Message = duplicate
-                            ? $"Dropped a duplicate result for tool call {Quote(sourceId)}."
-                            : $"Dropped a tool result without a preceding call for {Quote(sourceId)}.",
-                        RecordIndex = recordIndex,
-                        InputLine = sourceEvent.InputLine,
-                    });
-                    return null;
-                }
+                        var duplicate = entries is { Count: > 0 };
+                        diagnostics.Add(new TrajectoryDiagnostic
+                        {
+                            Code = duplicate
+                                ? DiagnosticCodes.DuplicateToolResult
+                                : DiagnosticCodes.OrphanToolResult,
+                            Message = duplicate
+                                ? $"Dropped a duplicate result for tool call {Quote(sourceId)}."
+                                : $"Dropped a tool result without a preceding call for {Quote(sourceId)}.",
+                            RecordIndex = recordIndex,
+                            InputLine = sourceEvent.InputLine,
+                        });
+                        return null;
+                    }
 
-                if (openEntry is not null)
-                {
-                    openEntry.Consumed = true;
-                }
-
-                if (config.Filters.ToolResults == ToolResultPolicy.Omit)
-                {
-                    return null;
-                }
-
-                var finalId = openEntry?.FinalId ?? sourceId;
-                var original = sourceEvent.Content ?? string.Empty;
-                var content = NormalizationText.TruncateResult(
-                    original,
-                    config.Bounds.ToolResults.MaxCharacters,
-                    config.Bounds.ToolResults.Strategy);
-                if (!StringComparer.Ordinal.Equals(content, original))
-                {
-                    var strategy = config.Bounds.ToolResults.Strategy ==
-                        ToolResultTruncationStrategy.Head
-                            ? "head"
-                            : "head-tail";
-                    diagnostics.Add(new TrajectoryDiagnostic
+                    if (openEntry is not null)
                     {
-                        Code = DiagnosticCodes.ToolResultTruncated,
-                        Message = $"Truncated the result for tool call {Quote(finalId)} to at most {config.Bounds.ToolResults.MaxCharacters} Unicode code points using the {Quote(strategy)} strategy.",
-                        RecordIndex = recordIndex,
-                        InputLine = sourceEvent.InputLine,
-                    });
-                }
+                        openEntry.Consumed = true;
+                    }
 
-                var semanticHash = ContentHashForToolResult(content);
-                var provenance = BuildProvenance(
-                    sourceEvent,
-                    eventIndex,
-                    groupId,
-                    config,
-                    plan,
-                    semanticHash,
-                    $"tool-result:{finalId}");
-                return new ToolResultIR
-                {
-                    Id = DeterministicIdentity.RecordId(
+                    if (config.Filters.ToolResults == ToolResultPolicy.Omit)
+                    {
+                        return null;
+                    }
+
+                    var finalId = openEntry?.FinalId ?? sourceId;
+                    var original = sourceEvent.Content ?? string.Empty;
+                    var content = NormalizationText.TruncateResult(
+                        original,
+                        config.Bounds.ToolResults.MaxCharacters,
+                        config.Bounds.ToolResults.Strategy);
+                    if (!StringComparer.Ordinal.Equals(content, original))
+                    {
+                        var strategy = config.Bounds.ToolResults.Strategy ==
+                            ToolResultTruncationStrategy.Head
+                                ? "head"
+                                : "head-tail";
+                        diagnostics.Add(new TrajectoryDiagnostic
+                        {
+                            Code = DiagnosticCodes.ToolResultTruncated,
+                            Message = $"Truncated the result for tool call {Quote(finalId)} to at most {config.Bounds.ToolResults.MaxCharacters} Unicode code points using the {Quote(strategy)} strategy.",
+                            RecordIndex = recordIndex,
+                            InputLine = sourceEvent.InputLine,
+                        });
+                    }
+
+                    var semanticHash = ContentHashForToolResult(content);
+                    var provenance = BuildProvenance(
+                        sourceEvent,
+                        eventIndex,
                         groupId,
-                        provenance.StableSourceRecordId,
-                        provenance.ComponentKey),
-                    Kind = IRRecordKind.ToolResult,
-                    Role = TrajectoryRole.Tool,
-                    Order = recordIndex - 1,
-                    SourceTimestamp = sourceEvent.Timestamp,
-                    Timestamp = null,
-                    ToolCallId = finalId,
-                    ToolName = sourceEvent.ToolName,
-                    Content = content,
-                    IsError = sourceEvent.IsError,
-                    Provenance = provenance,
-                    Hashes = EmptyHashes,
-                };
-            }
+                        config,
+                        plan,
+                        semanticHash,
+                        $"tool-result:{finalId}");
+                    return new ToolResultIR
+                    {
+                        Id = DeterministicIdentity.RecordId(
+                            groupId,
+                            provenance.StableSourceRecordId,
+                            provenance.ComponentKey),
+                        Kind = IRRecordKind.ToolResult,
+                        Role = TrajectoryRole.Tool,
+                        Order = recordIndex - 1,
+                        SourceTimestamp = sourceEvent.Timestamp,
+                        Timestamp = null,
+                        ToolCallId = finalId,
+                        ToolName = sourceEvent.ToolName,
+                        Content = content,
+                        IsError = sourceEvent.IsError,
+                        Provenance = provenance,
+                        Hashes = EmptyHashes,
+                    };
+                }
             default:
                 throw new ArgumentOutOfRangeException(nameof(sourceEvent));
         }

@@ -99,8 +99,8 @@ public sealed class Slice10ProjectionTests
                 "gen_ai.output.messages" or
                 "gen_ai.tool.call.arguments" or
                 "gen_ai.tool.call.result");
-        Assert.Empty(first.Spans.Where(static span =>
-            Attribute(span, "gen_ai.operation.name") == "chat"));
+        Assert.DoesNotContain(first.Spans, static span =>
+            Attribute(span, "gen_ai.operation.name") == "chat");
         Assert.Equal(3, first.Diagnostics.Count(static item => item.Code == "model_span_omitted"));
     }
 
