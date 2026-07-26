@@ -208,6 +208,9 @@ PublishScripts/
 **/[Pp]ackages/*
 # except build/, which is used as an MSBuild target.
 !**/[Pp]ackages/build/
+# TypeScript workspace packages are source, not restored NuGet packages.
+!typescript/packages/
+!typescript/packages/**
 # Uncomment if necessary however generally it will be regenerated when needed
 #!**/[Pp]ackages/repositories.config
 # NuGet v3's project.json files produces more ignorable files
@@ -292,6 +295,7 @@ FakesAssemblies/
 # Node.js Tools for Visual Studio
 .ntvs_analysis.dat
 node_modules/
+dist/
 
 # Visual Studio 6 build log
 *.plg
