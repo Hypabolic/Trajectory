@@ -1,0 +1,8 @@
+{"type":"session","version":3,"id":"tool-linking","timestamp":"2026-01-01T00:00:00Z"}
+{"type":"message","id":"user","timestamp":"2026-01-01T00:00:01Z","message":{"role":"user","content":"Run the tools."}}
+{"type":"message","id":"early-result","timestamp":"2026-01-01T00:00:02Z","message":{"role":"toolResult","toolCallId":"duplicate","content":"first"}}
+{"type":"message","id":"calls","timestamp":"2026-01-01T00:00:03Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"duplicate","name":"one","arguments":{"value":"abcdefghij"}},{"type":"toolCall","id":"duplicate","name":"two","arguments":{"value":"klmnopqrst"}},{"type":"toolCall","name":"missing-id","arguments":"not-an-object"}]}}
+{"type":"message","id":"second-result","timestamp":"2026-01-01T00:00:04Z","message":{"role":"toolResult","toolCallId":"duplicate","content":"second"}}
+{"type":"message","id":"duplicate-result","timestamp":"2026-01-01T00:00:05Z","message":{"role":"toolResult","toolCallId":"duplicate","content":"third"}}
+{"type":"message","id":"orphan-result","timestamp":"2026-01-01T00:00:06Z","message":{"role":"toolResult","toolCallId":"orphan","content":"orphan"}}
+{"type":"message","id":"final","timestamp":"2026-01-01T00:00:07Z","message":{"role":"assistant","content":"Complete."}}

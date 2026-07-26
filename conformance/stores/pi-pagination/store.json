@@ -1,0 +1,20 @@
+{
+  "store_version": 1,
+  "files": [
+    {
+      "path": "sessions/project-a/older.jsonl",
+      "content": "{}\n",
+      "updated_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "path": "sessions/project-b/newer.jsonl",
+      "content": "{}\n",
+      "updated_at": "2026-01-02T00:00:00.000Z"
+    },
+    {
+      "path": "sessions/project-b/ignored.txt",
+      "content": "not a trajectory",
+      "updated_at": "2026-01-03T00:00:00.000Z"
+    }
+  ]
+}

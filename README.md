@@ -1,87 +1,108 @@
-# Trajectory.NET
+# Trajectory
 
-Trajectory.NET is a high-performance, Native AOT-compatible C# library for normalizing coding-agent session transcripts into a stable internal trajectory representation and projecting that representation into multiple output schemas.
+Trajectory turns coding-agent session transcripts into deterministic,
+versioned trajectory formats for memory, replay, evaluation, search, training,
+and observability pipelines.
 
-It is a functional and behavioural port of [`letta-ai/trajectory`](https://github.com/letta-ai/trajectory), redesigned around ports and adapters:
+It is one product with native ecosystem implementations governed by the same
+wire contracts and conformance cases:
+
+| Runtime | Package | Status |
+| --- | --- | --- |
+| .NET | `Hypabolic.Trajectory` | Implemented |
+| TypeScript | `@hypabolic/trajectory` | Planned; ML2 is next |
+| Rust | `hypabolic-trajectory` | Planned |
+
+The current .NET runtime supports Pi, Claude Code, and Codex transcripts,
+explicit-root local-store listing, trimming and Native AOT, and these
+deterministic projections:
+
+- Letta trajectory v1;
+- Letta canonical v1;
+- Hypabolic trajectory v1;
+- OpenAI chat messages;
+- minimal JSONL;
+- OpenTelemetry GenAI span sets through the optional
+  `Hypabolic.Trajectory.OpenTelemetry` package.
+
+Rust and TypeScript packages have not been published. The TypeScript runtime
+will be a fresh Hypabolic implementation built from this repository's
+specifications and conformance cases. The pinned `letta-ai/trajectory` package
+is used only as a black-box compatibility oracle.
+
+## Architecture
 
 ```text
-Claude Code / Codex / Pi / Letta Code / OpenClaw / OpenHands / Hermes / Deep Agents
-                                      |
-                                      v
-                         Internal Trajectory IR
-                                      |
-          +---------------------------+---------------------------+
-          |                           |                           |
-          v                           v                           v
- Letta compatibility          Hypabolic trajectory v1     OpenTelemetry GenAI spans
- trajectory + canonical
+native source bytes
+  -> source decoder
+  -> shared normalization policy
+  -> implementation-private trajectory IR
+  -> versioned output adapters
 ```
 
-## Status
+Source decoding, normalization, identity, output projection, listing, and
+optional integrations remain independently testable. Each runtime owns an
+idiomatic private IR; Trajectory does not define a serialized public IR or a
+shared native implementation.
 
-Slices 1 through 4 and Slice 10 are implemented. Pi, Claude Code, and Codex
-transcripts now normalize through the shared IR into all three identity-bearing
-outputs, with source listing, pinned upstream goldens, cross-platform tests, and
-Native AOT smoke coverage. Slice 10 also supplies OpenAI chat and minimal JSONL
-stream projections, public adapter registration, and an optional OpenTelemetry
-package. The remaining plan will:
+The .NET core package is BCL-only. OpenTelemetry dependencies remain in the
+optional package, and future SQLite/checkpoint dependencies will remain outside
+core.
 
-- match the original Letta trajectory and canonical formats exactly;
-- support every source and listing capability in the pinned Letta reference;
-- add a richer, provenance-preserving Hypabolic export;
-- retain the optional OpenTelemetry GenAI package without adding telemetry dependencies to the core package;
-- keep the core BCL-only, trim-safe, and Native AOT-compatible;
-- verify behaviour through golden fixtures and differential parity tests.
+## Repository
 
-The [Rust and TypeScript implementation plan](docs/multi-language-plan.md) turns this into a three-runtime product governed by shared contracts and differential conformance, while retaining native APIs and packages in each ecosystem.
+```text
+contracts/       versioned schemas and normative behavioral specifications
+conformance/     shared native fixtures, expected outputs, stores, and protocol
+dotnet/          current .NET source, tests, AOT smoke app, and solution
+docs/            product architecture, parity baseline, and roadmap
+```
 
-## Intended outputs
+`contracts/compatibility.json` records the pinned upstream reference, contract
+versions, schema versions, capability vocabulary, and currently implemented
+sources and outputs. Contract and conformance files at the repository root are
+authoritative. Runtime tests consume them directly.
 
-| Schema ID | Purpose |
-| --- | --- |
-| `letta-trajectory-v1` | Exact Letta normalized trajectory record array |
-| `letta-canonical-v1` | Exact library-owned Letta canonical ingestion contract |
-| `hypabolic-trajectory-v1` | Loss-minimizing Hypabolic format with provenance, identity, hashes, resolved configuration, and diagnostics |
-| `otel-genai-spans-v1` | Deterministic OpenTelemetry GenAI span projection with optional OTLP and `ActivitySource` emission |
-| `openai-chat-messages` | OpenAI-compatible message projection |
-| `jsonl-minimal` | Compact streaming JSONL projection |
+Implementation-specific unit fixtures stay under the relevant runtime. A
+fixture belongs in `conformance/` when another independent implementation must
+produce the same observable result.
 
-## Intended packages
+## Build and test .NET
 
-- `Hypabolic.Trajectory` — BCL-only normalization core, transcript adapters, output adapters, and listing abstractions.
-- `Hypabolic.Trajectory.Sqlite` — optional Deep Agents / LangGraph checkpoint support.
-- `Hypabolic.Trajectory.OpenTelemetry` — optional OpenTelemetry GenAI projection, OTLP conversion, and emission support.
-- `Hypabolic.Trajectory.Testing` — optional fixture and adapter-authoring helpers.
+The .NET projects target `net8.0`, `net9.0`, and `net10.0`; the test and private
+conformance executables run on `net10.0`.
 
-Target frameworks: `net8.0;net9.0;net10.0`.
+```bash
+dotnet restore dotnet/Trajectory.sln
+dotnet build dotnet/Trajectory.sln -c Release --no-restore
+dotnet test dotnet/tests/Trajectory.Tests/Trajectory.Tests.csproj \
+  -c Release --no-build
+```
 
-## Documentation
+Run every shared case through the .NET runner:
 
-- [Architecture](docs/architecture.md)
-- [Pinned upstream compatibility reference](docs/upstream-reference.md)
-- [Letta parity baseline and current implementation audit](docs/parity-baseline.md)
-- [Hypabolic trajectory v1 contract](docs/hypabolic-trajectory-v1.md)
-- [OpenTelemetry GenAI span output plan](docs/otel-genai-output.md)
-- [Adapter authoring](docs/adapter-authoring.md)
-- [Rust and TypeScript implementation plan](docs/multi-language-plan.md)
-- [Vertical-slice implementation plan](docs/implementation-plan.md)
+```bash
+python3 conformance/verify.py --repository-root . -- \
+  dotnet dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll
+```
 
-## Core constraints
+Publish and run the Native AOT smoke target:
 
-- deterministic normalization, ordering, identity, canonical JSON, and SHA-256 hashing;
-- source-generated `System.Text.Json` serialization only for built-in contracts;
-- no reflection, runtime assembly scanning, or dynamic code generation in the core path;
-- no required third-party runtime dependency in the core package;
-- explicit adapter registration at compile time or through a fluent builder;
-- diagnostics never contain raw transcript content;
-- source decoding and output projection remain independently testable.
+```bash
+dotnet publish dotnet/tests/Trajectory.AotSmoke/Trajectory.AotSmoke.csproj \
+  -c Release -r linux-x64 --self-contained true
+./dotnet/tests/Trajectory.AotSmoke/bin/Release/net10.0/linux-x64/publish/Hypabolic.Trajectory.AotSmoke
+```
 
-## High-level API
+The private runner protocol and case-authoring workflow are documented in
+[conformance/README.md](conformance/README.md).
+
+## .NET usage
 
 ```csharp
 var engine = TrajectoryEngine.CreateDefault();
 
-var ir = engine.NormalizeToIR(new NormalizeInput
+var input = new NormalizeInput
 {
     Source = TrajectorySource.Codex,
     Transcript = transcript,
@@ -91,17 +112,44 @@ var ir = engine.NormalizeToIR(new NormalizeInput
         BaseByteOffset = offset,
         Partial = true,
     },
-});
+};
 
-var letta = engine.Project<LettaNormalizeResult>(
+var ir = engine.NormalizeToIR(input);
+var canonical = engine.Project<LettaCanonicalResult>(
     ir,
-    OutputSchemaIds.LettaTrajectoryV1);
-
+    OutputSchemaIds.LettaCanonicalV1);
 var hypabolic = engine.Project<HypabolicTrajectoryV1>(
     ir,
     OutputSchemaIds.HypabolicTrajectoryV1);
 ```
 
-The API may still evolve before the first package release; the wire-format and
-behavioural compatibility contracts take precedence over preserving pre-release
-surface details.
+The API may still evolve before the first NuGet release. Versioned wire
+contracts, canonical identity, hashes, diagnostics, and conformance behavior
+take precedence over preserving an unpublished pre-release API.
+
+## Compatibility policy
+
+- The compatibility pin changes only in an explicit compatibility update.
+- Existing identity-bearing bytes never change under the same contract
+  version.
+- Canonical JSON is the documented Trajectory algorithm, not RFC 8785/JCS.
+- Diagnostics and fatal errors are typed and content-safe.
+- New runtime capabilities are advertised only after their shared cases pass.
+- Goldens are reviewed artifacts; CI never regenerates and accepts them.
+- Pre-1.0 package releases remain synchronized because normalizer version
+  participates in canonical output.
+
+See:
+
+- [architecture](docs/architecture.md);
+- [compatibility and multi-language roadmap](docs/multi-language-plan.md);
+- [detailed .NET behavior baseline](docs/implementation-plan.md);
+- [pinned parity baseline](docs/parity-baseline.md);
+- [.NET adapter authoring](dotnet/docs/adapter-authoring.md);
+- [normative specifications](contracts/spec/normalization.md).
+
+## Roadmap
+
+ML1 establishes the shared contract and repository foundation around the
+existing .NET runtime. ML2 is the next slice: an independent TypeScript Pi
+vertical path built from the Hypabolic specifications and conformance cases.

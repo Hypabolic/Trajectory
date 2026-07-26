@@ -2,7 +2,7 @@
 
 ## Objective
 
-Deliver a production-quality Trajectory.NET library with behavioural parity to the pinned `letta-ai/trajectory` reference, exact Letta trajectory and canonical outputs, the additional `hypabolic-trajectory-v1` output, and an optional OpenTelemetry GenAI span projection.
+Deliver a production-quality .NET implementation of Trajectory with behavioural parity to the pinned `letta-ai/trajectory` reference, exact Letta trajectory and canonical outputs, the additional `hypabolic-trajectory-v1` output, and an optional OpenTelemetry GenAI span projection.
 
 The plan is intentionally organized as vertical slices. Each source slice ends with a usable public API path:
 
@@ -35,7 +35,11 @@ This document remains the detailed .NET behavioural and source-acceptance baseli
 | 10 — Additional projections, OpenTelemetry, and extension API | Complete |
 | 11 — Differential parity, performance, and package readiness | Expanded by ML1–ML7 and ML13 |
 
-ML1 — shared contracts and repository foundation — is now the next slice. Do not begin Letta Code as a .NET-only slice; its existing requirements below are retained and become the .NET portion of multi-language ML8 after Rust and TypeScript reach the Pi, Claude Code, and Codex baseline.
+ML1 — shared contracts and repository foundation — is complete. ML2, the
+independent TypeScript Pi vertical path, is next. Do not begin Letta Code as a
+.NET-only slice; its existing requirements below are retained and become the
+.NET portion of multi-language ML8 after Rust and TypeScript reach the Pi,
+Claude Code, and Codex baseline.
 
 ## Planning rules
 
@@ -317,7 +321,7 @@ The adapter model is proven beyond Letta/Hypabolic by shipping OpenAI, minimal J
 - Custom adapters can be registered without modifying core source.
 - Typed projection rejects output-type/schema mismatches clearly.
 - Streaming output works under Native AOT.
-- OpenAI and JSONL fixtures are deterministic and documented as Trajectory.NET contracts rather than Letta parity claims.
+- OpenAI and JSONL fixtures are deterministic and documented as the .NET implementation of Trajectory contracts rather than Letta parity claims.
 - Pi and at least one second source produce deterministic OpenTelemetry agent/tool span goldens.
 - OpenTelemetry span names, kinds, attributes, parentage, links, and schema URL pass tests pinned to the selected GenAI semantic-convention version.
 - Model inference spans are omitted rather than assigned fabricated durations when reliable invocation timing is unavailable.

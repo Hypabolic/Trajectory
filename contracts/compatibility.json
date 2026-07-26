@@ -1,0 +1,74 @@
+{
+  "$schema": "./schemas/compatibility-manifest-v1.schema.json",
+  "manifest_version": 1,
+  "product": "Trajectory",
+  "upstream": {
+    "repository": "letta-ai/trajectory",
+    "commit": "f165ecf0af35da40512a288c4380a36b3102403c",
+    "package_version": "0.2.0",
+    "role": "black-box-compatibility-oracle"
+  },
+  "contracts": {
+    "normalizer": "0.2.0",
+    "diagnostics": "1",
+    "conformance_protocol": "1"
+  },
+  "public_schemas": [
+    {
+      "id": "letta-trajectory-v1",
+      "version": "1"
+    },
+    {
+      "id": "letta-canonical-v1",
+      "version": "1",
+      "schema": "schemas/letta-canonical-v1.schema.json"
+    },
+    {
+      "id": "hypabolic-trajectory-v1",
+      "version": "1",
+      "schema": "schemas/hypabolic-trajectory-v1.schema.json"
+    },
+    {
+      "id": "openai-chat-messages",
+      "version": "1"
+    },
+    {
+      "id": "jsonl-minimal",
+      "version": "1"
+    },
+    {
+      "id": "otel-genai-spans-v1",
+      "version": "1"
+    }
+  ],
+  "capabilities": {
+    "required": [
+      "normalize",
+      "normalize-partial",
+      "list-explicit-root",
+      "typed-diagnostics",
+      "typed-fatal-errors",
+      "deterministic-rerun"
+    ],
+    "optional": [
+      "native-aot",
+      "otel-sdk-emission",
+      "sqlite-stores"
+    ]
+  },
+  "implemented": {
+    "sources": [
+      "pi",
+      "claude-code",
+      "codex"
+    ],
+    "outputs": [
+      "letta-trajectory-v1",
+      "letta-canonical-v1",
+      "hypabolic-trajectory-v1",
+      "openai-chat-messages",
+      "jsonl-minimal",
+      "otel-genai-spans-v1"
+    ]
+  }
+}

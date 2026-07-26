@@ -13,9 +13,9 @@ time. Advancing the pin requires an explicit compatibility update.
 
 ## Purpose
 
-Trajectory.NET should be able to project normalized coding-agent trajectories into OpenTelemetry spans that follow the OpenTelemetry Generative AI semantic conventions. This allows historical or captured agent sessions to feed standard observability systems without coupling source decoders to a particular telemetry backend.
+The .NET implementation of Trajectory can project normalized coding-agent trajectories into OpenTelemetry spans that follow the OpenTelemetry Generative AI semantic conventions. This allows historical or captured agent sessions to feed standard observability systems without coupling source decoders to a particular telemetry backend.
 
-The output is not a Letta parity contract. It is a Trajectory.NET projection whose compatibility target is a pinned OpenTelemetry GenAI semantic-convention version.
+The output is not a Letta parity contract. It is a Trajectory projection whose compatibility target is a pinned OpenTelemetry GenAI semantic-convention version.
 
 ## Package boundary
 

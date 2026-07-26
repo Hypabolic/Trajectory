@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Hypabolic.Trajectory.AotSmoke</AssemblyName>
+    <RootNamespace>Hypabolic.Trajectory.AotSmoke</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishAot>true</PublishAot>
+    <PublishTrimmed>true</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Trajectory/Trajectory.csproj" />
+    <ProjectReference Include="../../src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../../conformance/cases/claude-code/tool-call/input.jsonl" Link="Fixtures/claude-code-tool-call.jsonl" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../../conformance/cases/codex/full/input.jsonl" Link="Fixtures/codex-full.jsonl" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../../conformance/cases/pi/tool-calls/input.jsonl" Link="Fixtures/pi-tool-calls.jsonl" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
