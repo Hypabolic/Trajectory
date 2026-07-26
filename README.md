@@ -11,7 +11,7 @@ wire contracts and conformance cases:
 | --- | --- | --- |
 | .NET | `Hypabolic.Trajectory` | Implemented |
 | TypeScript | `@hypabolic/trajectory` | Pi, Claude Code, and Codex baseline implemented; unpublished |
-| Rust | `hypabolic-trajectory` | Pi and Claude Code baseline implemented; unpublished |
+| Rust | `hypabolic-trajectory` | Pi, Claude Code, and Codex baseline implemented; unpublished |
 
 The current .NET runtime supports Pi, Claude Code, and Codex transcripts,
 explicit-root local-store listing, trimming and Native AOT, and these
@@ -28,11 +28,11 @@ deterministic projections:
 Rust and TypeScript packages have not been published. Both are independent
 implementations built from this repository's specifications and conformance
 cases. TypeScript supports the current .NET Pi, Claude Code, and Codex source
-baseline and all deterministic projections. Rust ML5 supports Pi and Claude
-Code with the three identity-bearing projections. Both provide explicit-root
-listing for their advertised sources and the private conformance protocol.
-Codex remains planned for Rust. The pinned `letta-ai/trajectory` package is
-used only as a black-box compatibility oracle.
+baseline and all deterministic projections. Rust ML6 supports the same Pi,
+Claude Code, and Codex source baseline with the three identity-bearing
+projections. Both provide explicit-root listing for their advertised sources
+and the private conformance protocol. The pinned `letta-ai/trajectory` package
+is used only as a black-box compatibility oracle.
 
 ## Architecture
 
@@ -139,8 +139,7 @@ cargo +stable clippy --manifest-path rust/Cargo.toml \
   --workspace --all-targets -- -D warnings
 ```
 
-Run ML5's identity-bearing Pi and Claude Code operations and listing through
-the Rust runner:
+Run ML6's identity-bearing source baseline and listing through the Rust runner:
 
 ```bash
 cargo +stable build --manifest-path rust/Cargo.toml \
@@ -152,6 +151,12 @@ python3 conformance/verify.py --repository-root . --source pi \
   --operation list-trajectories -- \
   rust/target/release/trajectory-conformance
 python3 conformance/verify.py --repository-root . --source claude-code \
+  --operation normalize-letta \
+  --operation normalize-canonical \
+  --operation normalize-hypabolic \
+  --operation list-trajectories -- \
+  rust/target/release/trajectory-conformance
+python3 conformance/verify.py --repository-root . --source codex \
   --operation normalize-letta \
   --operation normalize-canonical \
   --operation normalize-hypabolic \
@@ -219,6 +224,6 @@ See:
 
 ML1 established the shared foundation; ML2 and ML3 added independent
 TypeScript and Rust Pi vertical paths; ML4 brought TypeScript to the current
-.NET Pi, Claude Code, and Codex source baseline; ML5 added native Rust Claude
-Code normalization and listing. ML6 is next: add the native Rust Codex
-baseline.
+.NET Pi, Claude Code, and Codex source baseline; ML5 and ML6 brought Rust to
+the same source baseline. ML7 is next: complete output and distribution parity
+across all three implementations.

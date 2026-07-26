@@ -3,7 +3,7 @@ use serde_json::{Map, Number, Value};
 use sha2::{Digest as _, Sha256};
 
 use crate::canonical::{canonical_json, relaxed_json};
-use crate::model::{Diagnostic, IrRecord, RecordKind, Role, Trajectory};
+use crate::model::{Diagnostic, IrRecord, RecordKind, Role, Trajectory, TrajectorySource};
 use crate::{NORMALIZER_CONTRACT_VERSION, TrajectoryError, schema_ids};
 
 /// Ecosystem-native typed output adapter boundary.
@@ -63,6 +63,12 @@ pub fn letta_value(trajectory: &Trajectory) -> Value {
 
 /// Returns the canonical wire value.
 pub fn canonical_value(trajectory: &Trajectory) -> Result<Value, TrajectoryError> {
+    if trajectory.source == TrajectorySource::Codex && !trajectory.source_group_resolved {
+        return Err(TrajectoryError::new(
+            "source_group_required",
+            "Canonical Codex normalization requires a source group: include session_meta or pass sourceContext.groupId.",
+        ));
+    }
     let records = trajectory
         .records
         .iter()

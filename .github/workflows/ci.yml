@@ -301,7 +301,7 @@ jobs:
         run: cargo +stable package -p hypabolic-trajectory --locked
 
   rust-conformance:
-    name: Shared conformance / Rust Pi + Claude Code
+    name: Shared conformance / Rust source baseline
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -314,15 +314,15 @@ jobs:
       - name: Validate Rust capability manifest
         run: >-
           jq -e
-          '.runtime == "rust" and .slice == "ML5"
+          '.runtime == "rust" and .slice == "ML6"
           and .normalizer_contract_version == "0.2.0"
-          and .sources == ["pi", "claude-code"]
+          and .sources == ["pi", "claude-code", "codex"]
           and .outputs == ["letta-trajectory-v1", "letta-canonical-v1", "hypabolic-trajectory-v1"]'
           rust/runtime-capabilities.json > /dev/null
-      - name: Run every ML5 shared Pi and Claude Code operation twice
+      - name: Run every ML6 shared source operation twice
         shell: bash
         run: |
-          for source in pi claude-code; do
+          for source in pi claude-code codex; do
             python3 conformance/verify.py --repository-root . --source "$source" \
               --operation normalize-letta \
               --operation normalize-canonical \

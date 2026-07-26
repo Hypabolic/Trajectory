@@ -9,8 +9,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use chrono::DateTime;
 use hypabolic_trajectory::{
     ListingOptions, NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError,
-    TruncationStrategy, list_claude_code_trajectories, list_pi_trajectories, normalize_claude_code,
-    normalize_pi, project_canonical, project_hypabolic, project_letta,
+    TruncationStrategy, list_claude_code_trajectories, list_codex_trajectories,
+    list_pi_trajectories, normalize_claude_code, normalize_codex, normalize_pi, project_canonical,
+    project_hypabolic, project_letta,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -136,9 +137,9 @@ fn run() -> Result<Value, String> {
             request.case, request.operation
         ));
     }
-    if !matches!(manifest.source.as_str(), "pi" | "claude-code") {
+    if !matches!(manifest.source.as_str(), "pi" | "claude-code" | "codex") {
         return Err(format!(
-            "Rust ML5 does not support source '{}'.",
+            "Rust ML6 does not support source '{}'.",
             manifest.source
         ));
     }
@@ -228,6 +229,7 @@ fn execute(
     let trajectory = match manifest.source.as_str() {
         "pi" => normalize_pi(normalize_request),
         "claude-code" => normalize_claude_code(normalize_request),
+        "codex" => normalize_codex(normalize_request),
         _ => unreachable!("source is validated before execution"),
     }?;
     let output = match operation {
@@ -236,7 +238,7 @@ fn execute(
         "normalize-hypabolic" => project_hypabolic(&trajectory),
         _ => Err(TrajectoryError::new(
             "unknown_operation",
-            format!("Rust ML5 does not support operation '{operation}'."),
+            format!("Rust ML6 does not support operation '{operation}'."),
         )),
     }?;
     Ok((output, trajectory.diagnostics))
@@ -278,7 +280,7 @@ fn execute_listing(repository_root: &Path, manifest: &Manifest) -> Result<String
         let mut pages = Vec::new();
         let mut cursor = None;
         loop {
-            let listing_root = if manifest.source == "claude-code" {
+            let listing_root = if matches!(manifest.source.as_str(), "claude-code" | "codex") {
                 root.join("store")
             } else {
                 root.clone()
@@ -291,6 +293,7 @@ fn execute_listing(repository_root: &Path, manifest: &Manifest) -> Result<String
             let page = match manifest.source.as_str() {
                 "pi" => list_pi_trajectories(&options),
                 "claude-code" => list_claude_code_trajectories(&options),
+                "codex" => list_codex_trajectories(&options),
                 _ => unreachable!("source is validated before execution"),
             }?;
             let items = page

@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: accepted; ML1–ML5 implemented, ML6 next
+Status: accepted; ML1–ML6 implemented, ML7 next
 
 Planning baseline:
 
@@ -665,8 +665,9 @@ uniform.
 
 ## Immediate next action
 
-Implement ML6: the native Rust Codex baseline. Build it independently from the
-Hypabolic specifications and shared conformance cases. Preserve full and
-append-only chunk identity, source-group requirements and conflicts,
-tool-search/custom-tool semantics, reasoning, calls, results, and UTF-8 byte
-anchors without adding Node, .NET, FFI, or subprocess dependencies.
+Implement ML7: output and distribution parity. Add the remaining OpenAI chat,
+minimal JSONL, and deterministic GenAI span projections where absent; keep
+OpenTelemetry SDK dependencies optional; add ecosystem-appropriate streaming
+surfaces, synchronized package metadata, preview publishing dry runs,
+provenance/SBOM evidence, and representative benchmarks without changing
+identity-bearing contract bytes.
