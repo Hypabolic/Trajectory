@@ -1,0 +1,22 @@
+{
+  "runtime": "typescript",
+  "slice": "ML4",
+  "normalizer_contract_version": "0.2.0",
+  "sources": ["pi", "claude-code", "codex"],
+  "outputs": [
+    "letta-trajectory-v1",
+    "letta-canonical-v1",
+    "hypabolic-trajectory-v1",
+    "openai-chat-messages",
+    "jsonl-minimal",
+    "otel-genai-spans-v1"
+  ],
+  "capabilities": [
+    "normalize",
+    "normalize-partial",
+    "list-explicit-root",
+    "typed-diagnostics",
+    "typed-fatal-errors",
+    "deterministic-rerun"
+  ]
+}

@@ -20,8 +20,13 @@ import {
   projectOpenAI,
   serializeProjection,
   TrajectoryNormalizationError,
+  type TrajectorySource,
 } from "@hypabolic/trajectory";
-import { listPiTrajectories } from "@hypabolic/trajectory-node";
+import {
+  listClaudeCodeTrajectories,
+  listCodexTrajectories,
+  listPiTrajectories,
+} from "@hypabolic/trajectory-node";
 import { projectOpenTelemetry } from "@hypabolic/trajectory-otel";
 
 interface Request {
@@ -99,7 +104,9 @@ async function execute(request: Request): Promise<unknown> {
   if (!(request.operation in manifest.operation)) {
     throw new Error(`Case '${request.case}' does not declare operation '${request.operation}'.`);
   }
-  if (manifest.source !== "pi") throw new Error(`TypeScript ML2 does not support source '${manifest.source}'.`);
+  if (!["pi", "claude-code", "codex"].includes(manifest.source)) {
+    throw new Error(`TypeScript ML4 does not support source '${manifest.source}'.`);
+  }
   try {
     let outputText: string;
     let diagnostics: TrajectoryIRDiagnostics = [];
@@ -108,7 +115,7 @@ async function execute(request: Request): Promise<unknown> {
     } else {
       const transcript = await readFile(safeResolve(caseDirectory, manifest.transcript));
       const trajectory = normalizeToIR({
-        source: "pi",
+        source: manifest.source as TrajectorySource,
         transcriptBytes: transcript,
         sourceContext: {
           ...(manifest.source_context.group_id === undefined ? {} : { groupId: manifest.source_context.group_id }),
@@ -203,11 +210,17 @@ async function executeListing(repositoryRoot: string, manifest: Manifest): Promi
         await utimes(destination, timestamp, timestamp);
       }
     }
+    const listingRoot = manifest.source === "pi" ? root : join(root, "store");
     const pages: unknown[] = [];
     let cursor: string | undefined;
     do {
-      const page = await listPiTrajectories({
-        root,
+      const list = manifest.source === "claude-code"
+        ? listClaudeCodeTrajectories
+        : manifest.source === "codex"
+          ? listCodexTrajectories
+          : listPiTrajectories;
+      const page = await list({
+        root: listingRoot,
         limit: manifest.listing?.limit ?? 50,
         ...(cursor === undefined ? {} : { cursor }),
       });

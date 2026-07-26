@@ -1,0 +1,4 @@
+{
+  "code": "source_group_conflict",
+  "message": "Detected source group \"detected-session\" conflicts with the provided source context group \"provided-session\"."
+}

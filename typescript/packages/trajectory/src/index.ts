@@ -1,8 +1,9 @@
 /**
- * ML2 starts from exact transcript bytes. String input is a convenience only;
+ * Adapters start from exact transcript bytes. String input is a convenience only;
  * adapters derive byte anchors from this UTF-8 encoding, never UTF-16 indices.
  */
 export type TranscriptInput = Uint8Array | string;
+export type TrajectorySource = "pi" | "claude-code" | "codex";
 
 export interface SourceContext {
   readonly groupId?: string;
@@ -11,7 +12,7 @@ export interface SourceContext {
 }
 
 export interface NormalizeRequest {
-  readonly source: "pi";
+  readonly source: TrajectorySource;
   readonly transcript?: TranscriptInput;
   readonly transcriptBytes?: Uint8Array;
   readonly sourceContext?: SourceContext;
@@ -38,6 +39,7 @@ export interface TrajectoryDiagnostic {
 }
 
 export const NORMALIZER_CONTRACT_VERSION = "0.2.0";
+export const ImplementedSources = ["pi", "claude-code", "codex"] as const;
 export const OutputSchemaIds = {
   lettaTrajectoryV1: "letta-trajectory-v1",
   lettaCanonicalV1: "letta-canonical-v1",
@@ -54,6 +56,8 @@ export function transcriptBytes(input: TranscriptInput): Uint8Array {
 }
 
 import {
+  normalizeClaudeCode,
+  normalizeCodex,
   normalizePi,
   type TrajectoryIR,
   TrajectoryNormalizationError,
@@ -79,8 +83,11 @@ function normalizedRequest(request: NormalizeRequest): NormalizeRequest & { tran
 }
 
 export function normalizeToIR(request: NormalizeRequest): TrajectoryIR {
-  if (request.source !== "pi") throw new TrajectoryNormalizationError("unknown_source", `No source adapter is registered for '${String(request.source)}'.`);
-  return normalizePi(normalizedRequest(request));
+  const normalized = normalizedRequest(request);
+  if (request.source === "pi") return normalizePi(normalized);
+  if (request.source === "claude-code") return normalizeClaudeCode(normalized);
+  if (request.source === "codex") return normalizeCodex(normalized);
+  throw new TrajectoryNormalizationError("unknown_source", `No source adapter is registered for '${String(request.source)}'.`);
 }
 
 export function normalizeToLetta(request: NormalizeRequest): unknown {
