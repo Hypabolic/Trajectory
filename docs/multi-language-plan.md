@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: accepted; ML1–ML4 implemented, ML5 next
+Status: accepted; ML1–ML5 implemented, ML6 next
 
 Planning baseline:
 
@@ -665,8 +665,8 @@ uniform.
 
 ## Immediate next action
 
-Implement ML5: the native Rust Claude Code baseline. Build it independently
-from the Hypabolic specifications and shared conformance cases. Preserve mixed
-producer versions, sidechain and malformed-row handling, injected context,
-native UUID identity, and stable explicit-root listing without adding Node,
-.NET, FFI, or subprocess dependencies.
+Implement ML6: the native Rust Codex baseline. Build it independently from the
+Hypabolic specifications and shared conformance cases. Preserve full and
+append-only chunk identity, source-group requirements and conflicts,
+tool-search/custom-tool semantics, reasoning, calls, results, and UTF-8 byte
+anchors without adding Node, .NET, FFI, or subprocess dependencies.

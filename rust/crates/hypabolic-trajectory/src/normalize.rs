@@ -5,8 +5,9 @@ use serde_json::{Map, Value};
 
 use crate::canonical::{canonical_json, relaxed_json, utf16_compare};
 use crate::model::{
-    AppliedConfig, Bounds, Diagnostic, Filters, IrRecord, NormalizeRequest, Provenance,
-    RecordHashes, RecordKind, Role, ToolCall, Trajectory, TrajectoryError, TruncationStrategy,
+    AppliedConfig, Bounds, Diagnostic, Filters, IrRecord, ModelInvocation, ModelTokenUsage,
+    NormalizeRequest, Provenance, RecordHashes, RecordKind, Role, ToolCall, Trajectory,
+    TrajectoryError, TrajectoryExecution, TrajectorySource, TruncationStrategy,
 };
 use crate::projection::{format_ms, record_type, sha256, to_letta_record};
 
@@ -35,6 +36,20 @@ impl SourceAdapter for PiSourceAdapter {
     }
 }
 
+/// Native Claude Code JSONL source adapter.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ClaudeCodeSourceAdapter;
+
+impl SourceAdapter for ClaudeCodeSourceAdapter {
+    fn source(&self) -> &'static str {
+        "claude-code"
+    }
+
+    fn normalize(&self, request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+        normalize_claude_code(request)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum EventKind {
     Message,
@@ -53,7 +68,8 @@ struct DecodedEvent {
     arguments_json: Option<String>,
     is_error: Option<bool>,
     native_id: Option<String>,
-    source_sequence: i64,
+    producer_version: Option<String>,
+    source_sequence: Option<i64>,
     source_offset: i64,
     input_line: usize,
     timestamp_ms: Option<i64>,
@@ -63,12 +79,29 @@ struct DecodedEvent {
 }
 
 struct DecodedSession {
+    source: TrajectorySource,
+    source_name: &'static str,
     group_id: Option<String>,
     cwd: Option<String>,
+    git_branch: Option<String>,
     producer_version: Option<String>,
     created_at_ms: Option<i64>,
     events: Vec<DecodedEvent>,
+    model_invocations: Vec<DecodedModelInvocation>,
     diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Debug, Clone)]
+struct DecodedModelInvocation {
+    native_id: Option<String>,
+    source_offset: Option<i64>,
+    response_model: Option<String>,
+    response_id: Option<String>,
+    stop_reason: Option<String>,
+    producer_version: Option<String>,
+    usage: Option<ModelTokenUsage>,
+    completed_at_ms: Option<i64>,
+    completed_at_precise: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +123,20 @@ struct Plan {
 pub fn normalize_pi(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
     let config = resolve_config(request)?;
     let decoded = decode_pi(request.transcript)?;
+    normalize_decoded(config, decoded)
+}
+
+/// Normalizes a native Claude Code JSONL transcript into the private Rust IR.
+pub fn normalize_claude_code(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+    let config = resolve_config(request)?;
+    let decoded = decode_claude_code(request.transcript)?;
+    normalize_decoded(config, decoded)
+}
+
+fn normalize_decoded(
+    config: AppliedConfig,
+    decoded: DecodedSession,
+) -> Result<Trajectory, TrajectoryError> {
     let provided = config.source_group_id.as_deref();
     if let (Some(detected), Some(provided)) = (decoded.group_id.as_deref(), provided) {
         if detected != provided {
@@ -169,18 +216,28 @@ pub fn normalize_pi(request: NormalizeRequest<'_>) -> Result<Trajectory, Traject
             .then_with(|| utf16_compare(&left.0, &right.0))
     });
     let model = model_counts.first().map(|value| value.0.clone());
+    let execution = normalize_execution(
+        &decoded.model_invocations,
+        &group_id,
+        config.base_byte_offset,
+    )?;
     let meta = create_meta(
         &group_id,
+        decoded.source_name,
         decoded.cwd,
+        decoded.git_branch,
         model,
         decoded.producer_version.clone(),
     )?;
     records.insert(0, meta);
     Ok(Trajectory {
+        source: decoded.source,
+        source_name: decoded.source_name.into(),
         group_id,
         producer_version: decoded.producer_version,
         records,
         diagnostics,
+        execution,
         config,
     })
 }
@@ -279,13 +336,453 @@ fn decode_pi(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
         ));
     }
     Ok(DecodedSession {
+        source: TrajectorySource::Pi,
+        source_name: "pi",
         group_id,
         cwd,
+        git_branch: None,
         producer_version,
         created_at_ms,
         events,
+        model_invocations: Vec::new(),
         diagnostics,
     })
+}
+
+#[derive(Debug)]
+struct ContextCandidate {
+    value: String,
+    timestamp: i64,
+    tie: String,
+}
+
+fn decode_claude_code(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
+    const TRANSPORT_TYPES: &[&str] = &[
+        "progress",
+        "queue-operation",
+        "file-history-snapshot",
+        "summary",
+        "system",
+        "pr-link",
+        "last-prompt",
+        "custom-title",
+        "ai-title",
+        "agent-name",
+        "permission-mode",
+        "attachment",
+        "mode",
+    ];
+
+    let mut events = Vec::new();
+    let mut model_invocations = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut session_ids = HashSet::new();
+    let mut cwd = None;
+    let mut git_branch = None;
+    let mut producer_version = None;
+    let mut offset = 0_usize;
+    let mut line = 1_usize;
+
+    loop {
+        let relative_end = bytes[offset..].iter().position(|value| *value == b'\n');
+        let end = relative_end.map_or(bytes.len(), |value| offset + value);
+        let line_end = if end > offset && bytes[end - 1] == b'\r' {
+            end - 1
+        } else {
+            end
+        };
+        let slice = &bytes[offset..line_end];
+        if !slice
+            .iter()
+            .all(|value| matches!(*value, b' ' | b'\t' | b'\r'))
+        {
+            let parsed = std::str::from_utf8(slice)
+                .ok()
+                .and_then(|text| serde_json::from_str::<Value>(text).ok());
+            match parsed {
+                Some(Value::Object(row)) => {
+                    let row_type = string_value(row.get("type"));
+                    if row.get("isSidechain") == Some(&Value::Bool(true)) {
+                        diagnostics.push(Diagnostic {
+                            code: "sidechain_record_dropped".into(),
+                            message: format!(
+                                "Dropped a Claude Code sidechain record on line {line}."
+                            ),
+                            input_line: Some(line),
+                            record_index: None,
+                            count: None,
+                        });
+                    } else if row_type.is_some_and(|value| TRANSPORT_TYPES.contains(&value)) {
+                        // Transport records are deliberately outside the semantic transcript.
+                    } else {
+                        let timestamp = row.get("timestamp").and_then(parse_timestamp);
+                        let native_id = string_value(row.get("uuid")).map(str::to_owned);
+                        let context_timestamp =
+                            timestamp.as_ref().map_or(i64::MAX, |value| value.0);
+                        let context_tie = native_id.clone().unwrap_or_else(|| format!("@{offset}"));
+                        select_earlier(
+                            &mut cwd,
+                            string_value(row.get("cwd")),
+                            context_timestamp,
+                            &context_tie,
+                        );
+                        select_earlier(
+                            &mut git_branch,
+                            string_value(row.get("gitBranch")),
+                            context_timestamp,
+                            &context_tie,
+                        );
+                        let version = scalar_string(row.get("version"));
+                        select_earlier(
+                            &mut producer_version,
+                            version.as_deref(),
+                            context_timestamp,
+                            &context_tie,
+                        );
+                        if let Some(session_id) =
+                            string_value(row.get("sessionId")).filter(|value| !value.is_empty())
+                        {
+                            session_ids.insert(session_id.to_owned());
+                        }
+
+                        if matches!(row_type, Some("user" | "assistant")) {
+                            if let Some(Value::Object(message)) = row.get("message") {
+                                let source_offset = i64::try_from(offset).map_err(|_| {
+                                    TrajectoryError::new(
+                                        "invalid_input",
+                                        "Transcript byte offset exceeds signed 64-bit range.",
+                                    )
+                                })?;
+                                if row_type == Some("assistant") {
+                                    model_invocations.push(decode_claude_invocation(
+                                        &row,
+                                        message,
+                                        source_offset,
+                                        timestamp.as_ref(),
+                                    ));
+                                }
+                                decode_claude_message(
+                                    row_type.expect("semantic row type"),
+                                    &row,
+                                    message,
+                                    line,
+                                    source_offset,
+                                    timestamp.as_ref(),
+                                    &mut events,
+                                    &mut diagnostics,
+                                )?;
+                            }
+                        } else if let Some(row_type) = row_type.filter(|value| !value.is_empty()) {
+                            let _ = row_type;
+                            diagnostics.push(Diagnostic {
+                                code: "unknown_semantic_record".into(),
+                                message: format!(
+                                    "Skipped an unknown Claude Code semantic record on line {line}."
+                                ),
+                                input_line: Some(line),
+                                record_index: None,
+                                count: None,
+                            });
+                        }
+                    }
+                }
+                Some(_) => diagnostics.push(Diagnostic {
+                    code: "non_object_json_line".into(),
+                    message: format!("Skipped non-object JSON on line {line}."),
+                    input_line: Some(line),
+                    record_index: None,
+                    count: None,
+                }),
+                None => diagnostics.push(Diagnostic {
+                    code: "invalid_json_line".into(),
+                    message: format!("Skipped invalid JSON on line {line}."),
+                    input_line: Some(line),
+                    record_index: None,
+                    count: None,
+                }),
+            }
+        }
+        if end == bytes.len() {
+            break;
+        }
+        offset = end + 1;
+        line += 1;
+    }
+
+    if session_ids.len() > 1 {
+        let mut ids = session_ids.into_iter().collect::<Vec<_>>();
+        ids.sort_by(|left, right| utf16_compare(left, right));
+        return Err(TrajectoryError::new(
+            "source_group_conflict",
+            format!(
+                "Claude Code transcript contains multiple session ids: {}.",
+                ids.iter()
+                    .map(|value| quote(value))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ));
+    }
+
+    Ok(DecodedSession {
+        source: TrajectorySource::ClaudeCode,
+        source_name: "claude-code",
+        group_id: session_ids.into_iter().next(),
+        cwd: cwd.map(|value: ContextCandidate| value.value),
+        git_branch: git_branch.map(|value: ContextCandidate| value.value),
+        producer_version: Some(
+            producer_version
+                .map_or_else(|| "unknown".into(), |value: ContextCandidate| value.value),
+        ),
+        created_at_ms: None,
+        events,
+        model_invocations,
+        diagnostics,
+    })
+}
+
+fn decode_claude_invocation(
+    row: &Map<String, Value>,
+    message: &Map<String, Value>,
+    source_offset: i64,
+    timestamp: Option<&(i64, String)>,
+) -> DecodedModelInvocation {
+    let usage = message
+        .get("usage")
+        .and_then(Value::as_object)
+        .map(|usage| ModelTokenUsage {
+            input_tokens: integer_alias(usage, &["input_tokens", "input"]),
+            output_tokens: integer_alias(usage, &["output_tokens", "output"]),
+            cache_read_tokens: integer_alias(usage, &["cache_read_input_tokens", "cacheRead"]),
+            cache_write_tokens: integer_alias(
+                usage,
+                &["cache_creation_input_tokens", "cacheWrite"],
+            ),
+            total_tokens: integer_alias(usage, &["total_tokens"]),
+        });
+    DecodedModelInvocation {
+        native_id: string_value(row.get("uuid")).map(str::to_owned),
+        source_offset: Some(source_offset),
+        response_model: string_value(message.get("model")).map(str::to_owned),
+        response_id: string_value(message.get("id")).map(str::to_owned),
+        stop_reason: string_value(message.get("stop_reason"))
+            .or_else(|| string_value(message.get("stopReason")))
+            .map(str::to_owned),
+        producer_version: scalar_string(row.get("version")),
+        usage,
+        completed_at_ms: timestamp.map(|value| value.0),
+        completed_at_precise: timestamp.map(|value| value.1.clone()),
+    }
+}
+
+fn integer_alias(object: &Map<String, Value>, names: &[&str]) -> Option<i64> {
+    names
+        .iter()
+        .find_map(|name| object.get(*name).and_then(Value::as_i64))
+}
+
+fn select_earlier(
+    current: &mut Option<ContextCandidate>,
+    value: Option<&str>,
+    timestamp: i64,
+    tie: &str,
+) {
+    let Some(value) = value.filter(|value| !value.is_empty()) else {
+        return;
+    };
+    let replace = current.as_ref().is_none_or(|candidate| {
+        timestamp < candidate.timestamp
+            || (timestamp == candidate.timestamp && utf16_compare(tie, &candidate.tie).is_lt())
+    });
+    if replace {
+        *current = Some(ContextCandidate {
+            value: value.into(),
+            timestamp,
+            tie: tie.into(),
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn decode_claude_message(
+    row_type: &str,
+    row: &Map<String, Value>,
+    message: &Map<String, Value>,
+    line: usize,
+    offset: i64,
+    timestamp: Option<&(i64, String)>,
+    events: &mut Vec<DecodedEvent>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<(), TrajectoryError> {
+    let native_id = string_value(row.get("uuid")).map(str::to_owned);
+    let producer_version = scalar_string(row.get("version"));
+    let model = string_value(message.get("model")).map(str::to_owned);
+    let mut component_index = 0_usize;
+    let mut emit = |kind: EventKind,
+                    role: Role,
+                    content: Option<String>,
+                    tool_call_id: Option<String>,
+                    tool_name: Option<String>,
+                    arguments_json: Option<String>,
+                    is_error: Option<bool>| {
+        events.push(DecodedEvent {
+            kind,
+            role,
+            content,
+            tool_call_id,
+            tool_name,
+            arguments_json,
+            is_error,
+            native_id: native_id.clone(),
+            producer_version: producer_version.clone(),
+            source_sequence: None,
+            source_offset: offset,
+            input_line: line,
+            timestamp_ms: timestamp.map(|value| value.0),
+            timestamp_precise: timestamp.map(|value| value.1.clone()),
+            component_index,
+            model: if matches!(role, Role::Assistant | Role::Reasoning) {
+                model.clone()
+            } else {
+                None
+            },
+        });
+        component_index += 1;
+    };
+
+    let content = message.get("content");
+    if row_type == "user" {
+        match content {
+            Some(Value::String(value)) => emit(
+                EventKind::Message,
+                Role::User,
+                Some(value.clone()),
+                None,
+                None,
+                None,
+                None,
+            ),
+            Some(Value::Array(blocks)) => {
+                let mut text_parts = Vec::new();
+                for block in blocks {
+                    let Value::Object(block) = block else {
+                        continue;
+                    };
+                    match string_value(block.get("type")) {
+                        Some("tool_result") => emit(
+                            EventKind::ToolResult,
+                            Role::Tool,
+                            Some(read_blocks_text(block.get("content"))),
+                            string_value(block.get("tool_use_id")).map(str::to_owned),
+                            None,
+                            None,
+                            Some(block.get("is_error") == Some(&Value::Bool(true))),
+                        ),
+                        Some("text") => {
+                            if let Some(text) =
+                                string_value(block.get("text")).filter(|value| !value.is_empty())
+                            {
+                                text_parts.push(text.to_owned());
+                            }
+                        }
+                        Some("image") => text_parts.push("[image]".into()),
+                        _ => diagnostics.push(Diagnostic {
+                            code: "unknown_content_block".into(),
+                            message: format!(
+                                "Skipped an unknown Claude Code user content block on line {line}."
+                            ),
+                            input_line: Some(line),
+                            record_index: None,
+                            count: None,
+                        }),
+                    }
+                }
+                if !text_parts.is_empty() {
+                    emit(
+                        EventKind::Message,
+                        Role::User,
+                        Some(text_parts.join("\n")),
+                        None,
+                        None,
+                        None,
+                        None,
+                    );
+                }
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+
+    match content {
+        Some(Value::String(value)) => emit(
+            EventKind::Message,
+            Role::Assistant,
+            Some(value.clone()),
+            None,
+            None,
+            None,
+            None,
+        ),
+        Some(Value::Array(blocks)) => {
+            for block in blocks {
+                let Value::Object(block) = block else {
+                    continue;
+                };
+                match string_value(block.get("type")) {
+                    Some("thinking") => emit(
+                        EventKind::Reasoning,
+                        Role::Reasoning,
+                        Some(
+                            string_value(block.get("thinking"))
+                                .unwrap_or_default()
+                                .into(),
+                        ),
+                        None,
+                        None,
+                        None,
+                        None,
+                    ),
+                    Some("text") => emit(
+                        EventKind::Message,
+                        Role::Assistant,
+                        Some(string_value(block.get("text")).unwrap_or_default().into()),
+                        None,
+                        None,
+                        None,
+                        None,
+                    ),
+                    Some("tool_use") => emit(
+                        EventKind::ToolCall,
+                        Role::Assistant,
+                        None,
+                        string_value(block.get("id")).map(str::to_owned),
+                        string_value(block.get("name")).map(str::to_owned),
+                        Some(
+                            block
+                                .get("input")
+                                .map(relaxed_json)
+                                .transpose()?
+                                .unwrap_or_else(|| "{}".into()),
+                        ),
+                        None,
+                    ),
+                    Some("fallback") => {}
+                    _ => diagnostics.push(Diagnostic {
+                        code: "unknown_content_block".into(),
+                        message: format!(
+                            "Skipped an unknown Claude Code assistant content block on line {line}."
+                        ),
+                        input_line: Some(line),
+                        record_index: None,
+                        count: None,
+                    }),
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn decode_message(
@@ -325,7 +822,8 @@ fn decode_message(
             arguments_json,
             is_error,
             native_id: native_id.clone(),
-            source_sequence,
+            producer_version: None,
+            source_sequence: Some(source_sequence),
             source_offset: offset,
             input_line: line,
             timestamp_ms: timestamp.as_ref().map(|value| value.0),
@@ -465,6 +963,24 @@ fn normalize_event(
         } else {
             event.role
         };
+        if role == Role::User
+            && [
+                "<local-command-caveat>",
+                "<command-name>",
+                "<command-message>",
+                "<local-command-stdout>",
+            ]
+            .iter()
+            .any(|prefix| content.trim_start().starts_with(prefix))
+        {
+            diagnostics.push(event_diagnostic(
+                "noise_record_dropped",
+                "Dropped a harness-noise user record.".into(),
+                event,
+                record_index,
+            ));
+            return Ok(None);
+        }
         let bucket = if event.kind == EventKind::Reasoning {
             "reasoning"
         } else {
@@ -688,14 +1204,15 @@ fn create_record(
             event
                 .timestamp_ms
                 .map_or_else(|| Ok("0000-00-00T00:00:00.001Z".into()), format_ms)?,
-            event.source_sequence,
+            event.source_sequence.unwrap_or(0),
             stable_id
         ),
         component_key: component_key.clone(),
         component_index: event.component_index,
         component_type_ordinal: ordinal,
         native_record_id: event.native_id.clone(),
-        source_sequence: Some(event.source_sequence),
+        producer_version: event.producer_version.clone(),
+        source_sequence: event.source_sequence,
         source_offset: Some(if event.native_id.is_some() {
             event.source_offset
         } else {
@@ -727,6 +1244,7 @@ fn create_record(
         content,
         source_name: None,
         cwd: None,
+        git_branch: None,
         model: None,
         producer_version: None,
         tool_calls,
@@ -743,7 +1261,9 @@ fn create_record(
 
 fn create_meta(
     group_id: &str,
+    source_name: &str,
     cwd: Option<String>,
+    git_branch: Option<String>,
     model: Option<String>,
     producer_version: Option<String>,
 ) -> Result<IrRecord, TrajectoryError> {
@@ -760,8 +1280,9 @@ fn create_meta(
         source_timestamp_precise: None,
         timestamp_ms: None,
         content: None,
-        source_name: Some("pi".into()),
+        source_name: Some(source_name.into()),
         cwd,
+        git_branch,
         model,
         producer_version,
         tool_calls: Vec::new(),
@@ -776,6 +1297,7 @@ fn create_meta(
             component_index: 0,
             component_type_ordinal: 0,
             native_record_id: None,
+            producer_version: None,
             source_sequence: None,
             source_offset: None,
             source_anchor_kind: None,
@@ -789,13 +1311,81 @@ fn create_meta(
     Ok(record)
 }
 
+fn normalize_execution(
+    decoded: &[DecodedModelInvocation],
+    group_id: &str,
+    base_byte_offset: i64,
+) -> Result<TrajectoryExecution, TrajectoryError> {
+    let model_invocations = decoded
+        .iter()
+        .map(|invocation| {
+            let source_offset = invocation
+                .source_offset
+                .map(|offset| {
+                    offset.checked_add(base_byte_offset).ok_or_else(|| {
+                        TrajectoryError::new(
+                            "invalid_input",
+                            "Model invocation byte anchor is out of range.",
+                        )
+                    })
+                })
+                .transpose()?;
+            let identity = invocation.native_id.clone().unwrap_or_else(|| {
+                source_offset.map_or_else(
+                    || {
+                        invocation
+                            .response_id
+                            .clone()
+                            .unwrap_or_else(|| "model-invocation".into())
+                    },
+                    |offset| sha256(&format!("{group_id}|byte|{offset}")),
+                )
+            });
+            Ok(ModelInvocation {
+                id: sha256(&relaxed_json(&Value::Array(vec![
+                    Value::String(group_id.into()),
+                    Value::String(identity),
+                    Value::String("model-invocation".into()),
+                ]))?),
+                native_record_id: invocation.native_id.clone(),
+                source_offset,
+                response_model: invocation.response_model.clone(),
+                response_id: invocation.response_id.clone(),
+                stop_reason: invocation.stop_reason.clone(),
+                producer_version: invocation.producer_version.clone(),
+                usage: invocation.usage.clone().filter(|usage| {
+                    usage.input_tokens.is_some()
+                        || usage.output_tokens.is_some()
+                        || usage.cache_read_tokens.is_some()
+                        || usage.cache_write_tokens.is_some()
+                        || usage.total_tokens.is_some()
+                }),
+                completed_at_ms: invocation.completed_at_ms,
+                completed_at_precise: invocation.completed_at_precise.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>, TrajectoryError>>()?;
+    Ok(TrajectoryExecution { model_invocations })
+}
+
 fn hash_record(record: &IrRecord) -> Result<RecordHashes, TrajectoryError> {
     let semantic = match record.kind {
         RecordKind::Meta => {
             let mut value = Map::new();
-            value.insert("source".into(), Value::String("pi".into()));
+            value.insert(
+                "source".into(),
+                Value::String(
+                    record
+                        .source_name
+                        .clone()
+                        .expect("meta source name is populated"),
+                ),
+            );
             if let Some(cwd) = &record.cwd {
                 value.insert("cwd".into(), Value::String(cwd.clone()));
+            }
+            if let Some(git_branch) = &record.git_branch {
+                value.insert("git_branch".into(), Value::String(git_branch.clone()));
             }
             if let Some(model) = &record.model {
                 value.insert("model".into(), Value::String(model.clone()));
@@ -1289,7 +1879,10 @@ fn quote(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{NormalizeRequest, SourceAdapter};
-    use crate::{PiSourceAdapter, SourceContext};
+    use crate::{
+        ClaudeCodeSourceAdapter, PiSourceAdapter, SourceContext, project_canonical,
+        project_hypabolic, project_letta,
+    };
 
     #[test]
     fn byte_slice_is_the_primary_boundary() {
@@ -1306,5 +1899,75 @@ mod tests {
             .unwrap();
         assert_eq!(result.group_id, "test");
         assert_eq!(result.records.len(), 3);
+    }
+
+    #[test]
+    fn claude_native_uuid_identity_matches_the_shared_golden() {
+        let result = ClaudeCodeSourceAdapter
+            .normalize(NormalizeRequest {
+                transcript: include_bytes!(
+                    "../../../../conformance/cases/claude-code/tool-call/input.jsonl"
+                ),
+                source_context: SourceContext::default(),
+                options: Default::default(),
+            })
+            .expect("shared Claude case normalizes");
+        let expected = include_str!(
+            "../../../../conformance/cases/claude-code/tool-call/expected.canonical.json"
+        );
+        assert_eq!(
+            project_canonical(&result).expect("canonical projection"),
+            expected.strip_suffix('\n').unwrap_or(expected)
+        );
+    }
+
+    #[test]
+    fn claude_context_is_selected_by_source_time_and_execution_is_retained() {
+        let transcript = br#"{"type":"assistant","uuid":"a","sessionId":"s","version":"2","timestamp":"2026-01-01T00:00:02Z","cwd":"/late","gitBranch":"late","message":{"id":"response","role":"assistant","model":"claude","stop_reason":"end_turn","usage":{"input_tokens":7,"output_tokens":3},"content":"done"}}
+{"type":"user","uuid":"u","sessionId":"s","version":"1","timestamp":"2026-01-01T00:00:01Z","cwd":"/early","gitBranch":"early","message":{"role":"user","content":"go"}}
+"#;
+        let result = ClaudeCodeSourceAdapter
+            .normalize(NormalizeRequest {
+                transcript,
+                source_context: SourceContext::default(),
+                options: Default::default(),
+            })
+            .expect("reversed-arrival transcript normalizes");
+        let letta = project_letta(&result).expect("Letta projection");
+        assert!(letta.contains(r#""cwd":"/early""#));
+        assert!(letta.contains(r#""git_branch":"early""#));
+        assert_eq!(result.producer_version.as_deref(), Some("1"));
+        let hypabolic = project_hypabolic(&result).expect("Hypabolic projection");
+        assert!(hypabolic.contains(r#""type":"claude-code""#));
+        assert!(hypabolic.contains(r#""producer_version":"2""#));
+        let invocation = &result.execution.model_invocations[0];
+        assert_eq!(invocation.response_id.as_deref(), Some("response"));
+        assert_eq!(
+            invocation
+                .usage
+                .as_ref()
+                .and_then(|usage| usage.input_tokens),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn claude_multiple_session_ids_are_a_typed_fatal_error() {
+        let transcript =
+            br#"{"type":"user","sessionId":"b","message":{"role":"user","content":"go"}}
+{"type":"assistant","sessionId":"a","message":{"role":"assistant","content":"done"}}
+"#;
+        let error = ClaudeCodeSourceAdapter
+            .normalize(NormalizeRequest {
+                transcript,
+                source_context: SourceContext::default(),
+                options: Default::default(),
+            })
+            .expect_err("multiple native groups conflict");
+        assert_eq!(error.code, "source_group_conflict");
+        assert_eq!(
+            error.message,
+            r#"Claude Code transcript contains multiple session ids: "a", "b"."#
+        );
     }
 }

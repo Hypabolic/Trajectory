@@ -136,6 +136,24 @@ pub struct Diagnostic {
     pub count: Option<usize>,
 }
 
+/// Built-in transcript source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrajectorySource {
+    /// Pi session JSONL.
+    Pi,
+    /// Claude Code project JSONL.
+    ClaudeCode,
+}
+
+impl TrajectorySource {
+    pub(crate) const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Pi => "pi",
+            Self::ClaudeCode => "claude-code",
+        }
+    }
+}
+
 /// Normalized role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -215,6 +233,8 @@ pub struct Provenance {
     pub component_type_ordinal: usize,
     /// Native record ID if present.
     pub native_record_id: Option<String>,
+    /// Producer version attached to the native occurrence.
+    pub producer_version: Option<String>,
     /// Source record sequence.
     pub source_sequence: Option<i64>,
     /// Zero-based byte location within the supplied segment.
@@ -230,6 +250,53 @@ pub struct RecordHashes {
     pub content_sha256: String,
     /// Canonical Letta record hash.
     pub record_sha256: String,
+}
+
+/// Token usage retained for deterministic telemetry projection.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ModelTokenUsage {
+    /// Input tokens.
+    pub input_tokens: Option<i64>,
+    /// Output tokens.
+    pub output_tokens: Option<i64>,
+    /// Cache-read input tokens.
+    pub cache_read_tokens: Option<i64>,
+    /// Cache-write input tokens.
+    pub cache_write_tokens: Option<i64>,
+    /// Provider-reported total tokens.
+    pub total_tokens: Option<i64>,
+}
+
+/// One source-native model invocation retained in the private IR.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelInvocation {
+    /// Deterministic invocation ID.
+    pub id: String,
+    /// Native source record ID.
+    pub native_record_id: Option<String>,
+    /// Absolute source byte offset.
+    pub source_offset: Option<i64>,
+    /// Response model.
+    pub response_model: Option<String>,
+    /// Provider response ID.
+    pub response_id: Option<String>,
+    /// Provider stop reason.
+    pub stop_reason: Option<String>,
+    /// Producer version on this invocation.
+    pub producer_version: Option<String>,
+    /// Token usage when present.
+    pub usage: Option<ModelTokenUsage>,
+    /// Completion time in Unix milliseconds.
+    pub completed_at_ms: Option<i64>,
+    /// Source-native seven-digit UTC representation.
+    pub completed_at_precise: Option<String>,
+}
+
+/// Execution metadata retained separately from normalized records.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TrajectoryExecution {
+    /// Model invocations decoded from the source.
+    pub model_invocations: Vec<ModelInvocation>,
 }
 
 /// One normalized private-IR record.
@@ -255,6 +322,8 @@ pub struct IrRecord {
     pub source_name: Option<String>,
     /// Working directory for metadata.
     pub cwd: Option<String>,
+    /// Git branch for metadata.
+    pub git_branch: Option<String>,
     /// Selected model for metadata.
     pub model: Option<String>,
     /// Producer version for metadata.
@@ -273,9 +342,13 @@ pub struct IrRecord {
     pub hashes: RecordHashes,
 }
 
-/// Fully normalized Pi trajectory.
+/// Fully normalized trajectory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trajectory {
+    /// Native transcript source.
+    pub source: TrajectorySource,
+    /// Language-neutral source name.
+    pub source_name: String,
     /// Resolved source group.
     pub group_id: String,
     /// Producer version if present.
@@ -284,6 +357,8 @@ pub struct Trajectory {
     pub records: Vec<IrRecord>,
     /// Recoverable diagnostics.
     pub diagnostics: Vec<Diagnostic>,
+    /// Source-native execution metadata for later projections.
+    pub execution: TrajectoryExecution,
     /// Applied configuration.
     pub config: AppliedConfig,
 }

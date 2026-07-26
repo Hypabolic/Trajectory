@@ -46,6 +46,21 @@ pub struct TrajectoryListingPage {
 pub fn list_pi_trajectories(
     options: &ListingOptions<'_>,
 ) -> Result<TrajectoryListingPage, TrajectoryError> {
+    list_project_store(options, &options.root.join("sessions"), "Pi")
+}
+
+/// Lists Claude Code JSONL transcripts below the explicit projects root.
+pub fn list_claude_code_trajectories(
+    options: &ListingOptions<'_>,
+) -> Result<TrajectoryListingPage, TrajectoryError> {
+    list_project_store(options, options.root, "Claude Code")
+}
+
+fn list_project_store(
+    options: &ListingOptions<'_>,
+    projects_root: &Path,
+    source_name: &str,
+) -> Result<TrajectoryListingPage, TrajectoryError> {
     if !(1..=1_000).contains(&options.limit) {
         return Err(TrajectoryError::new(
             "invalid_input",
@@ -53,8 +68,7 @@ pub fn list_pi_trajectories(
         ));
     }
 
-    let sessions = options.root.join("sessions");
-    let projects = match fs::read_dir(&sessions) {
+    let projects = match fs::read_dir(projects_root) {
         Ok(value) => value,
         Err(error) if missing_or_denied(&error) => {
             return Ok(TrajectoryListingPage {
@@ -62,17 +76,31 @@ pub fn list_pi_trajectories(
                 next_cursor: None,
             });
         }
-        Err(error) => return Err(io_error("Could not enumerate the Pi store.", &error)),
+        Err(error) => {
+            return Err(io_error(
+                &format!("Could not enumerate the {source_name} store."),
+                &error,
+            ));
+        }
     };
 
     let mut items = Vec::new();
     for project in projects {
-        let project =
-            project.map_err(|error| io_error("Could not enumerate the Pi store.", &error))?;
+        let project = project.map_err(|error| {
+            io_error(
+                &format!("Could not enumerate the {source_name} store."),
+                &error,
+            )
+        })?;
         let file_type = match project.file_type() {
             Ok(value) => value,
             Err(error) if missing_or_denied(&error) => continue,
-            Err(error) => return Err(io_error("Could not inspect a Pi store entry.", &error)),
+            Err(error) => {
+                return Err(io_error(
+                    &format!("Could not inspect a {source_name} store entry."),
+                    &error,
+                ));
+            }
         };
         if !file_type.is_dir() {
             continue;
@@ -80,11 +108,20 @@ pub fn list_pi_trajectories(
         let files = match fs::read_dir(project.path()) {
             Ok(value) => value,
             Err(error) if missing_or_denied(&error) => continue,
-            Err(error) => return Err(io_error("Could not enumerate a Pi project.", &error)),
+            Err(error) => {
+                return Err(io_error(
+                    &format!("Could not enumerate a {source_name} project."),
+                    &error,
+                ));
+            }
         };
         for file in files {
-            let file =
-                file.map_err(|error| io_error("Could not enumerate a Pi project.", &error))?;
+            let file = file.map_err(|error| {
+                io_error(
+                    &format!("Could not enumerate a {source_name} project."),
+                    &error,
+                )
+            })?;
             let path = file.path();
             if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
                 continue;
@@ -93,7 +130,12 @@ pub fn list_pi_trajectories(
                 Ok(value) if value.is_file() => value,
                 Ok(_) => continue,
                 Err(error) if missing_or_denied(&error) => continue,
-                Err(error) => return Err(io_error("Could not inspect a Pi transcript.", &error)),
+                Err(error) => {
+                    return Err(io_error(
+                        &format!("Could not inspect a {source_name} transcript."),
+                        &error,
+                    ));
+                }
             };
             let id = path
                 .file_stem()
@@ -101,24 +143,29 @@ pub fn list_pi_trajectories(
                 .ok_or_else(|| {
                     TrajectoryError::new(
                         "invalid_input",
-                        "A Pi transcript filename is not valid Unicode.",
+                        format!("A {source_name} transcript filename is not valid Unicode."),
                     )
                 })?
                 .to_owned();
             let modified = metadata
                 .modified()
-                .map_err(|error| io_error("Could not read a Pi transcript timestamp.", &error))?
+                .map_err(|error| {
+                    io_error(
+                        &format!("Could not read a {source_name} transcript timestamp."),
+                        &error,
+                    )
+                })?
                 .duration_since(UNIX_EPOCH)
                 .map_err(|_| {
                     TrajectoryError::new(
                         "invalid_input",
-                        "A Pi transcript timestamp precedes the Unix epoch.",
+                        format!("A {source_name} transcript timestamp precedes the Unix epoch."),
                     )
                 })?;
             let milliseconds = i64::try_from(modified.as_millis()).map_err(|_| {
                 TrajectoryError::new(
                     "invalid_input",
-                    "A Pi transcript timestamp is out of range.",
+                    format!("A {source_name} transcript timestamp is out of range."),
                 )
             })?;
             items.push(TrajectoryListing {
@@ -199,4 +246,61 @@ fn missing_or_denied(error: &std::io::Error) -> bool {
 
 fn io_error(message: &str, error: &std::io::Error) -> TrajectoryError {
     TrajectoryError::new("io_error", format!("{message} {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{self, File, FileTimes};
+    use std::time::{Duration, SystemTime};
+
+    use super::{ListingOptions, list_claude_code_trajectories};
+
+    #[test]
+    fn claude_listing_is_stable_and_paginated_from_an_explicit_root() {
+        let root = std::env::temp_dir().join(format!(
+            "trajectory-rust-claude-listing-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let older = root.join("project-a").join("older.jsonl");
+        let newer = root.join("project-b").join("newer.jsonl");
+        fs::create_dir_all(older.parent().expect("older parent")).expect("create older project");
+        fs::create_dir_all(newer.parent().expect("newer parent")).expect("create newer project");
+        fs::write(&older, "{}\n").expect("write older transcript");
+        fs::write(&newer, "{}\n").expect("write newer transcript");
+        File::options()
+            .write(true)
+            .open(&older)
+            .expect("open older transcript")
+            .set_times(
+                FileTimes::new().set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(1_000)),
+            )
+            .expect("set older timestamp");
+        File::options()
+            .write(true)
+            .open(&newer)
+            .expect("open newer transcript")
+            .set_times(
+                FileTimes::new().set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(2_000)),
+            )
+            .expect("set newer timestamp");
+
+        let first = list_claude_code_trajectories(&ListingOptions {
+            root: &root,
+            cursor: None,
+            limit: 1,
+        })
+        .expect("list first page");
+        assert_eq!(first.items[0].id, "newer");
+        let second = list_claude_code_trajectories(&ListingOptions {
+            root: &root,
+            cursor: first.next_cursor.as_deref(),
+            limit: 1,
+        })
+        .expect("list second page");
+        assert_eq!(second.items[0].id, "older");
+        assert!(second.next_cursor.is_none());
+
+        fs::remove_dir_all(&root).expect("remove test store");
+    }
 }

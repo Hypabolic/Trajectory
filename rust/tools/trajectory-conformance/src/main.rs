@@ -9,8 +9,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use chrono::DateTime;
 use hypabolic_trajectory::{
     ListingOptions, NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError,
-    TruncationStrategy, list_pi_trajectories, normalize_pi, project_canonical, project_hypabolic,
-    project_letta,
+    TruncationStrategy, list_claude_code_trajectories, list_pi_trajectories, normalize_claude_code,
+    normalize_pi, project_canonical, project_hypabolic, project_letta,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -136,9 +136,9 @@ fn run() -> Result<Value, String> {
             request.case, request.operation
         ));
     }
-    if manifest.source != "pi" {
+    if !matches!(manifest.source.as_str(), "pi" | "claude-code") {
         return Err(format!(
-            "Rust ML3 does not support source '{}'.",
+            "Rust ML5 does not support source '{}'.",
             manifest.source
         ));
     }
@@ -199,7 +199,7 @@ fn execute(
             )),
         })
         .transpose()?;
-    let trajectory = normalize_pi(NormalizeRequest {
+    let normalize_request = NormalizeRequest {
         transcript: &transcript,
         source_context: SourceContext {
             group_id: manifest.source_context.group_id.as_deref(),
@@ -224,14 +224,19 @@ fn execute(
                 .as_deref()
                 .map(|value| value != "omit"),
         },
-    })?;
+    };
+    let trajectory = match manifest.source.as_str() {
+        "pi" => normalize_pi(normalize_request),
+        "claude-code" => normalize_claude_code(normalize_request),
+        _ => unreachable!("source is validated before execution"),
+    }?;
     let output = match operation {
         "normalize-letta" => project_letta(&trajectory),
         "normalize-canonical" => project_canonical(&trajectory),
         "normalize-hypabolic" => project_hypabolic(&trajectory),
         _ => Err(TrajectoryError::new(
             "unknown_operation",
-            format!("Rust ML3 does not support operation '{operation}'."),
+            format!("Rust ML5 does not support operation '{operation}'."),
         )),
     }?;
     Ok((output, trajectory.diagnostics))
@@ -273,11 +278,21 @@ fn execute_listing(repository_root: &Path, manifest: &Manifest) -> Result<String
         let mut pages = Vec::new();
         let mut cursor = None;
         loop {
-            let page = list_pi_trajectories(&ListingOptions {
-                root: &root,
+            let listing_root = if manifest.source == "claude-code" {
+                root.join("store")
+            } else {
+                root.clone()
+            };
+            let options = ListingOptions {
+                root: &listing_root,
                 cursor: cursor.as_deref(),
                 limit,
-            })?;
+            };
+            let page = match manifest.source.as_str() {
+                "pi" => list_pi_trajectories(&options),
+                "claude-code" => list_claude_code_trajectories(&options),
+                _ => unreachable!("source is validated before execution"),
+            }?;
             let items = page
                 .items
                 .iter()
