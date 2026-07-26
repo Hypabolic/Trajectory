@@ -6,7 +6,9 @@ export const OTEL_GENAI_SCHEMA_VERSION = "1";
 
 interface Attribute {
   key: string;
-  string_value: string;
+  string_value?: string;
+  integer_value?: bigint;
+  string_values?: string[];
 }
 
 interface Span {
@@ -14,7 +16,7 @@ interface Span {
   span_id: string;
   parent_span_id?: string;
   name: string;
-  kind: "INTERNAL";
+  kind: "INTERNAL" | "CLIENT";
   start_time: string;
   end_time: string;
   status: "UNSET" | "ERROR";
@@ -27,6 +29,7 @@ export function projectOpenTelemetry(trajectory: TrajectoryIR): unknown {
   const traceId = nonZero(sha256(`${trajectory.sourceName}|${trajectory.groupId}`).slice(0, 32));
   const body = trajectory.records.filter((record) => record.kind !== "meta");
   const spans: Span[] = [];
+  const diagnostics: { code: string; message: string; record_id: string }[] = [];
   const turns: { startIndex: number; endIndex: number; start: number; end: number; spanId: string }[] = [];
   const users = body.flatMap((record, index) => record.role === "user" ? [{ record, index }] : []);
   for (let index = 0; index < users.length; index++) {
@@ -60,6 +63,62 @@ export function projectOpenTelemetry(trajectory: TrajectoryIR): unknown {
       start: first.record.sourceTimestamp,
       end: last.sourceTimestamp,
       spanId,
+    });
+  }
+
+  for (const invocation of trajectory.execution.modelInvocations) {
+    if (
+      invocation.startedAt === undefined ||
+      invocation.completedAt === undefined ||
+      (
+        invocation.provider === undefined &&
+        invocation.requestedModel === undefined &&
+        invocation.responseModel === undefined
+      )
+    ) {
+      diagnostics.push({
+        code: "model_span_omitted",
+        message: "Model span omitted because source-native timing or provider/model metadata is incomplete.",
+        record_id: invocation.id,
+      });
+      continue;
+    }
+    const parent = [...turns].reverse().find(
+      (turn) => invocation.startedAt! >= turn.start && invocation.startedAt! <= turn.end,
+    );
+    const model = invocation.requestedModel ?? invocation.responseModel;
+    spans.push({
+      trace_id: traceId,
+      span_id: spanIdFor(`model|${invocation.id}`),
+      ...(parent === undefined ? {} : { parent_span_id: parent.spanId }),
+      name: model === undefined ? "chat" : `chat ${model}`,
+      kind: "CLIENT",
+      start_time: preciseInvocation(
+        invocation.startedAt,
+        invocation.startedAtPrecise,
+      ),
+      end_time: invocation.completedAt < invocation.startedAt
+        ? preciseInvocation(invocation.startedAt, invocation.startedAtPrecise)
+        : preciseInvocation(invocation.completedAt, invocation.completedAtPrecise),
+      status: "UNSET",
+      attributes: attributes({
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": invocation.provider,
+        "gen_ai.request.model": invocation.requestedModel,
+        "gen_ai.response.model": invocation.responseModel,
+        "gen_ai.response.id": invocation.responseId,
+        "gen_ai.response.finish_reasons": invocation.stopReason === undefined
+          ? undefined
+          : [invocation.stopReason],
+        "gen_ai.usage.input_tokens": invocation.usage?.inputTokens,
+        "gen_ai.usage.output_tokens": invocation.usage?.outputTokens,
+        "gen_ai.usage.cache_read.input_tokens": invocation.usage?.cacheReadTokens,
+        "gen_ai.usage.cache_creation.input_tokens": invocation.usage?.cacheWriteTokens,
+        "hypabolic.trajectory.invocation.id": invocation.id,
+        "hypabolic.trajectory.api_family": invocation.apiFamily,
+      }),
+      links: [],
+      events: [],
     });
   }
 
@@ -102,24 +161,6 @@ export function projectOpenTelemetry(trajectory: TrajectoryIR): unknown {
     left.span_id.localeCompare(right.span_id),
   );
 
-  const invocationIds = new Set<string>();
-  const diagnostics: { code: string; message: string; record_id: string }[] = [];
-  for (const record of body) {
-    if (record.role !== "assistant" || !record.provenance.nativeRecordId) continue;
-    const id = sha256(JSON.stringify([
-      trajectory.groupId,
-      record.provenance.nativeRecordId,
-      "model-invocation",
-    ]));
-    if (invocationIds.has(id)) continue;
-    invocationIds.add(id);
-    diagnostics.push({
-      code: "model_span_omitted",
-      message: "Model span omitted because source-native timing or provider/model metadata is incomplete.",
-      record_id: id,
-    });
-  }
-
   return {
     schema_url: "https://opentelemetry.io/schemas/gen-ai/1.42.0",
     trace_id: traceId,
@@ -142,10 +183,26 @@ function precise(record: TrajectoryIR["records"][number]): string {
     new Date(record.sourceTimestamp!).toISOString().replace("Z", "0000+00:00");
 }
 
-function attributes(values: Record<string, string>): Attribute[] {
+function preciseInvocation(value: number, preciseValue?: string): string {
+  return preciseValue ??
+    new Date(value).toISOString().replace("Z", "0000+00:00");
+}
+
+function attributes(
+  values: Record<string, string | bigint | string[] | undefined>,
+): Attribute[] {
   return Object.entries(values)
+    .filter((entry): entry is [string, string | bigint | string[]] =>
+      entry[1] !== undefined
+    )
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, string_value]) => ({ key, string_value }));
+    .map(([key, value]) =>
+      typeof value === "bigint"
+        ? { key, integer_value: value }
+        : Array.isArray(value)
+          ? { key, string_values: value }
+          : { key, string_value: value }
+    );
 }
 
 function spanIdFor(value: string): string {

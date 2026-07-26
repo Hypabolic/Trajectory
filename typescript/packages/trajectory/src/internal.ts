@@ -44,7 +44,32 @@ interface DecodedSession {
   producerVersion?: string;
   createdAt?: number;
   events: DecodedEvent[];
+  modelInvocations: DecodedModelInvocation[];
   diagnostics: TrajectoryDiagnostic[];
+}
+
+interface DecodedModelInvocation {
+  nativeId?: string;
+  sourceSequence?: number;
+  sourceOffset?: bigint;
+  provider?: string;
+  apiFamily?: string;
+  requestedModel?: string;
+  responseModel?: string;
+  responseId?: string;
+  stopReason?: string;
+  producerVersion?: string;
+  inputTokens?: bigint;
+  outputTokens?: bigint;
+  cacheReadTokens?: bigint;
+  cacheWriteTokens?: bigint;
+  totalTokens?: bigint;
+  startedAt?: number;
+  startedAtPrecise?: string;
+  firstResponseAt?: number;
+  firstResponseAtPrecise?: string;
+  completedAt?: number;
+  completedAtPrecise?: string;
 }
 
 export interface AppliedConfig {
@@ -103,7 +128,38 @@ export interface TrajectoryIR {
   producerVersion?: string;
   records: IRRecord[];
   diagnostics: TrajectoryDiagnostic[];
+  execution: {
+    modelInvocations: ModelInvocationIR[];
+    workflowInvocations: readonly [];
+  };
   config: AppliedConfig;
+}
+
+export interface ModelInvocationIR {
+  id: string;
+  nativeRecordId?: string;
+  sourceSequence?: number;
+  sourceOffset?: bigint;
+  provider?: string;
+  apiFamily?: string;
+  requestedModel?: string;
+  responseModel?: string;
+  responseId?: string;
+  stopReason?: string;
+  producerVersion?: string;
+  usage?: {
+    inputTokens?: bigint;
+    outputTokens?: bigint;
+    cacheReadTokens?: bigint;
+    cacheWriteTokens?: bigint;
+    totalTokens?: bigint;
+  };
+  startedAt?: number;
+  startedAtPrecise?: string;
+  firstResponseAt?: number;
+  firstResponseAtPrecise?: string;
+  completedAt?: number;
+  completedAtPrecise?: string;
 }
 
 interface PlannedCall {
@@ -195,6 +251,9 @@ function normalizeDecoded(
     model,
     decoded.producerVersion,
   );
+  const modelInvocations = decoded.modelInvocations.map((invocation) =>
+    normalizeInvocation(invocation, groupId, config.sourceContext.baseByteOffset)
+  );
   return {
     source: decoded.source,
     sourceName: decoded.sourceName,
@@ -203,16 +262,20 @@ function normalizeDecoded(
     ...(decoded.producerVersion === undefined ? {} : { producerVersion: decoded.producerVersion }),
     records: [meta, ...records],
     diagnostics,
+    execution: { modelInvocations, workflowInvocations: [] },
     config,
   };
 }
 
 function decodePi(bytes: Uint8Array): DecodedSession {
   const events: DecodedEvent[] = [];
+  const modelInvocations: DecodedModelInvocation[] = [];
   const diagnostics: TrajectoryDiagnostic[] = [];
   let groupId: string | undefined;
   let cwd: string | undefined;
   let producerVersion: string | undefined;
+  let requestedProvider: string | undefined;
+  let requestedModel: string | undefined;
   let createdAt: number | undefined;
   let sawMessage = false;
   const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -227,8 +290,10 @@ function decodePi(bytes: Uint8Array): DecodedSession {
     const slice = bytes.subarray(offset, lineEnd);
     if (!isAsciiWhitespace(slice)) {
       let row: JsonObject | undefined;
+      let rawLine: string | undefined;
       try {
-        const parsed: unknown = JSON.parse(decoder.decode(slice));
+        rawLine = decoder.decode(slice);
+        const parsed: unknown = JSON.parse(rawLine);
         if (!isObject(parsed)) {
           diagnostics.push({
             code: "non_object_json_line",
@@ -252,6 +317,9 @@ function decodePi(bytes: Uint8Array): DecodedSession {
           groupId ??= stringValue(row.id);
           createdAt ??= timestampValue(row.timestamp);
           producerVersion ??= scalarString(row.version);
+        } else if (type === "model_change") {
+          requestedProvider = stringValue(row.provider);
+          requestedModel = stringValue(row.modelId);
         } else if (type === "message" && isObject(row.message)) {
           sawMessage = true;
           const message = row.message as JsonObject;
@@ -277,6 +345,45 @@ function decodePi(bytes: Uint8Array): DecodedSession {
             const content = readBlocksText(message.content);
             if (content) emit({ kind: "message", role: "user", content, ...(timestamp === undefined ? {} : { timestamp }) });
           } else if (role === "assistant") {
+            const usage = readTokenUsage(message, rawLine!, {
+              inputTokens: ["input"],
+              outputTokens: ["output"],
+              cacheReadTokens: ["cacheRead"],
+              cacheWriteTokens: ["cacheWrite"],
+              totalTokens: ["totalTokens"],
+            });
+            const provider = stringValue(message.provider) ?? requestedProvider;
+            const apiFamily = stringValue(message.api);
+            const responseId = stringValue(message.responseId);
+            const stopReason = stringValue(message.stopReason);
+            const started = parseTimestamp(message.startTimestamp) ??
+              parseTimestamp(message.requestTimestamp);
+            const firstResponse = parseTimestamp(message.firstResponseTimestamp);
+            const completed = parseTimestamp(message.timestamp) ?? timestampData;
+            modelInvocations.push({
+              ...(nativeId === undefined ? {} : { nativeId }),
+              sourceSequence: line - 1,
+              sourceOffset: BigInt(offset),
+              ...(provider === undefined ? {} : { provider }),
+              ...(apiFamily === undefined ? {} : { apiFamily }),
+              ...(requestedModel === undefined ? {} : { requestedModel }),
+              ...(model === undefined ? {} : { responseModel: model }),
+              ...(responseId === undefined ? {} : { responseId }),
+              ...(stopReason === undefined ? {} : { stopReason }),
+              ...usage,
+              ...(started === undefined ? {} : {
+                startedAt: started.milliseconds,
+                startedAtPrecise: started.precise,
+              }),
+              ...(firstResponse === undefined ? {} : {
+                firstResponseAt: firstResponse.milliseconds,
+                firstResponseAtPrecise: firstResponse.precise,
+              }),
+              ...(completed === undefined ? {} : {
+                completedAt: completed.milliseconds,
+                completedAtPrecise: completed.precise,
+              }),
+            });
             const content = message.content;
             if (typeof content === "string") {
               if (content) emit({ kind: "message", role: "assistant", content, ...(timestamp === undefined ? {} : { timestamp }), ...(model === undefined ? {} : { model }) });
@@ -341,6 +448,7 @@ function decodePi(bytes: Uint8Array): DecodedSession {
     sourceName: "pi",
     groupResolved: groupId !== undefined,
     events,
+    modelInvocations,
     diagnostics,
     ...(groupId === undefined ? {} : { groupId }),
     ...(cwd === undefined ? {} : { cwd }),
@@ -352,6 +460,7 @@ function decodePi(bytes: Uint8Array): DecodedSession {
 function decodeClaudeCode(bytes: Uint8Array): DecodedSession {
   const diagnostics: TrajectoryDiagnostic[] = [];
   const events: DecodedEvent[] = [];
+  const modelInvocations: DecodedModelInvocation[] = [];
   const sessionIds = new Set<string>();
   let cwd: string | undefined;
   let gitBranch: string | undefined;
@@ -362,7 +471,7 @@ function decodeClaudeCode(bytes: Uint8Array): DecodedSession {
     "permission-mode", "attachment", "mode",
   ]);
 
-  forEachJsonLine(bytes, diagnostics, (row, inputLine, sourceOffset) => {
+  forEachJsonLine(bytes, diagnostics, (row, inputLine, sourceOffset, rawLine) => {
     const rowType = stringValue(row.type);
     if (row.isSidechain === true) {
       diagnostics.push({
@@ -453,6 +562,31 @@ function decodeClaudeCode(bytes: Uint8Array): DecodedSession {
       }
       return;
     }
+    const usage = readTokenUsage(message, rawLine, {
+      inputTokens: ["input_tokens", "input"],
+      outputTokens: ["output_tokens", "output"],
+      cacheReadTokens: ["cache_read_input_tokens", "cacheRead"],
+      cacheWriteTokens: ["cache_creation_input_tokens", "cacheWrite"],
+      totalTokens: ["total_tokens"],
+    });
+    const responseId = stringValue(message.id);
+    const stopReason = stringValue(message.stop_reason) ?? stringValue(message.stopReason);
+    const invocationProducerVersion = scalarString(row.version);
+    modelInvocations.push({
+      ...(nativeId === undefined ? {} : { nativeId }),
+      sourceOffset,
+      ...(model === undefined ? {} : { responseModel: model }),
+      ...(responseId === undefined ? {} : { responseId }),
+      ...(stopReason === undefined ? {} : { stopReason }),
+      ...(invocationProducerVersion === undefined ? {} : {
+        producerVersion: invocationProducerVersion,
+      }),
+      ...usage,
+      ...(timestampData === undefined ? {} : {
+        completedAt: timestampData.milliseconds,
+        completedAtPrecise: timestampData.precise,
+      }),
+    });
     if (typeof content === "string") {
       if (content.trim()) emit("message", "assistant", { content, model });
       return;
@@ -501,6 +635,7 @@ function decodeClaudeCode(bytes: Uint8Array): DecodedSession {
     sourceName: "claude-code",
     groupResolved: groupId !== undefined,
     events,
+    modelInvocations,
     diagnostics,
     ...(groupId === undefined ? {} : { groupId }),
     ...(cwd === undefined ? {} : { cwd }),
@@ -660,6 +795,7 @@ function decodeCodex(bytes: Uint8Array): DecodedSession {
     sourceName: "codex",
     groupResolved: groupId !== undefined,
     events,
+    modelInvocations: [],
     diagnostics,
     ...(groupId === undefined ? {} : { groupId }),
     ...(cwd === undefined ? {} : { cwd }),
@@ -672,7 +808,12 @@ function decodeCodex(bytes: Uint8Array): DecodedSession {
 function forEachJsonLine(
   bytes: Uint8Array,
   diagnostics: TrajectoryDiagnostic[],
-  visit: (row: JsonObject, inputLine: number, sourceOffset: bigint) => void,
+  visit: (
+    row: JsonObject,
+    inputLine: number,
+    sourceOffset: bigint,
+    rawLine: string,
+  ) => void,
 ): void {
   const decoder = new TextDecoder("utf-8", { fatal: true });
   let offset = 0;
@@ -685,9 +826,10 @@ function forEachJsonLine(
     const slice = bytes.subarray(offset, lineEnd);
     if (!isAsciiWhitespace(slice)) {
       try {
-        const parsed: unknown = JSON.parse(decoder.decode(slice));
+        const rawLine = decoder.decode(slice);
+        const parsed: unknown = JSON.parse(rawLine);
         if (isObject(parsed)) {
-          visit(parsed, line, BigInt(offset));
+          visit(parsed, line, BigInt(offset), rawLine);
         } else {
           diagnostics.push({
             code: "non_object_json_line",
@@ -719,6 +861,78 @@ function outputText(value: JsonValue | undefined): string {
 
 function nonEmpty(value: string | undefined): string | undefined {
   return value ? value : undefined;
+}
+
+function readTokenUsage(
+  message: JsonObject,
+  rawLine: string,
+  names: Record<
+    "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheWriteTokens" | "totalTokens",
+    string[]
+  >,
+): Partial<DecodedModelInvocation> {
+  if (!isObject(message.usage)) return {};
+  const rawUsage = rawObjectProperty(rawLine, "usage");
+  const usage: Partial<DecodedModelInvocation> = {};
+  for (const [target, sourceNames] of Object.entries(names) as [
+    keyof Pick<
+      DecodedModelInvocation,
+      "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheWriteTokens" | "totalTokens"
+    >,
+    string[],
+  ][]) {
+    for (const sourceName of sourceNames) {
+      const raw = rawUsage === undefined
+        ? undefined
+        : rawSignedIntegerProperty(rawUsage, sourceName);
+      const parsed = raw ?? safeInteger(message.usage[sourceName]);
+      if (parsed !== undefined) {
+        usage[target] = parsed;
+        break;
+      }
+    }
+  }
+  return usage;
+}
+
+function rawObjectProperty(json: string, property: string): string | undefined {
+  const key = `"${property.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")}"`;
+  const match = new RegExp(`${key}\\s*:\\s*\\{`).exec(json);
+  if (!match) return undefined;
+  const start = match.index + match[0].lastIndexOf("{");
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < json.length; index++) {
+    const character = json[index]!;
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === "\"") quoted = false;
+      continue;
+    }
+    if (character === "\"") quoted = true;
+    else if (character === "{") depth++;
+    else if (character === "}" && --depth === 0) return json.slice(start, index + 1);
+  }
+  return undefined;
+}
+
+function rawSignedIntegerProperty(json: string, property: string): bigint | undefined {
+  const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`"${escaped}"\\s*:\\s*(-?\\d+)(?=\\s*[,}])`).exec(json);
+  if (!match) return undefined;
+  const value = BigInt(match[1]!);
+  return value >= -9_223_372_036_854_775_808n &&
+      value <= 9_223_372_036_854_775_807n
+    ? value
+    : undefined;
+}
+
+function safeInteger(value: JsonValue | undefined): bigint | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value)
+    ? BigInt(value)
+    : undefined;
 }
 
 function normalizeEvent(
@@ -792,6 +1006,67 @@ function normalizeEvent(
     ...(event.toolName === undefined ? {} : { toolName: event.toolName }),
     isError: event.isError ?? false,
   });
+}
+
+function normalizeInvocation(
+  invocation: DecodedModelInvocation,
+  groupId: string,
+  baseByteOffset: bigint,
+): ModelInvocationIR {
+  const absoluteOffset = invocation.sourceOffset === undefined
+    ? undefined
+    : invocation.sourceOffset + baseByteOffset;
+  const identity = invocation.nativeId ??
+    (absoluteOffset === undefined
+      ? invocation.responseId ?? "model-invocation"
+      : sha256(`${groupId}|byte|${absoluteOffset}`));
+  const usage = {
+    ...(invocation.inputTokens === undefined ? {} : { inputTokens: invocation.inputTokens }),
+    ...(invocation.outputTokens === undefined ? {} : { outputTokens: invocation.outputTokens }),
+    ...(invocation.cacheReadTokens === undefined ? {} : {
+      cacheReadTokens: invocation.cacheReadTokens,
+    }),
+    ...(invocation.cacheWriteTokens === undefined ? {} : {
+      cacheWriteTokens: invocation.cacheWriteTokens,
+    }),
+    ...(invocation.totalTokens === undefined ? {} : { totalTokens: invocation.totalTokens }),
+  };
+  return {
+    id: sha256(compactJson([groupId, identity, "model-invocation"])),
+    ...(invocation.nativeId === undefined ? {} : { nativeRecordId: invocation.nativeId }),
+    ...(invocation.sourceSequence === undefined ? {} : {
+      sourceSequence: invocation.sourceSequence,
+    }),
+    ...(absoluteOffset === undefined ? {} : { sourceOffset: absoluteOffset }),
+    ...(invocation.provider === undefined ? {} : { provider: invocation.provider }),
+    ...(invocation.apiFamily === undefined ? {} : { apiFamily: invocation.apiFamily }),
+    ...(invocation.requestedModel === undefined ? {} : {
+      requestedModel: invocation.requestedModel,
+    }),
+    ...(invocation.responseModel === undefined ? {} : {
+      responseModel: invocation.responseModel,
+    }),
+    ...(invocation.responseId === undefined ? {} : { responseId: invocation.responseId }),
+    ...(invocation.stopReason === undefined ? {} : { stopReason: invocation.stopReason }),
+    ...(invocation.producerVersion === undefined ? {} : {
+      producerVersion: invocation.producerVersion,
+    }),
+    ...(Object.keys(usage).length === 0 ? {} : { usage }),
+    ...(invocation.startedAt === undefined ? {} : { startedAt: invocation.startedAt }),
+    ...(invocation.startedAtPrecise === undefined ? {} : {
+      startedAtPrecise: invocation.startedAtPrecise,
+    }),
+    ...(invocation.firstResponseAt === undefined ? {} : {
+      firstResponseAt: invocation.firstResponseAt,
+    }),
+    ...(invocation.firstResponseAtPrecise === undefined ? {} : {
+      firstResponseAtPrecise: invocation.firstResponseAtPrecise,
+    }),
+    ...(invocation.completedAt === undefined ? {} : { completedAt: invocation.completedAt }),
+    ...(invocation.completedAtPrecise === undefined ? {} : {
+      completedAtPrecise: invocation.completedAtPrecise,
+    }),
+  };
 }
 
 function createRecord(

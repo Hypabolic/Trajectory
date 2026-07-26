@@ -11,7 +11,8 @@ or used as this workspace's module structure.
 The implementation retains four package boundaries:
 
 - `@hypabolic/trajectory`: byte-oriented core, Pi, Claude Code, and Codex
-  normalization, identity, and projections;
+  normalization, lossless source-native invocation metadata, identity, and
+  projections;
 - `@hypabolic/trajectory-node`: explicit-root local-store listing for all three
   implemented sources;
 - `@hypabolic/trajectory-otel`: optional OpenTelemetry projection and emission;
