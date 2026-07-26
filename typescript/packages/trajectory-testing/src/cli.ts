@@ -214,7 +214,7 @@ async function executeListing(repositoryRoot: string, manifest: Manifest): Promi
       pages.push({
         items: page.items.map((item) => ({
           id: item.id,
-          path: item.path.replace(root, "$ROOT"),
+          path: item.path.replace(root, "$ROOT").replaceAll("\\", "/"),
           updated_at: item.updatedAt,
           size_bytes: item.sizeBytes,
         })),
