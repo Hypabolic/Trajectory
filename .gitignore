@@ -5,6 +5,8 @@
 
 # dotenv files
 .env
+.toolchains/
+/rust/target/
 
 # User-specific files
 *.rsuser

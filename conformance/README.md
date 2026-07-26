@@ -66,10 +66,27 @@ python3 conformance/verify.py --repository-root . --source pi -- \
 ```
 
 `--source` is repeatable and selects only manifests a runtime currently
-advertises. Omitting it preserves the original behavior and runs every case.
+advertises. `--operation` is also repeatable and selects the operations
+implemented by the current capability slice. Omitting either filter preserves
+the original behavior for that dimension.
 The TypeScript runner is private test infrastructure in
 `@hypabolic/trajectory-testing`; it is not a public interchange API.
 
-Future Rust and later TypeScript source slices consume the same request schema
-and produce the same response schema. The verifier command is repeated with
-each runner; no case or protocol redesign is required.
+## Rust runner
+
+Build the workspace and run the ML3 Pi capability set:
+
+```bash
+cargo +stable build --manifest-path rust/Cargo.toml \
+  --release --bin trajectory-conformance
+python3 conformance/verify.py --repository-root . --source pi \
+  --operation normalize-letta \
+  --operation normalize-canonical \
+  --operation normalize-hypabolic \
+  --operation list-trajectories -- \
+  rust/target/release/trajectory-conformance
+```
+
+The executable is unpublished private test infrastructure. Later Rust and
+TypeScript slices consume the same request and response schemas; runners add
+operations and sources without a protocol redesign.

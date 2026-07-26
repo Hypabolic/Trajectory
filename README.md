@@ -11,7 +11,7 @@ wire contracts and conformance cases:
 | --- | --- | --- |
 | .NET | `Hypabolic.Trajectory` | Implemented |
 | TypeScript | `@hypabolic/trajectory` | Pi vertical path implemented; unpublished |
-| Rust | `hypabolic-trajectory` | Planned |
+| Rust | `hypabolic-trajectory` | Pi vertical path implemented; unpublished |
 
 The current .NET runtime supports Pi, Claude Code, and Codex transcripts,
 explicit-root local-store listing, trimming and Native AOT, and these
@@ -25,12 +25,13 @@ deterministic projections:
 - OpenTelemetry GenAI span sets through the optional
   `Hypabolic.Trajectory.OpenTelemetry` package.
 
-Rust and TypeScript packages have not been published. The TypeScript Pi runtime
-is a fresh Hypabolic implementation built from this repository's specifications
-and conformance cases. It supports Pi normalization, all deterministic
-projections, explicit-root Pi listing, and the private conformance protocol.
-Claude Code and Codex remain planned for TypeScript. The pinned
-`letta-ai/trajectory` package is used only as a black-box compatibility oracle.
+Rust and TypeScript packages have not been published. Both Pi runtimes are
+independent implementations built from this repository's specifications and
+conformance cases. TypeScript supports all deterministic projections; Rust ML3
+supports the three identity-bearing projections. Both provide explicit-root Pi
+listing and the private conformance protocol. Claude Code and Codex remain
+planned for both runtimes. The pinned `letta-ai/trajectory` package is used
+only as a black-box compatibility oracle.
 
 ## Architecture
 
@@ -57,6 +58,7 @@ core.
 contracts/       versioned schemas and normative behavioral specifications
 conformance/     shared native fixtures, expected outputs, stores, and protocol
 dotnet/          current .NET source, tests, AOT smoke app, and solution
+rust/            independent Rust workspace, core crate, and private runner
 typescript/      independent TypeScript packages, tests, and private runner
 docs/            product architecture, parity baseline, and roadmap
 ```
@@ -124,6 +126,36 @@ python3 conformance/verify.py --repository-root . --source pi -- \
 `@hypabolic/trajectory-otel` owns the optional OpenTelemetry projection, and
 `@hypabolic/trajectory-testing` owns the unpublished runner.
 
+## Build and test Rust
+
+The Rust workspace uses Rust 2024, has an MSRV of 1.85, and is tested on MSRV
+and stable across Linux, macOS, and Windows.
+
+```bash
+cargo +1.85.0 test --manifest-path rust/Cargo.toml --workspace --locked
+cargo +stable fmt --manifest-path rust/Cargo.toml --all -- --check
+cargo +stable clippy --manifest-path rust/Cargo.toml \
+  --workspace --all-targets -- -D warnings
+```
+
+Run ML3's identity-bearing Pi operations and listing through the Rust runner:
+
+```bash
+cargo +stable build --manifest-path rust/Cargo.toml \
+  --release --bin trajectory-conformance
+python3 conformance/verify.py --repository-root . --source pi \
+  --operation normalize-letta \
+  --operation normalize-canonical \
+  --operation normalize-hypabolic \
+  --operation list-trajectories -- \
+  rust/target/release/trajectory-conformance
+```
+
+The core crate owns the byte-oriented source and projection traits, typed
+models/errors, canonical identity, and synchronous explicit-root listing. It
+does not depend on SQLite or OpenTelemetry. See [rust/README.md](rust/README.md)
+for the package boundary and full validation commands.
+
 ## .NET usage
 
 ```csharp
@@ -177,6 +209,6 @@ See:
 
 ## Roadmap
 
-ML1 established the shared foundation and ML2 adds the independent TypeScript
-Pi vertical path. ML3 is next: a native Rust Pi vertical path governed by the
-same contracts and shared cases.
+ML1 established the shared foundation; ML2 and ML3 add independent TypeScript
+and Rust Pi vertical paths. ML4 is next: bring TypeScript to the current
+Claude Code and Codex source baseline.
