@@ -6,6 +6,10 @@ Reference reviewed: `letta-ai/trajectory` `main`, package version `0.2.0` at the
 
 This document defines what “feature parity” means for the .NET implementation of Trajectory and records the gap between that target and the current prototype.
 
+For v1 release scope, Letta Code, OpenHands, and Deep Agents checkpoint
+integrations are deferred support goals. Their parity requirements remain
+recorded here for future implementation but are not v1 acceptance criteria.
+
 ## Parity target
 
 The .NET implementation of Trajectory reaches Letta parity when the same supported source input and equivalent options produce:
@@ -14,7 +18,7 @@ The .NET implementation of Trajectory reaches Letta parity when the same support
 2. identical library-owned canonical records, identity fields, ordering fields, hashes, configuration, and diagnostics;
 3. equivalent fatal error codes and recoverable cleanup behaviour;
 4. equivalent local trajectory listings and cursor semantics;
-5. equivalent Deep Agents checkpoint selection and normalized messages;
+5. for the post-v1 Deep Agents capability, equivalent checkpoint selection and normalized messages;
 6. deterministic results across reruns, chunk boundaries, and input arrival order where the upstream contract guarantees it.
 
 Exact JSON byte equality is required for golden compatibility fixtures after line-ending normalization and a defined canonical serializer. Where the TypeScript runtime exposes typed objects rather than serialized bytes, field values, ordering, omission/null rules, and timestamp text must still match exactly.
@@ -105,11 +109,11 @@ contracts until the first package release.
 | Pi | Implemented through all three outputs with pinned parity fixtures | Keep covered by differential parity and regression tests |
 | Claude Code | Implemented through all three outputs with version-family fixtures and listing | Keep covered by differential parity and regression tests |
 | Codex | Implemented with true UTF-8 byte offsets, arbitrary partial chunks, group enforcement, semantic tool variants, and listing | Keep covered by differential parity and regression tests |
-| Letta Code | Enum value only | Full client transcript decoder and row/native identity rules |
+| Letta Code | Enum value only; post-v1 backlog | Full client transcript decoder and row/native identity rules |
 | OpenClaw | Enum value only | Full wrapper/message decoder and byte fallback identity |
-| OpenHands | Enum value only | Array/envelope event decoding and event identity |
+| OpenHands | Enum value only; post-v1 backlog | Array/envelope event decoding and event identity |
 | Hermes | Enum value only | Array/envelope decoding and SQLite listing/export support |
-| Deep Agents | Enum value only | Optional SQLite/checkpoint package and exact checkpoint reduction |
+| Deep Agents | Enum value only; post-v1 backlog | Optional SQLite/checkpoint package and exact checkpoint reduction |
 | Tool linking | Shared pre-pass implements duplicate repair, reverse-arrival linking, and partial orphan policy | Extend source fixtures as later adapters introduce new native shapes |
 | Timestamps | Exact preservation/interpolation/synthesis policy implemented | Keep source-specific timestamp representations covered |
 | Validation | Whole/partial normalized validation and checked schemas implemented | Add public validation surface in Slice 10 |

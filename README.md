@@ -233,5 +233,7 @@ ML1 established the shared foundation; ML2 and ML3 added independent
 TypeScript and Rust Pi vertical paths; ML4 brought TypeScript to the current
 .NET Pi, Claude Code, and Codex source baseline; ML5 and ML6 brought Rust to
 the same source baseline; ML7 completed output and preview-distribution parity
-across all three implementations. ML8 is next: add Letta Code across all three
-runtimes.
+across all three implementations. ML9 is next: add OpenClaw across all three
+runtimes. Letta Code (ML8), OpenHands (ML10), and Deep Agents checkpoint
+integrations (ML12) remain accepted post-v1 support goals and are not part of
+the v1 required capability set.

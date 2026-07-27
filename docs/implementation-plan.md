@@ -30,8 +30,11 @@ This document remains the detailed .NET behavioural and source-acceptance baseli
 | 2 — Pi normalization and canonical parity | Complete |
 | 3 — Claude Code end-to-end parity | Complete |
 | 4 — Codex end-to-end parity | Complete |
-| 5 — Letta Code end-to-end parity | Re-sequenced as multi-language ML8 |
-| 6–9 — Remaining source integrations | Re-sequenced as multi-language ML9–ML12 |
+| 5 — Letta Code end-to-end parity | Post-v1 backlog as multi-language ML8 |
+| 6 — OpenClaw end-to-end parity | Re-sequenced as v1 multi-language ML9 |
+| 7 — OpenHands end-to-end parity | Post-v1 backlog as multi-language ML10 |
+| 8 — Hermes end-to-end parity | Re-sequenced as v1 multi-language ML11 |
+| 9 — Deep Agents optional SQLite package | Post-v1 backlog as multi-language ML12 |
 | 10 — Additional projections, OpenTelemetry, and extension API | Complete |
 | 11 — Differential parity, performance, and package readiness | Expanded by ML1–ML7 and ML13 |
 
@@ -39,11 +42,10 @@ ML1 — shared contracts and repository foundation — ML2, the independent
 TypeScript Pi vertical path, and ML3, the native Rust Pi vertical path, are
 complete. ML4 brought TypeScript to the current Pi, Claude Code, and Codex
 baseline, ML5–ML6 brought Rust to the same source baseline, and ML7 completed
-output and preview-distribution parity. ML8, Letta Code across all three
-runtimes, is next. Do not begin
-Letta Code as a .NET-only slice; its existing requirements below are retained
-and become the .NET portion of multi-language ML8 after Rust and TypeScript
-reach the Pi, Claude Code, and Codex baseline.
+output and preview-distribution parity. ML9, OpenClaw across all three runtimes,
+is next. Letta Code (ML8), OpenHands (ML10), and Deep Agents checkpoint
+integrations (ML12) are retained below as post-v1 behavioural backlogs. Do not
+begin any of them as a .NET-only slice.
 
 ## Planning rules
 
@@ -176,6 +178,9 @@ Codex rollout JSONL supports full transcripts and arbitrary append-only chunks w
 
 ## Slice 5 — Letta Code end-to-end parity
 
+Post-v1 backlog. This slice is not required for v1 and, when scheduled, must be
+implemented as multi-language ML8 rather than as a .NET-only capability.
+
 ### Outcome
 
 Letta Code client reflection transcripts normalize and list correctly, including historical id-less rows and unfinished tools.
@@ -224,6 +229,9 @@ OpenClaw session files normalize through the shared Pi-family semantic model wit
 
 ## Slice 7 — OpenHands end-to-end parity
 
+Post-v1 backlog. This slice is not required for v1 and, when scheduled, must be
+implemented as multi-language ML10 rather than as a .NET-only capability.
+
 ### Outcome
 
 OpenHands event exports normalize from either array or API envelope forms and list from local event directories.
@@ -270,6 +278,9 @@ Hermes session exports normalize from row arrays or session envelopes and local 
 - Core normalization remains independent of the concrete SQLite provider.
 
 ## Slice 9 — Deep Agents optional SQLite package
+
+Post-v1 backlog. This integration is not required for v1 and, when scheduled,
+must be implemented as multi-language ML12 through optional ecosystem packages.
 
 ### Outcome
 
