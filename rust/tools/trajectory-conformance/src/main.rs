@@ -11,7 +11,7 @@ use hypabolic_trajectory::{
     ListingOptions, NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError,
     TruncationStrategy, list_claude_code_trajectories, list_codex_trajectories,
     list_pi_trajectories, normalize_claude_code, normalize_codex, normalize_pi, project_canonical,
-    project_hypabolic, project_letta,
+    project_hypabolic, project_letta, project_minimal_jsonl, project_openai, project_opentelemetry,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -139,7 +139,7 @@ fn run() -> Result<Value, String> {
     }
     if !matches!(manifest.source.as_str(), "pi" | "claude-code" | "codex") {
         return Err(format!(
-            "Rust ML6 does not support source '{}'.",
+            "Rust ML7 does not support source '{}'.",
             manifest.source
         ));
     }
@@ -236,9 +236,12 @@ fn execute(
         "normalize-letta" => project_letta(&trajectory),
         "normalize-canonical" => project_canonical(&trajectory),
         "normalize-hypabolic" => project_hypabolic(&trajectory),
+        "project-openai" => project_openai(&trajectory),
+        "project-minimal-jsonl" => project_minimal_jsonl(&trajectory),
+        "project-otel" => project_opentelemetry(&trajectory),
         _ => Err(TrajectoryError::new(
             "unknown_operation",
-            format!("Rust ML6 does not support operation '{operation}'."),
+            format!("Rust ML7 does not support operation '{operation}'."),
         )),
     }?;
     Ok((output, trajectory.diagnostics))

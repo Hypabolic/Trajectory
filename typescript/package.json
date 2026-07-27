@@ -1,7 +1,7 @@
 {
   "name": "@hypabolic/trajectory-workspace",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -13,7 +13,8 @@
     "build": "npm run build --workspaces --if-present",
     "clean": "npm run clean --workspaces --if-present",
     "test": "npm run build && node --test test/*.test.mjs",
-    "typecheck": "npm run build && npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run build && npm run typecheck --workspaces --if-present",
+    "benchmark": "npm run build && node benchmarks/benchmark.mjs"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
