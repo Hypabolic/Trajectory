@@ -15,6 +15,8 @@ export interface ProjectionOptions {
   readonly writeIndented?: boolean;
 }
 
+export type ProjectionWriter = (chunk: string) => void;
+
 export function projectLetta(trajectory: TrajectoryIR): JsonObject {
   return {
     records: trajectory.records.map(toLetta),
@@ -54,27 +56,31 @@ export function projectOpenAI(trajectory: TrajectoryIR): JsonValue[] {
 }
 
 export function projectMinimalJsonl(trajectory: TrajectoryIR): string {
-  return trajectory.records.map((record) => {
-    const value: JsonObject = {
-      id: record.id,
-      order: record.order,
-      kind: record.kind.replaceAll("_", ""),
-      role: record.role,
-    };
-    if (record.timestamp !== null) value.timestamp = formatOffset(record.timestamp);
-    if (record.content !== undefined) value.content = record.content;
-    if (record.toolCallId !== undefined) value.tool_call_id = record.toolCallId;
-    if (record.toolName !== undefined) value.tool_name = record.toolName;
-    if (record.isError !== undefined) value.is_error = record.isError;
-    if (record.toolCalls !== undefined) {
-      value.tool_calls = record.toolCalls.map((call) => ({
-        id: call.id,
-        name: call.name,
-        arguments_json: call.argumentsJson,
-      }));
-    }
-    return relaxedJson(value);
-  }).join("\n") + "\n";
+  return [...minimalJsonlChunks(trajectory)].join("");
+}
+
+/** Yields one complete JSONL record at a time, including its final newline. */
+export function* minimalJsonlChunks(trajectory: TrajectoryIR): Generator<string> {
+  for (const record of trajectory.records) {
+    yield `${relaxedJson(minimalRecord(record))}\n`;
+  }
+}
+
+/** Writes minimal JSONL incrementally without materializing the complete output. */
+export function writeMinimalJsonl(
+  trajectory: TrajectoryIR,
+  write: ProjectionWriter,
+): void {
+  for (const chunk of minimalJsonlChunks(trajectory)) write(chunk);
+}
+
+/** Writes any materialized JSON projection through an ecosystem-native callback. */
+export function writeSerializedProjection(
+  value: JsonValue,
+  write: ProjectionWriter,
+  options?: ProjectionOptions,
+): void {
+  write(serializeProjection(value, options));
 }
 
 export function projectCanonical(trajectory: TrajectoryIR): JsonObject {
@@ -224,6 +230,28 @@ function hypabolicRecord(record: IRRecord): JsonObject {
     record_sha256: record.hashes.recordSha256,
   };
   return output;
+}
+
+function minimalRecord(record: IRRecord): JsonObject {
+  const value: JsonObject = {
+    id: record.id,
+    order: record.order,
+    kind: record.kind.replaceAll("_", ""),
+    role: record.role,
+  };
+  if (record.timestamp !== null) value.timestamp = formatOffset(record.timestamp);
+  if (record.content !== undefined) value.content = record.content;
+  if (record.toolCallId !== undefined) value.tool_call_id = record.toolCallId;
+  if (record.toolName !== undefined) value.tool_name = record.toolName;
+  if (record.isError !== undefined) value.is_error = record.isError;
+  if (record.toolCalls !== undefined) {
+    value.tool_calls = record.toolCalls.map((call) => ({
+      id: call.id,
+      name: call.name,
+      arguments_json: call.argumentsJson,
+    }));
+  }
+  return value;
 }
 
 function recordType(record: IRRecord): string {

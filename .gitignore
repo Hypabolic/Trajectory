@@ -298,6 +298,8 @@ FakesAssemblies/
 .ntvs_analysis.dat
 node_modules/
 dist/
+typescript/packages/trajectory/contracts/
+rust/crates/hypabolic-trajectory/contracts/
 
 # Visual Studio 6 build log
 *.plg

@@ -1,6 +1,6 @@
 {
-  "runtime": "typescript",
-  "slice": "ML4",
+  "runtime": "rust",
+  "slice": "ML7",
   "normalizer_contract_version": "0.2.0",
   "sources": ["pi", "claude-code", "codex"],
   "outputs": [

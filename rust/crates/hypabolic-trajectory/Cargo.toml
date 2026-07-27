@@ -1,6 +1,16 @@
 [package]
 name = "hypabolic-trajectory"
 description = "Native Rust implementation of Hypabolic Trajectory contracts"
+keywords = ["agents", "transcripts", "observability", "jsonl"]
+categories = ["development-tools", "encoding"]
+include = [
+    "Cargo.toml",
+    "README.md",
+    "src/**",
+    "examples/**",
+    "runtime-capabilities.json",
+    "contracts/**",
+]
 readme = "README.md"
 version.workspace = true
 edition.workspace = true

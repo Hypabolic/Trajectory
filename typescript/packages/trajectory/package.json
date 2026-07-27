@@ -1,7 +1,16 @@
 {
   "name": "@hypabolic/trajectory",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Normalize coding-agent transcripts into deterministic Trajectory contracts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hypabolic/Trajectory.git",
+    "directory": "typescript/packages/trajectory"
+  },
+  "keywords": ["agents", "transcripts", "observability", "jsonl"],
+  "sideEffects": false,
+  "publishConfig": { "access": "public", "provenance": true },
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -13,11 +22,14 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "contracts",
+    "runtime-capabilities.json"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "tsc --build --clean tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "node ../../tools/copy-contracts.mjs"
   }
 }

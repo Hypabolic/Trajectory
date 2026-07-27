@@ -240,9 +240,9 @@ jobs:
         shell: bash
         run: |
           install_root=$(mktemp -d)
-          npm init --prefix "$install_root" -y
-          npm install --prefix "$install_root" "$PWD"/../artifacts/npm/*.tgz --ignore-scripts
           cd "$install_root"
+          npm init -y
+          npm install "$OLDPWD"/../artifacts/npm/*.tgz --ignore-scripts
           node --input-type=module -e "
             import { TrajectoryEngine } from '@hypabolic/trajectory';
             import { listTrajectories } from '@hypabolic/trajectory-node';
@@ -297,11 +297,15 @@ jobs:
             exit 1
           fi
       - name: Package and verify the core crate
-        working-directory: rust
-        run: cargo +stable package -p hypabolic-trajectory --locked
+        run: |
+          python3 tools/prepare_rust_package.py
+          git check-ignore -q rust/crates/hypabolic-trajectory/contracts/compatibility.json
+          test -z "$(git status --porcelain --untracked-files=all -- rust/crates/hypabolic-trajectory/contracts)"
+          cargo +stable package --manifest-path rust/Cargo.toml -p hypabolic-trajectory --locked --allow-dirty
+          cargo +stable package --manifest-path rust/Cargo.toml -p hypabolic-trajectory-opentelemetry --list
 
   rust-conformance:
-    name: Shared conformance / Rust source baseline
+    name: Shared conformance / Rust output parity
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -312,25 +316,104 @@ jobs:
       - name: Build Rust conformance runner
         run: cargo +stable build --manifest-path rust/Cargo.toml --release --locked --bin trajectory-conformance
       - name: Validate Rust capability manifest
-        run: >-
-          jq -e
-          '.runtime == "rust" and .slice == "ML6"
-          and .normalizer_contract_version == "0.2.0"
-          and .sources == ["pi", "claude-code", "codex"]
-          and .outputs == ["letta-trajectory-v1", "letta-canonical-v1", "hypabolic-trajectory-v1"]'
-          rust/runtime-capabilities.json > /dev/null
-      - name: Run every ML6 shared source operation twice
-        shell: bash
         run: |
-          for source in pi claude-code codex; do
-            python3 conformance/verify.py --repository-root . --source "$source" \
-              --operation normalize-letta \
-              --operation normalize-canonical \
-              --operation normalize-hypabolic \
-              --operation list-trajectories -- \
-              rust/target/release/trajectory-conformance
-          done
+          jq -e '
+            .runtime == "rust"
+            and .slice == "ML7"
+            and .normalizer_contract_version == "0.2.0"
+            and .sources == ["pi", "claude-code", "codex"]
+            and .outputs == [
+              "letta-trajectory-v1",
+              "letta-canonical-v1",
+              "hypabolic-trajectory-v1",
+              "openai-chat-messages",
+              "jsonl-minimal",
+              "otel-genai-spans-v1"
+            ]
+          ' rust/crates/hypabolic-trajectory/runtime-capabilities.json > /dev/null
+      - name: Run every advertised shared case and output twice
+        run: >-
+          python3 conformance/verify.py --repository-root . --
+          rust/target/release/trajectory-conformance
       - name: Prove checked-in identity goldens are unchanged
         run: sha256sum --check conformance/identity-baseline.sha256
       - name: Reject fixture mutation
         run: git diff --exit-code -- contracts conformance
+
+  preview-release:
+    name: Preview packages, evidence, and benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Validate synchronized release metadata
+        run: >-
+          python3 tools/validate_release_metadata.py
+          --repository-root .
+          --evidence artifacts/evidence/provenance.json
+      - name: Restore preview builds
+        run: |
+          dotnet restore dotnet/Trajectory.sln
+          dotnet restore dotnet/benchmarks/Trajectory.Benchmarks/Trajectory.Benchmarks.csproj
+          npm ci --prefix typescript
+      - name: Build and dry-run NuGet packages
+        run: |
+          dotnet pack dotnet/src/Trajectory/Trajectory.csproj -c Release --no-restore -o artifacts/preview/nuget
+          dotnet pack dotnet/src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj -c Release --no-restore -o artifacts/preview/nuget
+          dotnet pack dotnet/src/Trajectory.Testing/Trajectory.Testing.csproj -c Release --no-restore -o artifacts/preview/nuget
+          consumer=$(mktemp -d)
+          dotnet new console --output "$consumer" --framework net10.0
+          dotnet add "$consumer" package Hypabolic.Trajectory --version 0.1.0 --source "$PWD/artifacts/preview/nuget"
+          dotnet build "$consumer" --no-restore
+      - name: Build and dry-run npm packages
+        working-directory: typescript
+        run: |
+          npm run build
+          mkdir -p ../artifacts/preview/npm
+          npm pack --workspace @hypabolic/trajectory \
+            --workspace @hypabolic/trajectory-node \
+            --workspace @hypabolic/trajectory-otel \
+            --pack-destination ../artifacts/preview/npm
+          npm publish --dry-run --workspace @hypabolic/trajectory \
+            --workspace @hypabolic/trajectory-node \
+            --workspace @hypabolic/trajectory-otel
+      - name: Build and dry-run crates
+        run: |
+          python3 tools/prepare_rust_package.py
+          git check-ignore -q rust/crates/hypabolic-trajectory/contracts/compatibility.json
+          test -z "$(git status --porcelain --untracked-files=all -- rust/crates/hypabolic-trajectory/contracts)"
+          cargo +stable package --manifest-path rust/Cargo.toml -p hypabolic-trajectory --locked --allow-dirty
+          cargo +stable package --manifest-path rust/Cargo.toml \
+            -p hypabolic-trajectory-opentelemetry --list \
+            > artifacts/evidence/rust-otel-package-files.txt
+          mkdir -p artifacts/preview/crates
+          cp rust/target/package/*.crate artifacts/preview/crates/
+      - name: Generate dependency inventories and package checksums
+        shell: bash
+        run: |
+          dotnet list dotnet/Trajectory.sln package --include-transitive --format json > artifacts/evidence/dotnet-packages.json
+          (cd typescript && npm sbom --sbom-format cyclonedx) > artifacts/evidence/npm.cdx.json
+          cargo +stable metadata --manifest-path rust/Cargo.toml --format-version 1 --locked > artifacts/evidence/cargo-metadata.json
+          find artifacts/preview -type f -print0 | sort -z | xargs -0 sha256sum > artifacts/evidence/package-sha256.txt
+      - name: Run representative measurements
+        run: |
+          mkdir -p artifacts/benchmarks
+          dotnet run --project dotnet/benchmarks/Trajectory.Benchmarks/Trajectory.Benchmarks.csproj -c Release --no-restore > artifacts/benchmarks/dotnet.json
+          npm run --prefix typescript benchmark > artifacts/benchmarks/typescript.json
+          cargo +stable run --manifest-path rust/Cargo.toml -p hypabolic-trajectory --example benchmark --release --locked > artifacts/benchmarks/rust.json
+      - name: Upload preview evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml7-preview-release
+          path: artifacts

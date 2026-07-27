@@ -7,7 +7,9 @@ import test from "node:test";
 
 import {
   normalizeToIR,
+  projectMinimalJsonl,
   TrajectoryNormalizationError,
+  writeMinimalJsonl,
 } from "@hypabolic/trajectory";
 import { projectOpenTelemetry } from "@hypabolic/trajectory-otel";
 
@@ -61,6 +63,20 @@ test("partial mode accepts a cross-chunk result and applies baseByteOffset", () 
   assert.equal(trajectory.records.length, 2);
   assert.equal(trajectory.records[1].toolCallId, "prior");
   assert.equal(trajectory.records[1].provenance.sourceOffset, 0n);
+});
+
+test("minimal JSONL writer preserves exact projection chunks", () => {
+  const trajectory = normalizeToIR({
+    source: "pi",
+    transcriptBytes: readFileSync(
+      resolve(repository, "conformance/cases/pi/unicode-boundaries/input.jsonl"),
+    ),
+  });
+  const chunks = [];
+  writeMinimalJsonl(trajectory, (chunk) => chunks.push(chunk));
+  assert.equal(chunks.length, trajectory.records.length);
+  assert.equal(chunks.join(""), projectMinimalJsonl(trajectory));
+  assert.ok(chunks.every((chunk) => chunk.endsWith("\n")));
 });
 
 test("null bounds mean unbounded rather than defaults", () => {

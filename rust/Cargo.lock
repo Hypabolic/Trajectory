@@ -91,13 +91,21 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hypabolic-trajectory"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "base64",
  "chrono",
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "hypabolic-trajectory-opentelemetry"
+version = "0.1.0"
+dependencies = [
+ "hypabolic-trajectory",
+ "serde_json",
 ]
 
 [[package]]
@@ -218,7 +226,7 @@ dependencies = [
 
 [[package]]
 name = "trajectory-conformance"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "hypabolic-trajectory",
