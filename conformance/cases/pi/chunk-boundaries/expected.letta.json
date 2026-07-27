@@ -1,0 +1,1 @@
+{"records":[{"role":"meta","source":"pi","cwd":"/tmp/π"},{"role":"user","content":"byte \uD83D\uDE00 boundary","timestamp":"2026-02-03T00:00:00.000Z"},{"role":"assistant","content":"done","timestamp":"2026-02-03T00:00:01.000Z"}],"diagnostics":[{"code":"invalid_json_line","message":"Skipped invalid JSON on line 2.","inputLine":2}]}

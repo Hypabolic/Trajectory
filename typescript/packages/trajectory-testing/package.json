@@ -1,0 +1,31 @@
+{
+  "name": "@hypabolic/trajectory-testing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "trajectory-conformance": "./dist/cli.js"
+  },
+  "dependencies": {
+    "@hypabolic/trajectory": "0.0.0",
+    "@hypabolic/trajectory-node": "0.0.0",
+    "@hypabolic/trajectory-otel": "0.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "tsc --build --clean tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

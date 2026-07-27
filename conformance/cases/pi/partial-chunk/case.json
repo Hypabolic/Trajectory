@@ -1,0 +1,40 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1,
+  "id": "pi/partial-chunk",
+  "operation": {
+    "normalize-canonical": {
+      "expected": "expected.canonical.json",
+      "comparison": "json-exact"
+    },
+    "normalize-hypabolic": {
+      "expected": "expected.hypabolic.json",
+      "comparison": "byte-exact"
+    }
+  },
+  "source": "pi",
+  "transcript": "input.jsonl",
+  "native_container": "pi-session-jsonl-chunk",
+  "source_context": {
+    "group_id": "pi-chunk-session",
+    "base_byte_offset": 4096,
+    "partial": true
+  },
+  "bounds": {},
+  "filters": {},
+  "projection_options": {
+    "write_indented": false
+  },
+  "mode": "partial",
+  "required_capabilities": [
+    "normalize",
+    "normalize-partial",
+    "typed-diagnostics",
+    "deterministic-rerun"
+  ],
+  "expected": {
+    "result": "success",
+    "diagnostic_codes": []
+  },
+  "comparison": "byte-exact"
+}

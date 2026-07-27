@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1,
+  "id": "pi/missing-assistant",
+  "operation": {
+    "normalize-canonical": {
+      "expected": "expected.error.json",
+      "comparison": "json-exact"
+    }
+  },
+  "source": "pi",
+  "transcript": "input.jsonl",
+  "native_container": "pi-session-jsonl",
+  "source_context": {},
+  "bounds": {},
+  "filters": {},
+  "projection_options": {},
+  "mode": "whole",
+  "required_capabilities": [
+    "normalize",
+    "typed-fatal-errors",
+    "deterministic-rerun"
+  ],
+  "expected": {
+    "result": "fatal-error",
+    "diagnostic_codes": []
+  },
+  "comparison": "json-exact"
+}
