@@ -21,6 +21,7 @@ test("workspace packages install and import through public exports", () => {
   assert.deepEqual(Object.keys(TrajectoryNode), [
     "listClaudeCodeTrajectories",
     "listCodexTrajectories",
+    "listOpenClawTrajectories",
     "listPiTrajectories",
     "listTrajectories",
   ]);
@@ -43,7 +44,7 @@ test("runtime capabilities match the authoritative compatibility manifest", asyn
   );
 
   assert.equal(capabilities.runtime, "typescript");
-  assert.equal(capabilities.slice, "ML7");
+  assert.equal(capabilities.slice, "ML9");
   assert.equal(capabilities.normalizer_contract_version, NORMALIZER_CONTRACT_VERSION);
   assert.deepEqual(capabilities.sources, [...ImplementedSources]);
   assert.deepEqual(capabilities.sources, compatibility.implemented.sources);
