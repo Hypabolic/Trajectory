@@ -25,6 +25,7 @@ import {
 import {
   listClaudeCodeTrajectories,
   listCodexTrajectories,
+  listOpenClawTrajectories,
   listPiTrajectories,
 } from "@hypabolic/trajectory-node";
 import { projectOpenTelemetry } from "@hypabolic/trajectory-otel";
@@ -104,8 +105,8 @@ async function execute(request: Request): Promise<unknown> {
   if (!(request.operation in manifest.operation)) {
     throw new Error(`Case '${request.case}' does not declare operation '${request.operation}'.`);
   }
-  if (!["pi", "claude-code", "codex"].includes(manifest.source)) {
-    throw new Error(`TypeScript ML4 does not support source '${manifest.source}'.`);
+  if (!["pi", "claude-code", "codex", "openclaw"].includes(manifest.source)) {
+    throw new Error(`TypeScript does not support source '${manifest.source}'.`);
   }
   try {
     let outputText: string;
@@ -210,7 +211,9 @@ async function executeListing(repositoryRoot: string, manifest: Manifest): Promi
         await utimes(destination, timestamp, timestamp);
       }
     }
-    const listingRoot = manifest.source === "pi" ? root : join(root, "store");
+    const listingRoot = manifest.source === "pi" || manifest.source === "openclaw"
+      ? root
+      : join(root, "store");
     const pages: unknown[] = [];
     let cursor: string | undefined;
     do {
@@ -218,7 +221,9 @@ async function executeListing(repositoryRoot: string, manifest: Manifest): Promi
         ? listClaudeCodeTrajectories
         : manifest.source === "codex"
           ? listCodexTrajectories
-          : listPiTrajectories;
+          : manifest.source === "openclaw"
+            ? listOpenClawTrajectories
+            : listPiTrajectories;
       const page = await list({
         root: listingRoot,
         limit: manifest.listing?.limit ?? 50,

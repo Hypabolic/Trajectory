@@ -145,6 +145,8 @@ pub enum TrajectorySource {
     ClaudeCode,
     /// Codex rollout JSONL.
     Codex,
+    /// OpenClaw session JSONL (Pi-family).
+    OpenClaw,
 }
 
 impl TrajectorySource {
@@ -153,6 +155,7 @@ impl TrajectorySource {
             Self::Pi => "pi",
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
+            Self::OpenClaw => "openclaw",
         }
     }
 }

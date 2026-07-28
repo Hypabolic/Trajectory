@@ -1,0 +1,32 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1,
+  "id": "openclaw/cleanup",
+  "operation": {
+    "normalize-letta": {
+      "expected": "expected.letta.json",
+      "comparison": "json-exact"
+    },
+    "normalize-canonical": {
+      "expected": "expected.canonical.json",
+      "comparison": "json-exact"
+    }
+  },
+  "source": "openclaw",
+  "transcript": "input.jsonl",
+  "native_container": "pi-session-jsonl",
+  "source_context": {},
+  "bounds": {},
+  "filters": {},
+  "projection_options": {},
+  "mode": "whole",
+  "required_capabilities": ["normalize", "typed-diagnostics", "deterministic-rerun"],
+  "expected": {
+    "result": "diagnostics",
+    "diagnostic_codes": [
+      "invalid_json_line",
+      "orphan_tool_result"
+    ]
+  },
+  "comparison": "json-exact"
+}

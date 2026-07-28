@@ -75,7 +75,7 @@
       "properties": {
         "sources": {
           "type": "array",
-          "items": { "enum": ["pi", "claude-code", "codex"] },
+          "items": { "enum": ["pi", "claude-code", "codex", "openclaw"] },
           "uniqueItems": true
         },
         "outputs": {

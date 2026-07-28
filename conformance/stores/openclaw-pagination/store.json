@@ -1,0 +1,25 @@
+{
+  "store_version": 1,
+  "files": [
+    {
+      "path": "agents/agent-a/sessions/older.jsonl",
+      "content": "{}\n",
+      "updated_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "path": "agents/agent-b/sessions/newer.jsonl",
+      "content": "{}\n",
+      "updated_at": "2026-01-02T00:00:00.000Z"
+    },
+    {
+      "path": "agents/agent-b/sessions/ignored.txt",
+      "content": "not a trajectory",
+      "updated_at": "2026-01-03T00:00:00.000Z"
+    },
+    {
+      "path": "sessions/not-openclaw.jsonl",
+      "content": "{}\n",
+      "updated_at": "2026-01-04T00:00:00.000Z"
+    }
+  ]
+}

@@ -5,6 +5,10 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## 0.1.0 — Unreleased
 
+- Added OpenClaw (Pi-family) source adapters, listing, and shared conformance
+  fixtures across .NET, TypeScript, and Rust. Delivery-mirror model placeholders
+  keep assistant prose but are excluded from model metadata.
+
 - Established language-neutral contracts and shared conformance assets.
 - Added native .NET, TypeScript, and Rust implementations for Pi, Claude Code,
   and Codex.

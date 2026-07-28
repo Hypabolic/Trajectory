@@ -10,7 +10,7 @@ mod projection;
 pub use canonical::{canonical_json, relaxed_json};
 pub use listing::{
     ListingOptions, TrajectoryListing, TrajectoryListingPage, list_claude_code_trajectories,
-    list_codex_trajectories, list_pi_trajectories,
+    list_codex_trajectories, list_openclaw_trajectories, list_pi_trajectories,
 };
 pub use model::{
     AppliedConfig, Bounds, Diagnostic, Filters, IrRecord, ModelInvocation, ModelTokenUsage,
@@ -19,8 +19,8 @@ pub use model::{
     TruncationStrategy,
 };
 pub use normalize::{
-    ClaudeCodeSourceAdapter, CodexSourceAdapter, PiSourceAdapter, SourceAdapter,
-    normalize_claude_code, normalize_codex, normalize_pi,
+    ClaudeCodeSourceAdapter, CodexSourceAdapter, OpenClawSourceAdapter, PiSourceAdapter,
+    SourceAdapter, normalize_claude_code, normalize_codex, normalize_openclaw, normalize_pi,
 };
 pub use projection::{
     OutputAdapter, canonical_value, hypabolic_value, letta_value, openai_value,
