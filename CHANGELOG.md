@@ -5,6 +5,15 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## 0.1.0 — Unreleased
 
+- Added multi-registry **Release** workflow (`.github/workflows/release.yml`) to
+  pack and publish synchronized NuGet, npm, and crates.io packages from a
+  version tag (`v*.*.*`) or `workflow_dispatch`. Includes dry-run mode, package
+  content checks, npm provenance, crates.io ordered publish with index retry,
+  GitHub Release notes/assets, MIT `LICENSE`, shared NuGet metadata
+  (`dotnet/Directory.Build.props`), and `tools/assert_release_version.py`.
+  Operator guide: `docs/publishing.md`. Live publish still requires registry
+  secrets and an explicit tag or dispatch with `dry_run=false`.
+
 - Completed ML13 1.0 parity and release hardening. Runtime capability manifests
   advertise slice `ML13` with the full v1 source set (`pi`, `claude-code`,
   `codex`, `openclaw`, `hermes`) and six deterministic outputs. CI capability

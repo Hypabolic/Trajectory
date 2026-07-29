@@ -1,0 +1,428 @@
+name: Release
+
+# Publishes synchronized library packages to NuGet, npm, and crates.io.
+#
+# Real publishes:
+#   - Push a matching tag: git tag v0.1.0 && git push origin v0.1.0
+#   - Or Actions → Release → Run workflow with dry_run=false
+#
+# Dry run (default for workflow_dispatch):
+#   - Packs, validates, and uploads artifacts without registry writes.
+#
+# Required repository secrets for a live publish:
+#   NUGET_API_KEY          NuGet.org API key with push rights
+#   NPM_TOKEN              npm automation token with publish to @hypabolic
+#   CARGO_REGISTRY_TOKEN   crates.io API token
+#
+# See docs/publishing.md for the full process.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Pack and validate without publishing to registries
+        type: boolean
+        default: true
+      version:
+        description: Version when not using a tag (e.g. 0.1.0). Ignored on tag pushes.
+        type: string
+        required: false
+        default: "0.1.0"
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  CARGO_TERM_COLOR: always
+
+jobs:
+  resolve:
+    name: Resolve version and mode
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      dry_run: ${{ steps.meta.outputs.dry_run }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Compute release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+            DRY_RUN=false
+          else
+            VERSION="${{ inputs.version }}"
+            VERSION="${VERSION#v}"
+            TAG="v${VERSION}"
+            if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+              DRY_RUN=true
+            else
+              DRY_RUN=false
+            fi
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version: $VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$DRY_RUN" >> "$GITHUB_OUTPUT"
+          echo "Release version=$VERSION tag=$TAG dry_run=$DRY_RUN"
+
+  validate:
+    name: Validate packages and pack artifacts
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+          registry-url: https://registry.npmjs.org
+          scope: "@hypabolic"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Assert version matches package metadata
+        run: >-
+          python3 tools/assert_release_version.py
+          --repository-root .
+          --version "${{ needs.resolve.outputs.version }}"
+
+      - name: Validate synchronized release metadata
+        run: >-
+          python3 tools/validate_release_metadata.py
+          --repository-root .
+          --evidence artifacts/evidence/provenance.json
+
+      - name: Restore and pack NuGet
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.resolve.outputs.version }}"
+          mkdir -p artifacts/release/nuget
+          dotnet restore dotnet/Trajectory.sln
+          for project in \
+            dotnet/src/Trajectory/Trajectory.csproj \
+            dotnet/src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj \
+            dotnet/src/Trajectory.Testing/Trajectory.Testing.csproj
+          do
+            dotnet pack "$project" -c Release --no-restore \
+              -o artifacts/release/nuget \
+              -p:PackageVersion="$VERSION" \
+              -p:Version="$VERSION"
+          done
+          python3 conformance/check_package.py artifacts/release/nuget
+          consumer=$(mktemp -d)
+          dotnet new console --output "$consumer" --framework net10.0
+          # PackageReference resolution against a local feed for the core package only.
+          dotnet add "$consumer" package Hypabolic.Trajectory \
+            --version "$VERSION" \
+            --source "$PWD/artifacts/release/nuget"
+          # OpenTelemetry package depends on NuGet.org OpenTelemetry packages; restore may hit nuget.org.
+          dotnet restore "$consumer"
+          dotnet build "$consumer" --no-restore
+
+      - name: Build and pack npm
+        working-directory: typescript
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          mkdir -p ../artifacts/release/npm
+          npm pack \
+            --workspace @hypabolic/trajectory \
+            --workspace @hypabolic/trajectory-node \
+            --workspace @hypabolic/trajectory-otel \
+            --pack-destination ../artifacts/release/npm
+          for package in ../artifacts/release/npm/*.tgz; do
+            echo "Contents of $package"
+            tar -tzf "$package" | sort | head -50
+            if tar -tzf "$package" | grep -Eq '(^|/)(src|test|node_modules)/'; then
+              echo "Unexpected source, test, or dependency directory in $package" >&2
+              exit 1
+            fi
+          done
+          # Dry-run always; live publish is a later job.
+          npm publish --dry-run \
+            --workspace @hypabolic/trajectory \
+            --workspace @hypabolic/trajectory-node \
+            --workspace @hypabolic/trajectory-otel
+
+      - name: Package crates
+        run: |
+          set -euo pipefail
+          python3 tools/prepare_rust_package.py
+          git check-ignore -q rust/crates/hypabolic-trajectory/contracts/compatibility.json
+          test -z "$(git status --porcelain --untracked-files=all -- rust/crates/hypabolic-trajectory/contracts)"
+          cargo +stable package --manifest-path rust/Cargo.toml \
+            -p hypabolic-trajectory --locked --allow-dirty
+          cargo +stable package --manifest-path rust/Cargo.toml \
+            -p hypabolic-trajectory-opentelemetry --locked --allow-dirty --list \
+            > artifacts/evidence/rust-otel-package-files.txt
+          # Also materialize the otel crate for artifact upload.
+          cargo +stable package --manifest-path rust/Cargo.toml \
+            -p hypabolic-trajectory-opentelemetry --locked --allow-dirty
+          mkdir -p artifacts/release/crates
+          cp rust/target/package/*.crate artifacts/release/crates/
+
+      - name: Checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          find artifacts/release -type f -print0 | sort -z | xargs -0 sha256sum \
+            > artifacts/evidence/release-package-sha256.txt
+          cat artifacts/evidence/release-package-sha256.txt
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trajectory-release-${{ needs.resolve.outputs.version }}
+          path: |
+            artifacts/release
+            artifacts/evidence
+          if-no-files-found: error
+
+  publish-nuget:
+    name: Publish NuGet
+    needs: [resolve, validate]
+    runs-on: ubuntu-latest
+    if: needs.resolve.outputs.dry_run == 'false'
+    environment: release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: trajectory-release-${{ needs.resolve.outputs.version }}
+          path: artifacts
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Push packages to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NUGET_API_KEY:-}" ]]; then
+            echo "NUGET_API_KEY secret is not configured." >&2
+            exit 1
+          fi
+          shopt -s nullglob
+          packages=(artifacts/release/nuget/*.nupkg)
+          symbols=(artifacts/release/nuget/*.snupkg)
+          if [[ ${#packages[@]} -eq 0 ]]; then
+            echo "No nupkg files found." >&2
+            exit 1
+          fi
+          for pkg in "${packages[@]}"; do
+            echo "Pushing $pkg"
+            dotnet nuget push "$pkg" \
+              --source https://api.nuget.org/v3/index.json \
+              --api-key "$NUGET_API_KEY" \
+              --skip-duplicate
+          done
+          for pkg in "${symbols[@]}"; do
+            echo "Pushing symbols $pkg"
+            dotnet nuget push "$pkg" \
+              --source https://api.nuget.org/v3/index.json \
+              --api-key "$NUGET_API_KEY" \
+              --skip-duplicate
+          done
+
+  publish-npm:
+    name: Publish npm
+    needs: [resolve, validate]
+    runs-on: ubuntu-latest
+    if: needs.resolve.outputs.dry_run == 'false'
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+          registry-url: https://registry.npmjs.org
+          scope: "@hypabolic"
+
+      - name: Build publishable workspaces
+        working-directory: typescript
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Publish @hypabolic packages
+        working-directory: typescript
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "NPM_TOKEN secret is not configured." >&2
+            exit 1
+          fi
+          # Publish dependency order: core → node → otel
+          for workspace in \
+            @hypabolic/trajectory \
+            @hypabolic/trajectory-node \
+            @hypabolic/trajectory-otel
+          do
+            echo "Publishing $workspace"
+            npm publish --workspace "$workspace" --access public --provenance
+          done
+
+  publish-crates:
+    name: Publish crates.io
+    needs: [resolve, validate]
+    runs-on: ubuntu-latest
+    if: needs.resolve.outputs.dry_run == 'false'
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Publish crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
+            echo "CARGO_REGISTRY_TOKEN secret is not configured." >&2
+            exit 1
+          fi
+          python3 tools/prepare_rust_package.py
+          # Core first; optional otel crate depends on it on crates.io.
+          cargo +stable publish --manifest-path rust/Cargo.toml \
+            -p hypabolic-trajectory --locked --allow-dirty
+          # crates.io index can lag; retry otel publish.
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if cargo +stable publish --manifest-path rust/Cargo.toml \
+              -p hypabolic-trajectory-opentelemetry --locked --allow-dirty; then
+              exit 0
+            fi
+            echo "otel publish attempt $attempt failed; waiting for index..."
+            sleep 30
+          done
+          echo "Failed to publish hypabolic-trajectory-opentelemetry after retries." >&2
+          exit 1
+
+  github-release:
+    name: GitHub Release
+    needs: [resolve, validate, publish-nuget, publish-npm, publish-crates]
+    # Run after live publish jobs, or after validate alone when dry-run (publish jobs skipped).
+    if: |
+      always() &&
+      needs.resolve.result == 'success' &&
+      needs.validate.result == 'success' &&
+      (
+        needs.resolve.outputs.dry_run == 'true' ||
+        (
+          needs.publish-nuget.result == 'success' &&
+          needs.publish-npm.result == 'success' &&
+          needs.publish-crates.result == 'success'
+        )
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: trajectory-release-${{ needs.resolve.outputs.version }}
+          path: artifacts
+
+      - name: Build release notes
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.resolve.outputs.version }}"
+          TAG="${{ needs.resolve.outputs.tag }}"
+          DRY="${{ needs.resolve.outputs.dry_run }}"
+          {
+            echo "## Trajectory ${VERSION}"
+            echo
+            if [[ "$DRY" == "true" ]]; then
+              echo "> Dry run — packages were packed and validated but **not** published to registries."
+              echo
+            else
+              echo "Published from commit \`${GITHUB_SHA}\`."
+              echo
+              echo "### Packages"
+              echo
+              echo "**NuGet**"
+              echo "- [Hypabolic.Trajectory](https://www.nuget.org/packages/Hypabolic.Trajectory/${VERSION})"
+              echo "- [Hypabolic.Trajectory.OpenTelemetry](https://www.nuget.org/packages/Hypabolic.Trajectory.OpenTelemetry/${VERSION})"
+              echo "- [Hypabolic.Trajectory.Testing](https://www.nuget.org/packages/Hypabolic.Trajectory.Testing/${VERSION})"
+              echo
+              echo "**npm**"
+              echo "- [@hypabolic/trajectory](https://www.npmjs.com/package/@hypabolic/trajectory/v/${VERSION})"
+              echo "- [@hypabolic/trajectory-node](https://www.npmjs.com/package/@hypabolic/trajectory-node/v/${VERSION})"
+              echo "- [@hypabolic/trajectory-otel](https://www.npmjs.com/package/@hypabolic/trajectory-otel/v/${VERSION})"
+              echo
+              echo "**crates.io**"
+              echo "- [hypabolic-trajectory](https://crates.io/crates/hypabolic-trajectory/${VERSION})"
+              echo "- [hypabolic-trajectory-opentelemetry](https://crates.io/crates/hypabolic-trajectory-opentelemetry/${VERSION})"
+              echo
+            fi
+            echo "Normalizer contract \`0.2.0\`. Capability slice \`ML13\`."
+            echo
+            echo "See [CHANGELOG.md](https://github.com/Hypabolic/Trajectory/blob/${TAG}/CHANGELOG.md) and [docs/publishing.md](https://github.com/Hypabolic/Trajectory/blob/${TAG}/docs/publishing.md)."
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        if: needs.resolve.outputs.dry_run == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: Trajectory ${{ needs.resolve.outputs.version }}
+          body_file: release-notes.md
+          files: |
+            artifacts/release/nuget/*
+            artifacts/release/npm/*
+            artifacts/release/crates/*
+            artifacts/evidence/*
+          fail_on_unmatched_files: false
+          generate_release_notes: true
+
+      - name: Dry-run summary
+        if: needs.resolve.outputs.dry_run == 'true'
+        run: |
+          echo "Dry run complete for v${{ needs.resolve.outputs.version }}."
+          echo "Artifacts uploaded as trajectory-release-${{ needs.resolve.outputs.version }}."
+          echo "To publish for real: push tag v${{ needs.resolve.outputs.version }} or re-run with dry_run=false."
