@@ -49,12 +49,12 @@ def main() -> None:
     for path in runtime_manifests:
         manifest = load_json(path)
         if (
-            manifest.get("slice") != "ML9"
+            manifest.get("slice") != "ML11"
             or manifest.get("outputs") != OUTPUTS
             or manifest.get("sources") != expected_sources
         ):
             raise SystemExit(
-                f"{path.relative_to(root)} does not advertise ML9 source/output parity."
+                f"{path.relative_to(root)} does not advertise ML11 source/output parity."
             )
 
     npm_paths = [

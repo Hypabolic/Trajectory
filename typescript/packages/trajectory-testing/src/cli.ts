@@ -25,6 +25,7 @@ import {
 import {
   listClaudeCodeTrajectories,
   listCodexTrajectories,
+  listHermesTrajectories,
   listOpenClawTrajectories,
   listPiTrajectories,
 } from "@hypabolic/trajectory-node";
@@ -105,7 +106,7 @@ async function execute(request: Request): Promise<unknown> {
   if (!(request.operation in manifest.operation)) {
     throw new Error(`Case '${request.case}' does not declare operation '${request.operation}'.`);
   }
-  if (!["pi", "claude-code", "codex", "openclaw"].includes(manifest.source)) {
+  if (!["pi", "claude-code", "codex", "openclaw", "hermes"].includes(manifest.source)) {
     throw new Error(`TypeScript does not support source '${manifest.source}'.`);
   }
   try {
@@ -223,7 +224,9 @@ async function executeListing(repositoryRoot: string, manifest: Manifest): Promi
           ? listCodexTrajectories
           : manifest.source === "openclaw"
             ? listOpenClawTrajectories
-            : listPiTrajectories;
+            : manifest.source === "hermes"
+              ? listHermesTrajectories
+              : listPiTrajectories;
       const page = await list({
         root: listingRoot,
         limit: manifest.listing?.limit ?? 50,

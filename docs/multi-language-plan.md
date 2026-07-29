@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: accepted; ML1–ML7 and ML9 implemented, ML11 next
+Status: accepted; ML1–ML7, ML9, and ML11 implemented; ML13 next
 
 Planning baseline:
 
@@ -590,6 +590,8 @@ must conform.
 
 ### ML11 — Hermes across all runtimes
 
+Status: complete.
+
 This replaces the current .NET-only Slice 8. Transcript normalization remains
 in core packages; SQLite discovery/export remains optional and independently
 testable.
@@ -698,7 +700,6 @@ compatibility claim.
 
 ## Immediate next action
 
-Implement ML11: Hermes across all three runtimes. Keep Hermes core normalize
-independent of any SQLite provider package, cover message-row and session-envelope
-shapes with shared fixtures, and add optional store listing only in provider
-packages. After Hermes, ML13 is 1.0 parity and release hardening.
+Implement ML13: 1.0 parity and release hardening. Hermes (ML11) is complete across
+all three runtimes with SQLite-free core normalize and empty-page listing for a
+missing store.

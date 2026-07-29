@@ -45,6 +45,26 @@ export async function listOpenClawTrajectories(
   return listDiscovered(options, discoverOpenClaw);
 }
 
+/**
+ * Hermes sessions live in `~/.hermes/state.db`. Core listing stays SQLite-free:
+ * a missing store yields an empty page. Full sessions-table enumeration is
+ * optional/provider-side; pass either the database path or its parent directory.
+ */
+export async function listHermesTrajectories(
+  options: ListingOptions,
+): Promise<TrajectoryListingPage> {
+  return listDiscovered(options, discoverHermes);
+}
+
+async function discoverHermes(root: string): Promise<TrajectoryListing[]> {
+  // SQLite-backed session discovery is intentionally not implemented in the
+  // core Node listing package so package dependencies stay free of native
+  // SQLite bindings. Missing stores list empty; callers export message rows
+  // for normalize. Optional provider packages may replace this discoverer.
+  void root;
+  return [];
+}
+
 async function listDiscovered(
   options: ListingOptions,
   discover: (root: string) => Promise<TrajectoryListing[]>,

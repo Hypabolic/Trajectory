@@ -35,6 +35,7 @@ internal sealed record DecodedSessionContext
     public string? SourceGroupId { get; init; }
     public string? Cwd { get; init; }
     public string? GitBranch { get; init; }
+    public string? Model { get; init; }
     public string? ProducerVersion { get; init; }
     public DateTimeOffset? CreatedAt { get; init; }
 }

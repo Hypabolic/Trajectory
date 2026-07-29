@@ -184,4 +184,16 @@ public static class TrajectoryConverter
             cursor,
             limit,
             cancellationToken);
+
+    public static ValueTask<TrajectoryListingPage> ListHermesTrajectoriesAsync(
+        string? root = null,
+        string? cursor = null,
+        int limit = 50,
+        CancellationToken cancellationToken = default) =>
+        ListTrajectoriesAsync(
+            TrajectorySource.Hermes,
+            root,
+            cursor,
+            limit,
+            cancellationToken);
 }

@@ -107,7 +107,7 @@ internal sealed class TrajectoryNormalizer
             body[index] = StampAndHash(body[index], timestamp);
         }
 
-        var model = ResolveModel(modelCounts);
+        var model = context.Model ?? ResolveModel(modelCounts);
         var meta = BuildMeta(context, groupId, model);
         Validate([meta, .. body], partial);
 

@@ -10,9 +10,10 @@ use chrono::DateTime;
 use hypabolic_trajectory::{
     ListingOptions, NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError,
     TruncationStrategy, list_claude_code_trajectories, list_codex_trajectories,
-    list_openclaw_trajectories, list_pi_trajectories, normalize_claude_code, normalize_codex,
-    normalize_openclaw, normalize_pi, project_canonical, project_hypabolic, project_letta,
-    project_minimal_jsonl, project_openai, project_opentelemetry,
+    list_hermes_trajectories, list_openclaw_trajectories, list_pi_trajectories,
+    normalize_claude_code, normalize_codex, normalize_hermes, normalize_openclaw, normalize_pi,
+    project_canonical, project_hypabolic, project_letta, project_minimal_jsonl, project_openai,
+    project_opentelemetry,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -140,10 +141,10 @@ fn run() -> Result<Value, String> {
     }
     if !matches!(
         manifest.source.as_str(),
-        "pi" | "claude-code" | "codex" | "openclaw"
+        "pi" | "claude-code" | "codex" | "openclaw" | "hermes"
     ) {
         return Err(format!(
-            "Rust ML7 does not support source '{}'.",
+            "Rust does not support source '{}'.",
             manifest.source
         ));
     }
@@ -235,6 +236,7 @@ fn execute(
         "claude-code" => normalize_claude_code(normalize_request),
         "codex" => normalize_codex(normalize_request),
         "openclaw" => normalize_openclaw(normalize_request),
+        "hermes" => normalize_hermes(normalize_request),
         _ => unreachable!("source is validated before execution"),
     }?;
     let output = match operation {
@@ -303,6 +305,7 @@ fn execute_listing(repository_root: &Path, manifest: &Manifest) -> Result<String
                 "claude-code" => list_claude_code_trajectories(&options),
                 "codex" => list_codex_trajectories(&options),
                 "openclaw" => list_openclaw_trajectories(&options),
+                "hermes" => list_hermes_trajectories(&options),
                 _ => unreachable!("source is validated before execution"),
             }?;
             let items = page
