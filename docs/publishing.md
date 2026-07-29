@@ -73,7 +73,9 @@ That helper is for **repo hygiene**, not the release trigger.
 | Environment **`release`** | Gates live publish; must match Trusted Publisher policies |
 | NuGet Trusted Publishing | OIDC for `hypabolic` owner: workflow `release.yml`, env `release` |
 | npm Trusted Publisher | OIDC for `@hypabolic/*` on workflow `release.yml`, env `release` |
-| `CARGO_REGISTRY_TOKEN` | crates.io push (no Trusted Publishing yet) |
+| crates.io Trusted Publishing | OIDC per crate: workflow `release.yml`, env `release` |
+
+No long-lived registry API tokens are required for NuGet, npm, or crates.io.
 
 ### NuGet Trusted Publishing
 
@@ -89,6 +91,21 @@ On [nuget.org](https://www.nuget.org/) → Trusted Publishing, register:
 
 The Release job uses `NuGet/login@v1` with `user: hypabolic` and
 `id-token: write` — no long-lived `NUGET_API_KEY`.
+
+### crates.io Trusted Publishing
+
+On [crates.io](https://crates.io/docs/trusted-publishing), for **each** crate
+(`hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry`):
+
+| Field | Value |
+| --- | --- |
+| Repository | `Hypabolic/Trajectory` |
+| Workflow | `release.yml` |
+| Environment | `release` |
+
+The Release job uses `rust-lang/crates-io-auth-action@v1` (OIDC → short-lived
+token) and `cargo publish` with `CARGO_REGISTRY_TOKEN` set from that token.
+No long-lived crates.io API token is stored in GitHub.
 
 ### npm first create (bootstrap)
 
@@ -119,6 +136,7 @@ cargo add hypabolic-trajectory@0.1.0
 | GitHub Release | Pipeline creates it | Pipeline creates it |
 | npm auth | OIDC | OIDC (after bootstrap) |
 | NuGet auth | API key / OIDC | OIDC Trusted Publishing (`NuGet/login@v1`) |
+| crates auth | API token / OIDC | OIDC Trusted Publishing (`crates-io-auth-action`) |
 
 ## Failure recovery
 
@@ -129,6 +147,7 @@ cargo add hypabolic-trajectory@0.1.0
 | npm already published | Workflow continues if version exists on registry |
 | crates already uploaded | Treated as success |
 | OIDC 404 / NuGet login fail | Match Trusted Publisher: owner `hypabolic`, workflow `release.yml`, env `release` |
+| crates.io OIDC auth fail | Match Trusted Publishing on **both** crates; workflow `release.yml`, env `release` |
 | npm OIDC 404 | Fix Trusted Publisher or bootstrap package once |
 
 ## Related

@@ -9,8 +9,8 @@ name: Release
 #
 # Or: Actions → Release → Run workflow → tag=v0.1.0, dry_run=false
 #
-# Secrets: CARGO_REGISTRY_TOKEN
-# NuGet + npm: OIDC Trusted Publishing (release.yml + environment "release")
+# NuGet + npm + crates.io: OIDC Trusted Publishing
+# (workflow release.yml + environment "release")
 # See docs/publishing.md
 
 on:
@@ -427,6 +427,12 @@ jobs:
     if: ${{ needs.resolve.outputs.dry_run != 'true' && needs.validate.result == 'success' }}
     runs-on: ubuntu-latest
     environment: release
+    # crates.io Trusted Publishing (OIDC) — policy per crate on crates.io:
+    # repository Hypabolic/Trajectory, workflow release.yml, environment release
+    # https://crates.io/docs/trusted-publishing
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -435,14 +441,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+      - name: crates.io login (OIDC Trusted Publishing)
+        id: crates-auth
+        uses: rust-lang/crates-io-auth-action@v1
       - name: Stamp version and publish
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
         run: |
           set -euo pipefail
           VERSION="${{ needs.resolve.outputs.version }}"
           if [[ -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
-            echo "CARGO_REGISTRY_TOKEN is not configured." >&2
+            echo "crates.io OIDC auth did not produce a token." >&2
             exit 1
           fi
           python3 tools/stamp_release_version.py --version "$VERSION"
@@ -470,6 +479,7 @@ jobs:
             return 1
           }
 
+          # Core first; otel depends on it and needs the registry index to catch up.
           publish_one hypabolic-trajectory || exit 1
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
             if publish_one hypabolic-trajectory-opentelemetry; then
