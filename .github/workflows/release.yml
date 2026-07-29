@@ -13,13 +13,13 @@ name: Release
 #   - oidc (default): trusted publishing — no NPM_TOKEN. Requires each package
 #     to already exist on npmjs.com with a Trusted Publisher pointing at this
 #     workflow (release.yml) and the `release` environment.
-#   - token: bootstrap / fallback using secrets.NPM_TOKEN. Use once to create
-#     the @hypabolic/* packages, then configure OIDC and switch back to oidc.
+#     First-time package creation: local CLI (./tools/bootstrap_npm_packages.sh).
+#   - token: emergency recovery only (secrets.NPM_TOKEN). Prefer local CLI.
 #
-# Other live-publish secrets:
+# Live-publish secrets:
 #   NUGET_API_KEY          NuGet.org API key with push rights
 #   CARGO_REGISTRY_TOKEN   crates.io API token
-#   NPM_TOKEN              only when npm_auth=token (bootstrap)
+#   NPM_TOKEN              only when npm_auth=token (recovery; not normal)
 #
 # See docs/publishing.md for the full process (including npm bootstrap).
 
