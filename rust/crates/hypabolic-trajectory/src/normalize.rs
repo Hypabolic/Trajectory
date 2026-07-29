@@ -320,7 +320,11 @@ impl PiFamilyOptions {
 
     fn exclude_model(self, model: Option<&str>) -> Option<String> {
         model.and_then(|value| {
-            if self.excluded_models.iter().any(|excluded| *excluded == value) {
+            if self
+                .excluded_models
+                .iter()
+                .any(|excluded| *excluded == value)
+            {
                 None
             } else {
                 Some(value.to_owned())
