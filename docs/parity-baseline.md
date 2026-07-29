@@ -79,7 +79,7 @@ The upstream Python wrapper is not a separate parity requirement. The NuGet libr
 
 - The project multi-targets `net8.0`, `net9.0`, and `net10.0`.
 - Trimming and AOT analyzers are enabled and the core remains BCL-only.
-- Pi, Claude Code, and Codex have complete decode-normalize-project paths,
+- Pi, Claude Code, Codex, and OpenClaw have complete decode-normalize-project paths,
   default listing, pinned upstream goldens, and Native AOT smoke coverage.
 - Exact Letta trajectory/canonical adapters and the provenance-rich Hypabolic
   adapter share one deterministic IR, identity, canonical JSON, and SHA-256
@@ -110,7 +110,7 @@ contracts until the first package release.
 | Claude Code | Implemented through all three outputs with version-family fixtures and listing | Keep covered by differential parity and regression tests |
 | Codex | Implemented with true UTF-8 byte offsets, arbitrary partial chunks, group enforcement, semantic tool variants, and listing | Keep covered by differential parity and regression tests |
 | Letta Code | Enum value only; post-v1 backlog | Full client transcript decoder and row/native identity rules |
-| OpenClaw | Enum value only | Full wrapper/message decoder and byte fallback identity |
+| OpenClaw | Implemented through built-in outputs with shared fixtures, delivery-mirror masking, and listing | Keep covered by differential parity and regression tests |
 | OpenHands | Enum value only; post-v1 backlog | Array/envelope event decoding and event identity |
 | Hermes | Enum value only | Array/envelope decoding and SQLite listing/export support |
 | Deep Agents | Enum value only; post-v1 backlog | Optional SQLite/checkpoint package and exact checkpoint reduction |

@@ -176,6 +176,10 @@ export function normalizePi(request: NormalizeRequest & { transcriptBytes: Uint8
   return normalizeDecoded(request, decodePi(request.transcriptBytes));
 }
 
+export function normalizeOpenClaw(request: NormalizeRequest & { transcriptBytes: Uint8Array }): TrajectoryIR {
+  return normalizeDecoded(request, decodeOpenClaw(request.transcriptBytes));
+}
+
 export function normalizeClaudeCode(request: NormalizeRequest & { transcriptBytes: Uint8Array }): TrajectoryIR {
   return normalizeDecoded(request, decodeClaudeCode(request.transcriptBytes));
 }
@@ -267,7 +271,33 @@ function normalizeDecoded(
   };
 }
 
+function decodeOpenClaw(bytes: Uint8Array): DecodedSession {
+  return decodePiSession(bytes, {
+    source: "openclaw",
+    sourceName: "openclaw",
+    sourceLabel: "OpenClaw",
+    excludedModels: ["delivery-mirror"],
+  });
+}
+
 function decodePi(bytes: Uint8Array): DecodedSession {
+  return decodePiSession(bytes, {
+    source: "pi",
+    sourceName: "pi",
+    sourceLabel: "Pi",
+    excludedModels: [],
+  });
+}
+
+function decodePiSession(
+  bytes: Uint8Array,
+  options: {
+    source: TrajectorySource;
+    sourceName: string;
+    sourceLabel: string;
+    excludedModels: readonly string[];
+  },
+): DecodedSession {
   const events: DecodedEvent[] = [];
   const modelInvocations: DecodedModelInvocation[] = [];
   const diagnostics: TrajectoryDiagnostic[] = [];
@@ -328,7 +358,10 @@ function decodePi(bytes: Uint8Array): DecodedSession {
           const timestampData = parseTimestamp(row.timestamp) ?? parseTimestamp(message.timestamp);
           const timestamp = timestampData?.milliseconds;
           const timestampPrecise = timestampData?.precise;
-          const model = stringValue(message.model);
+          const rawModel = stringValue(message.model);
+          const model = rawModel !== undefined && options.excludedModels.includes(rawModel)
+            ? undefined
+            : rawModel;
           let componentIndex = 0;
           const emit = (event: Omit<DecodedEvent, "nativeId" | "sourceSequence" | "sourceOffset" | "inputLine" | "componentIndex">): void => {
             events.push({
@@ -441,11 +474,11 @@ function decodePi(bytes: Uint8Array): DecodedSession {
     line++;
   }
   if (!sawMessage && !groupId) {
-    fail("invalid_input", "Pi transcript must be session JSONL containing a session header or message entries.");
+    fail("invalid_input", `${options.sourceLabel} transcript must be session JSONL containing a session header or message entries.`);
   }
   return {
-    source: "pi",
-    sourceName: "pi",
+    source: options.source,
+    sourceName: options.sourceName,
     groupResolved: groupId !== undefined,
     events,
     modelInvocations,

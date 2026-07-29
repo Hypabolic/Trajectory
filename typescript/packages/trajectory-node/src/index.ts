@@ -39,6 +39,12 @@ export async function listCodexTrajectories(
   return listDiscovered(options, discoverCodex);
 }
 
+export async function listOpenClawTrajectories(
+  options: ListingOptions,
+): Promise<TrajectoryListingPage> {
+  return listDiscovered(options, discoverOpenClaw);
+}
+
 async function listDiscovered(
   options: ListingOptions,
   discover: (root: string) => Promise<TrajectoryListing[]>,
@@ -89,6 +95,38 @@ async function discoverPi(root: string): Promise<TrajectoryListing[]> {
     for (const file of files) {
       if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
       const path = join(directory, file.name);
+      try {
+        await addListing(items, path);
+      } catch (error) {
+        if (!isMissingOrDenied(error)) throw error;
+      }
+    }
+  }
+  return items;
+}
+
+async function discoverOpenClaw(root: string): Promise<TrajectoryListing[]> {
+  const items: TrajectoryListing[] = [];
+  let agents;
+  try {
+    agents = await readdir(join(root, "agents"), { withFileTypes: true });
+  } catch (error) {
+    if (isMissingOrDenied(error)) return items;
+    throw error;
+  }
+  for (const agent of agents) {
+    if (!agent.isDirectory()) continue;
+    const sessionsDirectory = join(root, "agents", agent.name, "sessions");
+    let files;
+    try {
+      files = await readdir(sessionsDirectory, { withFileTypes: true });
+    } catch (error) {
+      if (isMissingOrDenied(error)) continue;
+      throw error;
+    }
+    for (const file of files) {
+      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
+      const path = join(sessionsDirectory, file.name);
       try {
         await addListing(items, path);
       } catch (error) {

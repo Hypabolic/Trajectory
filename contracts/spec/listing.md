@@ -29,6 +29,10 @@ additional items remain.
   default root is `~/.claude/projects`.
 - Codex: `*.jsonl` recursively under the root to four directory levels. The
   default root is `~/.codex/sessions`.
+- OpenClaw: `<state-root>/agents/<agentId>/sessions/*.jsonl`, one sessions
+  directory level under each agent. The default state root is
+  `OPENCLAW_STATE_DIR` or legacy `CLAWDBOT_STATE_DIR` when non-empty; otherwise
+  `~/.openclaw` when present, else legacy `~/.clawdbot`.
 
 Missing stores return an empty page. Inaccessible or concurrently removed
 subtrees are skipped. A source without an installed lister fails with

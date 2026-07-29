@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: accepted; ML1–ML7 implemented, ML9 next
+Status: accepted; ML1–ML7 and ML9 implemented, ML11 next
 
 Planning baseline:
 
@@ -575,7 +575,9 @@ Acceptance retains the existing Slice 5 source requirements and adds:
 
 ### ML9 — OpenClaw across all runtimes
 
-This replaces the current .NET-only Slice 6. Share semantic block-decoding
+Status: complete.
+
+This replaced the current .NET-only Slice 6. Share semantic block-decoding
 rules where valid without conflating the Pi and OpenClaw source contracts.
 
 ### ML10 — OpenHands across all runtimes
@@ -696,8 +698,7 @@ compatibility claim.
 
 ## Immediate next action
 
-Implement ML9: OpenClaw across all three runtimes. Keep the OpenClaw source
-contract distinct from Pi while sharing only genuinely common semantic block
-decoding. Add shared fixtures, identity and diagnostic vectors, explicit-root
-listing, and all currently implemented projections without introducing a
-shared native core, FFI, or subprocess wrappers.
+Implement ML11: Hermes across all three runtimes. Keep Hermes core normalize
+independent of any SQLite provider package, cover message-row and session-envelope
+shapes with shared fixtures, and add optional store listing only in provider
+packages. After Hermes, ML13 is 1.0 parity and release hardening.

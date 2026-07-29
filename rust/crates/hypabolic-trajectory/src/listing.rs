@@ -66,6 +66,80 @@ pub fn list_codex_trajectories(
     paginate(options, items)
 }
 
+/// Lists `OpenClaw` JSONL transcripts below `<root>/agents/*/sessions`.
+pub fn list_openclaw_trajectories(
+    options: &ListingOptions<'_>,
+) -> Result<TrajectoryListingPage, TrajectoryError> {
+    validate_limit(options.limit)?;
+    let mut items = Vec::new();
+    let agents_root = options.root.join("agents");
+    let agents = match fs::read_dir(&agents_root) {
+        Ok(value) => value,
+        Err(error) if missing_or_denied(&error) => {
+            return Ok(TrajectoryListingPage {
+                items: Vec::new(),
+                next_cursor: None,
+            });
+        }
+        Err(error) => {
+            return Err(io_error("Could not enumerate the OpenClaw store.", &error));
+        }
+    };
+    for agent in agents {
+        let agent =
+            agent.map_err(|error| io_error("Could not enumerate the OpenClaw store.", &error))?;
+        let file_type = match agent.file_type() {
+            Ok(value) => value,
+            Err(error) if missing_or_denied(&error) => continue,
+            Err(error) => {
+                return Err(io_error(
+                    "Could not inspect an OpenClaw store entry.",
+                    &error,
+                ));
+            }
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let sessions = agent.path().join("sessions");
+        let files = match fs::read_dir(&sessions) {
+            Ok(value) => value,
+            Err(error) if missing_or_denied(&error) => continue,
+            Err(error) => {
+                return Err(io_error(
+                    "Could not enumerate an OpenClaw agent sessions directory.",
+                    &error,
+                ));
+            }
+        };
+        for file in files {
+            let file = file.map_err(|error| {
+                io_error(
+                    "Could not enumerate an OpenClaw agent sessions directory.",
+                    &error,
+                )
+            })?;
+            let path = file.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let metadata = match file.metadata() {
+                Ok(value) if value.is_file() => value,
+                Ok(_) => continue,
+                Err(error) if missing_or_denied(&error) => continue,
+                Err(error) => {
+                    return Err(io_error(
+                        "Could not inspect an OpenClaw transcript.",
+                        &error,
+                    ));
+                }
+            };
+            items.push(listing_from_file(path, &metadata, "OpenClaw")?);
+        }
+    }
+    paginate(options, items)
+}
+
 fn list_project_store(
     options: &ListingOptions<'_>,
     projects_root: &Path,
