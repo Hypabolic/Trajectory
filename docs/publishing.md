@@ -70,10 +70,25 @@ That helper is for **repo hygiene**, not the release trigger.
 
 | Item | Purpose |
 | --- | --- |
-| Environment **`release`** | Gates live publish; must match npm Trusted Publisher |
-| `NUGET_API_KEY` | NuGet.org push |
-| `CARGO_REGISTRY_TOKEN` | crates.io push |
+| Environment **`release`** | Gates live publish; must match Trusted Publisher policies |
+| NuGet Trusted Publishing | OIDC for `hypabolic` owner: workflow `release.yml`, env `release` |
 | npm Trusted Publisher | OIDC for `@hypabolic/*` on workflow `release.yml`, env `release` |
+| `CARGO_REGISTRY_TOKEN` | crates.io push (no Trusted Publishing yet) |
+
+### NuGet Trusted Publishing
+
+On [nuget.org](https://www.nuget.org/) → Trusted Publishing, register:
+
+| Field | Value |
+| --- | --- |
+| Package owner | `hypabolic` |
+| Publisher | GitHub Actions |
+| Repository | `Hypabolic/Trajectory` |
+| Workflow | `release.yml` |
+| Environment | `release` |
+
+The Release job uses `NuGet/login@v1` with `user: hypabolic` and
+`id-token: write` — no long-lived `NUGET_API_KEY`.
 
 ### npm first create (bootstrap)
 
@@ -103,6 +118,7 @@ cargo add hypabolic-trajectory@0.1.0
 | Human pre-step | Push tag | Push tag |
 | GitHub Release | Pipeline creates it | Pipeline creates it |
 | npm auth | OIDC | OIDC (after bootstrap) |
+| NuGet auth | API key / OIDC | OIDC Trusted Publishing (`NuGet/login@v1`) |
 
 ## Failure recovery
 
@@ -112,7 +128,8 @@ cargo add hypabolic-trajectory@0.1.0
 | NuGet already published | `--skip-duplicate` makes re-run a no-op |
 | npm already published | Workflow continues if version exists on registry |
 | crates already uploaded | Treated as success |
-| OIDC 404 | Fix Trusted Publisher or bootstrap package once |
+| OIDC 404 / NuGet login fail | Match Trusted Publisher: owner `hypabolic`, workflow `release.yml`, env `release` |
+| npm OIDC 404 | Fix Trusted Publisher or bootstrap package once |
 
 ## Related
 
