@@ -36,9 +36,14 @@ on:
           - token
         default: oidc
 
+# contents: checkout + create GitHub Release
+# id-token: npm OIDC provenance
+# actions/checks: CI gate must read workflow/check status (internal repos 403 without these)
 permissions:
   contents: write
   id-token: write
+  actions: read
+  checks: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -99,33 +104,56 @@ jobs:
         run: |
           set -euo pipefail
           sha="${{ github.sha }}"
-          # Wait briefly for CI checks on the commit the tag points at (usually main).
-          for attempt in 1 2 3 4 5 6; do
-            runs=$(gh api "repos/${{ github.repository }}/commits/${sha}/check-runs" \
-              --paginate \
-              --jq '[.check_runs[] | select(.name | test("Shared conformance|\\.NET 10|TypeScript|Rust|Contracts|Preview packages|Native AOT|NuGet"))]')
-            count=$(echo "$runs" | jq 'length')
-            if [[ "$count" -eq 0 ]]; then
-              echo "No matching check runs yet for ${sha} (attempt ${attempt})..."
-              sleep 30
-              continue
-            fi
-            pending=$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')
-            if [[ "$pending" -gt 0 ]]; then
-              echo "CI still running (${pending} pending)..."
-              sleep 30
-              continue
-            fi
-            failed=$(echo "$runs" | jq '[.[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral")] | length')
-            echo "$runs" | jq -r '.[] | "  \(.name): \(.conclusion // .status)"'
-            if [[ "$failed" -gt 0 ]]; then
-              echo "::error::CI did not fully pass on ${sha}"
+          # Prefer the Actions workflow-runs API (reliable on internal repos).
+          # Hypa-style: fail closed if CI did not succeed on the tagged commit.
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if ! payload=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${sha}&per_page=50" 2>/tmp/gh-gate.err); then
+              err=$(cat /tmp/gh-gate.err || true)
+              echo "::error::Cannot list workflow runs for ${sha}: ${err}"
+              echo "Ensure the Release workflow has permissions: actions: read (and checks: read)."
               exit 1
             fi
-            echo "CI gate passed for ${sha}"
-            exit 0
+
+            # Latest non-PR "CI" run on this SHA (workflow name from ci.yml).
+            latest=$(echo "$payload" | jq -c '
+              [.workflow_runs[]
+                | select(.name == "CI")
+                | select(.event == "push" or .event == "workflow_dispatch")
+              ]
+              | sort_by(.created_at)
+              | reverse
+              | .[0] // empty
+            ')
+
+            if [[ -z "$latest" || "$latest" == "null" ]]; then
+              echo "No CI workflow run yet for ${sha} (attempt ${attempt}/12)..."
+              sleep 30
+              continue
+            fi
+
+            status=$(echo "$latest" | jq -r '.status')
+            conclusion=$(echo "$latest" | jq -r '.conclusion // "null"')
+            url=$(echo "$latest" | jq -r '.html_url')
+            echo "CI run: status=${status} conclusion=${conclusion} ${url}"
+
+            if [[ "$status" != "completed" ]]; then
+              echo "CI still running (attempt ${attempt}/12)..."
+              sleep 30
+              continue
+            fi
+
+            if [[ "$conclusion" == "success" ]]; then
+              echo "CI gate passed for ${sha}"
+              exit 0
+            fi
+
+            echo "::error::CI did not succeed on ${sha} (conclusion=${conclusion}). Fix main, then retag."
+            echo "See ${url}"
+            exit 1
           done
-          echo "::warning::CI gate timed out waiting for checks; continuing release (tag is explicit)."
+
+          echo "::error::Timed out waiting for CI on ${sha}. Run CI on this commit before tagging."
+          exit 1
 
   validate:
     name: Stamp version, pack artifacts
@@ -230,10 +258,15 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.resolve.outputs.version }}"
           python3 tools/prepare_rust_package.py
+          # Core: full verify (self-contained).
           cargo +stable package --manifest-path rust/Cargo.toml \
             -p hypabolic-trajectory --locked --allow-dirty
+          # Otel depends on hypabolic-trajectory; until that version is on crates.io,
+          # package verification would fail looking up the path dep. --no-verify only
+          # skips the unpack-and-build check; the .crate is still valid for publish
+          # (publish job ships core first, then otel).
           cargo +stable package --manifest-path rust/Cargo.toml \
-            -p hypabolic-trajectory-opentelemetry --locked --allow-dirty
+            -p hypabolic-trajectory-opentelemetry --locked --allow-dirty --no-verify
           mkdir -p artifacts/release/crates
           cp rust/target/package/*.crate artifacts/release/crates/
           for crate in artifacts/release/crates/*.crate; do
