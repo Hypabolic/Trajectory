@@ -3,7 +3,9 @@
 All notable product and contract changes are recorded here. Package versions
 remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
-## 0.1.0 — Unreleased
+## 0.1.0 — 2026-07-01
+
+First public multi-ecosystem release of Trajectory.
 
 - Hardened **versioned releases**: root `VERSION` file as single source of
   truth; `tools/set_package_version.py` / `extract_changelog.py`; Release
@@ -24,7 +26,7 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
   tied to commit and contract version. Documented privacy/fixture sanitization,
   upgrade guidance,
   and product-level 1.0 readiness criteria in `docs/release-readiness.md`.
-  Packages are not published.
+
 
 - Added unpublished sample CLIs for local session browsing across .NET
   (`dotnet/samples/Trajectory.Cli`), TypeScript (`@hypabolic/trajectory-cli`),

@@ -473,13 +473,24 @@ jobs:
             echo "npm_auth=token requires secrets.NPM_TOKEN." >&2
             exit 1
           fi
+          VERSION="${{ needs.resolve.outputs.version }}"
           for workspace in \
             @hypabolic/trajectory \
             @hypabolic/trajectory-node \
             @hypabolic/trajectory-otel
           do
-            echo "Publishing $workspace (token) @${{ needs.resolve.outputs.version }}"
-            npm publish --workspace "$workspace" --access public --provenance
+            echo "Publishing $workspace (token) @${VERSION}"
+            if npm publish --workspace "$workspace" --access public --provenance; then
+              echo "Published $workspace@${VERSION}"
+            else
+              # Already on the registry (e.g. local bootstrap) — treat as success.
+              if npm view "${workspace}@${VERSION}" version >/dev/null 2>&1; then
+                echo "::notice::$workspace@${VERSION} already published; continuing."
+              else
+                echo "Publish failed for $workspace@${VERSION}" >&2
+                exit 1
+              fi
+            fi
           done
 
       - name: Publish @hypabolic packages (OIDC)
@@ -488,13 +499,23 @@ jobs:
         run: |
           set -euo pipefail
           unset NODE_AUTH_TOKEN || true
+          VERSION="${{ needs.resolve.outputs.version }}"
           for workspace in \
             @hypabolic/trajectory \
             @hypabolic/trajectory-node \
             @hypabolic/trajectory-otel
           do
-            echo "Publishing $workspace (OIDC) @${{ needs.resolve.outputs.version }}"
-            npm publish --workspace "$workspace" --access public --provenance
+            echo "Publishing $workspace (OIDC) @${VERSION}"
+            if npm publish --workspace "$workspace" --access public --provenance; then
+              echo "Published $workspace@${VERSION}"
+            else
+              if npm view "${workspace}@${VERSION}" version >/dev/null 2>&1; then
+                echo "::notice::$workspace@${VERSION} already published; continuing."
+              else
+                echo "Publish failed for $workspace@${VERSION}" >&2
+                exit 1
+              fi
+            fi
           done
 
   publish-crates:
@@ -528,13 +549,41 @@ jobs:
             exit 1
           fi
           python3 tools/prepare_rust_package.py
-          cargo +stable publish --manifest-path rust/Cargo.toml \
-            -p hypabolic-trajectory --locked --allow-dirty
+          VERSION="${{ needs.resolve.outputs.version }}"
+          set +e
+          out=$(cargo +stable publish --manifest-path rust/Cargo.toml \
+            -p hypabolic-trajectory --locked --allow-dirty 2>&1)
+          status=$?
+          echo "$out"
+          if [[ $status -ne 0 ]]; then
+            if echo "$out" | grep -qiE 'already (uploaded|exists)'; then
+              echo "::notice::hypabolic-trajectory@${VERSION} already published"
+            elif curl -fsSL "https://crates.io/api/v1/crates/hypabolic-trajectory/${VERSION}" >/dev/null 2>&1; then
+              echo "::notice::hypabolic-trajectory@${VERSION} already on crates.io"
+            else
+              echo "$out" >&2
+              exit 1
+            fi
+          fi
+          set -e
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            if cargo +stable publish --manifest-path rust/Cargo.toml \
-              -p hypabolic-trajectory-opentelemetry --locked --allow-dirty; then
+            set +e
+            out=$(cargo +stable publish --manifest-path rust/Cargo.toml \
+              -p hypabolic-trajectory-opentelemetry --locked --allow-dirty 2>&1)
+            status=$?
+            echo "$out"
+            if [[ $status -eq 0 ]]; then
               exit 0
             fi
+            if echo "$out" | grep -qiE 'already (uploaded|exists)'; then
+              echo "::notice::hypabolic-trajectory-opentelemetry@${VERSION} already published"
+              exit 0
+            fi
+            if curl -fsSL "https://crates.io/api/v1/crates/hypabolic-trajectory-opentelemetry/${VERSION}" >/dev/null 2>&1; then
+              echo "::notice::otel crate version already on crates.io"
+              exit 0
+            fi
+            set -e
             echo "otel publish attempt $attempt failed; waiting for crates.io index..."
             sleep 30
           done
