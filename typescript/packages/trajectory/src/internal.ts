@@ -1503,7 +1503,13 @@ function ahpToolResultContent(toolCall: JsonObject, isError: boolean): string {
       return toolCall.reasonMessage;
     }
     if (typeof toolCall.reason === "string" && toolCall.reason) return toolCall.reason;
-    return "cancelled";
+    // ToolCallCompletedState carries error.message when success is false.
+    if (isObject(toolCall.error)) {
+      const errorMessage = toolCall.error.message;
+      if (typeof errorMessage === "string" && errorMessage) return errorMessage;
+    }
+    const status = typeof toolCall.status === "string" ? toolCall.status : undefined;
+    return status === "cancelled" || status === "denied" ? "cancelled" : "error";
   }
   return "";
 }

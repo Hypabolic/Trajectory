@@ -170,7 +170,7 @@ internal static class CliFormat
 internal class GlobalSettings : CommandSettings
 {
     [CommandOption("-s|--source <SOURCE>")]
-    [Description("Transcript source: pi, claude-code, codex, openclaw, hermes.")]
+    [Description("Transcript source: pi, claude-code, codex, openclaw, hermes, ahp.")]
     public string? Source { get; init; }
 
     [CommandOption("-r|--root <PATH>")]

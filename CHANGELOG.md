@@ -20,12 +20,20 @@ First public multi-ecosystem release of Trajectory.
 
 - Completed ML13 1.0 parity and release hardening. Runtime capability manifests
   advertise slice `ML13` with the full v1 source set (`pi`, `claude-code`,
-  `codex`, `openclaw`, `hermes`) and six deterministic outputs. CI capability
-  gates and `tools/validate_release_metadata.py` require Hermes and ML13
-  agreement; preview packaging remains dry-run only with provenance evidence
-  tied to commit and contract version. Documented privacy/fixture sanitization,
-  upgrade guidance,
-  and product-level 1.0 readiness criteria in `docs/release-readiness.md`.
+  `codex`, `openclaw`, `hermes`, `ahp`) and six deterministic outputs. CI
+  capability gates and `tools/validate_release_metadata.py` require that source
+  set and ML13 agreement; preview packaging remains dry-run only with
+  provenance evidence tied to commit and contract version. Documented
+  privacy/fixture sanitization, upgrade guidance, and product-level 1.0
+  readiness criteria in `docs/release-readiness.md`.
+
+- Added **AHP** (Agent Host Protocol) Shape A snapshot source adapters across
+  .NET, TypeScript, and Rust. Wire source name is `ahp`; protocol pin is
+  `0.7.x` (`conformance/vendor/ahp/PROTOCOL_VERSION`). Phase 1 covers offline
+  ChatState export envelopes (`ahp-export-v1`), chat-unit identity, cancel-safe
+  tool mapping (including `toolCall.error.message`), and shared conformance
+  cases `ahp/tool-calls`, `ahp/multi-turn`, and `ahp/cancelled-turn`. Shape B
+  action-log reduce, store listing, and live host clients remain deferred.
 
 
 - Added unpublished sample CLIs for local session browsing across .NET

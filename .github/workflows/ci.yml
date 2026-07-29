@@ -196,7 +196,7 @@ jobs:
             .runtime == "typescript"
             and .slice == "ML13"
             and .normalizer_contract_version == "0.2.0"
-            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes"]
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"]
             and .outputs == [
               "letta-trajectory-v1",
               "letta-canonical-v1",
@@ -337,7 +337,7 @@ jobs:
             .runtime == "rust"
             and .slice == "ML13"
             and .normalizer_contract_version == "0.2.0"
-            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes"]
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"]
             and .outputs == [
               "letta-trajectory-v1",
               "letta-canonical-v1",

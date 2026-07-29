@@ -2124,7 +2124,19 @@ fn ahp_tool_result_content(
         {
             return Ok(reason.to_owned());
         }
-        return Ok("cancelled".into());
+        // ToolCallCompletedState carries error.message when success is false.
+        if let Some(error) = tool_call.get("error").and_then(Value::as_object) {
+            if let Some(message) =
+                string_value(error.get("message")).filter(|value| !value.is_empty())
+            {
+                return Ok(message.to_owned());
+            }
+        }
+        let status = string_value(tool_call.get("status"));
+        return Ok(match status {
+            Some("cancelled" | "denied") => "cancelled".into(),
+            _ => "error".into(),
+        });
     }
     Ok(String::new())
 }

@@ -287,7 +287,7 @@ From `ToolCallState` / tool actions:
 | `toolCallId` | Native tool call id (required for linking) |
 | `toolName` | Tool name; missing → `unknown_tool` after normalizer |
 | Arguments | Object from completed parameter stream; invalid → `_raw` wrapper per normalization contract |
-| Result | From complete action / state result payload; stringify deterministically |
+| Result | Prefer text content, `structuredContent`, `pastTenseMessage`; on failure also `reasonMessage` / `reason` / `error.message`; status-appropriate fallback (`"cancelled"` vs `"error"`) |
 | Status denied/cancelled/error | Result record with success=false / error text; do not invent success |
 | Permissions / auth pauses | Not separate IR events in v1; may appear in provenance |
 

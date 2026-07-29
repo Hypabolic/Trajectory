@@ -180,10 +180,10 @@ From `ToolCallState` on `kind: "toolCall"` parts:
 | `toolCallId` | Native tool call id (required for linking) |
 | `toolName` | Tool name; missing → normalizer `unknown_tool` |
 | Arguments | Prefer structured parameters when present; else parse `toolInput` string as JSON object; invalid/non-object → `_raw` wrapper per normalization contract |
-| Result | From completed state: text content blocks, `structuredContent`, or past-tense message; stringify deterministically |
+| Result | Prefer text `content` blocks, then `structuredContent`, then `pastTenseMessage`; stringify deterministically |
 | `status: completed` + `success: true` | Linked result, success |
-| `status: completed` + `success: false` | Linked result with error text; **do not invent success** |
-| `status: cancelled` / denied | Result or terminal tool record with success=false / cancel reason; **do not invent success** |
+| `status: completed` + `success: false` | Linked result with error text from content / past-tense / `error.message`; **do not invent success**. Fallback content is `"error"` when none of those are present |
+| `status: cancelled` / denied | Result with success=false; prefer `reasonMessage`, then `reason`; fallback content is `"cancelled"`; **do not invent success** |
 | Permissions / auth pauses | Not separate IR events in v1; provenance only |
 
 Linking: AHP pairs call and result by `toolCallId`. Feed normalizer as

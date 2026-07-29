@@ -70,7 +70,7 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Transcript source: pi, claude-code, codex, openclaw, hermes.
+    /// Transcript source: pi, claude-code, codex, openclaw, hermes, ahp.
     #[arg(short, long, global = true, value_enum)]
     source: Option<SourceArg>,
 

@@ -13,7 +13,7 @@ start (see the root [README](../README.md)).
 | Normalizer contract | `0.2.0` |
 | Conformance protocol | `1` |
 | Diagnostics contract | `1` |
-| v1 sources | `pi`, `claude-code`, `codex`, `openclaw`, `hermes` |
+| v1 sources | `pi`, `claude-code`, `codex`, `openclaw`, `hermes`, `ahp` |
 | Outputs | Hypabolic, canonical identity, message trajectory, OpenAI chat, minimal JSONL, OTEL GenAI spans |
 
 Machine-readable surfaces:

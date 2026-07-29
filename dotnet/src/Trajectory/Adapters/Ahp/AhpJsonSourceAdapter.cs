@@ -564,7 +564,19 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
                 return reason;
             }
 
-            return "cancelled";
+            // ToolCallCompletedState carries error.message when success is false.
+            if (toolCall.TryGetProperty("error", out var error) &&
+                error.ValueKind == JsonValueKind.Object)
+            {
+                var errorMessage = GetString(error, "message");
+                if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    return errorMessage;
+                }
+            }
+
+            var status = GetString(toolCall, "status");
+            return status is "cancelled" or "denied" ? "cancelled" : "error";
         }
 
         return string.Empty;
