@@ -125,7 +125,7 @@ internal static class StoreRoots
         TrajectorySource.Pi => "~/.pi/agent (or PI_CODING_AGENT_DIR)",
         TrajectorySource.ClaudeCode => "~/.claude/projects",
         TrajectorySource.Codex => "~/.codex/sessions",
-        TrajectorySource.OpenClaw => "~/.openclaw (or OPENCLAW_STATE_DIR)",
+        TrajectorySource.OpenClaw => "~/.openclaw if present, else ~/.clawdbot (or OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR)",
         TrajectorySource.Hermes => "~/.hermes/state.db",
         _ => "n/a",
     };

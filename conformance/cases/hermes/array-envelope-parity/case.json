@@ -1,7 +1,7 @@
 {
   "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
   "case_version": 1,
-  "id": "hermes/tool-calls",
+  "id": "hermes/array-envelope-parity",
   "operation": {
     "normalize-letta": {
       "expected": "expected.letta.json",
@@ -10,19 +10,15 @@
     "normalize-canonical": {
       "expected": "expected.canonical.json",
       "comparison": "json-exact"
-    },
-    "project-openai": {
-      "expected": "expected.openai.json",
-      "comparison": "byte-exact"
     }
   },
   "source": "hermes",
   "transcript": "input.json",
-  "native_container": "hermes-session-json",
+  "native_container": "hermes-messages-json",
   "source_context": {},
   "bounds": {},
   "filters": {},
-  "projection_options": { "write_indented": false },
+  "projection_options": {},
   "mode": "whole",
   "required_capabilities": ["normalize", "typed-diagnostics", "deterministic-rerun"],
   "expected": {

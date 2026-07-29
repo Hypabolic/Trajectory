@@ -538,7 +538,7 @@ fn describe_default(source: SourceArg) -> &'static str {
         SourceArg::Pi => "~/.pi/agent (or PI_CODING_AGENT_DIR)",
         SourceArg::ClaudeCode => "~/.claude/projects",
         SourceArg::Codex => "~/.codex/sessions",
-        SourceArg::Openclaw => "~/.openclaw (or OPENCLAW_STATE_DIR)",
+        SourceArg::Openclaw => "~/.openclaw if present, else ~/.clawdbot (or OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR)",
         SourceArg::Hermes => "~/.hermes/state.db",
     }
 }

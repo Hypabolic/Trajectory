@@ -7,6 +7,8 @@ var fixtures = new[]
     (TrajectorySource.Pi, "pi-tool-calls.jsonl"),
     (TrajectorySource.ClaudeCode, "claude-code-tool-call.jsonl"),
     (TrajectorySource.Codex, "codex-full.jsonl"),
+    (TrajectorySource.Hermes, "hermes-tool-calls.json"),
+    (TrajectorySource.OpenClaw, "openclaw-tool-calls.jsonl"),
 };
 var engine = TrajectoryEngine.CreateDefault();
 engine.AddOutputAdapter(new OpenTelemetryGenAiOutputAdapter());
