@@ -17,11 +17,11 @@ continuation chunks. Session IDs provide the source group.
 
 The adapter silently drops documented transport/UI records and fallback
 metadata. Sidechain and harness-noise rows produce the same diagnostics as the
-pinned Letta implementation. Unknown semantic rows and blocks produce
+shared Trajectory contracts. Unknown semantic rows and blocks produce
 content-safe diagnostics so future source drift is visible.
 
 Hypabolic output retains the earliest producer version as session metadata and
-the originating producer version on each record's provenance. Letta outputs
+the originating producer version on each record's provenance. Compact message-trajectory outputs
 omit this additional metadata.
 
 Listing scans only top-level `*.jsonl` session files under each project

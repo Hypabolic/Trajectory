@@ -1,146 +1,179 @@
 # Trajectory
 
-Trajectory turns coding-agent session transcripts into deterministic,
-versioned trajectory formats for memory, replay, evaluation, search, training,
-and observability pipelines.
+**Trajectory** normalizes coding-agent session transcripts into stable, versioned
+records you can store, search, replay, evaluate, train on, and observe.
 
-It is one product with native ecosystem implementations governed by the same
-wire contracts and conformance cases:
+One product. Three native packages. The same wire contracts and conformance
+suite in every ecosystem.
 
-| Runtime | Package | Status |
+| Ecosystem | Package | Install |
 | --- | --- | --- |
-| .NET | `Hypabolic.Trajectory` | v1 sources/outputs (ML13); `0.1.0` (publish via Release workflow) |
-| TypeScript | `@hypabolic/trajectory` | v1 sources/outputs (ML13); `0.1.0` (publish via Release workflow) |
-| Rust | `hypabolic-trajectory` | v1 sources/outputs (ML13); `0.1.0` (publish via Release workflow) |
+| .NET | [`Hypabolic.Trajectory`](https://www.nuget.org/packages/Hypabolic.Trajectory) | `dotnet add package Hypabolic.Trajectory` |
+| TypeScript | [`@hypabolic/trajectory`](https://www.npmjs.com/package/@hypabolic/trajectory) | `npm install @hypabolic/trajectory` |
+| Rust | [`hypabolic-trajectory`](https://crates.io/crates/hypabolic-trajectory) | `cargo add hypabolic-trajectory` |
 
-All three runtimes support Pi, Claude Code, Codex, OpenClaw, and Hermes
-transcripts, explicit-root local-store listing, and these
-deterministic projections:
+Optional OpenTelemetry packages: `Hypabolic.Trajectory.OpenTelemetry`,
+`@hypabolic/trajectory-otel`, `hypabolic-trajectory-opentelemetry`.
 
-- Letta trajectory v1;
-- Letta canonical v1;
-- Hypabolic trajectory v1;
-- OpenAI chat messages;
-- minimal JSONL;
-- OpenTelemetry GenAI span sets through optional ecosystem packages
-  (`Hypabolic.Trajectory.OpenTelemetry`, `@hypabolic/trajectory-otel`,
-  `hypabolic-trajectory-opentelemetry`).
+Current version: **0.1.0** (synchronized across NuGet, npm, and crates.io).
 
-All three runtimes are independent implementations built from this repository's
-specifications and conformance cases. They share the v1 source baseline,
-deterministic projections, explicit-root listing, synchronized `0.1.0` package
-metadata, and the private conformance protocol. Optional OpenTelemetry packages
-remain outside each core package. First public registry publishes are cut with
-the Release workflow (see [docs/publishing.md](docs/publishing.md)). The pinned
-`letta-ai/trajectory` package is used only as a black-box
-compatibility oracle. Preview packaging is dry-run only; see
-[docs/release-readiness.md](docs/release-readiness.md).
+## What you get
 
-## Architecture
+- **Multi-source ingest** — Pi, Claude Code, Codex, OpenClaw, and Hermes
+  transcripts
+- **Deterministic normalization** — stable IDs, ordering, hashes, and
+  content-safe diagnostics on every run
+- **Multiple outputs** from one decode:
+  - Hypabolic trajectory (provenance-rich)
+  - Canonical identity records
+  - Compact message trajectory arrays
+  - OpenAI-style chat messages
+  - Minimal JSONL
+  - OpenTelemetry GenAI span projections (optional packages)
+- **Local store listing** — discover sessions under each agent’s default paths
+- **Partial / chunked input** — append-only and offset-aware normalization where
+  the source supports it
+- **Native AOT / trim-friendly .NET**, ESM TypeScript (Node 22+), Rust 2024
+  (MSRV 1.85)
+
+## Quick start
+
+### .NET
+
+```csharp
+using Hypabolic.Trajectory;
+
+var engine = TrajectoryEngine.CreateDefault();
+
+var input = new NormalizeInput
+{
+    Source = TrajectorySource.Codex,
+    Transcript = transcriptBytes,
+    SourceContext = new SourceContext
+    {
+        GroupId = sessionId,
+        Partial = true,
+    },
+};
+
+var ir = engine.NormalizeToIR(input);
+var hypabolic = engine.Project<HypabolicTrajectoryV1>(
+    ir,
+    OutputSchemaIds.HypabolicTrajectoryV1);
+```
+
+```bash
+dotnet add package Hypabolic.Trajectory
+```
+
+### TypeScript
+
+```ts
+import { normalizeToHypabolic } from "@hypabolic/trajectory";
+
+const result = normalizeToHypabolic({
+  source: "pi",
+  transcript: bytes,
+});
+```
+
+```bash
+npm install @hypabolic/trajectory
+# Optional Node listing helpers:
+npm install @hypabolic/trajectory-node
+```
+
+### Rust
+
+```rust
+use hypabolic_trajectory::{normalize_pi, project_hypabolic, NormalizeRequest};
+
+let trajectory = normalize_pi(NormalizeRequest {
+    transcript: &bytes,
+    ..Default::default()
+})?;
+let hypabolic = project_hypabolic(&trajectory)?;
+```
+
+```bash
+cargo add hypabolic-trajectory
+```
+
+## Supported sources
+
+| Source | Typical input | Default local store |
+| --- | --- | --- |
+| Pi | Session JSONL | `~/.pi/agent` |
+| Claude Code | Session JSONL | `~/.claude/projects` |
+| Codex | Rollout JSONL | `~/.codex/sessions` |
+| OpenClaw | Session JSONL | `~/.openclaw` |
+| Hermes | Message array or `{ session, messages }` JSON | export from store; listing is optional |
+
+Pass an explicit root when listing; missing stores return an empty page.
+
+## Sample CLIs
+
+Try Trajectory against sessions already on your machine (not published packages):
+
+| Runtime | Location |
+| --- | --- |
+| .NET | `dotnet/samples/Trajectory.Cli` |
+| TypeScript | `typescript/packages/trajectory-cli` |
+| Rust | `rust/tools/trajectory-cli` |
+
+```bash
+# .NET
+dotnet run --project dotnet/samples/Trajectory.Cli -- list --source claude-code
+dotnet run --project dotnet/samples/Trajectory.Cli -- browse --source pi
+
+# TypeScript
+cd typescript && npm ci && npm run build
+node packages/trajectory-cli/dist/cli.js list --source codex
+
+# Rust
+cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- list --source pi
+```
+
+Summaries omit transcript content by default. Use `--show-content` only when you
+intend to print session text (privacy warning applied).
+
+## How it works
 
 ```text
 native source bytes
-  -> source decoder
-  -> shared normalization policy
-  -> implementation-private trajectory IR
-  -> versioned output adapters
+  → source decoder
+  → shared normalization policy
+  → private intermediate representation
+  → versioned output adapters
 ```
 
-Source decoding, normalization, identity, output projection, listing, and
-optional integrations remain independently testable. Each runtime owns an
-idiomatic private IR; Trajectory does not define a serialized public IR or a
-shared native implementation.
+Implementations are independent per language. They do not share a runtime, FFI
+bridge, or subprocess. Behaviour is locked by shared contracts and conformance
+cases under `contracts/` and `conformance/`.
 
-The .NET core package is BCL-only. OpenTelemetry dependencies remain in the
-optional package, and future SQLite/checkpoint dependencies will remain outside
-core.
-
-## Repository
+## Repository layout
 
 ```text
-contracts/       versioned schemas and normative behavioral specifications
-conformance/     shared native fixtures, expected outputs, stores, and protocol
-dotnet/          current .NET source, tests, AOT smoke app, sample CLI, and solution
-rust/            independent Rust workspace, core crate, private runner, sample CLI
-typescript/      independent TypeScript packages, tests, private runner, sample CLI
-docs/            product architecture, parity baseline, and roadmap
+contracts/     versioned schemas and behavioural specifications
+conformance/   shared fixtures, expected outputs, and verify protocol
+dotnet/        .NET libraries, tests, AOT smoke, sample CLI
+typescript/    npm packages, tests, sample CLI
+rust/          crates, conformance binary, sample CLI
+docs/          architecture, formats, publishing
+tools/         release and bootstrap helpers
 ```
 
-`contracts/compatibility.json` records the pinned upstream reference, contract
-versions, schema versions, capability vocabulary, and currently implemented
-sources and outputs. Contract and conformance files at the repository root are
-authoritative. Runtime tests consume them directly.
+## Build from source
 
-Implementation-specific unit fixtures stay under the relevant runtime. A
-fixture belongs in `conformance/` when another independent implementation must
-produce the same observable result.
-
-## Build and test .NET
-
-The .NET projects target `net8.0`, `net9.0`, and `net10.0`; the test and private
-conformance executables run on `net10.0`.
+### .NET (`net8.0` / `net9.0` / `net10.0`)
 
 ```bash
 dotnet restore dotnet/Trajectory.sln
 dotnet build dotnet/Trajectory.sln -c Release --no-restore
-dotnet test dotnet/tests/Trajectory.Tests/Trajectory.Tests.csproj \
-  -c Release --no-build
+dotnet test dotnet/tests/Trajectory.Tests/Trajectory.Tests.csproj -c Release --no-build
 ```
 
-Run every shared case through the .NET runner:
-
-```bash
-python3 conformance/verify.py --repository-root . -- \
-  dotnet dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll
-```
-
-Publish and run the Native AOT smoke target:
-
-```bash
-dotnet publish dotnet/tests/Trajectory.AotSmoke/Trajectory.AotSmoke.csproj \
-  -c Release -r linux-x64 --self-contained true
-./dotnet/tests/Trajectory.AotSmoke/bin/Release/net10.0/linux-x64/publish/Hypabolic.Trajectory.AotSmoke
-```
-
-The private runner protocol and case-authoring workflow are documented in
-[conformance/README.md](conformance/README.md).
-
-## Sample CLIs (local demos)
-
-Unpublished sample TUIs let you list local agent sessions and normalize one into
-a privacy-safe Letta/Hypabolic summary. They depend on workspace packages only
-and are not part of the published surface.
-
-| Runtime | Sample | Docs |
-| --- | --- | --- |
-| .NET | `dotnet/samples/Trajectory.Cli` | [README](dotnet/samples/Trajectory.Cli/README.md) |
-| TypeScript | `typescript/packages/trajectory-cli` | [README](typescript/packages/trajectory-cli/README.md) |
-| Rust | `rust/tools/trajectory-cli` | [README](rust/tools/trajectory-cli/README.md) |
-
-Quick starts:
-
-```bash
-# .NET
-dotnet run --project dotnet/samples/Trajectory.Cli -- list --source pi
-dotnet run --project dotnet/samples/Trajectory.Cli -- show \
-  --source pi --path conformance/cases/pi/tool-calls/input.jsonl
-
-# TypeScript (from typescript/)
-npm install && npm run build
-node packages/trajectory-cli/dist/cli.js list --source pi
-
-# Rust (from rust/)
-cargo run -p trajectory-cli -- list --source pi
-```
-
-Default store roots: `~/.pi/agent`, `~/.claude/projects`, `~/.codex/sessions`,
-`~/.openclaw` (else legacy `~/.clawdbot`), `~/.hermes`. Override with `--root` or `TRAJECTORY_<SOURCE>_ROOT`.
-Content is omitted unless `--show-content` (prints a privacy warning).
-
-## Build and test TypeScript
-
-The TypeScript workspace supports Node.js 22 and newer. It is tested on Node
-22 and 24 across Linux, macOS, and Windows, with a Node 26 package smoke gate.
+### TypeScript (Node 22+)
 
 ```bash
 cd typescript
@@ -149,138 +182,43 @@ npm run typecheck
 npm test
 ```
 
-Run every applicable shared case through the TypeScript runner:
+### Rust (1.85+ / stable)
 
 ```bash
+cargo test --manifest-path rust/Cargo.toml --workspace --locked
+```
+
+### Shared conformance
+
+```bash
+# .NET runner (after building Trajectory.Conformance)
 python3 conformance/verify.py --repository-root . -- \
-  node typescript/packages/trajectory-testing/dist/cli.js
+  dotnet dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll
 ```
 
-`@hypabolic/trajectory` is byte-oriented and environment-neutral.
-`@hypabolic/trajectory-node` owns filesystem listing,
-`@hypabolic/trajectory-otel` owns the optional OpenTelemetry projection, and
-`@hypabolic/trajectory-testing` owns the unpublished runner.
+## Compatibility promises
 
-## Build and test Rust
+- Identity-bearing output bytes do not change under the same normalizer contract
+  version (`0.2.0` today).
+- Diagnostics and fatal errors are typed and never include raw transcript
+  secrets by contract.
+- Capabilities are advertised only after shared conformance cases pass.
+- Golden fixtures are reviewed artifacts; CI does not auto-accept regenerations.
+- Pre-1.0 package versions stay synchronized across ecosystems because the
+  normalizer version participates in canonical identity.
 
-The Rust workspace uses Rust 2024, has an MSRV of 1.85, and is tested on MSRV
-and stable across Linux, macOS, and Windows.
+## Documentation
 
-```bash
-cargo +1.85.0 test --manifest-path rust/Cargo.toml --workspace --locked
-cargo +stable fmt --manifest-path rust/Cargo.toml --all -- --check
-cargo +stable clippy --manifest-path rust/Cargo.toml \
-  --workspace --all-targets -- -D warnings
-```
-
-Run the complete advertised source/output set through the Rust runner:
-
-```bash
-cargo +stable build --manifest-path rust/Cargo.toml \
-  --release --bin trajectory-conformance
-python3 conformance/verify.py --repository-root . -- \
-  rust/target/release/trajectory-conformance
-```
-
-The core crate owns the byte-oriented source and projection traits, typed
-models/errors, canonical identity, and synchronous explicit-root listing. It
-does not depend on SQLite or OpenTelemetry.
-`hypabolic-trajectory-opentelemetry` provides the optional deterministic span
-projection and an application-owned SDK sink boundary. See
-[rust/README.md](rust/README.md) for the package boundary and full validation
-commands.
-
-## Publishing packages
-
-Package versions are synchronized across NuGet, npm, and crates.io. Every PR
-and main build dry-runs packaging; live publishes use the **Release** workflow
-when you push a `v*.*.*` tag (or run the workflow with `dry_run=false`).
-
-| Ecosystem | Public packages |
+| Doc | Audience |
 | --- | --- |
-| NuGet | `Hypabolic.Trajectory`, `.OpenTelemetry`, `.Testing` |
-| npm | `@hypabolic/trajectory`, `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
-| crates.io | `hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry` |
+| [Architecture](docs/architecture.md) | How normalization and adapters fit together |
+| [Hypabolic trajectory format](docs/hypabolic-trajectory-v1.md) | Provenance-rich output schema |
+| [OpenTelemetry GenAI output](docs/otel-genai-output.md) | Span projection and privacy defaults |
+| [Publishing](docs/publishing.md) | Registry release process |
+| [Release readiness](docs/release-readiness.md) | Privacy, packaging, and 1.0 gates |
+| [Normative specs](contracts/spec/normalization.md) | Wire behaviour (identity, timestamps, diagnostics) |
+| [.NET adapter authoring](dotnet/docs/adapter-authoring.md) | Extending sources and outputs |
 
-Operator setup (secrets, tag steps, consumer install):
-[docs/publishing.md](docs/publishing.md).
+## License
 
-Validate synchronized metadata locally:
-
-```bash
-python3 tools/validate_release_metadata.py --repository-root .
-python3 tools/assert_release_version.py --repository-root . --version 0.1.0
-```
-
-Representative dependency-free benchmarks live under each runtime. They report
-throughput and output size; .NET additionally reports managed allocation and
-TypeScript reports heap delta. These are regression measurements, not
-cross-runtime performance contracts.
-
-## .NET usage
-
-```csharp
-var engine = TrajectoryEngine.CreateDefault();
-
-var input = new NormalizeInput
-{
-    Source = TrajectorySource.Codex,
-    Transcript = transcript,
-    SourceContext = new SourceContext
-    {
-        GroupId = sessionId,
-        BaseByteOffset = offset,
-        Partial = true,
-    },
-};
-
-var ir = engine.NormalizeToIR(input);
-var canonical = engine.Project<LettaCanonicalResult>(
-    ir,
-    OutputSchemaIds.LettaCanonicalV1);
-var hypabolic = engine.Project<HypabolicTrajectoryV1>(
-    ir,
-    OutputSchemaIds.HypabolicTrajectoryV1);
-```
-
-The API may still evolve before the first NuGet release. Versioned wire
-contracts, canonical identity, hashes, diagnostics, and conformance behavior
-take precedence over preserving an unpublished pre-release API.
-
-## Compatibility policy
-
-- The compatibility pin changes only in an explicit compatibility update.
-- Existing identity-bearing bytes never change under the same contract
-  version.
-- Canonical JSON is the documented Trajectory algorithm, not RFC 8785/JCS.
-- Diagnostics and fatal errors are typed and content-safe.
-- New runtime capabilities are advertised only after their shared cases pass.
-- Goldens are reviewed artifacts; CI never regenerates and accepts them.
-- Pre-1.0 package releases remain synchronized because normalizer version
-  participates in canonical output.
-
-See:
-
-- [architecture](docs/architecture.md);
-- [compatibility and multi-language roadmap](docs/multi-language-plan.md);
-- [release readiness, privacy, upgrade, intentional differences](docs/release-readiness.md);
-- [publishing packages to NuGet, npm, and crates.io](docs/publishing.md);
-- [detailed .NET behavior baseline](docs/implementation-plan.md);
-- [pinned parity baseline](docs/parity-baseline.md);
-- [.NET adapter authoring](dotnet/docs/adapter-authoring.md);
-- [normative specifications](contracts/spec/normalization.md).
-
-## Roadmap
-
-ML1 established the shared foundation; ML2 and ML3 added independent
-TypeScript and Rust Pi vertical paths; ML4 brought TypeScript to the current
-.NET Pi, Claude Code, and Codex source baseline; ML5 and ML6 brought Rust to
-the same source baseline; ML7 completed output and preview-distribution parity
-across all three implementations. ML9 OpenClaw, ML11 Hermes, and ML13 1.0
-parity and release hardening are complete. Packaging is dry-run gated on every
-CI build; live multi-registry publish is available via the Release workflow
-([docs/publishing.md](docs/publishing.md)). Letta Code (ML8), OpenHands (ML10),
-and Deep Agents checkpoint integrations (ML12) remain accepted post-v1 support
-goals and are not part of the v1 required capability set. Remaining process
-gates (secrets, first tag) are in
-[docs/release-readiness.md](docs/release-readiness.md).
+MIT — see [LICENSE](LICENSE).

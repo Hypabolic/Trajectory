@@ -1,29 +1,24 @@
 # Trajectory TypeScript
 
-This workspace is the independent TypeScript implementation of Trajectory. It
-targets Node.js 22 and newer and is authored only from the Hypabolic contracts
-and shared conformance cases.
+Independent TypeScript implementation of Trajectory for Node.js 22+.
 
-The pinned `letta-ai/trajectory` release is a black-box compatibility oracle.
-Its implementation source must not be copied, translated, vendored, imported,
-or used as this workspace's module structure.
+| Package | Role |
+| --- | --- |
+| `@hypabolic/trajectory` | Core normalize + project (byte-oriented) |
+| `@hypabolic/trajectory-node` | Explicit-root local store listing |
+| `@hypabolic/trajectory-otel` | Optional OpenTelemetry GenAI projection |
+| `@hypabolic/trajectory-testing` | Private conformance runner (unpublished) |
+| `@hypabolic/trajectory-cli` | Private sample TUI (unpublished) |
 
-The implementation retains these package boundaries:
+## Install
 
-- `@hypabolic/trajectory`: byte-oriented core, Pi, Claude Code, Codex, OpenClaw,
-  and Hermes normalization, lossless source-native invocation metadata,
-  identity, and projections;
-- `@hypabolic/trajectory-node`: explicit-root local-store listing for implemented
-  sources;
-- `@hypabolic/trajectory-otel`: optional OpenTelemetry projection and emission;
-- `@hypabolic/trajectory-testing`: conformance and adapter-authoring helpers;
-- `@hypabolic/trajectory-cli`: unpublished local sample TUI for browsing agent
-  sessions (private workspace package).
+```bash
+npm install @hypabolic/trajectory
+npm install @hypabolic/trajectory-node   # listing helpers
+npm install @hypabolic/trajectory-otel   # optional spans
+```
 
-Node filesystem APIs, SQLite, and OpenTelemetry dependencies stay outside the
-core package.
-
-## Build and verify
+## Build and verify (from this workspace)
 
 ```bash
 npm ci
@@ -31,22 +26,12 @@ npm run typecheck
 npm test
 ```
 
-The test command builds all four packages, exercises typed failures and partial
-segments, validates `runtime-capabilities.json`, and runs every advertised
-shared operation through the private runner twice.
-From the repository root, the runner can also be invoked directly:
+Shared conformance from the repo root:
 
 ```bash
 python3 conformance/verify.py --repository-root . -- \
   node typescript/packages/trajectory-testing/dist/cli.js
 ```
-
-ML13 advertises Pi, Claude Code, Codex, OpenClaw, and Hermes with all six
-deterministic outputs. `minimalJsonlChunks` and `writeMinimalJsonl` provide
-incremental output without materializing the complete JSONL document. The same
-private protocol and language-neutral cases are used by every runtime; source
-filters remain useful for focused development. Packages remain unpublished;
-see [docs/release-readiness.md](../docs/release-readiness.md).
 
 ## Core API
 
@@ -57,7 +42,6 @@ import {
   normalizeToIR,
   normalizeToCanonical,
   normalizeToHypabolic,
-  normalizeToLetta,
 } from "@hypabolic/trajectory";
 
 const request = {
@@ -71,24 +55,24 @@ const request = {
 };
 
 const ir = normalizeToIR(request);
-const letta = normalizeToLetta(request);
 const canonical = normalizeToCanonical(request);
 const hypabolic = normalizeToHypabolic(request);
 ```
 
-String transcript input is a UTF-8 convenience. The decoder always computes
-anchors from the encoded bytes, never from UTF-16 string indices.
+String transcript input is a UTF-8 convenience. Anchors are always computed
+from encoded bytes, never from UTF-16 string indices.
 
 ## Sample CLI
-
-The private `@hypabolic/trajectory-cli` package lists local agent stores and
-prints privacy-safe trajectory summaries. See
-[packages/trajectory-cli/README.md](packages/trajectory-cli/README.md).
 
 ```bash
 npm run build
 node packages/trajectory-cli/dist/cli.js list --source pi
-node packages/trajectory-cli/dist/cli.js show \
-  --source pi \
-  --path ../conformance/cases/pi/tool-calls/input.jsonl
 ```
+
+See [packages/trajectory-cli/README.md](packages/trajectory-cli/README.md).
+
+## Further reading
+
+- [Root README](../README.md)
+- [Architecture](../docs/architecture.md)
+- [Publishing](../docs/publishing.md)

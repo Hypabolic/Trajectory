@@ -31,7 +31,7 @@ user and assistant-role record. Partial mode permits either to be absent and
 permits a result whose call is in another chunk.
 
 All results begin with synthetic meta in the private IR. Canonical output omits
-meta when `base_byte_offset` is non-zero. Letta and Hypabolic projections retain
+meta when `base_byte_offset` is non-zero. message-trajectory and Hypabolic projections retain
 the current implemented behavior.
 
 ## Tool linking

@@ -255,7 +255,7 @@ internal sealed class ShowCommand : AsyncCommand<ShowCommand.Settings>
         public string? Id { get; init; }
 
         [CommandOption("--format <FORMAT>")]
-        [Description("Summary projection: letta, hypabolic, or both (default).")]
+        [Description("Summary projection: messages, hypabolic, or both (default).")]
         [DefaultValue("both")]
         public string Format { get; init; } = "both";
     }
@@ -498,17 +498,17 @@ internal static class SessionSummary
             }
         }
 
-        if (formats is "both" or "letta" or "all")
+        if (formats is "both" or "messages" or "letta" or "all")
         {
             try
             {
-                var letta = TrajectoryConverter.NormalizeTranscript(source, transcript);
+                var messages = TrajectoryConverter.NormalizeTranscript(source, transcript);
                 AnsiConsole.MarkupLine(
-                    $"[bold]Letta[/] records={letta.Records.Count} diagnostics={letta.Diagnostics.Count}");
+                    $"[bold]Messages[/] records={messages.Records.Count} diagnostics={messages.Diagnostics.Count}");
             }
             catch (TrajectoryNormalizationException error)
             {
-                AnsiConsole.MarkupLine($"[yellow]Letta projection skipped:[/] {Markup.Escape(error.Message)}");
+                AnsiConsole.MarkupLine($"[yellow]Message trajectory skipped:[/] {Markup.Escape(error.Message)}");
             }
         }
 

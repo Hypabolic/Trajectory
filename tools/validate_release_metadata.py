@@ -155,7 +155,6 @@ def main() -> None:
         "version": VERSION,
         "slice": SLICE,
         "normalizer_contract_version": compatibility["contracts"]["normalizer"],
-        "upstream_commit": compatibility["upstream"]["commit"],
         "source_commit": source_commit,
         "implemented_sources": expected_sources,
         "implemented_outputs": OUTPUTS,

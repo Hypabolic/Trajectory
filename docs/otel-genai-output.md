@@ -15,7 +15,7 @@ time. Advancing the pin requires an explicit compatibility update.
 
 The .NET implementation of Trajectory can project normalized coding-agent trajectories into OpenTelemetry spans that follow the OpenTelemetry Generative AI semantic conventions. This allows historical or captured agent sessions to feed standard observability systems without coupling source decoders to a particular telemetry backend.
 
-The output is not a Letta parity contract. It is a Trajectory projection whose compatibility target is a pinned OpenTelemetry GenAI semantic-convention version.
+The output is a Trajectory projection whose compatibility target is a pinned OpenTelemetry GenAI semantic-convention version.
 
 ## Package boundary
 
@@ -163,7 +163,7 @@ The adapter must therefore:
 - add an explicit compatibility update when moving the pin;
 - maintain golden fixtures per supported semantic-convention version if more than one version is supported.
 
-The initial planning baseline is GenAI schema `1.42.0`; implementation must verify the current upstream release before coding begins.
+The initial planning baseline is GenAI schema `1.42.0`; implementation must verify the current GenAI schema release before coding begins.
 
 ## Output model and transport
 

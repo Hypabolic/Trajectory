@@ -13,7 +13,7 @@ import { constants as fsConstants, existsSync } from "node:fs";
 import {
   normalizeToHypabolic,
   normalizeToIR,
-  normalizeToLetta,
+  normalizeToLetta as normalizeToMessages,
   TrajectoryNormalizationError,
   type TrajectoryIR,
   type TrajectorySource,
@@ -46,7 +46,7 @@ interface CliArgs {
   id?: string;
   limit: number;
   showContent: boolean;
-  format: "both" | "letta" | "hypabolic";
+  format: "both" | "messages" | "hypabolic";
 }
 
 async function main(): Promise<number> {
@@ -111,7 +111,7 @@ function parseArgs(argv: string[]): CliArgs {
       continue;
     }
     if (token === "--format" && next) {
-      if (next === "letta" || next === "hypabolic" || next === "both") args.format = next;
+      if (next === "letta" || next === "messages" || next === "hypabolic" || next === "both") args.format = next === "letta" ? "messages" : next;
       else throw new TrajectoryNormalizationError("invalid_input", `Unknown format '${next}'.`);
       i += 2;
       continue;
@@ -382,17 +382,17 @@ async function printSummary(
     }
   }
 
-  if (format === "both" || format === "letta") {
+  if (format === "both" || format === "messages") {
     try {
-      const letta = normalizeToLetta({ source: source as TrajectorySource, transcript }) as {
+      const messages = normalizeToMessages({ source: source as TrajectorySource, transcript }) as {
         records?: unknown[];
         diagnostics?: unknown[];
       };
       console.log(
-        `${BOLD}Letta${RESET} records=${letta.records?.length ?? "?"} diagnostics=${letta.diagnostics?.length ?? "?"}`,
+        `${BOLD}Messages${RESET} records=${messages.records?.length ?? "?"} diagnostics=${messages.diagnostics?.length ?? "?"}`,
       );
     } catch (error) {
-      console.log(`${YELLOW}Letta projection skipped:${RESET}`, error instanceof Error ? error.message : error);
+      console.log(`${YELLOW}Message trajectory skipped:${RESET}`, error instanceof Error ? error.message : error);
     }
   }
 

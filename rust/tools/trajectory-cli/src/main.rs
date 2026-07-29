@@ -53,7 +53,7 @@ impl SourceArg {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum FormatArg {
     Both,
-    Letta,
+    Messages,
     Hypabolic,
 }
 
@@ -98,7 +98,7 @@ enum Commands {
         /// Session id from listing; resolved under the store root when --path is omitted.
         #[arg(long)]
         id: Option<String>,
-        /// Summary projection: letta, hypabolic, or both (default).
+        /// Summary projection: messages, hypabolic, or both (default).
         #[arg(long, value_enum, default_value_t = FormatArg::Both)]
         format: FormatArg,
     },
@@ -363,11 +363,11 @@ fn print_summary(
             },
             Err(error) => println!("Hypabolic projection skipped: {}", error.message),
         },
-        FormatArg::Letta => {}
+        FormatArg::Messages => {}
     }
 
     match format {
-        FormatArg::Both | FormatArg::Letta => match project_letta(&trajectory) {
+        FormatArg::Both | FormatArg::Messages => match project_letta(&trajectory) {
             Ok(json) => match serde_json::from_str::<serde_json::Value>(&json) {
                 Ok(value) => {
                     let records = value
@@ -378,11 +378,11 @@ fn print_summary(
                         .get("diagnostics")
                         .and_then(serde_json::Value::as_array)
                         .map_or(0, Vec::len);
-                    println!("Letta records={records} diagnostics={diagnostics}");
+                    println!("Messages records={records} diagnostics={diagnostics}");
                 }
-                Err(_) => println!("Letta projection produced {} bytes", json.len()),
+                Err(_) => println!("Message trajectory produced {} bytes", json.len()),
             },
-            Err(error) => println!("Letta projection skipped: {}", error.message),
+            Err(error) => println!("Message trajectory skipped: {}", error.message),
         },
         FormatArg::Hypabolic => {}
     }

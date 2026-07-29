@@ -52,7 +52,7 @@ secrets. Required rules:
   `contracts/spec/diagnostics.md` (no transcript prose, raw JSON, secrets, or
   paths).
 
-When behaviour is discovered against a real transcript or the upstream oracle,
+When behaviour is discovered against a real transcript,
 rewrite it into a minimal sanitized vector before check-in. See
 [docs/release-readiness.md](../docs/release-readiness.md) for the ML13 privacy
 review and product release policy.

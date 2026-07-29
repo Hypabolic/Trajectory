@@ -82,7 +82,7 @@ upward). It is not a durable cursor and is excluded from durable identity.
 {"content": <semantic-content>, "type": "<record-type>"}
 ```
 
-`record_sha256` hashes the canonical Letta record JSON, excluding the hashes
+`record_sha256` hashes the canonical message-trajectory record JSON, excluding the hashes
 object and all provenance. Timestamps therefore affect record hashes but not
 content hashes. Transport offsets, arrival order, and diagnostics affect
 neither.

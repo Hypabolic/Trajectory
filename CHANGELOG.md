@@ -23,14 +23,14 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
   gates and `tools/validate_release_metadata.py` require Hermes and ML13
   agreement; preview packaging remains dry-run only with provenance evidence
   tied to commit and contract version. Documented privacy/fixture sanitization,
-  intentional differences from the pinned upstream oracle, upgrade guidance,
+  upgrade guidance,
   and product-level 1.0 readiness criteria in `docs/release-readiness.md`.
   Packages are not published.
 
 - Added unpublished sample CLIs for local session browsing across .NET
   (`dotnet/samples/Trajectory.Cli`), TypeScript (`@hypabolic/trajectory-cli`),
   and Rust (`trajectory-cli`). Each lists default agent-store roots, supports
-  `--root` / env overrides, interactive session pick, and privacy-safe Letta
+  `--root` / env overrides, interactive session pick, and privacy-safe 
   and Hypabolic summaries (`--show-content` is opt-in with a warning).
 
 - Added Hermes source adapters and shared conformance fixtures across .NET,
@@ -47,7 +47,7 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 - Established language-neutral contracts and shared conformance assets.
 - Added native .NET, TypeScript, and Rust implementations for Pi, Claude Code,
   and Codex.
-- Added deterministic Letta trajectory, Letta canonical, Hypabolic, OpenAI
+- Added deterministic message trajectory, canonical identity, Hypabolic, OpenAI
   chat, minimal JSONL, and OpenTelemetry GenAI span projections across all
   three runtimes.
 - Added explicit-root listing, typed diagnostics and fatal errors, incremental

@@ -9,7 +9,7 @@ inputs identify the same instant regardless of their textual offset.
 
 ## Normalized timestamps
 
-Source timestamps are preserved separately. Public Letta, canonical,
+Source timestamps are preserved separately. Public message-trajectory, canonical,
 Hypabolic, minimal JSONL, and OpenTelemetry timestamps format normalized
 instants in UTC with exactly three fractional digits:
 
@@ -35,7 +35,7 @@ Given body records and source-native anchors:
 Meta has null source and normalized timestamps.
 
 Timestamp synthesis and interpolation do not participate in durable record ID
-or source order identity. They do participate in the canonical Letta
+or source order identity. They do participate in the canonical message-trajectory
 `record_json` and therefore in `record_sha256`.
 
 OpenTelemetry spans are emitted only for defensible source-native boundaries.

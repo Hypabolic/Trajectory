@@ -10,7 +10,7 @@ Local sample CLI/TUI for browsing agent sessions with
 
 - Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes)
 - Interactive browse: pick source → pick session → privacy-safe summary
-- Summary includes record counts, roles, tool calls, diagnostics, and Letta/Hypabolic projections
+- Summary includes record counts, roles, tool calls, diagnostics, and message/Hypabolic projections
 - Optional `--show-content` with an explicit privacy warning
 
 | Source | Default root | Env override |
