@@ -12,6 +12,7 @@ Related:
 - [Listing](../contracts/spec/listing.md)
 - [Conformance case authoring](../conformance/README.md)
 - [Contributing](contributing.md)
+- [AHP source design (draft)](ahp-source-spec.md) — Agent Host Protocol as a post-v1 source
 
 ## Architecture reminder
 
