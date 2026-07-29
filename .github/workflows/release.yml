@@ -291,6 +291,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ needs.resolve.outputs.version }}"
+          mkdir -p artifacts/evidence
           find artifacts/release -type f -print0 | sort -z | xargs -0 sha256sum \
             > artifacts/evidence/release-package-sha256.txt
           python3 tools/extract_changelog.py \
