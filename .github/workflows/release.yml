@@ -258,21 +258,34 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.resolve.outputs.version }}"
           python3 tools/prepare_rust_package.py
-          # Core: full verify (self-contained).
+          mkdir -p artifacts/release/crates
+
+          # Core is self-contained — full package + verify.
           cargo +stable package --manifest-path rust/Cargo.toml \
             -p hypabolic-trajectory --locked --allow-dirty
-          # Otel depends on hypabolic-trajectory; until that version is on crates.io,
-          # package verification would fail looking up the path dep. --no-verify only
-          # skips the unpack-and-build check; the .crate is still valid for publish
-          # (publish job ships core first, then otel).
-          cargo +stable package --manifest-path rust/Cargo.toml \
-            -p hypabolic-trajectory-opentelemetry --locked --allow-dirty --no-verify
-          mkdir -p artifacts/release/crates
-          cp rust/target/package/*.crate artifacts/release/crates/
+          cp rust/target/package/hypabolic-trajectory-"${VERSION}".crate \
+            artifacts/release/crates/
+
+          # Otel rewrites its path dep to a crates.io version requirement when
+          # packaging. Cargo refuses to package until that version exists on the
+          # registry (even with --no-verify). First-ever dual publish: skip the
+          # otel artifact here; publish-crates ships core then otel, and may
+          # attach the otel .crate after core is live.
+          if curl -fsSL "https://crates.io/api/v1/crates/hypabolic-trajectory/${VERSION}" \
+               >/dev/null 2>&1; then
+            cargo +stable package --manifest-path rust/Cargo.toml \
+              -p hypabolic-trajectory-opentelemetry --locked --allow-dirty
+            cp rust/target/package/hypabolic-trajectory-opentelemetry-"${VERSION}".crate \
+              artifacts/release/crates/
+          else
+            echo "::notice::hypabolic-trajectory@${VERSION} not on crates.io yet; skipping otel .crate pack (publish job will release both)."
+          fi
+
           for crate in artifacts/release/crates/*.crate; do
             base="$(basename "$crate")"
             [[ "$base" == *"${VERSION}"* ]] || { echo "Bad crate name: $base" >&2; exit 1; }
           done
+          ls -la artifacts/release/crates/
 
       - name: Checksums and release notes
         run: |
