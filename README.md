@@ -15,7 +15,9 @@ suite in every ecosystem.
 Optional OpenTelemetry packages: `Hypabolic.Trajectory.OpenTelemetry`,
 `@hypabolic/trajectory-otel`, `hypabolic-trajectory-opentelemetry`.
 
-Current version: **0.1.0** (synchronized across NuGet, npm, and crates.io).
+Current version: **0.1.0** (see root `VERSION`; synchronized across NuGet, npm,
+and crates.io). Releases are cut via the **Release** workflow (versioned packs,
+registry publish, GitHub Release)—see [docs/publishing.md](docs/publishing.md).
 
 ## What you get
 

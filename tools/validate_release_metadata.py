@@ -10,7 +10,14 @@ import os
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-VERSION = "0.1.0"
+def read_package_version(root: Path) -> str:
+    """Package version from repository-root VERSION file (single source of truth)."""
+    path = root / "VERSION"
+    if not path.is_file():
+        raise SystemExit("VERSION file is missing at repository root.")
+    return path.read_text(encoding="utf-8").strip()
+
+
 SLICE = "ML13"
 OUTPUTS = [
     "letta-trajectory-v1",
@@ -79,6 +86,7 @@ def main() -> None:
     parser.add_argument("--evidence", type=Path)
     args = parser.parse_args()
     root = args.repository_root.resolve()
+    version = read_package_version(root)
 
     compatibility = load_json(root / "contracts/compatibility.json")
     if compatibility["implemented"]["outputs"] != OUTPUTS:
@@ -116,15 +124,15 @@ def main() -> None:
     ]
     for path in npm_paths:
         package = load_json(path)
-        if package["version"] != VERSION:
-            raise SystemExit(f"{path.relative_to(root)} is not version {VERSION}.")
+        if package["version"] != version:
+            raise SystemExit(f"{path.relative_to(root)} is not version {version}.")
     for path in npm_paths[1:4]:
         package = load_json(path)
         if package.get("private", False):
             raise SystemExit(f"{path.relative_to(root)} cannot participate in a preview dry run.")
 
     cargo = load_toml(root / "rust/Cargo.toml")
-    if cargo["workspace"]["package"]["version"] != VERSION:
+    if cargo["workspace"]["package"]["version"] != version:
         raise SystemExit("Rust workspace package version is not synchronized.")
     core_dependencies = cargo["workspace"].get("dependencies", {})
     if any("opentelemetry" in name.lower() for name in core_dependencies):
@@ -136,11 +144,12 @@ def main() -> None:
         root / "dotnet/src/Trajectory.Testing/Trajectory.Testing.csproj",
     ]
     for path in projects:
-        version = ET.parse(path).findtext(".//Version")
-        if version != VERSION:
-            raise SystemExit(f"{path.relative_to(root)} is not version {VERSION}.")
+        project_version = ET.parse(path).findtext(".//Version")
+        if project_version != version:
+            raise SystemExit(f"{path.relative_to(root)} is not version {version}.")
 
     inputs = [
+        root / "VERSION",
         root / "contracts/compatibility.json",
         *runtime_manifests,
         *npm_paths,
@@ -152,7 +161,7 @@ def main() -> None:
     source_commit = os.environ.get("GITHUB_SHA") or os.environ.get("SOURCE_COMMIT")
     evidence = {
         "format": "trajectory-preview-provenance-v1",
-        "version": VERSION,
+        "version": version,
         "slice": SLICE,
         "normalizer_contract_version": compatibility["contracts"]["normalizer"],
         "source_commit": source_commit,
@@ -173,7 +182,7 @@ def main() -> None:
         json.dumps(
             {
                 "status": "success",
-                "version": VERSION,
+                "version": version,
                 "slice": SLICE,
                 "manifests": len(inputs),
                 "source_commit": source_commit,

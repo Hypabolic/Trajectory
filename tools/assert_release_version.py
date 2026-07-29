@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Assert a release version matches synchronized package metadata."""
+"""Assert a release version matches the repository VERSION and package metadata."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-# Reuse the release metadata constants.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from validate_release_metadata import (  # noqa: E402
-    VERSION as METADATA_VERSION,
     load_json,
     load_toml,
+    read_package_version,
 )
 
 
@@ -42,11 +42,13 @@ def main() -> None:
     args = parser.parse_args()
     root = args.repository_root.resolve()
     version = normalize_version(args.version)
+    file_version = read_package_version(root)
 
-    if version != METADATA_VERSION:
+    if version != file_version:
         raise SystemExit(
-            f"Requested version {version} does not match tools/validate_release_metadata.py "
-            f"VERSION constant {METADATA_VERSION}. Bump all package metadata together first."
+            f"Requested version {version} does not match VERSION file ({file_version}). "
+            "Run: python3 tools/set_package_version.py --version "
+            f"{version}"
         )
 
     npm_paths = [
@@ -76,10 +78,11 @@ def main() -> None:
             raise SystemExit(f"{path.relative_to(root)} Version is not {version}.")
 
     print(
-        __import__("json").dumps(
+        json.dumps(
             {
                 "status": "success",
                 "version": version,
+                "tag": f"v{version}",
                 "nuget": [
                     "Hypabolic.Trajectory",
                     "Hypabolic.Trajectory.OpenTelemetry",

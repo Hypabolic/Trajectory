@@ -5,17 +5,16 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## 0.1.0 — Unreleased
 
-- Added multi-registry **Release** workflow (`.github/workflows/release.yml`) to
-  pack and publish synchronized NuGet, npm, and crates.io packages from a
-  version tag (`v*.*.*`) or `workflow_dispatch`. Includes dry-run mode, package
-  content checks, npm provenance, crates.io ordered publish with index retry,
-  GitHub Release notes/assets, MIT `LICENSE`, shared NuGet metadata
-  (`dotnet/Directory.Build.props`), and `tools/assert_release_version.py`.
-  Steady-state npm uses **OIDC trusted publishing**. First-time
-  `@hypabolic/*` package creation is a local CLI bootstrap
-  (`./tools/bootstrap_npm_packages.sh` / `npm publish` from a logged-in
-  machine) so Trusted Publisher can be configured afterward—no long-lived
-  npm token in GitHub. Operator guide: `docs/publishing.md`.
+- Hardened **versioned releases**: root `VERSION` file as single source of
+  truth; `tools/set_package_version.py` / `extract_changelog.py`; Release
+  workflow packs version-stamped NuGet/npm/crates artifacts, publishes to all
+  three registries, and creates a GitHub Release with changelog notes and
+  attached packages. Tag `vX.Y.Z` (after VERSION sync) or dispatch with
+  bump/version. Operator guide: `docs/publishing.md`.
+
+- Added multi-registry **Release** workflow baseline, MIT `LICENSE`, NuGet
+  package metadata, npm OIDC steady-state publish, and local
+  `./tools/bootstrap_npm_packages.sh` for first `@hypabolic/*` create.
 
 - Completed ML13 1.0 parity and release hardening. Runtime capability manifests
   advertise slice `ML13` with the full v1 source set (`pi`, `claude-code`,
