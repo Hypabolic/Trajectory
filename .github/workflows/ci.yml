@@ -397,13 +397,16 @@ jobs:
         run: |
           npm run build
           mkdir -p ../artifacts/preview/npm
+          # Pack only — `npm publish --dry-run` fails once 0.1.0 already exists
+          # on the registry (bootstrap), even though no publish occurs.
           npm pack --workspace @hypabolic/trajectory \
             --workspace @hypabolic/trajectory-node \
             --workspace @hypabolic/trajectory-otel \
             --pack-destination ../artifacts/preview/npm
-          npm publish --dry-run --workspace @hypabolic/trajectory \
-            --workspace @hypabolic/trajectory-node \
-            --workspace @hypabolic/trajectory-otel
+          for package in ../artifacts/preview/npm/*.tgz; do
+            echo "Packed $package"
+            tar -tzf "$package" | head -20
+          done
       - name: Build and dry-run crates
         run: |
           python3 tools/prepare_rust_package.py
