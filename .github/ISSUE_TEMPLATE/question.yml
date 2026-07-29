@@ -1,0 +1,40 @@
+name: Question
+description: Ask about usage or design (not a bug or feature request)
+title: "q: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Prefer searching [docs](https://github.com/Hypabolic/Trajectory/tree/main/docs)
+        and existing issues first. For bugs or features, use those templates instead.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to do, and what is unclear?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package / runtime (if relevant)
+      multiple: true
+      options:
+        - .NET
+        - TypeScript
+        - Rust
+        - Sample CLI
+        - General / multi-runtime
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Code snippet, version, or link (sanitize any session data)
+    validations:
+      required: false

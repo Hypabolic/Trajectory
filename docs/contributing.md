@@ -111,13 +111,17 @@ own README.
 
 ## Reporting issues
 
-Include:
+Use the GitHub **issue forms** (Bug report, Feature request, Documentation,
+Question). Include:
 
 - runtime and package version;
 - source family and whether the input is whole or partial;
 - a **sanitized** minimal fixture (never paste production secrets);
 - expected vs actual behaviour (hashes, diagnostics codes, or structural
   mismatch)—not full private transcripts.
+
+Pull requests should use the repository **PR template** checklist
+(`.github/PULL_REQUEST_TEMPLATE.md`).
 
 ## License
 

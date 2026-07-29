@@ -1,0 +1,36 @@
+name: Documentation
+description: Gaps, errors, or improvements in docs and examples
+title: "docs: "
+labels: ["documentation"]
+body:
+  - type: dropdown
+    id: location
+    attributes:
+      label: Where
+      multiple: true
+      options:
+        - README
+        - docs/ architecture or guides
+        - Package README (dotnet / typescript / rust)
+        - API / XML docs / rustdoc / TSDoc
+        - Contributing or adapter authoring
+        - Changelog / publishing
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is wrong or missing?
+      description: Link to the page/section if possible
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: Optional rewrite, outline, or example you wish existed
+    validations:
+      required: false

@@ -1,0 +1,82 @@
+name: Feature request
+description: Propose a new capability, source, output, or API improvement
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Trajectory is a multi-language library with shared contracts and
+        conformance. Feature requests that change wire behaviour need a clear
+        contract story (see [docs/adapter-authoring.md](https://github.com/Hypabolic/Trajectory/blob/main/docs/adapter-authoring.md)).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - New source adapter
+        - New output / projection
+        - Listing / store discovery
+        - Normalize API / options
+        - OpenTelemetry
+        - Performance
+        - Sample CLI / DX
+        - Documentation
+        - CI / release
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem are you trying to solve? Who hits it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: |
+        Ideal API or behaviour. For sources/outputs, note schema or wire impact.
+      placeholder: |
+        e.g. Add a source adapter for … with listing under …
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, other libraries, or “do nothing”
+    validations:
+      required: false
+
+  - type: dropdown
+    id: runtimes
+    attributes:
+      label: Runtimes that should ship this
+      description: Behavioural features usually need all three
+      multiple: true
+      options:
+        - .NET
+        - TypeScript
+        - Rust
+        - Docs / process only
+        - Unsure
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and discussions for similar requests
+          required: true
+        - label: I understand multi-runtime wire changes need shared contracts/conformance
+          required: false
