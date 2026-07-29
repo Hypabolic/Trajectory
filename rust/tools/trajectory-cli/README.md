@@ -70,3 +70,8 @@ Shared flags: `--source`, `--root`, `--limit`, `--show-content`.
 - Empty stores exit 0 with a clear message.
 - Typed `TrajectoryError` codes are printed without panicking.
 - Built with `clap` + `dialoguer` over the workspace library.
+
+## Related
+
+- Product overview and CLI matrix: [root README](../../../README.md#sample-clis-try-your-local-sessions)
+- Contributing: [docs/contributing.md](../../../docs/contributing.md)

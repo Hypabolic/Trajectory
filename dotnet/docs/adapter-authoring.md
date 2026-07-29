@@ -1,7 +1,10 @@
-# Adapter authoring
+# Adapter authoring (.NET)
 
-Trajectory has two public extension seams. Both use explicit registration on a
-`TrajectoryEngine`; no reflection, assembly scanning, or dynamic activation is
+For the multi-runtime checklist (shared contracts, conformance, and TypeScript /
+Rust sketches), see [docs/adapter-authoring.md](../../docs/adapter-authoring.md).
+
+This page documents **.NET** extension seams. Both use explicit registration on
+a `TrajectoryEngine`; no reflection, assembly scanning, or dynamic activation is
 used.
 
 ## Custom source adapter

@@ -36,16 +36,16 @@ pub const NORMALIZER_CONTRACT_VERSION: &str = "0.2.0";
 
 /// Public output schema identifiers implemented by the Rust runtime.
 pub mod schema_ids {
-    /// Letta trajectory output.
+    /// Compact message-trajectory record array.
     pub const LETTA_TRAJECTORY_V1: &str = "letta-trajectory-v1";
-    /// Letta canonical output.
+    /// Canonical identity records (stable ids, hashes, ordering).
     pub const LETTA_CANONICAL_V1: &str = "letta-canonical-v1";
-    /// Hypabolic trajectory output.
+    /// Provenance-rich Hypabolic trajectory document.
     pub const HYPOBOLIC_TRAJECTORY_V1: &str = "hypabolic-trajectory-v1";
-    /// `OpenAI` chat message output.
+    /// OpenAI-style chat message projection.
     pub const OPENAI_CHAT_MESSAGES_V1: &str = "openai-chat-messages";
-    /// Streaming minimal JSONL output.
+    /// Streaming minimal JSONL projection.
     pub const MINIMAL_JSONL_V1: &str = "jsonl-minimal";
-    /// Deterministic OpenTelemetry `GenAI` span-set output.
+    /// Deterministic OpenTelemetry GenAI span-set projection.
     pub const OTEL_GENAI_SPANS_V1: &str = "otel-genai-spans-v1";
 }

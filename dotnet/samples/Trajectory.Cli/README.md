@@ -71,3 +71,8 @@ Shared flags: `--source`, `--root`, `--limit`, `--show-content`.
 - Empty stores print a friendly message and exit 0.
 - Normalization failures surface typed `TrajectoryNormalizationException` codes without panicking.
 - Sample is intentionally unpublished (`IsPackable=false`).
+
+## Related
+
+- Product overview and multi-runtime CLI matrix: [root README](../../../README.md#sample-clis-try-your-local-sessions)
+- Contributing: [docs/contributing.md](../../../docs/contributing.md)

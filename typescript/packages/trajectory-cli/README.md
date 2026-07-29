@@ -78,3 +78,8 @@ workspace Trajectory packages. No ink/ink-heavy UI stack.
 - Empty stores exit 0 with a clear message.
 - Typed `TrajectoryNormalizationError` codes are printed without stack dumps by default.
 - Not part of the published npm surface for v1.
+
+## Related
+
+- Product overview and CLI matrix: [root README](../../../README.md#sample-clis-try-your-local-sessions)
+- Contributing: [docs/contributing.md](../../../docs/contributing.md)
