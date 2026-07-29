@@ -103,6 +103,13 @@ def compare_output(
     return True
 
 
+def implemented_sources(repository_root: Path) -> set[str]:
+    """Sources advertised in contracts/compatibility.json implemented.sources."""
+    manifest_path = repository_root / "contracts" / "compatibility.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return set(payload.get("implemented", {}).get("sources", []))
+
+
 def main() -> int:
     args = parse_args()
     repository_root = args.repository_root.resolve()
@@ -114,6 +121,16 @@ def main() -> int:
             for path in manifests
             if json.loads(path.read_text(encoding="utf-8"))["source"]
             in args.sources
+        ]
+    else:
+        # Phase-0+ contract fixtures may land before runtimes implement a
+        # source. Skip unadvertised sources unless the caller filters with
+        # --source (explicit development / Phase-1 runs).
+        allowed = implemented_sources(repository_root)
+        manifests = [
+            path
+            for path in manifests
+            if json.loads(path.read_text(encoding="utf-8"))["source"] in allowed
         ]
     checked = 0
     candidates = 0

@@ -1,10 +1,17 @@
 # Spec: Agent Host Protocol (AHP) support in Trajectory
 
-Status: **draft for review**  
+Status: **AHP-0 landed** (contracts + synthetic fixtures; no runtime decoder yet)  
 Target product slice: post-v1 source family  
 AHP reference: [microsoft.github.io/agent-host-protocol](https://microsoft.github.io/agent-host-protocol/)  
 AHP schemas: [github.com/microsoft/agent-host-protocol/schema](https://github.com/microsoft/agent-host-protocol/tree/main/schema)  
-Pinned protocol family for design: **0.3.x** (pre-1.0; breaking changes expected)
+Pinned protocol family: **0.7.x** (vendor pin `conformance/vendor/ahp/PROTOCOL_VERSION`; pre-1.0; breaking changes expected)
+
+**AHP-0 deliverables:** `contracts/spec/sources/ahp.md`,
+`contracts/schemas/ahp-export-v1.schema.json`, vendor pin, and
+`conformance/cases/ahp/{tool-calls,multi-turn,cancelled-turn}` (Shape A
+snapshots; expected goldens stubbed until AHP-1+).  
+**Not yet:** runtime decode, `compatibility.json` → `implemented.sources`,
+action-log reduce.
 
 Related Trajectory docs:
 
@@ -140,7 +147,7 @@ Canonical offline export. Preferred for conformance goldens.
 
 ```jsonc
 {
-  "ahpProtocolVersion": "0.3.0",
+  "ahpProtocolVersion": "0.7.0",
   "chat": { /* ChatState */ },
   "session": { /* optional SessionState or SessionSummary fields */ }
 }
@@ -178,7 +185,7 @@ Rules:
 
 ```jsonc
 {
-  "ahpProtocolVersion": "0.3.0",
+  "ahpProtocolVersion": "0.7.0",
   "session": { /* SessionState */ },
   "chats": [
     { "chat": { /* ChatState */ }, "actions": [ /* optional ActionEnvelope[] */ ] }
@@ -219,7 +226,8 @@ used; snapshot-only partial is best-effort.
 ### D6 — Protocol version pin
 
 - Conformance fixtures declare `ahpProtocolVersion`.
-- Adapter accepts a small allow-list of compatible versions (e.g. all `0.3.x`).
+- Adapter accepts a small allow-list of compatible versions (e.g. all `0.7.x`
+  once Phase 1 ships; expand only with reviewed fixture updates).
 - Incompatible major/minor → fatal `unsupported_ahp_version`.
 - Missing version on snapshot: assume pin used to author the fixture; warn
   diagnostic `ahp_version_missing` (non-fatal) so real-world dumps still work.
@@ -433,12 +441,12 @@ experiments — explicitly deferred; Trajectory remains ingest-first.
 
 ## 10. Phased delivery
 
-### Phase 0 — Spec freeze (this document + contract draft)
+### Phase 0 — Spec freeze (this document + contract draft) — **done (AHP-0)**
 
-- [ ] Agree D1–D6
-- [ ] Pin AHP protocol version + schema digest
-- [ ] Author `contracts/spec/sources/ahp.md`
-- [ ] Sketch 3 synthetic fixtures (happy tools, cancel/error, multi-turn text)
+- [x] Agree D1–D6 (baseline; open questions §13 still for Phase 1 code)
+- [x] Pin AHP protocol version (`conformance/vendor/ahp/PROTOCOL_VERSION` → 0.7.0)
+- [x] Author `contracts/spec/sources/ahp.md` + `ahp-export-v1.schema.json`
+- [x] Sketch 3 synthetic fixtures (`ahp/tool-calls`, `ahp/multi-turn`, `ahp/cancelled-turn`)
 
 ### Phase 1 — Snapshot source (all runtimes)
 

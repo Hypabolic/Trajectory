@@ -1,0 +1,5 @@
+{
+  "_phase0_stub": true,
+  "_note": "AHP-0 contract-only case. Replace with reviewed golden after snapshot decode. MUST NOT invent tool success for cancelled/denied toolCall; turn state cancelled must surface without fabricating complete success.",
+  "records": []
+}

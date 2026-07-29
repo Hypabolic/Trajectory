@@ -1,0 +1,5 @@
+{
+  "_phase0_stub": true,
+  "_note": "AHP-0 contract-only case. Replace with reviewed letta-trajectory golden after the ahp snapshot decoder lands (AHP-1+).",
+  "messages": []
+}

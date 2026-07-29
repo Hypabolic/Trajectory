@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1,
+  "id": "ahp/cancelled-turn",
+  "operation": {
+    "normalize-canonical": {
+      "expected": "expected.canonical.json",
+      "comparison": "json-exact"
+    }
+  },
+  "source": "ahp",
+  "transcript": "input.json",
+  "native_container": "ahp-export-snapshot-v1",
+  "source_context": {},
+  "bounds": {},
+  "filters": {},
+  "projection_options": {},
+  "mode": "whole",
+  "required_capabilities": [
+    "normalize",
+    "typed-diagnostics",
+    "deterministic-rerun"
+  ],
+  "expected": {
+    "result": "success",
+    "diagnostic_codes": []
+  },
+  "comparison": "json-exact"
+}
