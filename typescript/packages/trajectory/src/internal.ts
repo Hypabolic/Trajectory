@@ -1157,6 +1157,9 @@ function decodeAhp(bytes: Uint8Array, partial: boolean): DecodedSession {
     const turnId = typeof turn.id === "string" && turn.id ? turn.id : undefined;
     const timestamp = ahpTimestamp(turn.startedAt);
     if (createdAt === undefined && timestamp !== undefined) createdAt = timestamp;
+    // Turn-local model from this turn's Message.model — never stick a prior
+    // turn's model onto later turns when usage.model is absent.
+    let turnModel: string | undefined;
     let componentIndex = 0;
     const emit = (
       event: Omit<DecodedEvent, "nativeId" | "sourceSequence" | "sourceOffset" | "componentIndex"> & {
@@ -1174,9 +1177,11 @@ function decodeAhp(bytes: Uint8Array, partial: boolean): DecodedSession {
     };
 
     if (isObject(turn.message)) {
-      emitAhpMessage(turn.message, turnId, timestamp, emit, diagnostics, (next) => {
-        if (model === undefined) model = next;
-      });
+      const messageModel = emitAhpMessage(turn.message, turnId, timestamp, emit, diagnostics);
+      if (messageModel !== undefined) {
+        turnModel = messageModel;
+        if (model === undefined) model = messageModel;
+      }
     }
 
     if (Array.isArray(turn.responseParts)) {
@@ -1187,7 +1192,7 @@ function decodeAhp(bytes: Uint8Array, partial: boolean): DecodedSession {
       const usageModel =
         typeof turn.usage.model === "string" && turn.usage.model ? turn.usage.model : undefined;
       if (usageModel && model === undefined) model = usageModel;
-      const resolvedModel = usageModel ?? model;
+      const resolvedModel = usageModel ?? turnModel;
       const invocation: DecodedModelInvocation = {
         ...(turnId === undefined ? {} : { nativeId: turnId }),
         ...(provider === undefined ? {} : { provider }),
@@ -1297,6 +1302,7 @@ function collectAhpTurns(
   return turns.map((item) => item.element);
 }
 
+/** Returns this message's model id when present (turn-local; does not mutate session model). */
 function emitAhpMessage(
   message: JsonObject,
   turnId: string | undefined,
@@ -1307,8 +1313,7 @@ function emitAhpMessage(
     },
   ) => void,
   diagnostics: TrajectoryDiagnostic[],
-  setModel: (model: string) => void,
-): void {
+): string | undefined {
   const origin = isObject(message.origin) ? message.origin : undefined;
   const originKind = typeof origin?.kind === "string" ? origin.kind : undefined;
   if (!originKind) {
@@ -1316,9 +1321,9 @@ function emitAhpMessage(
       code: "ahp_unknown_message_origin",
       message: "Dropped a message with an unknown origin kind.",
     });
-    return;
+    return undefined;
   }
-  if (originKind === "tool") return;
+  if (originKind === "tool") return undefined;
 
   let role: Role;
   if (originKind === "user") role = "user";
@@ -1335,15 +1340,15 @@ function emitAhpMessage(
       code: "ahp_unknown_message_origin",
       message: "Dropped a message with an unknown origin kind.",
     });
-    return;
+    return undefined;
   }
 
   const text = typeof message.text === "string" ? message.text : "";
-  if (!text) return;
-
-  if (isObject(message.model) && typeof message.model.id === "string" && message.model.id) {
-    setModel(message.model.id);
-  }
+  const turnModel =
+    isObject(message.model) && typeof message.model.id === "string" && message.model.id
+      ? message.model.id
+      : undefined;
+  if (!text) return turnModel;
 
   emit({
     kind: "message",
@@ -1351,7 +1356,9 @@ function emitAhpMessage(
     content: text,
     ...(timestamp === undefined ? {} : { timestamp }),
     ...(turnId === undefined ? {} : { nativeId: turnId }),
+    ...(turnModel === undefined ? {} : { model: turnModel }),
   });
+  return turnModel;
 }
 
 function emitAhpResponseParts(
@@ -1418,7 +1425,17 @@ function emitAhpResponseParts(
         code: "ahp_input_request_skipped",
         message: "Skipped an inputRequest response part.",
       });
+      continue;
     }
+    if (kind === "resource") {
+      // v1 does not fetch content-by-reference resource bodies.
+      diagnostics.push({
+        code: "ahp_unresolved_content_ref",
+        message: "Dropped a resource response part without fetching content-by-reference.",
+      });
+      continue;
+    }
+    // systemNotification and unknown kinds: non-identity meta; ignore body for v1.
   }
   flushMarkdown();
 }
@@ -1493,15 +1510,14 @@ function ahpToolResultContent(toolCall: JsonObject, isError: boolean): string {
     if (parts.length > 0) return parts.join("\n");
   }
   if (toolCall.structuredContent !== undefined && toolCall.structuredContent !== null) {
-    return compactJson(toolCall.structuredContent as JsonValue);
+    // Canonical JSON so .NET/TS/Rust structuredContent strings match cross-runtime.
+    return canonicalJson(toolCall.structuredContent as JsonValue);
   }
-  if (typeof toolCall.pastTenseMessage === "string" && toolCall.pastTenseMessage) {
-    return toolCall.pastTenseMessage;
-  }
+  const pastTense = ahpStringOrMarkdown(toolCall.pastTenseMessage);
+  if (pastTense !== undefined) return pastTense;
   if (isError) {
-    if (typeof toolCall.reasonMessage === "string" && toolCall.reasonMessage) {
-      return toolCall.reasonMessage;
-    }
+    const reasonMessage = ahpStringOrMarkdown(toolCall.reasonMessage);
+    if (reasonMessage !== undefined) return reasonMessage;
     if (typeof toolCall.reason === "string" && toolCall.reason) return toolCall.reason;
     // ToolCallCompletedState carries error.message when success is false.
     if (isObject(toolCall.error)) {
@@ -1512,6 +1528,16 @@ function ahpToolResultContent(toolCall: JsonObject, isError: boolean): string {
     return status === "cancelled" || status === "denied" ? "cancelled" : "error";
   }
   return "";
+}
+
+/** AHP StringOrMarkdown: plain string or `{ "markdown": "..." }`. */
+function ahpStringOrMarkdown(value: unknown): string | undefined {
+  if (typeof value === "string" && value) return value;
+  if (isObject(value as JsonValue) && typeof (value as JsonObject).markdown === "string") {
+    const markdown = (value as JsonObject).markdown as string;
+    if (markdown) return markdown;
+  }
+  return undefined;
 }
 
 function firstAhpWorkingDirectory(

@@ -228,6 +228,204 @@ public sealed class AhpParityTests
     }
 
     [Fact]
+    public void PerTurnMessageModelDoesNotStickAcrossTurns()
+    {
+        // Turn 1 has Message.model only; turn 2 has a different Message.model and
+        // no usage.model. Invocation for turn 2 must use turn-local model-b, not
+        // sticky model-a from turn 1.
+        const string snapshot = """
+            {
+              "ahpProtocolVersion": "0.7.0",
+              "chat": {
+                "resource": "ahp-chat:/model-sticky",
+                "turns": [
+                  {
+                    "id": "turn-1",
+                    "startedAt": "2026-03-15T13:00:00.000Z",
+                    "message": {
+                      "text": "first",
+                      "origin": { "kind": "user" },
+                      "model": { "id": "model-a" }
+                    },
+                    "responseParts": [
+                      { "kind": "markdown", "id": "md-1", "content": "reply-a" }
+                    ],
+                    "usage": { "inputTokens": 1, "outputTokens": 1 },
+                    "state": "complete"
+                  },
+                  {
+                    "id": "turn-2",
+                    "startedAt": "2026-03-15T13:01:00.000Z",
+                    "message": {
+                      "text": "second",
+                      "origin": { "kind": "user" },
+                      "model": { "id": "model-b" }
+                    },
+                    "responseParts": [
+                      { "kind": "markdown", "id": "md-2", "content": "reply-b" }
+                    ],
+                    "usage": { "inputTokens": 2, "outputTokens": 2 },
+                    "state": "complete"
+                  }
+                ]
+              }
+            }
+            """;
+
+        var engine = TrajectoryEngine.CreateDefault();
+        var ir = engine.NormalizeToIR(new NormalizeInput
+        {
+            Source = TrajectorySource.Ahp,
+            Transcript = snapshot,
+        });
+
+        Assert.Equal(2, ir.Execution.ModelInvocations.Count);
+        Assert.Equal("model-a", ir.Execution.ModelInvocations[0].ResponseModel);
+        Assert.Equal("model-b", ir.Execution.ModelInvocations[1].ResponseModel);
+    }
+
+    [Fact]
+    public void StringOrMarkdownPastTenseAndReasonMessage()
+    {
+        const string snapshot = """
+            {
+              "ahpProtocolVersion": "0.7.0",
+              "chat": {
+                "resource": "ahp-chat:/string-or-md",
+                "turns": [
+                  {
+                    "id": "turn-1",
+                    "startedAt": "2026-03-15T13:00:00.000Z",
+                    "message": { "text": "run", "origin": { "kind": "user" } },
+                    "responseParts": [
+                      {
+                        "kind": "toolCall",
+                        "toolCall": {
+                          "toolCallId": "tc-ok",
+                          "toolName": "echo",
+                          "status": "completed",
+                          "success": true,
+                          "pastTenseMessage": { "markdown": "Echoed **ok**" }
+                        }
+                      },
+                      {
+                        "kind": "toolCall",
+                        "toolCall": {
+                          "toolCallId": "tc-denied",
+                          "toolName": "rm",
+                          "status": "cancelled",
+                          "success": false,
+                          "reasonMessage": { "markdown": "Denied **rm**" }
+                        }
+                      },
+                      { "kind": "markdown", "id": "md-1", "content": "done" }
+                    ],
+                    "state": "complete"
+                  }
+                ]
+              }
+            }
+            """;
+
+        var engine = TrajectoryEngine.CreateDefault();
+        var ir = engine.NormalizeToIR(new NormalizeInput
+        {
+            Source = TrajectorySource.Ahp,
+            Transcript = snapshot,
+        });
+
+        var results = ir.Records.OfType<ToolResultIR>().ToArray();
+        Assert.Equal(2, results.Length);
+        Assert.Equal("Echoed **ok**", results[0].Content);
+        Assert.False(results[0].IsError);
+        Assert.Equal("Denied **rm**", results[1].Content);
+        Assert.True(results[1].IsError);
+    }
+
+    [Fact]
+    public void StructuredContentUsesCanonicalJsonKeyOrder()
+    {
+        const string snapshot = """
+            {
+              "ahpProtocolVersion": "0.7.0",
+              "chat": {
+                "resource": "ahp-chat:/structured",
+                "turns": [
+                  {
+                    "id": "turn-1",
+                    "startedAt": "2026-03-15T13:00:00.000Z",
+                    "message": { "text": "run", "origin": { "kind": "user" } },
+                    "responseParts": [
+                      {
+                        "kind": "toolCall",
+                        "toolCall": {
+                          "toolCallId": "tc-struct",
+                          "toolName": "meta",
+                          "status": "completed",
+                          "success": true,
+                          "structuredContent": { "z": 1, "a": 2 }
+                        }
+                      },
+                      { "kind": "markdown", "id": "md-1", "content": "done" }
+                    ],
+                    "state": "complete"
+                  }
+                ]
+              }
+            }
+            """;
+
+        var engine = TrajectoryEngine.CreateDefault();
+        var ir = engine.NormalizeToIR(new NormalizeInput
+        {
+            Source = TrajectorySource.Ahp,
+            Transcript = snapshot,
+        });
+
+        var result = Assert.Single(ir.Records.OfType<ToolResultIR>());
+        Assert.Equal("{\"a\":2,\"z\":1}", result.Content);
+    }
+
+    [Fact]
+    public void ResourcePartEmitsUnresolvedContentRefDiagnostic()
+    {
+        const string snapshot = """
+            {
+              "ahpProtocolVersion": "0.7.0",
+              "chat": {
+                "resource": "ahp-chat:/resource-part",
+                "turns": [
+                  {
+                    "id": "turn-1",
+                    "startedAt": "2026-03-15T13:00:00.000Z",
+                    "message": { "text": "hi", "origin": { "kind": "user" } },
+                    "responseParts": [
+                      { "kind": "resource", "uri": "ahp-file:/demo.txt" },
+                      { "kind": "markdown", "id": "md-1", "content": "see file" }
+                    ],
+                    "state": "complete"
+                  }
+                ]
+              }
+            }
+            """;
+
+        var engine = TrajectoryEngine.CreateDefault();
+        var ir = engine.NormalizeToIR(new NormalizeInput
+        {
+            Source = TrajectorySource.Ahp,
+            Transcript = snapshot,
+        });
+
+        Assert.Contains(
+            ir.Diagnostics,
+            static d => d.Code == DiagnosticCodes.AhpUnresolvedContentRef);
+        Assert.Contains(
+            ir.Records.OfType<MessageIR>(),
+            static r => r.Role == TrajectoryRole.Assistant && r.Content == "see file");
+    }
+
+    [Fact]
     public void SharedCancelledTurnMatchesHypabolicGolden()
     {
         var transcript = FixtureText("ahp/cancelled-turn/input.json");

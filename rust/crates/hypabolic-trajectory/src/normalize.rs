@@ -1611,6 +1611,9 @@ fn decode_ahp(bytes: &[u8], partial: bool) -> Result<DecodedSession, TrajectoryE
         if created_at_ms.is_none() {
             created_at_ms = timestamp_ms;
         }
+        // Turn-local model from this turn's Message.model — never stick a prior
+        // turn's model onto later turns when usage.model is absent.
+        let mut turn_model: Option<String> = None;
         let mut component_index = 0usize;
         let mut emit = |mut event: DecodedEvent| {
             event.component_index = component_index;
@@ -1626,15 +1629,19 @@ fn decode_ahp(bytes: &[u8], partial: bool) -> Result<DecodedSession, TrajectoryE
         };
 
         if let Some(message) = turn_obj.get("message").and_then(Value::as_object) {
-            emit_ahp_message(
+            if let Some(message_model) = emit_ahp_message(
                 message,
                 turn_id.as_deref(),
                 timestamp_ms,
                 timestamp_precise.as_deref(),
                 &mut emit,
                 &mut diagnostics,
-                &mut model,
-            );
+            ) {
+                if model.is_none() {
+                    model = Some(message_model.clone());
+                }
+                turn_model = Some(message_model);
+            }
         }
 
         if let Some(parts) = turn_obj.get("responseParts").and_then(Value::as_array) {
@@ -1655,7 +1662,7 @@ fn decode_ahp(bytes: &[u8], partial: bool) -> Result<DecodedSession, TrajectoryE
             if model.is_none() {
                 model.clone_from(&usage_model);
             }
-            let resolved_model = usage_model.clone().or_else(|| model.clone());
+            let resolved_model = usage_model.or_else(|| turn_model.clone());
             model_invocations.push(DecodedModelInvocation {
                 native_id: turn_id.clone(),
                 source_offset: None,
@@ -1788,6 +1795,8 @@ fn collect_ahp_turns(
     turns.into_iter().map(|(value, _, _)| value).collect()
 }
 
+/// Emits the turn message and returns this message's model id when present
+/// (turn-local; does not mutate session model).
 fn emit_ahp_message(
     message: &Map<String, Value>,
     turn_id: Option<&str>,
@@ -1795,8 +1804,7 @@ fn emit_ahp_message(
     timestamp_precise: Option<&str>,
     emit: &mut dyn FnMut(DecodedEvent),
     diagnostics: &mut Vec<Diagnostic>,
-    model: &mut Option<String>,
-) {
+) -> Option<String> {
     let origin_kind = message
         .get("origin")
         .and_then(Value::as_object)
@@ -1809,10 +1817,10 @@ fn emit_ahp_message(
             record_index: None,
             count: None,
         });
-        return;
+        return None;
     };
     if origin_kind == "tool" {
-        return;
+        return None;
     }
 
     let role = match origin_kind {
@@ -1837,24 +1845,20 @@ fn emit_ahp_message(
                 record_index: None,
                 count: None,
             });
-            return;
+            return None;
         }
     };
 
-    let text = string_value(message.get("text")).unwrap_or("").to_owned();
-    if text.is_empty() {
-        return;
-    }
-
-    if let Some(id) = message
+    let turn_model = message
         .get("model")
         .and_then(Value::as_object)
         .and_then(|m| string_value(m.get("id")))
         .filter(|value| !value.is_empty())
-    {
-        if model.is_none() {
-            *model = Some(id.to_owned());
-        }
+        .map(str::to_owned);
+
+    let text = string_value(message.get("text")).unwrap_or("").to_owned();
+    if text.is_empty() {
+        return turn_model;
     }
 
     emit(DecodedEvent {
@@ -1873,8 +1877,9 @@ fn emit_ahp_message(
         timestamp_ms,
         timestamp_precise: timestamp_precise.map(str::to_owned),
         component_index: 0,
-        model: model.clone(),
+        model: turn_model.clone(),
     });
+    turn_model
 }
 
 fn emit_ahp_response_parts(
@@ -1983,7 +1988,22 @@ fn emit_ahp_response_parts(
                 record_index: None,
                 count: None,
             });
+            continue;
         }
+
+        if kind == "resource" {
+            // v1 does not fetch content-by-reference resource bodies.
+            diagnostics.push(Diagnostic {
+                code: "ahp_unresolved_content_ref".into(),
+                message: "Dropped a resource response part without fetching content-by-reference."
+                    .into(),
+                input_line: None,
+                record_index: None,
+                count: None,
+            });
+            continue;
+        }
+        // systemNotification and unknown kinds: non-identity meta; ignore body for v1.
     }
     flush_markdown(&mut markdown_buffer, emit);
     Ok(())
@@ -2106,19 +2126,16 @@ fn ahp_tool_result_content(
     }
     if let Some(structured) = tool_call.get("structuredContent") {
         if !structured.is_null() {
-            return relaxed_json(structured);
+            // Canonical JSON so .NET/TS/Rust structuredContent strings match cross-runtime.
+            return canonical_json(structured);
         }
     }
-    if let Some(past) =
-        string_value(tool_call.get("pastTenseMessage")).filter(|value| !value.is_empty())
-    {
-        return Ok(past.to_owned());
+    if let Some(past) = ahp_string_or_markdown(tool_call.get("pastTenseMessage")) {
+        return Ok(past);
     }
     if is_error {
-        if let Some(reason_message) =
-            string_value(tool_call.get("reasonMessage")).filter(|value| !value.is_empty())
-        {
-            return Ok(reason_message.to_owned());
+        if let Some(reason_message) = ahp_string_or_markdown(tool_call.get("reasonMessage")) {
+            return Ok(reason_message);
         }
         if let Some(reason) = string_value(tool_call.get("reason")).filter(|value| !value.is_empty())
         {
@@ -2139,6 +2156,17 @@ fn ahp_tool_result_content(
         });
     }
     Ok(String::new())
+}
+
+/// AHP StringOrMarkdown: plain string or `{ "markdown": "..." }`.
+fn ahp_string_or_markdown(value: Option<&Value>) -> Option<String> {
+    match value {
+        Some(Value::String(text)) if !text.is_empty() => Some(text.clone()),
+        Some(Value::Object(obj)) => string_value(obj.get("markdown"))
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned),
+        _ => None,
+    }
 }
 
 fn first_ahp_working_directory(

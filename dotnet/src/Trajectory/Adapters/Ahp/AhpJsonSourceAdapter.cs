@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Hypabolic.Trajectory.Internal;
 
 namespace Hypabolic.Trajectory.Adapters.Ahp;
@@ -194,6 +195,9 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
             createdAt = timestamp;
         }
 
+        // Turn-local model from this turn's Message.model — never stick a prior
+        // turn's model onto later turns when usage.model is absent.
+        string? turnModel = null;
         var componentIndex = 0;
 
         void Emit(DecodedEvent decoded)
@@ -218,7 +222,11 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
         if (turn.TryGetProperty("message", out var message) &&
             message.ValueKind == JsonValueKind.Object)
         {
-            EmitMessage(message, turnId, timestamp, Emit, diagnostics, ref model);
+            turnModel = EmitMessage(message, turnId, timestamp, Emit, diagnostics);
+            if (turnModel is not null)
+            {
+                model ??= turnModel;
+            }
         }
 
         if (turn.TryGetProperty("responseParts", out var parts) &&
@@ -236,12 +244,13 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
                 model ??= usageModel;
             }
 
+            var resolvedModel = usageModel ?? turnModel;
             modelInvocations.Add(new DecodedModelInvocation
             {
                 NativeRecordId = turnId,
                 Provider = provider,
-                RequestedModel = usageModel ?? model,
-                ResponseModel = usageModel ?? model,
+                RequestedModel = resolvedModel,
+                ResponseModel = resolvedModel,
                 InputTokens = GetInt64(usage, "inputTokens"),
                 OutputTokens = GetInt64(usage, "outputTokens"),
                 CacheReadTokens = GetInt64(usage, "cacheReadTokens"),
@@ -251,13 +260,16 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
         }
     }
 
-    private static void EmitMessage(
+    /// <summary>
+    /// Emits the turn message and returns this message's model id when present
+    /// (turn-local; does not mutate session model).
+    /// </summary>
+    private static string? EmitMessage(
         JsonElement message,
         string? turnId,
         DateTimeOffset? timestamp,
         Action<DecodedEvent> emit,
-        List<TrajectoryDiagnostic> diagnostics,
-        ref string? model)
+        List<TrajectoryDiagnostic> diagnostics)
     {
         var originKind = OriginKind(message);
         if (originKind is null)
@@ -267,13 +279,13 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
                 Code = DiagnosticCodes.AhpUnknownMessageOrigin,
                 Message = "Dropped a message with an unknown origin kind.",
             });
-            return;
+            return null;
         }
 
         if (originKind == "tool")
         {
             // Tool outputs are carried by toolCall response parts.
-            return;
+            return null;
         }
 
         TrajectoryRole role;
@@ -302,23 +314,20 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
                 Code = DiagnosticCodes.AhpUnknownMessageOrigin,
                 Message = "Dropped a message with an unknown origin kind.",
             });
-            return;
+            return null;
+        }
+
+        string? turnModel = null;
+        if (message.TryGetProperty("model", out var messageModel) &&
+            messageModel.ValueKind == JsonValueKind.Object)
+        {
+            turnModel = NonEmpty(GetString(messageModel, "id"));
         }
 
         var text = GetString(message, "text") ?? string.Empty;
         if (string.IsNullOrEmpty(text))
         {
-            return;
-        }
-
-        if (message.TryGetProperty("model", out var messageModel) &&
-            messageModel.ValueKind == JsonValueKind.Object)
-        {
-            var modelId = NonEmpty(GetString(messageModel, "id"));
-            if (modelId is not null)
-            {
-                model ??= modelId;
-            }
+            return turnModel;
         }
 
         emit(new DecodedEvent
@@ -328,9 +337,10 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
             Content = text,
             Timestamp = timestamp,
             NativeRecordId = turnId,
-            Model = model,
+            Model = turnModel,
             ComponentIndex = 0,
         });
+        return turnModel;
     }
 
     private static void EmitResponseParts(
@@ -422,11 +432,18 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
                 continue;
             }
 
-            if (kind is "resource" or "systemNotification")
+            if (kind == "resource")
             {
-                // Non-identity meta; ignore body for v1.
+                // v1 does not fetch content-by-reference resource bodies.
+                diagnostics.Add(new TrajectoryDiagnostic
+                {
+                    Code = DiagnosticCodes.AhpUnresolvedContentRef,
+                    Message = "Dropped a resource response part without fetching content-by-reference.",
+                });
                 continue;
             }
+
+            // systemNotification and unknown kinds: non-identity meta; ignore body for v1.
         }
 
         FlushMarkdown();
@@ -541,10 +558,11 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
         if (toolCall.TryGetProperty("structuredContent", out var structured) &&
             structured.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
         {
-            return CompactJson(structured);
+            // Canonical JSON so .NET/TS/Rust structuredContent strings match cross-runtime.
+            return CanonicalJsonFromElement(structured);
         }
 
-        var pastTense = GetString(toolCall, "pastTenseMessage");
+        var pastTense = StringOrMarkdown(toolCall, "pastTenseMessage");
         if (!string.IsNullOrEmpty(pastTense))
         {
             return pastTense;
@@ -552,7 +570,7 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
 
         if (isError)
         {
-            var reasonMessage = GetString(toolCall, "reasonMessage");
+            var reasonMessage = StringOrMarkdown(toolCall, "reasonMessage");
             if (!string.IsNullOrEmpty(reasonMessage))
             {
                 return reasonMessage;
@@ -580,6 +598,35 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
         }
 
         return string.Empty;
+    }
+
+    /// <summary>
+    /// AHP StringOrMarkdown: plain string or <c>{ "markdown": "..." }</c>.
+    /// </summary>
+    private static string? StringOrMarkdown(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.String)
+        {
+            return NonEmpty(property.GetString());
+        }
+
+        if (property.ValueKind == JsonValueKind.Object)
+        {
+            return NonEmpty(GetString(property, "markdown"));
+        }
+
+        return null;
+    }
+
+    private static string CanonicalJsonFromElement(JsonElement element)
+    {
+        var node = JsonNode.Parse(element.GetRawText());
+        return CanonicalJson.Serialize(node);
     }
 
     private static void ValidateProtocolVersion(

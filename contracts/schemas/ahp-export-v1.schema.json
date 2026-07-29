@@ -129,7 +129,18 @@
           ]
         },
         "success": { "type": "boolean" },
-        "pastTenseMessage": {},
+        "pastTenseMessage": {
+          "description": "AHP StringOrMarkdown: plain string or { markdown: string }.",
+          "anyOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["markdown"],
+              "additionalProperties": true,
+              "properties": { "markdown": { "type": "string" } }
+            }
+          ]
+        },
         "content": {
           "type": "array",
           "items": { "type": "object", "additionalProperties": true }
@@ -151,7 +162,18 @@
           "type": "string",
           "enum": ["denied", "skipped", "result-denied"]
         },
-        "reasonMessage": {},
+        "reasonMessage": {
+          "description": "AHP StringOrMarkdown: plain string or { markdown: string }.",
+          "anyOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["markdown"],
+              "additionalProperties": true,
+              "properties": { "markdown": { "type": "string" } }
+            }
+          ]
+        },
         "contributor": { "type": ["object", "null"], "additionalProperties": true },
         "_meta": { "type": ["object", "null"], "additionalProperties": true }
       }
@@ -201,7 +223,13 @@
           "type": "string",
           "enum": ["complete", "cancelled", "error"]
         },
-        "error": { "$ref": "#/$defs/errorInfo" }
+        "error": {
+          "description": "Turn error when state is error; may be null or omitted when absent.",
+          "anyOf": [
+            { "$ref": "#/$defs/errorInfo" },
+            { "type": "null" }
+          ]
+        }
       }
     },
     "activeTurn": {

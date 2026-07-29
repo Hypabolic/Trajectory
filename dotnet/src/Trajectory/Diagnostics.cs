@@ -31,6 +31,7 @@ public static class DiagnosticCodes
     public const string AhpInputRequestSkipped = "ahp_input_request_skipped";
     public const string AhpReasoningOmitted = "ahp_reasoning_omitted";
     public const string AhpSystemAsAssistant = "ahp_system_as_assistant";
+    public const string AhpUnresolvedContentRef = "ahp_unresolved_content_ref";
 }
 
 public sealed record TrajectoryDiagnostic

@@ -167,9 +167,9 @@ provenance / extras; do not fetch binary content-by-reference
 | `markdown` | Assistant text. **Concatenate contiguous markdown parts within a turn** for compact message-trajectory; retain part boundaries only in rich projections when schema allows. |
 | `reasoning` | **First-class reasoning** (IR `reasoning` role/kind, Codex-like). Empty/whitespace content is dropped without a diagnostic. `ahp_reasoning_omitted` remains reserved if a runtime lacks a reasoning slot. |
 | `toolCall` | Tool call + optional result from `toolCall` state (§5.4) |
-| `resource` | No body fetch; stub / diagnostic |
-| `systemNotification` | Diagnostic-only or system message (non-identity) |
-| `inputRequest` | Skip content for trajectory v1; may emit `ahp_input_request_skipped` |
+| `resource` | No body fetch; emit non-fatal `ahp_unresolved_content_ref` (do not silently drop) |
+| `systemNotification` | Diagnostic-only or system message (non-identity); ignore body for v1 |
+| `inputRequest` | Skip content for trajectory v1; emit `ahp_input_request_skipped` |
 
 ### 5.4 Tool calls
 
@@ -180,7 +180,9 @@ From `ToolCallState` on `kind: "toolCall"` parts:
 | `toolCallId` | Native tool call id (required for linking) |
 | `toolName` | Tool name; missing → normalizer `unknown_tool` |
 | Arguments | Prefer structured parameters when present; else parse `toolInput` string as JSON object; invalid/non-object → `_raw` wrapper per normalization contract |
-| Result | Prefer text `content` blocks, then `structuredContent`, then `pastTenseMessage`; stringify deterministically |
+| Result | Prefer text `content` blocks, then `structuredContent`, then `pastTenseMessage`; on failure also `reasonMessage` / `reason` / `error.message` |
+| `structuredContent` | Serialize with the shared [canonical JSON](../canonical-json.md) algorithm (sorted keys) so .NET/TS/Rust match |
+| `pastTenseMessage` / `reasonMessage` | AHP **StringOrMarkdown**: plain string **or** `{ "markdown": "..." }`; decode both forms to the text body |
 | `status: completed` + `success: true` | Linked result, success |
 | `status: completed` + `success: false` | Linked result with error text from content / past-tense / `error.message`; **do not invent success**. Fallback content is `"error"` when none of those are present |
 | `status: cancelled` / denied | Result with success=false; prefer `reasonMessage`, then `reason`; fallback content is `"cancelled"`; **do not invent success** |
@@ -204,8 +206,14 @@ decode (shared normalizer rule).
 | AHP | Trajectory |
 | --- | --- |
 | `UsageInfo.inputTokens` / `outputTokens` / `cacheReadTokens` | Usage when present; never invent |
-| `UsageInfo.model` or `Message.model.id` | Model string when present |
+| `UsageInfo.model` | Preferred model string for that turn’s model invocation |
+| `Message.model.id` | Turn-local model for that turn’s events / invocation when `usage.model` is absent |
 | `session.provider` | Provider provenance |
+
+**Per-turn model:** when models change across turns and a later turn omits
+`usage.model`, use that turn’s `Message.model.id` for the invocation — do **not**
+reuse the first turn’s `Message.model` as a sticky fallback for later turns.
+Session-level meta model may still record first-seen / majority for display.
 
 ### 5.7 Identity anchors
 
@@ -238,7 +246,7 @@ ids are missing.
 | `ahp_unknown_message_origin` | non-fatal | Unknown message origin kind |
 | `ahp_unknown_action` | non-fatal | Shape B unknown action type (Phase 2) |
 | `ahp_foreign_channel` | non-fatal / debug | Shape B envelope for other channel |
-| `ahp_unresolved_content_ref` | non-fatal | Content-by-reference not fetched |
+| `ahp_unresolved_content_ref` | non-fatal | Content-by-reference not fetched (including dropped `resource` response parts) |
 | `ahp_input_request_skipped` | non-fatal | Input request part skipped |
 | `ahp_reasoning_omitted` | non-fatal | Reasoning dropped by policy |
 | `ahp_system_as_assistant` | non-fatal | System mapped to assistant |
