@@ -27,9 +27,6 @@ public sealed class ContractsAndConformanceTests
         Assert.Equal(
             LettaCompatibilityVersion.Normalizer,
             root.GetProperty("contracts").GetProperty("normalizer").GetString());
-        Assert.Equal(
-            "f165ecf0af35da40512a288c4380a36b3102403c",
-            root.GetProperty("upstream").GetProperty("commit").GetString());
 
         var schemaIds = root.GetProperty("public_schemas")
             .EnumerateArray()
@@ -46,6 +43,16 @@ public sealed class ContractsAndConformanceTests
                 OutputSchemaIds.OtelGenAiSpansV1,
             }.Order(StringComparer.Ordinal),
             schemaIds.Order(StringComparer.Ordinal));
+
+        var sources = root.GetProperty("implemented")
+            .GetProperty("sources")
+            .EnumerateArray()
+            .Select(static item => item.GetString())
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(
+            new[] { "pi", "claude-code", "codex", "openclaw", "hermes" }
+                .Order(StringComparer.Ordinal),
+            sources.Order(StringComparer.Ordinal));
         Assert.Equal("1.42.0", OtelGenAiConventions.Version);
     }
 

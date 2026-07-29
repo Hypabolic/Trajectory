@@ -46,6 +46,6 @@ pub mod schema_ids {
     pub const OPENAI_CHAT_MESSAGES_V1: &str = "openai-chat-messages";
     /// Streaming minimal JSONL projection.
     pub const MINIMAL_JSONL_V1: &str = "jsonl-minimal";
-    /// Deterministic OpenTelemetry GenAI span-set projection.
+    /// Deterministic OpenTelemetry `GenAI` span-set projection.
     pub const OTEL_GENAI_SPANS_V1: &str = "otel-genai-spans-v1";
 }
