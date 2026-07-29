@@ -104,6 +104,151 @@ public sealed class AhpParityTests
         Assert.Null(page.NextCursor);
     }
 
+    [Fact]
+    public void MissingStartedAtSortsLastThenByUtf8Id()
+    {
+        // Completed turns out of order: one missing startedAt must sort after
+        // timestamped turns (nulls-last), then by UTF-8 id.
+        const string snapshot = """
+            {
+              "ahpProtocolVersion": "0.7.0",
+              "chat": {
+                "resource": "ahp-chat:/sort-test",
+                "turns": [
+                  {
+                    "id": "turn-b",
+                    "message": { "text": "second", "origin": { "kind": "user" } },
+                    "responseParts": [
+                      { "kind": "markdown", "id": "md-b", "content": "reply-b" }
+                    ]
+                  },
+                  {
+                    "id": "turn-a",
+                    "startedAt": "2026-03-15T13:00:00.000Z",
+                    "message": { "text": "first", "origin": { "kind": "user" } },
+                    "responseParts": [
+                      { "kind": "markdown", "id": "md-a", "content": "reply-a" }
+                    ]
+                  },
+                  {
+                    "id": "turn-c",
+                    "message": { "text": "third", "origin": { "kind": "user" } },
+                    "responseParts": [
+                      { "kind": "markdown", "id": "md-c", "content": "reply-c" }
+                    ]
+                  }
+                ]
+              }
+            }
+            """;
+
+        var engine = TrajectoryEngine.CreateDefault();
+        var ir = engine.NormalizeToIR(new NormalizeInput
+        {
+            Source = TrajectorySource.Ahp,
+            Transcript = snapshot,
+        });
+
+        var users = ir.Records
+            .OfType<MessageIR>()
+            .Where(static r => r.Role == TrajectoryRole.User)
+            .Select(static r => r.Content)
+            .ToArray();
+
+        Assert.Equal(["first", "second", "third"], users);
+    }
+
+    [Fact]
+    public void PartialModeAppendsActiveTurn()
+    {
+        const string snapshot = """
+            {
+              "ahpProtocolVersion": "0.7.0",
+              "chat": {
+                "resource": "ahp-chat:/partial-active",
+                "turns": [
+                  {
+                    "id": "turn-done",
+                    "startedAt": "2026-03-15T13:00:00.000Z",
+                    "message": { "text": "done-user", "origin": { "kind": "user" } },
+                    "responseParts": [
+                      { "kind": "markdown", "id": "md-done", "content": "done-assistant" }
+                    ]
+                  }
+                ],
+                "activeTurn": {
+                  "id": "turn-active",
+                  "startedAt": "2026-03-15T13:01:00.000Z",
+                  "message": { "text": "active-user", "origin": { "kind": "user" } },
+                  "responseParts": [
+                    { "kind": "markdown", "id": "md-active", "content": "active-assistant" }
+                  ]
+                }
+              }
+            }
+            """;
+
+        var engine = TrajectoryEngine.CreateDefault();
+        var whole = engine.NormalizeToIR(new NormalizeInput
+        {
+            Source = TrajectorySource.Ahp,
+            Transcript = snapshot,
+        });
+        Assert.DoesNotContain(whole.Records.OfType<MessageIR>(), static r => r.Content == "active-user");
+        Assert.Contains(whole.Diagnostics, static d => d.Code == DiagnosticCodes.AhpActiveTurnOmitted);
+
+        var partial = engine.NormalizeToIR(new NormalizeInput
+        {
+            Source = TrajectorySource.Ahp,
+            Transcript = snapshot,
+            SourceContext = new SourceContext { Partial = true },
+        });
+        Assert.DoesNotContain(partial.Diagnostics, static d => d.Code == DiagnosticCodes.AhpActiveTurnOmitted);
+        var users = partial.Records
+            .OfType<MessageIR>()
+            .Where(static r => r.Role == TrajectoryRole.User)
+            .Select(static r => r.Content)
+            .ToArray();
+        Assert.Equal(["done-user", "active-user"], users);
+    }
+
+    [Fact]
+    public void SessionProviderPlumbsIntoModelInvocation()
+    {
+        var transcript = FixtureText("ahp/tool-calls/input.json");
+        var engine = TrajectoryEngine.CreateDefault();
+        var ir = engine.NormalizeToIR(new NormalizeInput
+        {
+            Source = TrajectorySource.Ahp,
+            Transcript = transcript,
+        });
+
+        var invocation = Assert.Single(ir.Execution.ModelInvocations);
+        Assert.Equal("synthetic-provider", invocation.Provider);
+    }
+
+    [Fact]
+    public void SharedCancelledTurnMatchesHypabolicGolden()
+    {
+        var transcript = FixtureText("ahp/cancelled-turn/input.json");
+        var expectedHypabolic = FixtureText("ahp/cancelled-turn/expected.hypabolic.json");
+
+        var engine = TrajectoryEngine.CreateDefault();
+        var ir = engine.NormalizeToIR(new NormalizeInput
+        {
+            Source = TrajectorySource.Ahp,
+            Transcript = transcript,
+        });
+        var hypabolic = engine.ProjectJson(ir, OutputSchemaIds.HypabolicTrajectoryV1);
+        AssertJsonEqual(expectedHypabolic, hypabolic);
+
+        using var document = JsonDocument.Parse(hypabolic);
+        var tool = Assert.Single(
+            document.RootElement.GetProperty("records").EnumerateArray(),
+            static r => r.GetProperty("kind").GetString() == "tool_result");
+        Assert.True(tool.GetProperty("is_error").GetBoolean());
+    }
+
     private static void AssertJsonEqual(string expected, string actual)
     {
         using var expectedDocument = JsonDocument.Parse(expected);

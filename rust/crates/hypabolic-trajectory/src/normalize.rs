@@ -205,7 +205,8 @@ impl SourceAdapter for AhpSourceAdapter {
 /// Normalizes an AHP Shape A chat snapshot export.
 pub fn normalize_ahp(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
     let config = resolve_config(request)?;
-    let decoded = decode_ahp(request.transcript)?;
+    let partial = config.partial || config.base_byte_offset > 0;
+    let decoded = decode_ahp(request.transcript, partial)?;
     normalize_decoded(config, decoded)
 }
 
@@ -1569,7 +1570,7 @@ fn invalid_hermes_transcript() -> TrajectoryError {
     )
 }
 
-fn decode_ahp(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
+fn decode_ahp(bytes: &[u8], partial: bool) -> Result<DecodedSession, TrajectoryError> {
     let mut diagnostics = Vec::new();
     let mut events = Vec::new();
     let mut model_invocations = Vec::new();
@@ -1583,6 +1584,10 @@ fn decode_ahp(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
         .and_then(Value::as_object)
         .ok_or_else(invalid_ahp_snapshot)?;
     let session = root_obj.get("session").and_then(Value::as_object);
+    let provider = session
+        .and_then(|session| string_value(session.get("provider")))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
 
     let group_id = string_value(chat.get("resource"))
         .filter(|value| !value.is_empty())
@@ -1591,7 +1596,7 @@ fn decode_ahp(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
     let mut model: Option<String> = None;
     let mut created_at_ms: Option<i64> = None;
 
-    let turns = collect_ahp_turns(chat, &mut diagnostics);
+    let turns = collect_ahp_turns(chat, partial, &mut diagnostics);
     for turn in turns {
         let Some(turn_obj) = turn.as_object() else {
             continue;
@@ -1654,7 +1659,7 @@ fn decode_ahp(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
             model_invocations.push(DecodedModelInvocation {
                 native_id: turn_id.clone(),
                 source_offset: None,
-                provider: None,
+                provider: provider.clone(),
                 api_family: None,
                 requested_model: resolved_model.clone(),
                 response_model: resolved_model,
@@ -1737,7 +1742,11 @@ fn is_compatible_ahp_version(version: &str) -> bool {
         && parts.iter().all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
 }
 
-fn collect_ahp_turns(chat: &Map<String, Value>, diagnostics: &mut Vec<Diagnostic>) -> Vec<Value> {
+fn collect_ahp_turns(
+    chat: &Map<String, Value>,
+    partial: bool,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<Value> {
     let mut turns: Vec<(Value, Option<i64>, String)> = Vec::new();
     if let Some(array) = chat.get("turns").and_then(Value::as_array) {
         for turn in array {
@@ -1749,6 +1758,7 @@ fn collect_ahp_turns(chat: &Map<String, Value>, diagnostics: &mut Vec<Diagnostic
             turns.push((turn.clone(), started, id));
         }
     }
+    // Nulls-last: missing startedAt after present timestamps, then UTF-8 id.
     turns.sort_by(|left, right| {
         match (left.1, right.1) {
             (Some(a), Some(b)) if a != b => a.cmp(&b),
@@ -1758,14 +1768,21 @@ fn collect_ahp_turns(chat: &Map<String, Value>, diagnostics: &mut Vec<Diagnostic
         }
     });
 
-    if chat.get("activeTurn").and_then(Value::as_object).is_some() {
-        diagnostics.push(Diagnostic {
-            code: "ahp_active_turn_omitted".into(),
-            message: "Omitted incomplete activeTurn (snapshot whole-mode policy).".into(),
-            input_line: None,
-            record_index: None,
-            count: None,
-        });
+    if let Some(active) = chat.get("activeTurn").filter(|value| value.is_object()) {
+        if partial {
+            // Partial mode: append open activeTurn after completed turns (§5.5).
+            let id = string_value(active.get("id")).unwrap_or("").to_owned();
+            let started = ahp_timestamp(active.get("startedAt"));
+            turns.push((active.clone(), started, id));
+        } else {
+            diagnostics.push(Diagnostic {
+                code: "ahp_active_turn_omitted".into(),
+                message: "Omitted incomplete activeTurn (snapshot whole-mode policy).".into(),
+                input_line: None,
+                record_index: None,
+                count: None,
+            });
+        }
     }
 
     turns.into_iter().map(|(value, _, _)| value).collect()
@@ -1811,10 +1828,11 @@ fn emit_ahp_message(
             });
             Role::Assistant
         }
-        other => {
+        _other => {
+            // Fixed message only — do not echo free-form origin.kind (content-safety).
             diagnostics.push(Diagnostic {
                 code: "ahp_unknown_message_origin".into(),
-                message: format!("Dropped a message with unknown origin kind '{other}'."),
+                message: "Dropped a message with an unknown origin kind.".into(),
                 input_line: None,
                 record_index: None,
                 count: None,
@@ -1994,7 +2012,7 @@ fn emit_ahp_tool_call(
         content: None,
         tool_call_id: tool_call_id.clone(),
         tool_name: tool_name.clone(),
-        arguments_json: Some(arguments_json),
+        arguments_json,
         is_error: None,
         native_id: tool_call_id.clone(),
         producer_version: None,
@@ -2047,17 +2065,20 @@ fn emit_ahp_tool_call(
     Ok(())
 }
 
-fn ahp_tool_arguments_json(tool_call: &Map<String, Value>) -> Result<String, TrajectoryError> {
+fn ahp_tool_arguments_json(
+    tool_call: &Map<String, Value>,
+) -> Result<Option<String>, TrajectoryError> {
     if let Some(parameters) = tool_call.get("parameters") {
         if parameters.is_object() || parameters.is_array() {
-            return relaxed_json(parameters);
+            return Ok(Some(relaxed_json(parameters)?));
         }
     }
     if let Some(input) = string_value(tool_call.get("toolInput")).filter(|value| !value.is_empty())
     {
-        return Ok(input.to_owned());
+        return Ok(Some(input.to_owned()));
     }
-    Ok("{}".into())
+    // Omit when source has neither parameters nor toolInput; normalizer defaults empty object.
+    Ok(None)
 }
 
 fn ahp_tool_result_content(

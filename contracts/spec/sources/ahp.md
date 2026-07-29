@@ -46,7 +46,9 @@ ingests the agent-agnostic chat surface only.
 
 Rules:
 
-- Incompatible major/minor → fatal `unsupported_ahp_version`.
+- Incompatible major/minor → fatal `invalid_input` (version string appears only
+  in the exception message; there is no separate diagnostic/fatal code). Aligns
+  with [diagnostics.md](../diagnostics.md) fatal set.
 - Missing `ahpProtocolVersion` on a snapshot: assume the vendor pin used to
   author the fixture; emit non-fatal diagnostic `ahp_version_missing`.
 - Unknown AHP action types (action-log path, Phase 2): ignore + non-fatal
@@ -131,13 +133,13 @@ Shared bounds, linking, hashes, and diagnostics follow normalizer `0.2.0`.
 
 ### 5.1 Turn order
 
-1. Sort `chat.turns` by `startedAt` ascending, then `id` with **ordinal
-   UTF-8 / code-unit-independent string compare** using JavaScript-style
-   UTF-16 code unit order is **not** required; implementations MUST use
+1. Sort `chat.turns` by `startedAt` ascending (**nulls last** — missing
+   `startedAt` sorts after any present timestamp), then `id` with
    **lexicographic compare of UTF-8 bytes** for `id` ties (matches listing
-   sort style for opaque ids).
+   sort style for opaque ids). JavaScript-style UTF-16 code unit order is
+   **not** required.
 2. If partial mode and `activeTurn` is present, append it after completed
-   turns.
+   turns (do not re-sort with completed turns).
 3. Within each turn, emit in order:
    1. Initiating message (`turn.message`)
    2. Each `responseParts[i]` in array order
@@ -230,7 +232,7 @@ ids are missing.
 
 | Code | Severity | When |
 | --- | --- | --- |
-| `unsupported_ahp_version` | fatal | Protocol version outside allow-list |
+| *(fatal `invalid_input`)* | fatal | Protocol version outside allow-list (not a diagnostic code) |
 | `ahp_version_missing` | non-fatal | Snapshot lacks `ahpProtocolVersion` |
 | `ahp_active_turn_omitted` | non-fatal | Whole mode drops incomplete active turn |
 | `ahp_unknown_message_origin` | non-fatal | Unknown message origin kind |

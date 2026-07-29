@@ -6,6 +6,10 @@
     "normalize-canonical": {
       "expected": "expected.canonical.json",
       "comparison": "json-exact"
+    },
+    "normalize-hypabolic": {
+      "expected": "expected.hypabolic.json",
+      "comparison": "json-exact"
     }
   },
   "source": "ahp",

@@ -56,11 +56,28 @@ export async function listHermesTrajectories(
   return listDiscovered(options, discoverHermes);
 }
 
+/**
+ * AHP export-directory listing (Phase 3). Phase 1 returns an empty page for any
+ * root so `show --path` remains the supported path; export-tree discovery lands later.
+ */
+export async function listAhpTrajectories(
+  options: ListingOptions,
+): Promise<TrajectoryListingPage> {
+  return listDiscovered(options, discoverAhp);
+}
+
 async function discoverHermes(root: string): Promise<TrajectoryListing[]> {
   // SQLite-backed session discovery is intentionally not implemented in the
   // core Node listing package so package dependencies stay free of native
   // SQLite bindings. Missing stores list empty; callers export message rows
   // for normalize. Optional provider packages may replace this discoverer.
+  void root;
+  return [];
+}
+
+async function discoverAhp(root: string): Promise<TrajectoryListing[]> {
+  // Phase 1: snapshot normalize only. Explicit-root export layout listing is
+  // Phase 3; return empty so show --path remains the supported path.
   void root;
   return [];
 }

@@ -226,7 +226,8 @@ used; snapshot-only partial is best-effort.
 - Conformance fixtures declare `ahpProtocolVersion`.
 - Adapter accepts a small allow-list of compatible versions (e.g. all `0.7.x`
   once Phase 1 ships; expand only with reviewed fixture updates).
-- Incompatible major/minor → fatal `unsupported_ahp_version`.
+- Incompatible major/minor → fatal `invalid_input` (message may mention the
+  unsupported version; no separate fatal/diagnostic code).
 - Missing version on snapshot: assume pin used to author the fixture; warn
   diagnostic `ahp_version_missing` (non-fatal) so real-world dumps still work.
 
@@ -241,9 +242,8 @@ Shared bounds, linking policy, hashes, and diagnostics codes follow normalizer
 
 ### 5.1 Turn order
 
-1. Sort `chat.turns` by `startedAt` then `id` (UTF-16 / UTF-8 compare per
-   identity contract — pick one, pin in this spec at implement time to match
-   listing sort style).
+1. Sort `chat.turns` by `startedAt` ascending (**nulls last**), then `id`
+   with lexicographic UTF-8 byte compare (see `contracts/spec/sources/ahp.md`).
 2. If partial and `activeTurn` present, append after completed turns.
 3. Emit events **within** each turn in this order:
    1. Initiating message (`turn.message`)

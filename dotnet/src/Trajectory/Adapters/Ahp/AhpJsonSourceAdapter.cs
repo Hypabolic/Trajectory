@@ -18,7 +18,7 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
 
     public TrajectorySource Source => TrajectorySource.Ahp;
 
-    public DecodedSession Decode(ReadOnlyMemory<byte> transcriptUtf8)
+    public DecodedSession Decode(ReadOnlyMemory<byte> transcriptUtf8, SourceContext sourceContext)
     {
         var diagnostics = new List<TrajectoryDiagnostic>();
         JsonDocument document;
@@ -54,13 +54,15 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
                 session = sessionElement;
             }
 
-            return DecodeChat(chat, session, diagnostics);
+            var partial = sourceContext.Partial || (sourceContext.BaseByteOffset ?? 0L) > 0L;
+            return DecodeChat(chat, session, partial, diagnostics);
         }
     }
 
     private static DecodedSession DecodeChat(
         JsonElement chat,
         JsonElement? session,
+        bool partial,
         List<TrajectoryDiagnostic> diagnostics)
     {
         var events = new List<DecodedEvent>();
@@ -69,17 +71,15 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
         var cwd = FirstWorkingDirectoryPath(chat, session);
         string? model = null;
         DateTimeOffset? createdAt = null;
+        // session.provider is model-invocation provenance (not session model).
+        var provider = session is { } sessionElement
+            ? NonEmpty(GetString(sessionElement, "provider"))
+            : null;
 
-        var turns = CollectTurns(chat, diagnostics);
+        var turns = CollectTurns(chat, partial, diagnostics);
         foreach (var turn in turns)
         {
-            EmitTurn(turn, events, modelInvocations, ref model, ref createdAt, diagnostics);
-        }
-
-        if (session is { } sessionElement)
-        {
-            // Session provider is provenance only; model stays from chat usage/message.
-            _ = GetString(sessionElement, "provider");
+            EmitTurn(turn, events, modelInvocations, provider, ref model, ref createdAt, diagnostics);
         }
 
         return new DecodedSession
@@ -101,6 +101,7 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
 
     private static List<JsonElement> CollectTurns(
         JsonElement chat,
+        bool partial,
         List<TrajectoryDiagnostic> diagnostics)
     {
         var turns = new List<(JsonElement Element, DateTimeOffset? StartedAt, string Id)>();
@@ -120,38 +121,68 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
             }
         }
 
+        // Nulls-last: missing startedAt sorts after present timestamps, then UTF-8 id.
+        // Matches TypeScript/Rust so incomplete snapshots keep cross-runtime identity.
         turns.Sort(static (left, right) =>
         {
-            var byTime = Nullable.Compare(left.StartedAt, right.StartedAt);
+            var byTime = CompareStartedAtNullsLast(left.StartedAt, right.StartedAt);
             if (byTime != 0)
             {
                 return byTime;
             }
 
-            var byId = CompareUtf8(left.Id, right.Id);
-            return byId != 0 ? byId : 0;
+            return CompareUtf8(left.Id, right.Id);
         });
 
-        // Shape A decode has no partial flag on ISourceAdapter. Phase 1 drops
-        // incomplete activeTurn with a non-fatal diagnostic (whole-mode policy).
-        // Partial/activeTurn streaming is deferred with Shape B.
         if (chat.TryGetProperty("activeTurn", out var activeTurn) &&
             activeTurn.ValueKind == JsonValueKind.Object)
         {
-            diagnostics.Add(new TrajectoryDiagnostic
+            if (partial)
             {
-                Code = DiagnosticCodes.AhpActiveTurnOmitted,
-                Message = "Omitted incomplete activeTurn (snapshot whole-mode policy).",
-            });
+                // Partial mode: append open activeTurn after completed turns (§5.5).
+                turns.Add((
+                    activeTurn.Clone(),
+                    ParseTimestamp(GetProperty(activeTurn, "startedAt")),
+                    GetString(activeTurn, "id") ?? string.Empty));
+            }
+            else
+            {
+                diagnostics.Add(new TrajectoryDiagnostic
+                {
+                    Code = DiagnosticCodes.AhpActiveTurnOmitted,
+                    Message = "Omitted incomplete activeTurn (snapshot whole-mode policy).",
+                });
+            }
         }
 
         return turns.Select(static item => item.Element).ToList();
+    }
+
+    private static int CompareStartedAtNullsLast(DateTimeOffset? left, DateTimeOffset? right)
+    {
+        if (left is null && right is null)
+        {
+            return 0;
+        }
+
+        if (left is null)
+        {
+            return 1;
+        }
+
+        if (right is null)
+        {
+            return -1;
+        }
+
+        return left.Value.CompareTo(right.Value);
     }
 
     private static void EmitTurn(
         JsonElement turn,
         List<DecodedEvent> events,
         List<DecodedModelInvocation> modelInvocations,
+        string? provider,
         ref string? model,
         ref DateTimeOffset? createdAt,
         List<TrajectoryDiagnostic> diagnostics)
@@ -167,6 +198,20 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
 
         void Emit(DecodedEvent decoded)
         {
+            // Native-id events use sequence/offset 0 + byte anchor for parity with
+            // TS/Rust AHP decode (Shape A has no source-file byte positions).
+            if (!string.IsNullOrEmpty(decoded.NativeRecordId) &&
+                decoded.SourceSequence is null &&
+                decoded.SourceOffset is null)
+            {
+                decoded = decoded with
+                {
+                    SourceSequence = 0,
+                    SourceOffset = 0,
+                    SourceAnchorKind = SourceAnchorKind.Byte,
+                };
+            }
+
             events.Add(decoded with { ComponentIndex = componentIndex++ });
         }
 
@@ -194,6 +239,7 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
             modelInvocations.Add(new DecodedModelInvocation
             {
                 NativeRecordId = turnId,
+                Provider = provider,
                 RequestedModel = usageModel ?? model,
                 ResponseModel = usageModel ?? model,
                 InputTokens = GetInt64(usage, "inputTokens"),
@@ -250,10 +296,11 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
         }
         else
         {
+            // Fixed message only — do not echo free-form origin.kind (content-safety).
             diagnostics.Add(new TrajectoryDiagnostic
             {
                 Code = DiagnosticCodes.AhpUnknownMessageOrigin,
-                Message = $"Dropped a message with unknown origin kind '{originKind}'.",
+                Message = "Dropped a message with an unknown origin kind.",
             });
             return;
         }
@@ -442,7 +489,7 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
         }
     }
 
-    private static string ToolArgumentsJson(JsonElement toolCall)
+    private static string? ToolArgumentsJson(JsonElement toolCall)
     {
         if (toolCall.TryGetProperty("parameters", out var parameters) &&
             parameters.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
@@ -456,7 +503,9 @@ internal sealed class AhpJsonSourceAdapter : ISourceAdapter
             return toolInput;
         }
 
-        return "{}";
+        // Omit when source has neither parameters nor toolInput; normalizer
+        // applies the empty-object default / _raw policy for invalid JSON.
+        return null;
     }
 
     private static string ToolResultContent(JsonElement toolCall, bool isError)

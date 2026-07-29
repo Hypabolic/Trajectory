@@ -194,7 +194,9 @@ export function normalizeHermes(request: NormalizeRequest & { transcriptBytes: U
 }
 
 export function normalizeAhp(request: NormalizeRequest & { transcriptBytes: Uint8Array }): TrajectoryIR {
-  return normalizeDecoded(request, decodeAhp(request.transcriptBytes));
+  const config = resolveConfig(request.options, request.sourceContext);
+  const partial = config.sourceContext.partial || config.sourceContext.baseByteOffset > 0n;
+  return normalizeDecoded(request, decodeAhp(request.transcriptBytes, partial));
 }
 
 function normalizeDecoded(
@@ -1121,7 +1123,7 @@ function resolveHermesGroupId(session: JsonObject, messages: JsonObject[]): stri
   return undefined;
 }
 
-function decodeAhp(bytes: Uint8Array): DecodedSession {
+function decodeAhp(bytes: Uint8Array, partial: boolean): DecodedSession {
   const diagnostics: TrajectoryDiagnostic[] = [];
   const events: DecodedEvent[] = [];
   const modelInvocations: DecodedModelInvocation[] = [];
@@ -1143,10 +1145,14 @@ function decodeAhp(bytes: Uint8Array): DecodedSession {
   const session = isObject(root.session) ? root.session : undefined;
   const groupId = typeof chat.resource === "string" && chat.resource ? chat.resource : undefined;
   const cwd = firstAhpWorkingDirectory(chat, session);
+  const provider =
+    session && typeof session.provider === "string" && session.provider
+      ? session.provider
+      : undefined;
   let model: string | undefined;
   let createdAt: number | undefined;
 
-  const turns = collectAhpTurns(chat, diagnostics);
+  const turns = collectAhpTurns(chat, partial, diagnostics);
   for (const turn of turns) {
     const turnId = typeof turn.id === "string" && turn.id ? turn.id : undefined;
     const timestamp = ahpTimestamp(turn.startedAt);
@@ -1184,6 +1190,7 @@ function decodeAhp(bytes: Uint8Array): DecodedSession {
       const resolvedModel = usageModel ?? model;
       const invocation: DecodedModelInvocation = {
         ...(turnId === undefined ? {} : { nativeId: turnId }),
+        ...(provider === undefined ? {} : { provider }),
         ...(resolvedModel === undefined
           ? {}
           : { requestedModel: resolvedModel, responseModel: resolvedModel }),
@@ -1247,7 +1254,11 @@ function isCompatibleAhpVersion(version: string): boolean {
   );
 }
 
-function collectAhpTurns(chat: JsonObject, diagnostics: TrajectoryDiagnostic[]): JsonObject[] {
+function collectAhpTurns(
+  chat: JsonObject,
+  partial: boolean,
+  diagnostics: TrajectoryDiagnostic[],
+): JsonObject[] {
   const turns: Array<{ element: JsonObject; startedAt: number | null; id: string }> = [];
   if (Array.isArray(chat.turns)) {
     for (const turn of chat.turns) {
@@ -1259,6 +1270,7 @@ function collectAhpTurns(chat: JsonObject, diagnostics: TrajectoryDiagnostic[]):
       });
     }
   }
+  // Nulls-last: missing startedAt after present timestamps, then UTF-8 id.
   turns.sort((left, right) => {
     const leftTime = left.startedAt ?? Number.POSITIVE_INFINITY;
     const rightTime = right.startedAt ?? Number.POSITIVE_INFINITY;
@@ -1267,10 +1279,19 @@ function collectAhpTurns(chat: JsonObject, diagnostics: TrajectoryDiagnostic[]):
   });
 
   if (isObject(chat.activeTurn)) {
-    diagnostics.push({
-      code: "ahp_active_turn_omitted",
-      message: "Omitted incomplete activeTurn (snapshot whole-mode policy).",
-    });
+    if (partial) {
+      // Partial mode: append open activeTurn after completed turns (§5.5).
+      turns.push({
+        element: chat.activeTurn,
+        startedAt: ahpTimestamp(chat.activeTurn.startedAt) ?? null,
+        id: typeof chat.activeTurn.id === "string" ? chat.activeTurn.id : "",
+      });
+    } else {
+      diagnostics.push({
+        code: "ahp_active_turn_omitted",
+        message: "Omitted incomplete activeTurn (snapshot whole-mode policy).",
+      });
+    }
   }
 
   return turns.map((item) => item.element);
@@ -1309,9 +1330,10 @@ function emitAhpMessage(
       message: "Mapped a system message origin to assistant.",
     });
   } else {
+    // Fixed message only — do not echo free-form origin.kind (content-safety).
     diagnostics.push({
       code: "ahp_unknown_message_origin",
-      message: `Dropped a message with unknown origin kind '${originKind}'.`,
+      message: "Dropped a message with an unknown origin kind.",
     });
     return;
   }
@@ -1421,7 +1443,7 @@ function emitAhpToolCall(
   emit({
     kind: "tool-call",
     role: "assistant",
-    argumentsJson,
+    ...(argumentsJson === undefined ? {} : { argumentsJson }),
     ...(toolCallId === undefined ? {} : { toolCallId }),
     ...(toolName === undefined ? {} : { toolName }),
     ...(timestamp === undefined ? {} : { timestamp }),
@@ -1449,12 +1471,13 @@ function emitAhpToolCall(
   });
 }
 
-function ahpToolArgumentsJson(toolCall: JsonObject): string {
+function ahpToolArgumentsJson(toolCall: JsonObject): string | undefined {
   if (isObject(toolCall.parameters) || Array.isArray(toolCall.parameters)) {
     return compactJson(toolCall.parameters as JsonValue);
   }
   if (typeof toolCall.toolInput === "string" && toolCall.toolInput) return toolCall.toolInput;
-  return "{}";
+  // Omit when source has neither parameters nor toolInput; normalizer defaults empty object.
+  return undefined;
 }
 
 function ahpToolResultContent(toolCall: JsonObject, isError: boolean): string {

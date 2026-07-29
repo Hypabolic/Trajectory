@@ -23,6 +23,7 @@ import {
   type TrajectorySource,
 } from "@hypabolic/trajectory";
 import {
+  listAhpTrajectories,
   listClaudeCodeTrajectories,
   listCodexTrajectories,
   listHermesTrajectories,
@@ -226,7 +227,9 @@ async function executeListing(repositoryRoot: string, manifest: Manifest): Promi
             ? listOpenClawTrajectories
             : manifest.source === "hermes"
               ? listHermesTrajectories
-              : listPiTrajectories;
+              : manifest.source === "ahp"
+                ? listAhpTrajectories
+                : listPiTrajectories;
       const page = await list({
         root: listingRoot,
         limit: manifest.listing?.limit ?? 50,

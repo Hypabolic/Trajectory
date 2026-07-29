@@ -19,6 +19,7 @@ import {
   type TrajectorySource,
 } from "@hypabolic/trajectory";
 import {
+  listAhpTrajectories,
   listClaudeCodeTrajectories,
   listCodexTrajectories,
   listHermesTrajectories,
@@ -218,9 +219,7 @@ async function listForSource(
     case "hermes":
       return listHermesTrajectories(options);
     case "ahp":
-      // Phase 1: listing deferred; empty page so show --path remains the path.
-      void options;
-      return { items: [], nextCursor: null };
+      return listAhpTrajectories(options);
   }
 }
 
