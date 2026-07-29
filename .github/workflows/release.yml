@@ -93,12 +93,19 @@ jobs:
           echo "Release tag=$TAG version=$VERSION dry_run=$DRY_RUN"
 
   gate:
+    # Always run (success on manual dispatch). If this job is *skipped*, GitHub
+    # cascade-skips every downstream job that needs it — even when they use
+    # always() — which previously dropped all publish jobs on workflow_dispatch.
     name: Verify CI on tagged commit
     runs-on: ubuntu-latest
     needs: resolve
-    if: github.event_name == 'push'
     steps:
+      - name: Skip gate for manual dispatch
+        if: github.event_name != 'push'
+        run: echo "Manual dispatch — CI gate skipped (Hypa-style)."
+
       - name: Check CI conclusion for this SHA
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -158,11 +165,6 @@ jobs:
   validate:
     name: Stamp version, pack artifacts
     needs: [resolve, gate]
-    # Run when resolve ok and CI gate passed or was skipped (manual dispatch).
-    if: |
-      always() &&
-      needs.resolve.result == 'success' &&
-      (needs.gate.result == 'success' || needs.gate.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -315,7 +317,7 @@ jobs:
   publish-nuget:
     name: Publish NuGet
     needs: [resolve, validate]
-    if: needs.resolve.outputs.dry_run == 'false' && needs.validate.result == 'success'
+    if: ${{ needs.resolve.outputs.dry_run != 'true' && needs.validate.result == 'success' }}
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -347,7 +349,7 @@ jobs:
   publish-npm:
     name: Publish npm
     needs: [resolve, validate]
-    if: needs.resolve.outputs.dry_run == 'false' && needs.validate.result == 'success'
+    if: ${{ needs.resolve.outputs.dry_run != 'true' && needs.validate.result == 'success' }}
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -406,7 +408,7 @@ jobs:
   publish-crates:
     name: Publish crates.io
     needs: [resolve, validate]
-    if: needs.resolve.outputs.dry_run == 'false' && needs.validate.result == 'success'
+    if: ${{ needs.resolve.outputs.dry_run != 'true' && needs.validate.result == 'success' }}
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -469,7 +471,7 @@ jobs:
       always() &&
       needs.resolve.result == 'success' &&
       needs.validate.result == 'success' &&
-      needs.resolve.outputs.dry_run == 'false' &&
+      needs.resolve.outputs.dry_run != 'true' &&
       needs.publish-nuget.result == 'success' &&
       needs.publish-npm.result == 'success' &&
       needs.publish-crates.result == 'success'
@@ -553,7 +555,7 @@ jobs:
   dry-run-summary:
     name: Dry-run summary
     needs: [resolve, validate]
-    if: needs.resolve.outputs.dry_run == 'true' && needs.validate.result == 'success'
+    if: ${{ needs.resolve.outputs.dry_run == 'true' && needs.validate.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - run: |
