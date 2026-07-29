@@ -99,7 +99,7 @@ After the first multi-registry release:
 - [x] npm packages bootstrapped under `@hypabolic` (local CLI); OIDC Trusted
       Publisher configured for steady-state CI publishes.
 - [ ] GitHub Environment `release` protection rules as desired.
-- [ ] NuGet and crates.io secrets configured for multi-registry Release.
+- [x] NuGet / npm / crates.io Trusted Publishing (OIDC) for multi-registry Release.
 - [ ] Explicit decision to cut the next public version tag when ready.
 
 ### Explicit non-goals for v1

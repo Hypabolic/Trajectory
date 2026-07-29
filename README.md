@@ -50,164 +50,110 @@ cargo add hypabolic-trajectory
 
 ## Usage examples
 
-### .NET — normalize and project
+Trajectory is two steps:
+
+1. **Find** sessions in the agent’s local store (listing APIs know default roots)
+2. **Normalize** the transcript bytes into projections
+
+You only pass a raw path when you already have one (export, upload, pipe).
+For “what’s on this machine?”, use listing first.
+
+### .NET — list, then normalize
 
 ```csharp
 using Hypabolic.Trajectory;
 
-byte[] transcript = await File.ReadAllBytesAsync(path);
+// Discover Claude Code sessions under the default root (~/.claude/projects)
+var page = await TrajectoryConverter.ListClaudeCodeTrajectoriesAsync(limit: 20);
+var session = page.Items[0]; // Path, Id, UpdatedAt, …
+
+byte[] transcript = await File.ReadAllBytesAsync(session.Path);
 var engine = TrajectoryEngine.CreateDefault();
 
-var input = new NormalizeInput
+var ir = engine.NormalizeToIR(new NormalizeInput
 {
     Source = TrajectorySource.ClaudeCode,
     Transcript = transcript,
-    SourceContext = new SourceContext
-    {
-        // Optional: group / session id when the source requires it (e.g. Codex)
-        GroupId = sessionId,
-        BaseByteOffset = 0,
-        Partial = false,
-    },
-};
+});
 
-// Intermediate representation (implementation-private shape; use for multi-project)
-var ir = engine.NormalizeToIR(input);
-
-// Provenance-rich Hypabolic document
 var hypabolic = engine.Project<HypabolicTrajectoryV1>(
-    ir,
-    OutputSchemaIds.HypabolicTrajectoryV1);
-
-// Canonical identity (stable record ids / hashes)
+    ir, OutputSchemaIds.HypabolicTrajectoryV1);
 var canonical = engine.Project<LettaCanonicalResult>(
-    ir,
-    OutputSchemaIds.LettaCanonicalV1);
-
-// Compact message-trajectory array
+    ir, OutputSchemaIds.LettaCanonicalV1);
 var messages = TrajectoryConverter.NormalizeTranscript(
-    TrajectorySource.ClaudeCode,
-    transcript);
+    TrajectorySource.ClaudeCode, transcript);
 ```
 
-Partial / chunked Codex-style input:
+Same idea for any source (`ListPiTrajectoriesAsync`, `ListCodexTrajectoriesAsync`,
+or `ListTrajectoriesAsync(TrajectorySource.OpenClaw)`). Pass `root:` to override
+the default store. Codex partial/chunked input can still set `GroupId` and
+`BaseByteOffset` when you feed append-only slices.
 
-```csharp
-var chunk = new NormalizeInput
-{
-    Source = TrajectorySource.Codex,
-    Transcript = chunkBytes,
-    SourceContext = new SourceContext
-    {
-        GroupId = sessionId,
-        BaseByteOffset = absoluteUtf8Offset,
-        Partial = true,
-    },
-};
-var ir = engine.NormalizeToIR(chunk);
-```
-
-### TypeScript — bytes in, projections out
+### TypeScript — list (Node), then normalize
 
 ```ts
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
-  normalizeToIR,
   normalizeToHypabolic,
   normalizeToCanonical,
   normalizeToLetta,
-  projectOpenAI,
-  projectMinimalJsonl,
 } from "@hypabolic/trajectory";
-
-const transcriptBytes = readFileSync(path);
-
-const request = {
-  source: "pi" as const,
-  transcriptBytes,
-  sourceContext: { partial: false },
-  options: {
-    bounds: {
-      toolResults: { maxCharacters: 2500, strategy: "head-tail" as const },
-    },
-    filters: { toolResults: "include" as const },
-  },
-};
-
-const ir = normalizeToIR(request);
-const hypabolic = normalizeToHypabolic(request);
-const canonical = normalizeToCanonical(request);
-const messages = normalizeToLetta(request); // compact message trajectory
-const openai = projectOpenAI(ir);
-const minimalJsonl = projectMinimalJsonl(ir);
-```
-
-List local Claude Code sessions (Node):
-
-```ts
 import { listClaudeCodeTrajectories } from "@hypabolic/trajectory-node";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
+// Node listing package — pass the store root (defaults are not assumed)
 const page = await listClaudeCodeTrajectories({
   root: join(homedir(), ".claude", "projects"),
   limit: 20,
 });
+const session = page.items[0]; // id, path, updatedAt, sizeBytes
 
-for (const item of page.items) {
-  console.log(item.id, item.path, item.updatedAt ?? "");
-}
+const transcriptBytes = readFileSync(session.path);
+const request = {
+  source: "claude-code" as const,
+  transcriptBytes,
+  sourceContext: { partial: false },
+};
+
+const hypabolic = normalizeToHypabolic(request);
+const canonical = normalizeToCanonical(request);
+const messages = normalizeToLetta(request); // compact message trajectory
 ```
 
-### Rust — source helpers and projectors
+Also: `listPiTrajectories`, `listCodexTrajectories`, `listOpenClawTrajectories`.
+
+### Rust — list, then normalize
+
+Rust listing always takes an **explicit root** (no home-directory default in
+the library; the sample CLI applies the usual `~/.claude/projects` etc.).
 
 ```rust
 use std::fs;
+use std::path::Path;
 use hypabolic_trajectory::{
-    normalize_codex, normalize_pi, project_canonical, project_hypabolic,
-    project_openai, NormalizeRequest, SourceContext,
+    list_claude_code_trajectories, normalize_claude_code, project_canonical,
+    project_hypabolic, ListingOptions, NormalizeRequest,
 };
 
-let bytes = fs::read(path)?;
+let page = list_claude_code_trajectories(&ListingOptions {
+    root: Path::new("/home/you/.claude/projects"),
+    limit: 20,
+    cursor: None,
+})?;
+let session = &page.items[0]; // id, path, updated_at, size_bytes
 
-// Pi session file
-let pi = normalize_pi(NormalizeRequest {
+let bytes = fs::read(&session.path)?;
+let ir = normalize_claude_code(NormalizeRequest {
     transcript: &bytes,
     ..Default::default()
 })?;
-let hypabolic = project_hypabolic(&pi)?;
-
-// Codex chunk with group id + absolute byte offset
-let codex = normalize_codex(NormalizeRequest {
-    transcript: &chunk_bytes,
-    context: SourceContext {
-        group_id: Some(session_id.into()),
-        base_byte_offset: Some(offset),
-        partial: true,
-        ..Default::default()
-    },
-    ..Default::default()
-})?;
-let canonical = project_canonical(&codex)?;
-let openai = project_openai(&codex)?;
+let hypabolic = project_hypabolic(&ir)?;
+let canonical = project_canonical(&ir)?;
 ```
 
-List Pi sessions under an explicit root:
-
-```rust
-use hypabolic_trajectory::{list_pi_trajectories, ListingOptions};
-use std::path::Path;
-
-let page = list_pi_trajectories(&ListingOptions {
-    root: Path::new("/path/to/agent-root"),
-    limit: 50,
-    ..Default::default()
-})?;
-for item in page.items {
-    println!("{} {}", item.id, item.path.display());
-}
-```
-
+Also: `list_pi_trajectories`, `list_codex_trajectories`, `list_openclaw_trajectories`
+with matching `normalize_*` helpers.
 ## Supported sources
 
 | Source | Typical input | Default local store |
