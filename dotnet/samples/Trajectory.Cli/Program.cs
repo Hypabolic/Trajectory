@@ -309,7 +309,7 @@ internal sealed class InteractiveCommand : AsyncCommand<GlobalSettings>
     public override async Task<int> ExecuteAsync(CommandContext context, GlobalSettings settings)
     {
         AnsiConsole.Write(new FigletText("Trajectory").Color(Color.DeepSkyBlue1));
-        AnsiConsole.MarkupLine("[grey]Local sample TUI — not a published package. Privacy: content is hidden unless --show-content.[/]");
+        AnsiConsole.MarkupLine("[grey]Local sample TUI — Privacy: content is hidden unless --show-content.[/]");
         AnsiConsole.WriteLine();
 
         var sourceName = settings.Source
