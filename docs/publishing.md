@@ -103,15 +103,19 @@ already exists on the registry. Hypabolic’s normal bootstrap is a **local
    ./tools/bootstrap_npm_packages.sh --publish
    ```
 
-   Equivalent manual commands:
+   Equivalent manual commands (no `--provenance` — that only works in CI):
 
    ```bash
    cd typescript
    npm ci && npm run build
-   npm publish --workspace @hypabolic/trajectory --access public --provenance
-   npm publish --workspace @hypabolic/trajectory-node --access public --provenance
-   npm publish --workspace @hypabolic/trajectory-otel --access public --provenance
+   npm publish --workspace @hypabolic/trajectory --access public
+   npm publish --workspace @hypabolic/trajectory-node --access public
+   npm publish --workspace @hypabolic/trajectory-otel --access public
    ```
+
+   Local bootstrap deliberately skips npm provenance attestations
+   (`provider: null` on a laptop). GitHub Actions Release publishes later
+   versions with OIDC + `--provenance`.
 
 6. On npmjs.com, for **each** of the three packages:
    - **Package settings → Trusted Publisher → GitHub Actions**
