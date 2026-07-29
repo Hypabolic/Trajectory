@@ -1,0 +1,151 @@
+name: npm bootstrap (@hypabolic)
+
+# One-time (or recovery) publish that *creates* the @hypabolic/* packages on
+# npmjs.com using a granular token. Trusted publishing (OIDC) cannot be
+# configured until each package already exists — this workflow is the
+# chicken-and-egg break.
+#
+# After a successful run:
+#   1. On each package page → Trusted Publisher → GitHub Actions
+#        Repository: Hypabolic/Trajectory
+#        Workflow:   release.yml
+#        Environment: release
+#   2. Revoke/delete the NPM_TOKEN secret (steady-state releases use OIDC only)
+#   3. Use the Release workflow with npm_auth=oidc (default)
+#
+# Secret: NPM_TOKEN — granular access token with write:packages for @hypabolic
+# (and create package permission on the org for the first publish).
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Pack only — do not publish to npm
+        type: boolean
+        default: true
+      version:
+        description: Version that must match package.json (e.g. 0.1.0)
+        type: string
+        required: true
+        default: "0.1.0"
+
+permissions:
+  contents: read
+  # Provenance attestation still uses OIDC even when auth is a token.
+  id-token: write
+
+concurrency:
+  group: npm-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Bootstrap @hypabolic packages
+    runs-on: ubuntu-latest
+    # Prefer the release environment so the same reviewers gate first publish.
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+          registry-url: https://registry.npmjs.org
+          scope: "@hypabolic"
+
+      - name: Ensure recent npm
+        run: |
+          set -euo pipefail
+          npm install -g npm@latest
+          npm --version
+
+      - name: Assert version and metadata
+        run: |
+          set -euo pipefail
+          python3 tools/assert_release_version.py \
+            --repository-root . \
+            --version "${{ inputs.version }}"
+          python3 tools/validate_release_metadata.py --repository-root .
+
+      - name: Build packages
+        working-directory: typescript
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Pack for inspection
+        working-directory: typescript
+        run: |
+          set -euo pipefail
+          mkdir -p ../artifacts/npm-bootstrap
+          npm pack \
+            --workspace @hypabolic/trajectory \
+            --workspace @hypabolic/trajectory-node \
+            --workspace @hypabolic/trajectory-otel \
+            --pack-destination ../artifacts/npm-bootstrap
+          for package in ../artifacts/npm-bootstrap/*.tgz; do
+            echo "==== $package ===="
+            tar -tzf "$package" | sort | head -40
+          done
+
+      - name: Upload packed tarballs
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-bootstrap-${{ inputs.version }}
+          path: artifacts/npm-bootstrap
+
+      - name: Dry-run publish
+        if: inputs.dry_run
+        working-directory: typescript
+        run: |
+          set -euo pipefail
+          npm publish --dry-run \
+            --workspace @hypabolic/trajectory \
+            --workspace @hypabolic/trajectory-node \
+            --workspace @hypabolic/trajectory-otel
+          echo "Dry run only. Re-run with dry_run=false to create packages on npmjs.com."
+
+      - name: Publish with NPM_TOKEN (creates packages)
+        if: ${{ !inputs.dry_run }}
+        working-directory: typescript
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "Set repository secret NPM_TOKEN to a granular token that can publish under @hypabolic." >&2
+            exit 1
+          fi
+          for workspace in \
+            @hypabolic/trajectory \
+            @hypabolic/trajectory-node \
+            @hypabolic/trajectory-otel
+          do
+            echo "Publishing $workspace"
+            npm publish --workspace "$workspace" --access public --provenance
+          done
+
+      - name: Next steps (OIDC)
+        if: ${{ !inputs.dry_run }}
+        run: |
+          cat <<'EOF'
+          Bootstrap publish finished.
+
+          Configure trusted publishing on npmjs.com for EACH package:
+            @hypabolic/trajectory
+            @hypabolic/trajectory-node
+            @hypabolic/trajectory-otel
+
+          Package settings → Trusted Publisher → GitHub Actions:
+            Organization or user : Hypabolic
+            Repository           : Trajectory
+            Workflow filename    : release.yml
+            Environment name     : release
+
+          Then:
+            - Revoke the granular NPM_TOKEN (and remove the GitHub secret)
+            - Use Release workflow / tag pushes with npm_auth=oidc (default)
+          EOF

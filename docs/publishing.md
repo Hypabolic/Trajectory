@@ -24,33 +24,30 @@ gated by `tools/validate_release_metadata.py`.
 ### 1. Registry accounts and package ownership
 
 - **NuGet.org** — organization or user that may push `Hypabolic.*` package IDs.
-- **npm** — access to the `@hypabolic` scope (create the org if needed).
+- **npm** — create / own the **`@hypabolic` organization** on npmjs.com and
+  ensure your user can create packages under that scope.
 - **crates.io** — owner for `hypabolic-trajectory` and
   `hypabolic-trajectory-opentelemetry`.
 
-### 2. GitHub repository secrets
+### 2. GitHub Environment `release`
 
-Configure under **Settings → Secrets and variables → Actions**:
+Live publish jobs use the **`release`** environment. Create it under
+**Settings → Environments**. Optionally require reviewers and restrict
+deployment branches to `main` (and tags).
 
-| Secret | Purpose |
+The environment name **`release`** must match the Trusted Publisher
+configuration on npm (see bootstrap below).
+
+### 3. GitHub repository secrets
+
+| Secret | When required |
 | --- | --- |
-| `NUGET_API_KEY` | NuGet.org API key with **Push** permission |
-| `NPM_TOKEN` | npm **Automation** token that can publish `@hypabolic/*` |
-| `CARGO_REGISTRY_TOKEN` | crates.io API token |
+| `NUGET_API_KEY` | Every live multi-registry Release |
+| `CARGO_REGISTRY_TOKEN` | Every live multi-registry Release |
+| `NPM_TOKEN` | **Bootstrap only** — first create of `@hypabolic/*` (or recovery). Not used for steady-state OIDC publishes. |
 
-`GITHUB_TOKEN` is provided automatically for creating GitHub Releases and for
-npm provenance (`id-token: write`).
-
-### 3. GitHub Environment `release`
-
-The live publish jobs use the **`release`** environment. Create it under
-**Settings → Environments** and optionally require:
-
-- required reviewers before deploy;
-- deployment branches restricted to `main` (and tags).
-
-Dry runs do not require secrets and do not use the environment for registry
-writes.
+Steady-state npm publishes use **OIDC trusted publishing** (`id-token: write`);
+they do **not** read `NPM_TOKEN`.
 
 ### 4. Local package metadata gate
 
@@ -61,9 +58,69 @@ python3 tools/assert_release_version.py --repository-root . --version 0.1.0
 
 Both must pass before tagging.
 
+## npm: bootstrap `@hypabolic` (required once)
+
+npm **Trusted Publishing** (OIDC) can only be configured on a package that
+already exists. The first version must therefore be published with a token.
+
+### Packages created
+
+- `@hypabolic/trajectory`
+- `@hypabolic/trajectory-node`
+- `@hypabolic/trajectory-otel`
+
+### Bootstrap steps
+
+1. On [npmjs.com](https://www.npmjs.com), create the **`@hypabolic`** org (if
+   it does not exist) and invite the publishing account.
+2. Create a **granular access token** with permission to publish under
+   `@hypabolic` (and to create packages on first publish). Store it briefly as
+   the GitHub Actions secret **`NPM_TOKEN`**.
+3. Ensure the GitHub Environment **`release`** exists (same name as will be used
+   for OIDC).
+4. Merge packaging changes to `main` (CI green).
+5. Actions → **npm bootstrap (@hypabolic)** → **Run workflow**:
+   - first run with **dry_run = true** (inspect the packed tarballs artifact);
+   - then re-run with **dry_run = false** and the correct **version** (e.g.
+     `0.1.0`) to create the packages on the registry.
+6. On npmjs.com, for **each** of the three packages:
+   - **Package settings → Trusted Publisher → GitHub Actions**
+   - Organization or user: `Hypabolic`
+   - Repository: `Trajectory`
+   - Workflow filename: **`release.yml`** (exact)
+   - Environment name: **`release`** (exact)
+7. **Revoke** the granular npm token and **delete** the `NPM_TOKEN` GitHub
+   secret. Steady-state releases must not depend on a long-lived publish token.
+8. Subsequent releases: push `v*.*.*` or run **Release** with `npm_auth=oidc`
+   (default). Tag pushes always use OIDC for npm.
+
+### Bootstrap via the full Release workflow (alternative)
+
+Actions → **Release** → Run workflow with:
+
+- `dry_run = false`
+- `npm_auth = token`
+- version set
+
+That path also publishes NuGet and crates, so those secrets must be present.
+Prefer **npm bootstrap** when you only need to create the npm packages.
+
+### Troubleshooting OIDC 404s
+
+A `404` on `npm publish` with OIDC almost always means:
+
+- the package was never bootstrapped, or
+- Trusted Publisher fields do not **exactly** match
+  (`Hypabolic/Trajectory`, `release.yml`, environment `release`), or
+- the workflow is not running under environment `release`, or
+- npm CLI is too old (the workflows upgrade to `npm@latest`).
+
+Re-bootstrap with token only if the package truly does not exist; otherwise fix
+the Trusted Publisher configuration.
+
 ## Release process
 
-### Preferred: tag on `main`
+### Preferred: tag on `main` (after npm bootstrap + OIDC)
 
 1. Merge the release-ready PR to `main` (CI green).
 2. Confirm version strings are synchronized at the intended SemVer (today
@@ -79,10 +136,10 @@ Both must pass before tagging.
    git push origin v0.1.0
    ```
 
-5. The **Release** workflow runs automatically (`dry_run=false`):
+5. The **Release** workflow runs automatically (`dry_run=false`, `npm_auth=oidc`):
    - validates metadata and version;
    - packs NuGet / npm / crates artifacts;
-   - publishes to all three registries;
+   - publishes to all three registries (npm via OIDC);
    - creates a GitHub Release with notes and attached packages.
 
 ### Manual: workflow_dispatch
@@ -90,6 +147,8 @@ Both must pass before tagging.
 1. Actions → **Release** → **Run workflow**.
 2. Leave **dry_run** checked to pack-only, or uncheck to publish.
 3. Set **version** (e.g. `0.1.0`) when not running from a tag.
+4. **npm_auth**: leave `oidc` after bootstrap; use `token` only for bootstrap
+   recovery.
 
 ### Dry run only
 
@@ -105,12 +164,15 @@ before the first real publish.
 
 | Job | Dry run | Live publish |
 | --- | --- | --- |
-| `resolve` | Version / tag / mode | Same |
+| `resolve` | Version / tag / mode / npm_auth | Same |
 | `validate` | Pack + content checks + consumer smoke | Same |
 | `publish-nuget` | Skipped | `dotnet nuget push` (+ symbols) |
-| `publish-npm` | Skipped | `npm publish --access public --provenance` in dep order |
+| `publish-npm` | Skipped | `npm publish --access public --provenance` (OIDC or token) in dep order |
 | `publish-crates` | Skipped | `cargo publish` core then otel (with index retry) |
 | `github-release` | Summary only | GitHub Release + asset upload |
+
+Separate workflow **npm bootstrap (@hypabolic)** only creates the three npm
+packages with `NPM_TOKEN` and does not touch NuGet or crates.
 
 ## Bumping the version
 

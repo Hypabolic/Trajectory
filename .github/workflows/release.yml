@@ -9,12 +9,19 @@ name: Release
 # Dry run (default for workflow_dispatch):
 #   - Packs, validates, and uploads artifacts without registry writes.
 #
-# Required repository secrets for a live publish:
-#   NUGET_API_KEY          NuGet.org API key with push rights
-#   NPM_TOKEN              npm automation token with publish to @hypabolic
-#   CARGO_REGISTRY_TOKEN   crates.io API token
+# npm auth modes:
+#   - oidc (default): trusted publishing — no NPM_TOKEN. Requires each package
+#     to already exist on npmjs.com with a Trusted Publisher pointing at this
+#     workflow (release.yml) and the `release` environment.
+#   - token: bootstrap / fallback using secrets.NPM_TOKEN. Use once to create
+#     the @hypabolic/* packages, then configure OIDC and switch back to oidc.
 #
-# See docs/publishing.md for the full process.
+# Other live-publish secrets:
+#   NUGET_API_KEY          NuGet.org API key with push rights
+#   CARGO_REGISTRY_TOKEN   crates.io API token
+#   NPM_TOKEN              only when npm_auth=token (bootstrap)
+#
+# See docs/publishing.md for the full process (including npm bootstrap).
 
 on:
   push:
@@ -31,6 +38,13 @@ on:
         type: string
         required: false
         default: "0.1.0"
+      npm_auth:
+        description: npm authentication — oidc (trusted publishing) or token (bootstrap with NPM_TOKEN)
+        type: choice
+        options:
+          - oidc
+          - token
+        default: oidc
 
 permissions:
   contents: write
@@ -53,6 +67,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       dry_run: ${{ steps.meta.outputs.dry_run }}
       tag: ${{ steps.meta.outputs.tag }}
+      npm_auth: ${{ steps.meta.outputs.npm_auth }}
     steps:
       - name: Compute release metadata
         id: meta
@@ -63,6 +78,9 @@ jobs:
             TAG="${GITHUB_REF_NAME}"
             VERSION="${TAG#v}"
             DRY_RUN=false
+            # Tag pushes always use OIDC for npm (steady-state). Bootstrap the
+            # packages once via workflow_dispatch with npm_auth=token first.
+            NPM_AUTH=oidc
           else
             VERSION="${{ inputs.version }}"
             VERSION="${VERSION#v}"
@@ -72,15 +90,22 @@ jobs:
             else
               DRY_RUN=false
             fi
+            NPM_AUTH="${{ inputs.npm_auth }}"
+            NPM_AUTH="${NPM_AUTH:-oidc}"
           fi
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid version: $VERSION" >&2
             exit 1
           fi
+          if [[ "$NPM_AUTH" != "oidc" && "$NPM_AUTH" != "token" ]]; then
+            echo "Invalid npm_auth: $NPM_AUTH (expected oidc or token)" >&2
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "dry_run=$DRY_RUN" >> "$GITHUB_OUTPUT"
-          echo "Release version=$VERSION tag=$TAG dry_run=$DRY_RUN"
+          echo "npm_auth=$NPM_AUTH" >> "$GITHUB_OUTPUT"
+          echo "Release version=$VERSION tag=$TAG dry_run=$DRY_RUN npm_auth=$NPM_AUTH"
 
   validate:
     name: Validate packages and pack artifacts
@@ -254,10 +279,11 @@ jobs:
           done
 
   publish-npm:
-    name: Publish npm
+    name: Publish npm (${{ needs.resolve.outputs.npm_auth }})
     needs: [resolve, validate]
     runs-on: ubuntu-latest
     if: needs.resolve.outputs.dry_run == 'false'
+    # Environment name must match Trusted Publisher config on npmjs.com for OIDC.
     environment: release
     permissions:
       contents: read
@@ -273,6 +299,13 @@ jobs:
           registry-url: https://registry.npmjs.org
           scope: "@hypabolic"
 
+      # Trusted publishing needs a recent npm CLI (OIDC exchange).
+      - name: Ensure npm supports trusted publishing
+        run: |
+          set -euo pipefail
+          npm install -g npm@latest
+          npm --version
+
       - name: Build publishable workspaces
         working-directory: typescript
         run: |
@@ -280,23 +313,44 @@ jobs:
           npm ci
           npm run build
 
-      - name: Publish @hypabolic packages
+      - name: Publish @hypabolic packages (token bootstrap)
+        if: needs.resolve.outputs.npm_auth == 'token'
         working-directory: typescript
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
-            echo "NPM_TOKEN secret is not configured." >&2
+            echo "npm_auth=token requires secrets.NPM_TOKEN (granular automation token with publish to @hypabolic)." >&2
             exit 1
           fi
-          # Publish dependency order: core → node → otel
+          echo "Bootstrapping @hypabolic packages with NPM_TOKEN (create packages, then switch to OIDC)."
+          # Dependency order: core → node → otel. --access public is required for scoped packages.
           for workspace in \
             @hypabolic/trajectory \
             @hypabolic/trajectory-node \
             @hypabolic/trajectory-otel
           do
-            echo "Publishing $workspace"
+            echo "Publishing $workspace (token)"
+            npm publish --workspace "$workspace" --access public --provenance
+          done
+          echo "::notice::Token bootstrap complete. On npmjs.com, open each package → Trusted Publisher and add GitHub Actions: repo Hypabolic/Trajectory, workflow release.yml, environment release. Then revoke NPM_TOKEN and use npm_auth=oidc (default)."
+
+      - name: Publish @hypabolic packages (OIDC trusted publishing)
+        if: needs.resolve.outputs.npm_auth == 'oidc'
+        working-directory: typescript
+        run: |
+          set -euo pipefail
+          # Do not set NODE_AUTH_TOKEN — npm must exchange the GitHub OIDC token.
+          unset NODE_AUTH_TOKEN || true
+          for workspace in \
+            @hypabolic/trajectory \
+            @hypabolic/trajectory-node \
+            @hypabolic/trajectory-otel
+          do
+            echo "Publishing $workspace (OIDC)"
+            # If this 404s, the package is missing or Trusted Publisher does not match
+            # this workflow/environment. Bootstrap once with npm_auth=token first.
             npm publish --workspace "$workspace" --access public --provenance
           done
 
