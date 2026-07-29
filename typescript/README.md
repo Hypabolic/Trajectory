@@ -41,11 +41,12 @@ python3 conformance/verify.py --repository-root . -- \
   node typescript/packages/trajectory-testing/dist/cli.js
 ```
 
-ML7 advertises Pi, Claude Code, and Codex with all six deterministic outputs.
-`minimalJsonlChunks` and `writeMinimalJsonl` provide incremental output without
-materializing the complete JSONL document. The same private protocol and
-language-neutral cases are used by every runtime; source filters remain useful
-for focused development.
+ML13 advertises Pi, Claude Code, Codex, OpenClaw, and Hermes with all six
+deterministic outputs. `minimalJsonlChunks` and `writeMinimalJsonl` provide
+incremental output without materializing the complete JSONL document. The same
+private protocol and language-neutral cases are used by every runtime; source
+filters remain useful for focused development. Packages remain unpublished;
+see [docs/release-readiness.md](../docs/release-readiness.md).
 
 ## Core API
 

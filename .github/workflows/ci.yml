@@ -190,6 +190,22 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Validate TypeScript capability manifest
+        run: |
+          jq -e '
+            .runtime == "typescript"
+            and .slice == "ML13"
+            and .normalizer_contract_version == "0.2.0"
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes"]
+            and .outputs == [
+              "letta-trajectory-v1",
+              "letta-canonical-v1",
+              "hypabolic-trajectory-v1",
+              "openai-chat-messages",
+              "jsonl-minimal",
+              "otel-genai-spans-v1"
+            ]
+          ' typescript/packages/trajectory/runtime-capabilities.json > /dev/null
       - name: Run every advertised shared case twice
         run: >-
           python3 conformance/verify.py --repository-root . --
@@ -319,9 +335,9 @@ jobs:
         run: |
           jq -e '
             .runtime == "rust"
-            and .slice == "ML9"
+            and .slice == "ML13"
             and .normalizer_contract_version == "0.2.0"
-            and .sources == ["pi", "claude-code", "codex", "openclaw"]
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes"]
             and .outputs == [
               "letta-trajectory-v1",
               "letta-canonical-v1",
@@ -415,5 +431,5 @@ jobs:
       - name: Upload preview evidence
         uses: actions/upload-artifact@v4
         with:
-          name: ml7-preview-release
+          name: ml13-preview-release
           path: artifacts

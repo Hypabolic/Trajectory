@@ -1,6 +1,6 @@
 # Rust and TypeScript implementation plan
 
-Status: accepted; ML1–ML7, ML9, and ML11 implemented; ML13 next
+Status: accepted; ML1–ML7, ML9, ML11, and ML13 complete; v1 capability set ready for unpublished 0.1.0 preview
 
 Planning baseline:
 
@@ -607,13 +607,18 @@ and reducer semantics.
 
 ### ML13 — 1.0 parity and release hardening
 
+Status: complete.
+
 Outcome: NuGet, npm, and crates.io packages describe and deliver the same
-contract release.
+contract release. Packages remain unpublished; preview packaging is dry-run
+only. Product-level `1.0.0` publish process gates are recorded in
+[release-readiness.md](release-readiness.md).
 
 Acceptance:
 
 - every required conformance case passes for all advertised capabilities;
-- package compatibility manifests agree;
+- package compatibility manifests agree (slice `ML13`, v1 sources including
+  Hermes, six deterministic outputs);
 - golden, property, fuzz, differential, and platform suites pass;
 - privacy review confirms fixtures and diagnostics contain no source secrets;
 - release artifacts are reproducible enough to trace to one commit and contract
@@ -700,6 +705,12 @@ compatibility claim.
 
 ## Immediate next action
 
-Implement ML13: 1.0 parity and release hardening. Hermes (ML11) is complete across
-all three runtimes with SQLite-free core normalize and empty-page listing for a
-missing store.
+ML13 is complete. The v1 required capability set (Pi, Claude Code, Codex,
+OpenClaw, Hermes plus six deterministic outputs) is implemented and gated
+across .NET, TypeScript, and Rust. Packages remain at synchronized unpublished
+`0.1.0` with CI dry-run packaging only.
+
+Next product decision: whether to publish the `0.1.0` preview from a tagged
+commit, or hold packages unpublished until a formal `1.0.0` process gate.
+Post-v1 source work (ML8 Letta Code, ML10 OpenHands, ML12 Deep Agents) must not
+begin as single-runtime slices. See [release-readiness.md](release-readiness.md).
