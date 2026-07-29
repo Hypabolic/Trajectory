@@ -1593,9 +1593,8 @@ fn decode_ahp(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
 
     let turns = collect_ahp_turns(chat, &mut diagnostics);
     for turn in turns {
-        let turn_obj = match turn.as_object() {
-            Some(value) => value,
-            None => continue,
+        let Some(turn_obj) = turn.as_object() else {
+            continue;
         };
         let turn_id = string_value(turn_obj.get("id"))
             .filter(|value| !value.is_empty())
@@ -1649,7 +1648,7 @@ fn decode_ahp(bytes: &[u8]) -> Result<DecodedSession, TrajectoryError> {
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned);
             if model.is_none() {
-                model = usage_model.clone();
+                model.clone_from(&usage_model);
             }
             let resolved_model = usage_model.clone().or_else(|| model.clone());
             model_invocations.push(DecodedModelInvocation {
@@ -2015,13 +2014,13 @@ fn emit_ahp_tool_call(
     };
     let is_terminal = matches!(
         status,
-        Some("completed") | Some("cancelled") | Some("denied") | Some("error")
+        Some("completed" | "cancelled" | "denied" | "error")
     );
     if !is_terminal && success.is_none() {
         return Ok(());
     }
     let is_error = success == Some(false)
-        || matches!(status, Some("cancelled") | Some("denied") | Some("error"));
+        || matches!(status, Some("cancelled" | "denied" | "error"));
     let content = ahp_tool_result_content(tool_call, is_error)?;
     emit(DecodedEvent {
         kind: EventKind::ToolResult,
@@ -2145,6 +2144,7 @@ fn compare_utf8(left: &str, right: &str) -> std::cmp::Ordering {
     left.as_bytes().cmp(right.as_bytes())
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn number_as_i64(value: Option<&Value>) -> Option<i64> {
     value.and_then(Value::as_i64).or_else(|| {
         value

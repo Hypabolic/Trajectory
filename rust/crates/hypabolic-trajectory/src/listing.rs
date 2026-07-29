@@ -75,7 +75,7 @@ pub fn list_ahp_trajectories(
     options: &ListingOptions<'_>,
 ) -> Result<TrajectoryListingPage, TrajectoryError> {
     validate_limit(options.limit)?;
-    let _root = options.root;
+    let _ = options.root; // Phase 3 will scan the export directory.
     Ok(TrajectoryListingPage {
         items: Vec::new(),
         next_cursor: None,

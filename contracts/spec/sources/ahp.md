@@ -163,7 +163,7 @@ provenance / extras; do not fetch binary content-by-reference
 | Part `kind` | Decode |
 | --- | --- |
 | `markdown` | Assistant text. **Concatenate contiguous markdown parts within a turn** for compact message-trajectory; retain part boundaries only in rich projections when schema allows. |
-| `reasoning` | First-class reasoning when IR has a slot (Codex-like); else omit + `ahp_reasoning_omitted` (policy locked at implement). |
+| `reasoning` | **First-class reasoning** (IR `reasoning` role/kind, Codex-like). Empty/whitespace content is dropped without a diagnostic. `ahp_reasoning_omitted` remains reserved if a runtime lacks a reasoning slot. |
 | `toolCall` | Tool call + optional result from `toolCall` state (§5.4) |
 | `resource` | No body fetch; stub / diagnostic |
 | `systemNotification` | Diagnostic-only or system message (non-identity) |
