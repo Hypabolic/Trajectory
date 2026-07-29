@@ -1,15 +1,20 @@
 # Spec: Agent Host Protocol (AHP) support in Trajectory
 
-Status: **AHP-1 landed** (Shape A snapshot decode on .NET, TypeScript, and Rust)  
+Status: **Phase 0–1 complete** (AHP-0 contracts + AHP-1 Shape A snapshot decode
+on .NET, TypeScript, and Rust). See [ahp-ingest-status.md](ahp-ingest-status.md)
+for what shipped and how to re-run tests.  
 Target product slice: post-v1 source family  
 AHP reference: [microsoft.github.io/agent-host-protocol](https://microsoft.github.io/agent-host-protocol/)  
 AHP schemas: [github.com/microsoft/agent-host-protocol/schema](https://github.com/microsoft/agent-host-protocol/tree/main/schema)  
 Pinned protocol family: **0.7.x** (vendor pin `conformance/vendor/ahp/PROTOCOL_VERSION`; pre-1.0; breaking changes expected)
 
-**AHP-1 deliverables:** Shape A snapshot decoder → IR on all three runtimes,
+**Phase 0 (AHP-0):** `contracts/spec/sources/ahp.md`, export schema, vendor pin,
+synthetic fixtures.  
+**Phase 1 (AHP-1):** Shape A snapshot decoder → IR on all three runtimes,
 shared conformance goldens, wire source `ahp` in runners/CLIs, and
 `compatibility.json` → `implemented.sources`.  
-**Not yet:** action-log reduce (Shape B), live WebSocket host, export listing.
+**Not yet (Phase 2+):** action-log reduce (Shape B), live WebSocket host, export
+listing.
 
 Related Trajectory docs:
 

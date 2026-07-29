@@ -33,7 +33,7 @@ test("TypeScript runner passes every advertised shared operation deterministical
     protocol_version: "1",
     status: "success",
     cases: 27,
-    operations: 46,
+    operations: 47,
   });
 });
 
