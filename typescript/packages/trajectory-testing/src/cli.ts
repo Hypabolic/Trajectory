@@ -106,7 +106,7 @@ async function execute(request: Request): Promise<unknown> {
   if (!(request.operation in manifest.operation)) {
     throw new Error(`Case '${request.case}' does not declare operation '${request.operation}'.`);
   }
-  if (!["pi", "claude-code", "codex", "openclaw", "hermes"].includes(manifest.source)) {
+  if (!["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"].includes(manifest.source)) {
     throw new Error(`TypeScript does not support source '${manifest.source}'.`);
   }
   try {

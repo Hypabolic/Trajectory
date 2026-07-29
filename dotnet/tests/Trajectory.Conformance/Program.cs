@@ -413,6 +413,7 @@ internal static class ConformanceProgram
         "codex" => TrajectorySource.Codex,
         "openclaw" => TrajectorySource.OpenClaw,
         "hermes" => TrajectorySource.Hermes,
+        "ahp" => TrajectorySource.Ahp,
         _ => throw new ProtocolException($"Unsupported conformance source '{source}'."),
     };
 

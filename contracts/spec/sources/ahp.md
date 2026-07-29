@@ -1,7 +1,7 @@
 # Source: Agent Host Protocol (`ahp`)
 
-Contract version: AHP source decode `0.1.0-draft` (Phase 0 — contracts and
-fixtures only; runtime decoders land in AHP-1+).
+Contract version: AHP source decode `0.1.0` (Phase 1 — Shape A snapshot decode
+on .NET, TypeScript, and Rust).
 
 Wire source name: **`ahp`** (no aliases on the wire).
 
@@ -30,8 +30,8 @@ ingests the agent-agnostic chat surface only.
 | Snapshot decode on all runtimes (Phase 1) | Official reducer parity (Phase 2) |
 | Export directory listing (Phase 3) | ACP session logs as a separate source |
 
-**Do not** add `ahp` to `contracts/compatibility.json` →
-`implemented.sources` until multi-runtime snapshot conformance passes.
+`ahp` is advertised in `contracts/compatibility.json` →
+`implemented.sources` once multi-runtime snapshot conformance passes (AHP-1).
 
 ---
 

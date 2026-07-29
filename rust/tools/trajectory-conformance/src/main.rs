@@ -9,11 +9,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use chrono::DateTime;
 use hypabolic_trajectory::{
     ListingOptions, NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError,
-    TruncationStrategy, list_claude_code_trajectories, list_codex_trajectories,
-    list_hermes_trajectories, list_openclaw_trajectories, list_pi_trajectories,
-    normalize_claude_code, normalize_codex, normalize_hermes, normalize_openclaw, normalize_pi,
-    project_canonical, project_hypabolic, project_letta, project_minimal_jsonl, project_openai,
-    project_opentelemetry,
+    TruncationStrategy, list_ahp_trajectories, list_claude_code_trajectories,
+    list_codex_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
+    list_pi_trajectories, normalize_ahp, normalize_claude_code, normalize_codex, normalize_hermes,
+    normalize_openclaw, normalize_pi, project_canonical, project_hypabolic, project_letta,
+    project_minimal_jsonl, project_openai, project_opentelemetry,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -141,7 +141,7 @@ fn run() -> Result<Value, String> {
     }
     if !matches!(
         manifest.source.as_str(),
-        "pi" | "claude-code" | "codex" | "openclaw" | "hermes"
+        "pi" | "claude-code" | "codex" | "openclaw" | "hermes" | "ahp"
     ) {
         return Err(format!(
             "Rust does not support source '{}'.",
@@ -237,6 +237,7 @@ fn execute(
         "codex" => normalize_codex(normalize_request),
         "openclaw" => normalize_openclaw(normalize_request),
         "hermes" => normalize_hermes(normalize_request),
+        "ahp" => normalize_ahp(normalize_request),
         _ => unreachable!("source is validated before execution"),
     }?;
     let output = match operation {
@@ -306,6 +307,7 @@ fn execute_listing(repository_root: &Path, manifest: &Manifest) -> Result<String
                 "codex" => list_codex_trajectories(&options),
                 "openclaw" => list_openclaw_trajectories(&options),
                 "hermes" => list_hermes_trajectories(&options),
+                "ahp" => list_ahp_trajectories(&options),
                 _ => unreachable!("source is validated before execution"),
             }?;
             let items = page

@@ -193,6 +193,10 @@ export function normalizeHermes(request: NormalizeRequest & { transcriptBytes: U
   return normalizeDecoded(request, decodeHermes(request.transcriptBytes));
 }
 
+export function normalizeAhp(request: NormalizeRequest & { transcriptBytes: Uint8Array }): TrajectoryIR {
+  return normalizeDecoded(request, decodeAhp(request.transcriptBytes));
+}
+
 function normalizeDecoded(
   request: NormalizeRequest & { transcriptBytes: Uint8Array },
   decoded: DecodedSession,
@@ -1115,6 +1119,405 @@ function resolveHermesGroupId(session: JsonObject, messages: JsonObject[]): stri
     if (typeof row.session_id === "string" && row.session_id) return row.session_id;
   }
   return undefined;
+}
+
+function decodeAhp(bytes: Uint8Array): DecodedSession {
+  const diagnostics: TrajectoryDiagnostic[] = [];
+  const events: DecodedEvent[] = [];
+  const modelInvocations: DecodedModelInvocation[] = [];
+  let root: JsonObject;
+  try {
+    const parsed: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    if (!isObject(parsed)) fail("invalid_input", "AHP snapshot must be a JSON object with a chat object (Shape A export).");
+    root = parsed;
+  } catch (error) {
+    if (error instanceof TrajectoryNormalizationError) throw error;
+    fail("invalid_input", "AHP snapshot must be a JSON object with a chat object (Shape A export).");
+  }
+
+  validateAhpProtocolVersion(root, diagnostics);
+  if (!isObject(root.chat)) {
+    fail("invalid_input", "AHP snapshot must be a JSON object with a chat object (Shape A export).");
+  }
+  const chat = root.chat;
+  const session = isObject(root.session) ? root.session : undefined;
+  const groupId = typeof chat.resource === "string" && chat.resource ? chat.resource : undefined;
+  const cwd = firstAhpWorkingDirectory(chat, session);
+  let model: string | undefined;
+  let createdAt: number | undefined;
+
+  const turns = collectAhpTurns(chat, diagnostics);
+  for (const turn of turns) {
+    const turnId = typeof turn.id === "string" && turn.id ? turn.id : undefined;
+    const timestamp = ahpTimestamp(turn.startedAt);
+    if (createdAt === undefined && timestamp !== undefined) createdAt = timestamp;
+    let componentIndex = 0;
+    const emit = (
+      event: Omit<DecodedEvent, "nativeId" | "sourceSequence" | "sourceOffset" | "componentIndex"> & {
+        nativeId?: string;
+      },
+    ): void => {
+      const nativeId = event.nativeId;
+      events.push({
+        ...event,
+        ...(nativeId === undefined
+          ? { sourceOffset: BigInt(events.length), sourceSequence: events.length }
+          : { nativeId, sourceSequence: 0, sourceOffset: 0n }),
+        componentIndex: componentIndex++,
+      });
+    };
+
+    if (isObject(turn.message)) {
+      emitAhpMessage(turn.message, turnId, timestamp, emit, diagnostics, (next) => {
+        if (model === undefined) model = next;
+      });
+    }
+
+    if (Array.isArray(turn.responseParts)) {
+      emitAhpResponseParts(turn.responseParts, turnId, timestamp, emit, diagnostics);
+    }
+
+    if (isObject(turn.usage)) {
+      const usageModel =
+        typeof turn.usage.model === "string" && turn.usage.model ? turn.usage.model : undefined;
+      if (usageModel && model === undefined) model = usageModel;
+      const resolvedModel = usageModel ?? model;
+      const invocation: DecodedModelInvocation = {
+        ...(turnId === undefined ? {} : { nativeId: turnId }),
+        ...(resolvedModel === undefined
+          ? {}
+          : { requestedModel: resolvedModel, responseModel: resolvedModel }),
+        ...(typeof turn.usage.inputTokens === "number"
+          ? { inputTokens: BigInt(Math.trunc(turn.usage.inputTokens)) }
+          : {}),
+        ...(typeof turn.usage.outputTokens === "number"
+          ? { outputTokens: BigInt(Math.trunc(turn.usage.outputTokens)) }
+          : {}),
+        ...(typeof turn.usage.cacheReadTokens === "number"
+          ? { cacheReadTokens: BigInt(Math.trunc(turn.usage.cacheReadTokens)) }
+          : {}),
+        ...(timestamp === undefined ? {} : { startedAt: timestamp, completedAt: timestamp }),
+      };
+      modelInvocations.push(invocation);
+    }
+  }
+
+  return {
+    source: "ahp",
+    sourceName: "ahp",
+    groupResolved: groupId !== undefined,
+    events,
+    modelInvocations,
+    diagnostics,
+    ...(groupId === undefined ? {} : { groupId }),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(model === undefined ? {} : { model }),
+    ...(createdAt === undefined ? {} : { createdAt }),
+  };
+}
+
+function validateAhpProtocolVersion(root: JsonObject, diagnostics: TrajectoryDiagnostic[]): void {
+  if (root.ahpProtocolVersion === undefined || root.ahpProtocolVersion === null) {
+    diagnostics.push({
+      code: "ahp_version_missing",
+      message: "Snapshot lacks ahpProtocolVersion; assumed pinned 0.7.x.",
+    });
+    return;
+  }
+  if (typeof root.ahpProtocolVersion !== "string") {
+    fail("invalid_input", "AHP ahpProtocolVersion must be a string.");
+  }
+  if (!isCompatibleAhpVersion(root.ahpProtocolVersion)) {
+    fail(
+      "invalid_input",
+      `Unsupported AHP protocol version '${root.ahpProtocolVersion}'. Expected 0.7.x.`,
+    );
+  }
+}
+
+function isCompatibleAhpVersion(version: string): boolean {
+  if (!version) return false;
+  const core = version.split("-", 1)[0]!;
+  const parts = core.split(".");
+  return (
+    parts.length >= 2 &&
+    parts[0] === "0" &&
+    parts[1] === "7" &&
+    parts.every((part) => part.length > 0 && /^\d+$/.test(part))
+  );
+}
+
+function collectAhpTurns(chat: JsonObject, diagnostics: TrajectoryDiagnostic[]): JsonObject[] {
+  const turns: Array<{ element: JsonObject; startedAt: number | null; id: string }> = [];
+  if (Array.isArray(chat.turns)) {
+    for (const turn of chat.turns) {
+      if (!isObject(turn)) continue;
+      turns.push({
+        element: turn,
+        startedAt: ahpTimestamp(turn.startedAt) ?? null,
+        id: typeof turn.id === "string" ? turn.id : "",
+      });
+    }
+  }
+  turns.sort((left, right) => {
+    const leftTime = left.startedAt ?? Number.POSITIVE_INFINITY;
+    const rightTime = right.startedAt ?? Number.POSITIVE_INFINITY;
+    if (leftTime !== rightTime) return leftTime - rightTime;
+    return compareUtf8(left.id, right.id);
+  });
+
+  if (isObject(chat.activeTurn)) {
+    diagnostics.push({
+      code: "ahp_active_turn_omitted",
+      message: "Omitted incomplete activeTurn (snapshot whole-mode policy).",
+    });
+  }
+
+  return turns.map((item) => item.element);
+}
+
+function emitAhpMessage(
+  message: JsonObject,
+  turnId: string | undefined,
+  timestamp: number | undefined,
+  emit: (
+    event: Omit<DecodedEvent, "nativeId" | "sourceSequence" | "sourceOffset" | "componentIndex"> & {
+      nativeId?: string;
+    },
+  ) => void,
+  diagnostics: TrajectoryDiagnostic[],
+  setModel: (model: string) => void,
+): void {
+  const origin = isObject(message.origin) ? message.origin : undefined;
+  const originKind = typeof origin?.kind === "string" ? origin.kind : undefined;
+  if (!originKind) {
+    diagnostics.push({
+      code: "ahp_unknown_message_origin",
+      message: "Dropped a message with an unknown origin kind.",
+    });
+    return;
+  }
+  if (originKind === "tool") return;
+
+  let role: Role;
+  if (originKind === "user") role = "user";
+  else if (originKind === "agent" || originKind === "assistant") role = "assistant";
+  else if (originKind === "system" || originKind === "systemNotification") {
+    role = "assistant";
+    diagnostics.push({
+      code: "ahp_system_as_assistant",
+      message: "Mapped a system message origin to assistant.",
+    });
+  } else {
+    diagnostics.push({
+      code: "ahp_unknown_message_origin",
+      message: `Dropped a message with unknown origin kind '${originKind}'.`,
+    });
+    return;
+  }
+
+  const text = typeof message.text === "string" ? message.text : "";
+  if (!text) return;
+
+  if (isObject(message.model) && typeof message.model.id === "string" && message.model.id) {
+    setModel(message.model.id);
+  }
+
+  emit({
+    kind: "message",
+    role,
+    content: text,
+    ...(timestamp === undefined ? {} : { timestamp }),
+    ...(turnId === undefined ? {} : { nativeId: turnId }),
+  });
+}
+
+function emitAhpResponseParts(
+  parts: JsonValue[],
+  turnId: string | undefined,
+  timestamp: number | undefined,
+  emit: (
+    event: Omit<DecodedEvent, "nativeId" | "sourceSequence" | "sourceOffset" | "componentIndex"> & {
+      nativeId?: string;
+    },
+  ) => void,
+  diagnostics: TrajectoryDiagnostic[],
+): void {
+  const markdownBuffer: Array<{ id: string; content: string }> = [];
+  const flushMarkdown = (): void => {
+    if (markdownBuffer.length === 0) return;
+    const content = markdownBuffer.map((part) => part.content).join("");
+    const nativeId = markdownBuffer[0]!.id || turnId;
+    markdownBuffer.length = 0;
+    if (!content) return;
+    emit({
+      kind: "message",
+      role: "assistant",
+      content,
+      ...(timestamp === undefined ? {} : { timestamp }),
+      ...(nativeId === undefined ? {} : { nativeId }),
+    });
+  };
+
+  for (const part of parts) {
+    if (!isObject(part)) continue;
+    const kind = typeof part.kind === "string" ? part.kind : undefined;
+    if (kind === "markdown") {
+      markdownBuffer.push({
+        id: typeof part.id === "string" ? part.id : typeof part.partId === "string" ? part.partId : "",
+        content: typeof part.content === "string" ? part.content : "",
+      });
+      continue;
+    }
+    flushMarkdown();
+    if (kind === "reasoning") {
+      const content = typeof part.content === "string" ? part.content : "";
+      if (content.trim()) {
+        const id =
+          (typeof part.id === "string" && part.id) ||
+          (typeof part.partId === "string" && part.partId) ||
+          turnId;
+        emit({
+          kind: "reasoning",
+          role: "reasoning",
+          content,
+          ...(timestamp === undefined ? {} : { timestamp }),
+          ...(id === undefined ? {} : { nativeId: id }),
+        });
+      }
+      continue;
+    }
+    if (kind === "toolCall") {
+      emitAhpToolCall(part, timestamp, emit);
+      continue;
+    }
+    if (kind === "inputRequest") {
+      diagnostics.push({
+        code: "ahp_input_request_skipped",
+        message: "Skipped an inputRequest response part.",
+      });
+    }
+  }
+  flushMarkdown();
+}
+
+function emitAhpToolCall(
+  part: JsonObject,
+  timestamp: number | undefined,
+  emit: (
+    event: Omit<DecodedEvent, "nativeId" | "sourceSequence" | "sourceOffset" | "componentIndex"> & {
+      nativeId?: string;
+    },
+  ) => void,
+): void {
+  if (!isObject(part.toolCall)) return;
+  const toolCall = part.toolCall;
+  const toolCallId =
+    typeof toolCall.toolCallId === "string" && toolCall.toolCallId ? toolCall.toolCallId : undefined;
+  const toolName =
+    typeof toolCall.toolName === "string" && toolCall.toolName ? toolCall.toolName : undefined;
+  const argumentsJson = ahpToolArgumentsJson(toolCall);
+
+  emit({
+    kind: "tool-call",
+    role: "assistant",
+    argumentsJson,
+    ...(toolCallId === undefined ? {} : { toolCallId }),
+    ...(toolName === undefined ? {} : { toolName }),
+    ...(timestamp === undefined ? {} : { timestamp }),
+    ...(toolCallId === undefined ? {} : { nativeId: toolCallId }),
+  });
+
+  const status = typeof toolCall.status === "string" ? toolCall.status : undefined;
+  const success =
+    toolCall.success === true ? true : toolCall.success === false ? false : undefined;
+  const isTerminal =
+    status === "completed" || status === "cancelled" || status === "denied" || status === "error";
+  if (!isTerminal && success === undefined) return;
+
+  const isError =
+    success === false || status === "cancelled" || status === "denied" || status === "error";
+  emit({
+    kind: "tool-result",
+    role: "tool",
+    content: ahpToolResultContent(toolCall, isError),
+    isError,
+    ...(toolCallId === undefined ? {} : { toolCallId }),
+    ...(toolName === undefined ? {} : { toolName }),
+    ...(timestamp === undefined ? {} : { timestamp }),
+    ...(toolCallId === undefined ? {} : { nativeId: toolCallId }),
+  });
+}
+
+function ahpToolArgumentsJson(toolCall: JsonObject): string {
+  if (isObject(toolCall.parameters) || Array.isArray(toolCall.parameters)) {
+    return compactJson(toolCall.parameters as JsonValue);
+  }
+  if (typeof toolCall.toolInput === "string" && toolCall.toolInput) return toolCall.toolInput;
+  return "{}";
+}
+
+function ahpToolResultContent(toolCall: JsonObject, isError: boolean): string {
+  if (Array.isArray(toolCall.content)) {
+    const parts: string[] = [];
+    for (const block of toolCall.content) {
+      if (!isObject(block)) continue;
+      const type = typeof block.type === "string" ? block.type : undefined;
+      if ((type === "text" || type === undefined) && typeof block.text === "string" && block.text) {
+        parts.push(block.text);
+      }
+    }
+    if (parts.length > 0) return parts.join("\n");
+  }
+  if (toolCall.structuredContent !== undefined && toolCall.structuredContent !== null) {
+    return compactJson(toolCall.structuredContent as JsonValue);
+  }
+  if (typeof toolCall.pastTenseMessage === "string" && toolCall.pastTenseMessage) {
+    return toolCall.pastTenseMessage;
+  }
+  if (isError) {
+    if (typeof toolCall.reasonMessage === "string" && toolCall.reasonMessage) {
+      return toolCall.reasonMessage;
+    }
+    if (typeof toolCall.reason === "string" && toolCall.reason) return toolCall.reason;
+    return "cancelled";
+  }
+  return "";
+}
+
+function firstAhpWorkingDirectory(
+  chat: JsonObject,
+  session: JsonObject | undefined,
+): string | undefined {
+  for (const source of [chat, session]) {
+    if (!source || !Array.isArray(source.workingDirectories)) continue;
+    for (const dir of source.workingDirectories) {
+      if (typeof dir !== "string" || !dir) continue;
+      if (dir.startsWith("file://")) {
+        const path = dir.slice("file://".length);
+        return path.length > 0 ? path : dir;
+      }
+      return dir;
+    }
+  }
+  return undefined;
+}
+
+function ahpTimestamp(value: JsonValue | undefined): number | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function compareUtf8(left: string, right: string): number {
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  const limit = Math.min(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < limit; index++) {
+    const delta = leftBytes[index]! - rightBytes[index]!;
+    if (delta !== 0) return delta;
+  }
+  return leftBytes.length - rightBytes.length;
 }
 
 function firstString(...values: Array<string | undefined>): string | undefined {

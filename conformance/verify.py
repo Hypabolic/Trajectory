@@ -83,7 +83,7 @@ def compare_output(
             / expected_path.relative_to(repository_root / "conformance" / "cases")
         )
         candidate.parent.mkdir(parents=True, exist_ok=True)
-        candidate.write_text(actual, encoding="utf-8", newline="")
+        candidate.write_text(actual, encoding="utf-8")
         print(
             f"CANDIDATE {label}: wrote unaccepted output {candidate}",
             file=sys.stderr,

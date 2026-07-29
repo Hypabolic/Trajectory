@@ -24,7 +24,7 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
 
 ## What you get
 
-- **Multi-source ingest** — Pi, Claude Code, Codex, OpenClaw, and Hermes
+- **Multi-source ingest** — Pi, Claude Code, Codex, OpenClaw, Hermes, and AHP
 - **Deterministic normalization** — stable IDs, ordering, hashes, content-safe
   diagnostics
 - **Multiple outputs** from one decode: Hypabolic trajectory, canonical
@@ -166,6 +166,7 @@ with matching `normalize_*` helpers.
 | Codex | Rollout JSONL | `~/.codex/sessions` |
 | OpenClaw | Session JSONL | `~/.openclaw` or legacy `~/.clawdbot` |
 | Hermes | Message array or `{ session, messages }` JSON | Export file; core listing is SQLite-free |
+| AHP | Shape A chat snapshot `{ chat, session? }` JSON | Export file; listing is Phase 3 |
 
 Override listing roots with `--root` / `TRAJECTORY_<SOURCE>_ROOT` in the sample
 CLIs, or pass an explicit root to listing APIs.
@@ -198,7 +199,7 @@ Shared flags:
 
 | Flag | Meaning |
 | --- | --- |
-| `--source <name>` | `pi`, `claude-code`, `codex`, `openclaw`, `hermes` |
+| `--source <name>` | `pi`, `claude-code`, `codex`, `openclaw`, `hermes`, `ahp` |
 | `--root <path>` | Override store root |
 | `--limit <n>` | Listing page size (default 50) |
 | `--format <f>` | `both` (default), `messages`, or `hypabolic` |
@@ -229,6 +230,9 @@ cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- list --source cod
 cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- show \
   --source hermes \
   --path conformance/cases/hermes/tool-calls/input.json
+cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- show \
+  --source ahp \
+  --path conformance/cases/ahp/tool-calls/input.json
 ```
 
 **Notes**
@@ -236,6 +240,7 @@ cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- show \
 - Empty or missing stores exit successfully with a clear message.
 - Hermes listing in core returns empty (no SQLite dependency); export JSON and
   `show --path`.
+- AHP listing is Phase 3; normalize Shape A snapshots with `show --path`.
 - These CLIs are **not** published NuGet/npm/crates packages.
 
 ## How it works

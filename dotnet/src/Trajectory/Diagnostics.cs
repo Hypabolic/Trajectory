@@ -21,6 +21,15 @@ public static class DiagnosticCodes
     public const string ToolResultTruncated = "tool_result_truncated";
     public const string TimestampsSynthesized = "timestamps_synthesized";
     public const string TimestampsInterpolated = "timestamps_interpolated";
+
+    // AHP source diagnostics (contracts/spec/sources/ahp.md)
+    public const string UnsupportedAhpVersion = "unsupported_ahp_version";
+    public const string AhpVersionMissing = "ahp_version_missing";
+    public const string AhpActiveTurnOmitted = "ahp_active_turn_omitted";
+    public const string AhpUnknownMessageOrigin = "ahp_unknown_message_origin";
+    public const string AhpInputRequestSkipped = "ahp_input_request_skipped";
+    public const string AhpReasoningOmitted = "ahp_reasoning_omitted";
+    public const string AhpSystemAsAssistant = "ahp_system_as_assistant";
 }
 
 public sealed record TrajectoryDiagnostic

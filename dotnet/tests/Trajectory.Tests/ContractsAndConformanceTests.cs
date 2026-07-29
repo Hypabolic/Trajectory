@@ -50,7 +50,7 @@ public sealed class ContractsAndConformanceTests
             .Select(static item => item.GetString())
             .ToHashSet(StringComparer.Ordinal);
         Assert.Equal(
-            new[] { "pi", "claude-code", "codex", "openclaw", "hermes" }
+            new[] { "pi", "claude-code", "codex", "openclaw", "hermes", "ahp" }
                 .Order(StringComparer.Ordinal),
             sources.Order(StringComparer.Ordinal));
         Assert.Equal("1.42.0", OtelGenAiConventions.Version);

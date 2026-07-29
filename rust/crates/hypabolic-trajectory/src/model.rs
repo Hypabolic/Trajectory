@@ -149,6 +149,8 @@ pub enum TrajectorySource {
     OpenClaw,
     /// Hermes message-row array or session envelope.
     Hermes,
+    /// Agent Host Protocol Shape A chat snapshot.
+    Ahp,
 }
 
 impl TrajectorySource {
@@ -159,6 +161,7 @@ impl TrajectorySource {
             Self::Codex => "codex",
             Self::OpenClaw => "openclaw",
             Self::Hermes => "hermes",
+            Self::Ahp => "ahp",
         }
     }
 }

@@ -10,6 +10,7 @@ public enum TrajectorySource
     OpenHands,
     Hermes,
     DeepAgents,
+    Ahp,
 }
 
 public enum TrajectoryRole

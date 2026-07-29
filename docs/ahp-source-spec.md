@@ -1,17 +1,15 @@
 # Spec: Agent Host Protocol (AHP) support in Trajectory
 
-Status: **AHP-0 landed** (contracts + synthetic fixtures; no runtime decoder yet)  
+Status: **AHP-1 landed** (Shape A snapshot decode on .NET, TypeScript, and Rust)  
 Target product slice: post-v1 source family  
 AHP reference: [microsoft.github.io/agent-host-protocol](https://microsoft.github.io/agent-host-protocol/)  
 AHP schemas: [github.com/microsoft/agent-host-protocol/schema](https://github.com/microsoft/agent-host-protocol/tree/main/schema)  
 Pinned protocol family: **0.7.x** (vendor pin `conformance/vendor/ahp/PROTOCOL_VERSION`; pre-1.0; breaking changes expected)
 
-**AHP-0 deliverables:** `contracts/spec/sources/ahp.md`,
-`contracts/schemas/ahp-export-v1.schema.json`, vendor pin, and
-`conformance/cases/ahp/{tool-calls,multi-turn,cancelled-turn}` (Shape A
-snapshots; expected goldens stubbed until AHP-1+).  
-**Not yet:** runtime decode, `compatibility.json` → `implemented.sources`,
-action-log reduce.
+**AHP-1 deliverables:** Shape A snapshot decoder → IR on all three runtimes,
+shared conformance goldens, wire source `ahp` in runners/CLIs, and
+`compatibility.json` → `implemented.sources`.  
+**Not yet:** action-log reduce (Shape B), live WebSocket host, export listing.
 
 Related Trajectory docs:
 
@@ -448,13 +446,13 @@ experiments — explicitly deferred; Trajectory remains ingest-first.
 - [x] Author `contracts/spec/sources/ahp.md` + `ahp-export-v1.schema.json`
 - [x] Sketch 3 synthetic fixtures (`ahp/tool-calls`, `ahp/multi-turn`, `ahp/cancelled-turn`)
 
-### Phase 1 — Snapshot source (all runtimes)
+### Phase 1 — Snapshot source (all runtimes) — **done (AHP-1)**
 
-- [ ] Shape A decoder → IR events
-- [ ] Conformance: `ahp/tool-calls`, `ahp/multi-turn`, `ahp/cancelled-turn`
-- [ ] Wire `ahp` in runners; **do not** add to `compatibility.implemented.sources`
-  until all three runtimes pass
-- [ ] Sample CLI `show --source ahp --path …`
+- [x] Shape A decoder → IR events
+- [x] Conformance: `ahp/tool-calls`, `ahp/multi-turn`, `ahp/cancelled-turn`
+- [x] Wire `ahp` in runners; add to `compatibility.implemented.sources` after
+  all three runtimes pass
+- [x] Sample CLI `show --source ahp --path …`
 
 ### Phase 2 — Action-log reduce
 
