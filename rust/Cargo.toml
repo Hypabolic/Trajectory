@@ -3,6 +3,7 @@ members = [
     "crates/hypabolic-trajectory",
     "crates/hypabolic-trajectory-opentelemetry",
     "tools/trajectory-conformance",
+    "tools/trajectory-cli",
 ]
 resolver = "2"
 
