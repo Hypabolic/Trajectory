@@ -283,7 +283,7 @@ async function resolvePath(
     return undefined;
   }
   const page = await listForSource(source, root, limit);
-  const match = page.items.find((item) => item.id === id);
+  const match = page.items.find((item: TrajectoryListing) => item.id === id);
   if (!match) {
     console.error(`${RED}Session id '${id}' not found under ${root}.${RESET}`);
     return undefined;
