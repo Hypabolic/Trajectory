@@ -1,5 +1,8 @@
 # Trajectory
 
+<img width="612" height="103" alt="image" src="https://github.com/user-attachments/assets/3286ba53-81f0-48e3-bf1b-c743ed72ed9a" />
+
+
 **Trajectory** normalizes coding-agent session transcripts into stable, versioned
 records you can store, search, replay, evaluate, train on, and observe.
 
@@ -172,6 +175,10 @@ CLIs, or pass an explicit root to listing APIs.
 Unpublished developer tools that list agent stores on disk and normalize a
 selected session into a **privacy-safe summary** (counts, roles, tools,
 diagnostics—no transcript body by default).
+
+<img width="607" height="278" alt="image" src="https://github.com/user-attachments/assets/abfa4f1e-273f-4be9-9141-b38f0fa3751f" />
+<img width="1471" height="717" alt="image" src="https://github.com/user-attachments/assets/c39d80b3-519d-4513-b988-df285369f4c8" />
+
 
 | Runtime | Path | Binary / entry |
 | --- | --- | --- |
