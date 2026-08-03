@@ -19,12 +19,19 @@ Optional OpenTelemetry packages: `Hypabolic.Trajectory.OpenTelemetry`,
 `@hypabolic/trajectory-otel`, `hypabolic-trajectory-opentelemetry`.
 
 Releases use the **git tag as the version** (same model as Hypa): push
-`v0.1.0` and CI stamps packages, publishes NuGet/npm/crates, and creates a
+`vX.Y.Z` and CI stamps packages, publishes NuGet/npm/crates, and creates a
 GitHub Release. See [docs/publishing.md](docs/publishing.md).
+
+> **Published vs this tree:** Registry packages at **`0.1.0`** include Pi, Claude
+> Code, Codex, OpenClaw, and Hermes only. **AHP** Shape A offline snapshot ingest
+> is implemented **in this repository tip** and will ship under the **next**
+> synchronized package version (a new tag after `v0.1.0`). Install unversioned
+> commands resolve to latest published `0.1.0` until that cut.
 
 ## What you get
 
 - **Multi-source ingest** — Pi, Claude Code, Codex, OpenClaw, Hermes, and AHP
+  (Shape A offline ChatState snapshots; AHP is branch-tip / next release — see note above)
 - **Deterministic normalization** — stable IDs, ordering, hashes, content-safe
   diagnostics
 - **Multiple outputs** from one decode: Hypabolic trajectory, canonical
@@ -166,7 +173,7 @@ with matching `normalize_*` helpers.
 | Codex | Rollout JSONL | `~/.codex/sessions` |
 | OpenClaw | Session JSONL | `~/.openclaw` or legacy `~/.clawdbot` |
 | Hermes | Message array or `{ session, messages }` JSON | Export file; core listing is SQLite-free |
-| AHP | Shape A chat snapshot `{ chat, session? }` JSON | Export file; listing is Phase 3 |
+| AHP | Shape A chat snapshot `{ chat, session? }` JSON | Export file only; listing is Phase 3 (empty stub). In-tree / next package version after `0.1.0` — not in published `0.1.0` registries |
 
 Override listing roots with `--root` / `TRAJECTORY_<SOURCE>_ROOT` in the sample
 CLIs, or pass an explicit root to listing APIs.
@@ -332,6 +339,8 @@ We welcome issues and PRs that improve adapters, fixtures, docs, and packaging.
 | [OpenTelemetry GenAI](docs/otel-genai-output.md) | Span projection and privacy |
 | [Publishing](docs/publishing.md) | NuGet / npm / crates release |
 | [Release readiness](docs/release-readiness.md) | Privacy, packaging, 1.0 gates |
+| [AHP ingest status](docs/ahp-ingest-status.md) | AHP Phase 0–1 vs deferred work |
+| [AHP source design](docs/ahp-source-spec.md) | Agent Host Protocol ingest design |
 | [Normative specs](contracts/spec/normalization.md) | Identity, timestamps, diagnostics |
 | [Conformance](conformance/README.md) | Shared cases and runners |
 

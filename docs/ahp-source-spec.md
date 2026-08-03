@@ -48,7 +48,11 @@ live WebSocket client inside core packages, terminal/changeset as primary
 transcripts, or ACP agent backends.
 
 ```text
-AHP ChatState / action log  →  source adapter "ahp"  →  shared normalizer  →  IR  →  projections
+AHP ChatState snapshot (Shape A; Phase 1)
+        →  source adapter "ahp"  →  shared normalizer  →  IR  →  projections
+
+AHP action log (Shape B; Phase 2, not shipped)
+        →  reduce to ChatState  →  same decoder path
 ```
 
 ---
@@ -67,7 +71,7 @@ immutable state, pure reducers, and write-ahead reconciliation.
 | --- | --- | --- |
 | **Harness files** (Pi, Claude Code, Codex, …) | On-disk session JSONL | Existing sources |
 | **ACP** (Agent Client Protocol) | 1:1 client ↔ agent | Not a Trajectory source; host-internal |
-| **AHP** | N clients ↔ host (state + sequencing) | **Proposed source** |
+| **AHP** | N clients ↔ host (state + sequencing) | **Implemented** Shape A offline source (Phase 1); Shape B / listing / live deferred |
 
 AHP hosts often *use* ACP (or vendor APIs) *below* the host; clients never see
 agent-private wire formats. Trajectory should ingest the **agent-agnostic AHP
@@ -376,7 +380,7 @@ Privacy: synthetic URIs, titles, paths; no real workspace contents in fixtures.
 
 ## 7. Listing
 
-### 7.1 v1 — export directory listing (optional but useful)
+### 7.1 Phase 3 — export directory listing (deferred)
 
 Explicit root only (no home default — AHP is not a single well-known path):
 
@@ -409,20 +413,24 @@ If a stable on-disk layout is documented by VS Code agent host, add a
 
 ## 8. Sample CLI / DX
 
-Extend sample CLIs:
+**Supported today (Phase 1):** normalize a Shape A snapshot by path.
+
+```bash
+trajectory show --source ahp --path ./chat-export.json
+# e.g. conformance/cases/ahp/tool-calls/input.json
+```
+
+**Future Phase 3 (empty listing stubs today — not a working product path):**
 
 ```bash
 trajectory list --source ahp --root ./ahp-export
-trajectory show --source ahp --path ./ahp-export/sessions/.../chats/....json
 ```
 
-Optional:
+Optional live export (Phase 4 tooling, not core library):
 
 ```bash
 trajectory ahp export --url wss://host --session ahp-session:/… --out ./ahp-export
 ```
-
-(export command lives in optional tooling, not core library.)
 
 ---
 
@@ -446,7 +454,7 @@ experiments — explicitly deferred; Trajectory remains ingest-first.
 
 ### Phase 0 — Spec freeze (this document + contract draft) — **done (AHP-0)**
 
-- [x] Agree D1–D6 (baseline; open questions §13 still for Phase 1 code)
+- [x] Agree D1–D6 (baseline; residual decisions in §13 are Phase 2+)
 - [x] Pin AHP protocol version (`conformance/vendor/ahp/PROTOCOL_VERSION` → 0.7.0)
 - [x] Author `contracts/spec/sources/ahp.md` + `ahp-export-v1.schema.json`
 - [x] Sketch 3 synthetic fixtures (`ahp/tool-calls`, `ahp/multi-turn`, `ahp/cancelled-turn`)
@@ -491,7 +499,7 @@ experiments — explicitly deferred; Trajectory remains ingest-first.
 | --- | --- | --- |
 | `ahp/tool-calls` | Snapshot with user turn + markdown + toolCall complete | Tool link, args/result, projections |
 | `ahp/multi-turn` | Two completed turns | Ordering, ids |
-| `ahp/turn-cancelled` | Turn state cancelled mid tools | No invented success; diagnostics |
+| `ahp/cancelled-turn` | Turn state cancelled mid tools | No invented success; diagnostics |
 | `ahp/reasoning` | Reasoning parts present | Mapping policy locked |
 | `ahp/action-log-replay` | Shape B log reduces same identity as snapshot | Reducer equivalence |
 | `ahp/partial-prefix` | First N envelopes partial=true | Partial identity rules |
@@ -515,7 +523,10 @@ Goldens: hand-reviewed; never CI regenerate-and-accept.
 
 ---
 
-## 13. Open questions (resolve before Phase 1 code)
+## 13. Residual / Phase 2+ decisions
+
+Phase 1 Shape A offline snapshot ingest is complete; these items do **not**
+block Phase 1 advertising. Resolve before Shape B / listing / live work.
 
 1. **Concatenate vs split** assistant markdown parts within a turn for
    message-trajectory — recommendation: concatenate for compact outputs;
@@ -523,7 +534,7 @@ Goldens: hand-reviewed; never CI regenerate-and-accept.
 2. **Reasoning visibility** in compact message trajectory — include, omit, or
    separate channel?
 3. **Export layout** — adopt §7.1 as normative or wait for an official AHP
-   export format from Microsoft/VS Code?
+   export format from Microsoft/VS Code? (Phase 3)
 4. **.NET reducer** — port vs snapshot-only gap for Phase 2?
 5. Should **`GroupId`** be the full URI (`ahp-chat:/uuid`) or bare uuid?
    Recommendation: **full URI** for global uniqueness across hosts.
@@ -534,15 +545,25 @@ Goldens: hand-reviewed; never CI regenerate-and-accept.
 
 ## 14. Success criteria
 
-AHP support is **done** for product advertising when:
+### Phase 1 product advertising (Shape A offline snapshot)
+
+AHP Phase 1 is **done** for product advertising when:
 
 1. Shared conformance cases for Phase 1 pass on **.NET, TypeScript, and Rust**.
-2. `ahp` appears in `contracts/compatibility.json` → `implemented.sources`.
+2. `ahp` appears in branch-tip `contracts/compatibility.json` →
+   `implemented.sources`.
 3. Runtime capability manifests advertise `ahp` with the same protocol pin.
-4. README / adapter-authoring document export → list → normalize.
-5. At least one real-world export path is documented (VS Code host or AHPX).
+4. README / adapter-authoring document **export snapshot → `show --path`
+   normalize** (listing is Phase 3 and is **not** required for Phase 1).
+5. Packaging notes state AHP is **not** in published registry `0.1.0` and needs
+   a new tag to ship.
 
-Live subscribe package is a separate success metric and must not block (1)–(5).
+### Later phases (do not block Phase 1)
+
+- Working export-directory listing (Phase 3).
+- Documented real-world capture path (VS Code host or AHPX) — currently
+  doc-only.
+- Live subscribe package (Phase 4) is a separate success metric.
 
 ---
 

@@ -6,17 +6,35 @@ start (see the root [README](../README.md)).
 
 ## Current status
 
+Distinguish **published registry packages** from **this repository tip**.
+
+### Published release (`v0.1.0`)
+
 | Item | Value |
 | --- | --- |
-| Package version | `0.1.0` (synchronized NuGet / npm / crates) |
+| Package version | `0.1.0` (NuGet / npm / crates) |
 | Capability slice | `ML13` |
 | Normalizer contract | `0.2.0` |
 | Conformance protocol | `1` |
 | Diagnostics contract | `1` |
-| v1 sources | `pi`, `claude-code`, `codex`, `openclaw`, `hermes`, `ahp` |
+| Implemented sources | `pi`, `claude-code`, `codex`, `openclaw`, `hermes` (**no** `ahp`) |
 | Outputs | Hypabolic, canonical identity, message trajectory, OpenAI chat, minimal JSONL, OTEL GenAI spans |
 
-Machine-readable surfaces:
+### Branch tip / next candidate (`feature/ahp-ingest` and successors)
+
+| Item | Value |
+| --- | --- |
+| Checked-in `VERSION` | `0.1.0` until the next intentional cut (do **not** retag `v0.1.0`) |
+| Capability slice | `ML13` (historical slice id; AHP is a post-`0.1.0` source addition) |
+| Normalizer contract | `0.2.0` |
+| Implemented sources (tip) | Published set **plus** `ahp` (Shape A offline ChatState snapshot only) |
+| AHP scope | Phase 0–1 shipped in-tree; listing, Shape B action log, and live host are **not** shipped |
+| Next registry publish | Requires a **new** tag (`v0.1.1` / `v0.2.0` / …); skip-duplicate will not replace `0.1.0` contents |
+
+AHP phase truth: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
+[ahp-source-spec.md](ahp-source-spec.md).
+
+Machine-readable surfaces (branch tip may advertise `ahp`):
 
 - [`contracts/compatibility.json`](../contracts/compatibility.json)
 - Runtime `runtime-capabilities.json` files (TypeScript, Rust)
@@ -100,7 +118,9 @@ After the first multi-registry release:
       Publisher configured for steady-state CI publishes.
 - [ ] GitHub Environment `release` protection rules as desired.
 - [x] NuGet / npm / crates.io Trusted Publishing (OIDC) for multi-registry Release.
-- [ ] Explicit decision to cut the next public version tag when ready.
+- [x] Public version tag `v0.1.0` published (sources through `hermes` only).
+- [ ] Explicit decision to cut the **next** public version tag when ready
+      (required before AHP or other post-`0.1.0` capabilities reach registries).
 
 ### Explicit non-goals for v1
 

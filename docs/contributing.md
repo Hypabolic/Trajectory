@@ -88,10 +88,15 @@ the same observable result. Parser unit fixtures stay under the runtime.
 - [ ] Diagnostics remain content-safe (no transcript secrets in messages).
 - [ ] Identity-bearing bytes unchanged under the same normalizer contract
       version (`0.2.0`), or a contract version bump is included.
-- [ ] Package versions remain synchronized at `0.1.0` unless this PR is an
-      intentional version bump across NuGet, npm, and crates.
+- [ ] Package versions remain synchronized (currently checked-in `VERSION` is
+      `0.1.0`) unless this PR is an intentional version bump across NuGet, npm,
+      and crates. **New advertised sources or outputs** (AHP is the first
+      post-`0.1.0` case) require a synchronized package version bump before the
+      next public registry release; do not retag or expect republish of
+      `0.1.0` to deliver them.
 - [ ] Sample CLIs still build if listing/normalize surfaces changed.
-- [ ] Docs updated (README / adapter authoring / this file as needed).
+- [ ] Docs updated (README / adapter authoring / this file as needed). Distinguish
+      published registry capability from branch-tip capability when they differ.
 
 ## Code style
 

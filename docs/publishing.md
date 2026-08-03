@@ -14,13 +14,19 @@ Trajectory follows the same release model as **Hypabolic/Hypa**:
 
 ## Create a release (normal path)
 
+`v0.1.0` is **already published** on NuGet / npm / crates (sources through
+`hermes` only). Capability additions such as **AHP** Shape A require a **new**
+tag (`v0.1.1`, `v0.2.0`, …). Do not retag `v0.1.0`. skip-duplicate / OIDC re-runs
+will not replace existing package contents with AHP.
+
 ```bash
 git checkout main
 git pull origin main
 
-# Tag the commit you want to ship (must already be green on CI)
-git tag -a v0.1.0 -m "Trajectory 0.1.0"
-git push origin v0.1.0
+# Tag the commit you want to ship (must already be green on CI).
+# Example for the next cut after 0.1.0:
+git tag -a v0.1.1 -m "Trajectory 0.1.1"
+git push origin v0.1.1
 ```
 
 That is the whole developer step. The **Release** workflow then:
@@ -38,7 +44,7 @@ That is the whole developer step. The **Release** workflow then:
 
 | Input | Meaning |
 | --- | --- |
-| `tag` | Required, e.g. `v0.1.0` (tag should already exist, or push it first) |
+| `tag` | Required, e.g. `v0.1.1` (tag should already exist, or push it first; `v0.1.0` is already cut) |
 | `dry_run` | Pack only (no publish / no GitHub Release) |
 | `npm_auth` | `oidc` (default) or `token` |
 
@@ -120,6 +126,9 @@ Then configure Trusted Publisher on each package. Later releases use OIDC only.
 
 ## Install a released version
 
+Latest published public packages are **`0.1.0`** (no AHP). Unversioned install
+commands resolve to that surface until the next tag ships.
+
 ```bash
 dotnet add package Hypabolic.Trajectory --version 0.1.0
 npm install @hypabolic/trajectory@0.1.0
@@ -143,9 +152,9 @@ cargo add hypabolic-trajectory@0.1.0
 | Symptom | Action |
 | --- | --- |
 | CI gate failed | Fix main, retag or move tag to a green commit |
-| NuGet already published | `--skip-duplicate` makes re-run a no-op |
-| npm already published | Workflow continues if version exists on registry |
-| crates already uploaded | Treated as success |
+| NuGet already published | `--skip-duplicate` makes re-run a no-op (does **not** replace package contents — new capability such as AHP needs a new version) |
+| npm already published | Workflow continues if version exists on registry (same: new features need a new version) |
+| crates already uploaded | Treated as success (same: new features need a new version) |
 | OIDC 404 / NuGet login fail | Match Trusted Publisher: owner `hypabolic`, workflow `release.yml`, env `release` |
 | crates.io OIDC auth fail | Match Trusted Publishing on **both** crates; workflow `release.yml`, env `release` |
 | npm OIDC 404 | Fix Trusted Publisher or bootstrap package once |

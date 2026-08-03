@@ -4,15 +4,23 @@ Branch packaging note for **feature/ahp-ingest**. Normative design:
 [ahp-source-spec.md](ahp-source-spec.md). Wire contract:
 [`contracts/spec/sources/ahp.md`](../contracts/spec/sources/ahp.md).
 
+**Publication status:** Shipped **in-tree** on `feature/ahp-ingest` (and
+successors). **Not** included in published registry packages at **`0.1.0`**.
+Publishing AHP requires a **new** synchronized package version / tag after
+`v0.1.0` (do not retag or republish `0.1.0`). See
+[release-readiness.md](release-readiness.md) and [CHANGELOG.md](../CHANGELOG.md)
+`## [Unreleased]`.
+
 | Phase | Scope | Status |
 | --- | --- | --- |
-| **0 (AHP-0)** | Spec freeze, export schema, vendor pin, synthetic fixtures | **Shipped** |
-| **1 (AHP-1)** | Shape A snapshot → IR on .NET / TypeScript / Rust + conformance + CLI | **Shipped** |
+| **0 (AHP-0)** | Spec freeze, export schema, vendor pin, synthetic fixtures | **Shipped in-tree** |
+| **1 (AHP-1)** | Shape A snapshot → IR on .NET / TypeScript / Rust + conformance + CLI | **Shipped in-tree** |
 | **2+** | Shape B action-log reduce, export listing, live host | **Not shipped** |
 
 Protocol pin: **0.7.0** (`conformance/vendor/ahp/PROTOCOL_VERSION`). Wire source
-name: **`ahp`**. Advertised in `contracts/compatibility.json` →
-`implemented.sources` and runtime capability manifests.
+name: **`ahp`**. Advertised on this tip in `contracts/compatibility.json` →
+`implemented.sources` and runtime capability manifests (not in the published
+`0.1.0` package capability surface).
 
 ---
 

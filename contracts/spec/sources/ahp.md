@@ -22,16 +22,23 @@ ingests the agent-agnostic chat surface only.
 
 ## 1. Scope (Phase 0 / Phase 1)
 
-| In scope | Deferred |
+Phase 1 product advertising covers **Shape A offline snapshot decode only**.
+
+| In scope (Phase 0–1) | Deferred |
 | --- | --- |
-| **Shape A** snapshot export (`input.json`) | **Shape B** action-log reduce (`input.jsonl`) |
-| One chat per normalize | Live host / WebSocket client |
+| **Shape A** snapshot export (`input.json`) | **Shape B** action-log reduce (`input.jsonl`) — Phase 2 |
+| One chat per normalize | Live host / WebSocket client — Phase 4 |
 | Completed turns + optional `activeTurn` policy | Terminals, changesets, MCP channel as primary transcripts |
 | Snapshot decode on all runtimes (Phase 1) | Official reducer parity (Phase 2) |
-| Export directory listing (Phase 3) | ACP session logs as a separate source |
+| | Export directory listing (Phase 3; empty stubs today) |
+| | Multi-chat unpack helper (Phase 3) |
+| | ACP session logs as a separate source |
 
-`ahp` is advertised in `contracts/compatibility.json` →
+`ahp` is advertised on branch tip in `contracts/compatibility.json` →
 `implemented.sources` once multi-runtime snapshot conformance passes (AHP-1).
+Published registry packages at `0.1.0` do not include `ahp`; first registry ship
+needs a new package version. Listing (§7) is sketch-only and **not** required
+for Phase 1 advertising.
 
 ---
 

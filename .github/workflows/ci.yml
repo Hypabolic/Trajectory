@@ -389,15 +389,16 @@ jobs:
           dotnet pack dotnet/src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj -c Release --no-restore -o artifacts/preview/nuget
           dotnet pack dotnet/src/Trajectory.Testing/Trajectory.Testing.csproj -c Release --no-restore -o artifacts/preview/nuget
           consumer=$(mktemp -d)
+          package_version=$(tr -d '[:space:]' < VERSION)
           dotnet new console --output "$consumer" --framework net10.0
-          dotnet add "$consumer" package Hypabolic.Trajectory --version 0.1.0 --source "$PWD/artifacts/preview/nuget"
+          dotnet add "$consumer" package Hypabolic.Trajectory --version "$package_version" --source "$PWD/artifacts/preview/nuget"
           dotnet build "$consumer" --no-restore
       - name: Build and dry-run npm packages
         working-directory: typescript
         run: |
           npm run build
           mkdir -p ../artifacts/preview/npm
-          # Pack only — `npm publish --dry-run` fails once 0.1.0 already exists
+          # Pack only — `npm publish --dry-run` fails once a version already exists
           # on the registry (bootstrap), even though no publish occurs.
           npm pack --workspace @hypabolic/trajectory \
             --workspace @hypabolic/trajectory-node \

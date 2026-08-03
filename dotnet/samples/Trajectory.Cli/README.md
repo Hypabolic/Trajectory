@@ -6,6 +6,7 @@ Local sample TUI for browsing agent sessions with [`Hypabolic.Trajectory`](../..
 ## What it does
 
 - Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes)
+- Normalizes AHP Shape A offline snapshots via `show --path` (no default store)
 - Interactively pick a session and normalize it
 - Prints privacy-safe summaries (record counts, roles, tool calls, diagnostics)
 - Optional `--show-content` (prints a clear privacy warning)
@@ -19,8 +20,13 @@ Default store roots (override with `--root` or env):
 | `codex` | `~/.codex/sessions` | `TRAJECTORY_CODEX_ROOT` |
 | `openclaw` | `~/.openclaw` if present, else `~/.clawdbot` | `TRAJECTORY_OPENCLAW_ROOT`, `OPENCLAW_STATE_DIR`, or `CLAWDBOT_STATE_DIR` |
 | `hermes` | `~/.hermes` | `TRAJECTORY_HERMES_ROOT` |
+| `ahp` | _(none — export file only)_ | _(not applicable)_ |
 
 Hermes core listing is SQLite-free and returns empty pages. Export message JSON from Hermes and use `show --path`.
+
+AHP listing is Phase 3 (empty stub). Normalize Shape A snapshots with
+`show --source ahp --path …` (same pattern as Hermes exports). AHP is in-tree /
+next package version after published `0.1.0`.
 
 ## Prerequisites
 
@@ -45,6 +51,10 @@ Against a conformance fixture:
 dotnet run --project dotnet/samples/Trajectory.Cli -- show \
   --source pi \
   --path conformance/cases/pi/tool-calls/input.jsonl
+
+dotnet run --project dotnet/samples/Trajectory.Cli -- show \
+  --source ahp \
+  --path conformance/cases/ahp/tool-calls/input.json
 ```
 
 With content snippets (private data warning applies):
