@@ -1,0 +1,325 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hypabolic.dev/trajectory/contracts/ahp-export-v1.schema.json",
+  "title": "Trajectory AHP export envelope v1",
+  "description": "Trajectory-owned offline export container for Agent Host Protocol chat snapshots (Shape A). Does not rewrite AHP; embeds a ChatState-like subset sufficient for Trajectory ingest. Protocol pin: conformance/vendor/ahp/PROTOCOL_VERSION.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["chat"],
+  "properties": {
+    "ahpProtocolVersion": {
+      "type": "string",
+      "description": "AHP protocol SemVer string (e.g. 0.7.0). Missing → non-fatal ahp_version_missing at decode.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "chat": {
+      "$ref": "#/$defs/chatStateLike",
+      "description": "AHP ChatState-like snapshot for a single chat (one normalize unit)."
+    },
+    "session": {
+      "$ref": "#/$defs/sessionProvenance",
+      "description": "Optional session-level provenance (provider, title, directories). Not a multi-chat flatten."
+    }
+  },
+  "$defs": {
+    "uri": {
+      "type": "string",
+      "minLength": 1,
+      "description": "AHP resource URI (e.g. ahp-chat:/uuid, ahp-session:/uuid, file:///workspace/demo)."
+    },
+    "iso8601": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO 8601 timestamp string."
+    },
+    "messageOrigin": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["user", "agent", "tool", "systemNotification"]
+        }
+      }
+    },
+    "message": {
+      "type": "object",
+      "required": ["text", "origin"],
+      "additionalProperties": true,
+      "properties": {
+        "text": { "type": "string" },
+        "origin": { "$ref": "#/$defs/messageOrigin" },
+        "attachments": { "type": "array", "items": { "type": "object" } },
+        "model": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "id": { "type": "string" },
+            "config": { "type": "object" }
+          }
+        },
+        "agent": { "type": "object", "additionalProperties": true },
+        "_meta": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "usageInfo": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "properties": {
+        "inputTokens": { "type": "number" },
+        "outputTokens": { "type": "number" },
+        "cacheReadTokens": { "type": "number" },
+        "model": { "type": "string" },
+        "_meta": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "errorInfo": {
+      "type": "object",
+      "required": ["errorType", "message"],
+      "additionalProperties": true,
+      "properties": {
+        "errorType": { "type": "string" },
+        "message": { "type": "string" },
+        "stack": { "type": "string" },
+        "_meta": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "markdownPart": {
+      "type": "object",
+      "required": ["kind", "id", "content"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "const": "markdown" },
+        "id": { "type": "string", "minLength": 1 },
+        "content": { "type": "string" }
+      }
+    },
+    "reasoningPart": {
+      "type": "object",
+      "required": ["kind", "id", "content"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "const": "reasoning" },
+        "id": { "type": "string", "minLength": 1 },
+        "content": { "type": "string" }
+      }
+    },
+    "toolCallState": {
+      "type": "object",
+      "required": ["toolCallId", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "toolCallId": { "type": "string", "minLength": 1 },
+        "toolName": { "type": "string" },
+        "displayName": { "type": "string" },
+        "intention": { "type": ["string", "null"] },
+        "invocationMessage": {},
+        "toolInput": { "type": ["string", "null"] },
+        "status": {
+          "type": "string",
+          "enum": [
+            "streaming",
+            "pending-confirmation",
+            "running",
+            "auth-required",
+            "pending-result-confirmation",
+            "completed",
+            "cancelled"
+          ]
+        },
+        "success": { "type": "boolean" },
+        "pastTenseMessage": {
+          "description": "AHP StringOrMarkdown: plain string or { markdown: string }.",
+          "anyOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["markdown"],
+              "additionalProperties": true,
+              "properties": { "markdown": { "type": "string" } }
+            }
+          ]
+        },
+        "content": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        },
+        "structuredContent": { "type": "object", "additionalProperties": true },
+        "error": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "message": { "type": "string" },
+            "code": { "type": "string" }
+          }
+        },
+        "confirmed": {
+          "type": "string",
+          "enum": ["not-needed", "user-action", "setting"]
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["denied", "skipped", "result-denied"]
+        },
+        "reasonMessage": {
+          "description": "AHP StringOrMarkdown: plain string or { markdown: string }.",
+          "anyOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["markdown"],
+              "additionalProperties": true,
+              "properties": { "markdown": { "type": "string" } }
+            }
+          ]
+        },
+        "contributor": { "type": ["object", "null"], "additionalProperties": true },
+        "_meta": { "type": ["object", "null"], "additionalProperties": true }
+      }
+    },
+    "toolCallPart": {
+      "type": "object",
+      "required": ["kind", "toolCall"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "const": "toolCall" },
+        "toolCall": { "$ref": "#/$defs/toolCallState" }
+      }
+    },
+    "responsePart": {
+      "oneOf": [
+        { "$ref": "#/$defs/markdownPart" },
+        { "$ref": "#/$defs/reasoningPart" },
+        { "$ref": "#/$defs/toolCallPart" },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": true,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["resource", "systemNotification", "inputRequest"]
+            }
+          }
+        }
+      ]
+    },
+    "turn": {
+      "type": "object",
+      "required": ["id", "message", "responseParts", "state"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "startedAt": { "$ref": "#/$defs/iso8601" },
+        "duration": { "type": "number" },
+        "message": { "$ref": "#/$defs/message" },
+        "responseParts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/responsePart" }
+        },
+        "usage": { "$ref": "#/$defs/usageInfo" },
+        "state": {
+          "type": "string",
+          "enum": ["complete", "cancelled", "error"]
+        },
+        "error": {
+          "description": "Turn error when state is error; may be null or omitted when absent.",
+          "anyOf": [
+            { "$ref": "#/$defs/errorInfo" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "activeTurn": {
+      "type": "object",
+      "required": ["id", "message", "responseParts"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "startedAt": { "$ref": "#/$defs/iso8601" },
+        "message": { "$ref": "#/$defs/message" },
+        "responseParts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/responsePart" }
+        },
+        "usage": { "$ref": "#/$defs/usageInfo" }
+      }
+    },
+    "chatOrigin": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["user", "fork", "sideChat", "tool"]
+        },
+        "chat": { "$ref": "#/$defs/uri" },
+        "turnId": { "type": "string" },
+        "toolCallId": { "type": "string" }
+      }
+    },
+    "chatStateLike": {
+      "type": "object",
+      "required": ["resource", "title", "status", "modifiedAt", "turns"],
+      "additionalProperties": true,
+      "properties": {
+        "resource": { "$ref": "#/$defs/uri" },
+        "title": { "type": "string" },
+        "status": {
+          "type": "number",
+          "description": "AHP SessionStatus bitset (e.g. Idle=1, InProgress=8)."
+        },
+        "activity": { "type": "string" },
+        "modifiedAt": { "$ref": "#/$defs/iso8601" },
+        "origin": { "$ref": "#/$defs/chatOrigin" },
+        "interactivity": { "type": "string" },
+        "workingDirectories": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/uri" }
+        },
+        "turns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/turn" }
+        },
+        "turnsNextCursor": { "type": "string" },
+        "activeTurn": {
+          "anyOf": [
+            { "$ref": "#/$defs/activeTurn" },
+            { "type": "null" }
+          ]
+        },
+        "_meta": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "sessionProvenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "provider": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "number" },
+        "activity": { "type": "string" },
+        "resource": { "$ref": "#/$defs/uri" },
+        "workingDirectories": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/uri" }
+        },
+        "project": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "uri": { "$ref": "#/$defs/uri" },
+            "displayName": { "type": "string" }
+          }
+        },
+        "lifecycle": { "type": "string" },
+        "chats": { "type": "array", "items": { "type": "object" } },
+        "defaultChat": { "$ref": "#/$defs/uri" },
+        "_meta": { "type": "object", "additionalProperties": true }
+      }
+    }
+  }
+}

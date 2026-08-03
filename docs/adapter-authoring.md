@@ -12,7 +12,10 @@ Related:
 - [Listing](../contracts/spec/listing.md)
 - [Conformance case authoring](../conformance/README.md)
 - [Contributing](contributing.md)
-- [AHP source design (draft)](ahp-source-spec.md) — Agent Host Protocol as a post-v1 source
+- [AHP source design](ahp-source-spec.md) — Agent Host Protocol Shape A offline
+  snapshot source (`ahp`); action-log reduce, listing, and live host are later
+  phases. Phase status: [ahp-ingest-status.md](ahp-ingest-status.md). AHP is
+  in-tree / next package version after published `0.1.0`.
 
 ## Architecture reminder
 

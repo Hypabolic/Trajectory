@@ -27,7 +27,7 @@ OUTPUTS = [
     "jsonl-minimal",
     "otel-genai-spans-v1",
 ]
-EXPECTED_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes"]
+EXPECTED_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"]
 
 
 def load_json(path: Path) -> dict:
@@ -108,11 +108,10 @@ def main() -> None:
             manifest.get("slice") != SLICE
             or manifest.get("outputs") != OUTPUTS
             or manifest.get("sources") != expected_sources
-            or "hermes" not in manifest.get("sources", [])
         ):
             raise SystemExit(
                 f"{path.relative_to(root)} does not advertise ML13 source/output parity "
-                f"(slice={SLICE}, sources including hermes)."
+                f"(slice={SLICE}, sources={expected_sources})."
             )
 
     npm_paths = [

@@ -19,6 +19,7 @@ import {
   type TrajectorySource,
 } from "@hypabolic/trajectory";
 import {
+  listAhpTrajectories,
   listClaudeCodeTrajectories,
   listCodexTrajectories,
   listHermesTrajectories,
@@ -28,7 +29,7 @@ import {
   type TrajectoryListingPage,
 } from "@hypabolic/trajectory-node";
 
-const SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes"] as const;
+const SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"] as const;
 type SourceName = (typeof SOURCES)[number];
 
 const DIM = "\u001b[2m";
@@ -155,6 +156,7 @@ function defaultRoot(source: SourceName): string {
     codex: "TRAJECTORY_CODEX_ROOT",
     openclaw: "TRAJECTORY_OPENCLAW_ROOT",
     hermes: "TRAJECTORY_HERMES_ROOT",
+    ahp: "TRAJECTORY_AHP_ROOT",
   };
   const fromTrajectory = process.env[envMap[source]]?.trim();
   if (fromTrajectory) return expandHome(fromTrajectory);
@@ -177,6 +179,8 @@ function defaultRoot(source: SourceName): string {
     }
     case "hermes":
       return join(home, ".hermes");
+    case "ahp":
+      return home;
   }
 }
 
@@ -192,6 +196,8 @@ function describeDefault(source: SourceName): string {
       return "~/.openclaw if present, else ~/.clawdbot (or OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR)";
     case "hermes":
       return "~/.hermes/state.db";
+    case "ahp":
+      return "explicit export root only (no home default)";
   }
 }
 
@@ -212,6 +218,8 @@ async function listForSource(
       return listOpenClawTrajectories(options);
     case "hermes":
       return listHermesTrajectories(options);
+    case "ahp":
+      return listAhpTrajectories(options);
   }
 }
 
@@ -462,6 +470,11 @@ function printEmpty(source: SourceName): void {
       `${DIM}Hermes core listing is SQLite-free and returns empty pages. Export message JSON and use show --path.${RESET}`,
     );
   }
+  if (source === "ahp") {
+    console.log(
+      `${DIM}AHP listing is Phase 3; use show --path with a Shape A snapshot export.${RESET}`,
+    );
+  }
 }
 
 async function promptSource(): Promise<SourceName> {
@@ -470,7 +483,7 @@ async function promptSource(): Promise<SourceName> {
   const rl = createInterface({ input, output });
   try {
     while (true) {
-      const answer = (await rl.question("Select source [1-5 or name]: ")).trim().toLowerCase();
+      const answer = (await rl.question(`Select source [1-${SOURCES.length} or name]: `)).trim().toLowerCase();
       const asNumber = Number(answer);
       if (Number.isInteger(asNumber) && asNumber >= 1 && asNumber <= SOURCES.length) {
         return SOURCES[asNumber - 1]!;
@@ -539,6 +552,7 @@ Default roots:
   codex        ~/.codex/sessions
   openclaw     ~/.openclaw if present, else ~/.clawdbot
   hermes       ~/.hermes
+  ahp          explicit export root only (use show --path)
 
 Root overrides: --root or TRAJECTORY_<SOURCE>_ROOT (e.g. TRAJECTORY_PI_ROOT).
 OpenClaw also honors OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR.

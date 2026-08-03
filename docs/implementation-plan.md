@@ -8,12 +8,20 @@ tracked as multi-language capability slices in
 
 Deliver a production-quality .NET implementation of Trajectory:
 
-- native source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes);
+- native source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes) for the
+  historical published v1 / `0.1.0` set;
 - shared normalization (identity, bounds, timestamps, diagnostics);
 - Hypabolic, canonical identity, message trajectory, OpenAI chat, minimal
   JSONL, and optional OpenTelemetry GenAI projections;
 - explicit-root listing;
 - Native AOT / trim-safe core package.
+
+**Post-v1 / current branch:** AHP (`ahp`) Shape A offline snapshot adapters
+exist across runtimes on `feature/ahp-ingest` (see
+[ahp-ingest-status.md](ahp-ingest-status.md) and
+[multi-language-plan.md](multi-language-plan.md)). Export listing and Shape B
+remain out of scope for this cut. First registry ship of AHP needs a new
+package version after `0.1.0`.
 
 ## Delivery status
 

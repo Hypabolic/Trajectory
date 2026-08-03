@@ -49,6 +49,7 @@ internal static class Sources
         "codex",
         "openclaw",
         "hermes",
+        "ahp",
     ];
 
     public static TrajectorySource Parse(string value) => value.Trim().ToLowerInvariant() switch
@@ -58,6 +59,7 @@ internal static class Sources
         "codex" => TrajectorySource.Codex,
         "openclaw" => TrajectorySource.OpenClaw,
         "hermes" => TrajectorySource.Hermes,
+        "ahp" => TrajectorySource.Ahp,
         _ => throw new TrajectoryNormalizationException(
             NormalizationErrorCode.UnknownSource,
             $"Unknown source '{value}'. Expected one of: {string.Join(", ", Names)}."),
@@ -70,6 +72,7 @@ internal static class Sources
         TrajectorySource.Codex => "codex",
         TrajectorySource.OpenClaw => "openclaw",
         TrajectorySource.Hermes => "hermes",
+        TrajectorySource.Ahp => "ahp",
         _ => source.ToString().ToLowerInvariant(),
     };
 }
@@ -90,6 +93,7 @@ internal static class StoreRoots
             TrajectorySource.Codex => "TRAJECTORY_CODEX_ROOT",
             TrajectorySource.OpenClaw => "TRAJECTORY_OPENCLAW_ROOT",
             TrajectorySource.Hermes => "TRAJECTORY_HERMES_ROOT",
+            TrajectorySource.Ahp => "TRAJECTORY_AHP_ROOT",
             _ => null,
         };
         if (envKey is not null)
@@ -116,6 +120,7 @@ internal static class StoreRoots
                     ? Path.Combine(home, ".openclaw")
                     : Path.Combine(home, ".clawdbot"))!,
             TrajectorySource.Hermes => Path.Combine(home, ".hermes"),
+            TrajectorySource.Ahp => home,
             _ => home,
         };
     }
@@ -127,6 +132,7 @@ internal static class StoreRoots
         TrajectorySource.Codex => "~/.codex/sessions",
         TrajectorySource.OpenClaw => "~/.openclaw if present, else ~/.clawdbot (or OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR)",
         TrajectorySource.Hermes => "~/.hermes/state.db",
+        TrajectorySource.Ahp => "explicit export root only (no home default)",
         _ => "n/a",
     };
 
@@ -164,7 +170,7 @@ internal static class CliFormat
 internal class GlobalSettings : CommandSettings
 {
     [CommandOption("-s|--source <SOURCE>")]
-    [Description("Transcript source: pi, claude-code, codex, openclaw, hermes.")]
+    [Description("Transcript source: pi, claude-code, codex, openclaw, hermes, ahp.")]
     public string? Source { get; init; }
 
     [CommandOption("-r|--root <PATH>")]
@@ -204,6 +210,12 @@ internal sealed class ListCommand : AsyncCommand<ListCommand.Settings>
             {
                 AnsiConsole.MarkupLine(
                     "[grey]Hermes core listing is SQLite-free and returns empty pages. Export message JSON and use `show --path`.[/]");
+            }
+
+            if (source == TrajectorySource.Ahp)
+            {
+                AnsiConsole.MarkupLine(
+                    "[grey]AHP listing is Phase 3; use `show --path` with a Shape A snapshot export.[/]");
             }
 
             return 0;
@@ -349,6 +361,13 @@ internal sealed class InteractiveCommand : AsyncCommand<GlobalSettings>
                     "[grey]Hermes listing stays SQLite-free in the core package. Export a session as JSON and run:[/]");
                 AnsiConsole.MarkupLine(
                     "[grey]  trajectory show --source hermes --path ./session.json[/]");
+            }
+            else if (source == TrajectorySource.Ahp)
+            {
+                AnsiConsole.MarkupLine(
+                    "[grey]AHP listing is Phase 3. Normalize a Shape A snapshot with:[/]");
+                AnsiConsole.MarkupLine(
+                    "[grey]  trajectory show --source ahp --path ./chat-export.json[/]");
             }
             else
             {

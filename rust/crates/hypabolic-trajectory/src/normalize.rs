@@ -188,6 +188,28 @@ pub fn normalize_hermes(request: NormalizeRequest<'_>) -> Result<Trajectory, Tra
     normalize_decoded(config, decoded)
 }
 
+/// Native AHP Shape A snapshot source adapter.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AhpSourceAdapter;
+
+impl SourceAdapter for AhpSourceAdapter {
+    fn source(&self) -> &'static str {
+        "ahp"
+    }
+
+    fn normalize(&self, request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+        normalize_ahp(request)
+    }
+}
+
+/// Normalizes an AHP Shape A chat snapshot export.
+pub fn normalize_ahp(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+    let config = resolve_config(request)?;
+    let partial = config.partial || config.base_byte_offset > 0;
+    let decoded = decode_ahp(request.transcript, partial)?;
+    normalize_decoded(config, decoded)
+}
+
 /// Normalizes a native Claude Code JSONL transcript into the private Rust IR.
 pub fn normalize_claude_code(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
     let config = resolve_config(request)?;
@@ -1545,6 +1567,652 @@ fn invalid_hermes_transcript() -> TrajectoryError {
     TrajectoryError::new(
         "invalid_input",
         "Hermes transcript must be a JSON array of session-store message rows or an object with a messages array.",
+    )
+}
+
+fn decode_ahp(bytes: &[u8], partial: bool) -> Result<DecodedSession, TrajectoryError> {
+    let mut diagnostics = Vec::new();
+    let mut events = Vec::new();
+    let mut model_invocations = Vec::new();
+    let root: Value = serde_json::from_slice(bytes).map_err(|_| invalid_ahp_snapshot())?;
+    let root_obj = root.as_object().ok_or_else(invalid_ahp_snapshot)?;
+
+    validate_ahp_protocol_version(root_obj, &mut diagnostics)?;
+    let chat = root_obj
+        .get("chat")
+        .and_then(Value::as_object)
+        .ok_or_else(invalid_ahp_snapshot)?;
+    let session = root_obj.get("session").and_then(Value::as_object);
+    let provider = session
+        .and_then(|session| string_value(session.get("provider")))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+
+    let group_id = string_value(chat.get("resource"))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let cwd = first_ahp_working_directory(chat, session);
+    let mut model: Option<String> = None;
+    let mut created_at_ms: Option<i64> = None;
+
+    let turns = collect_ahp_turns(chat, partial, &mut diagnostics);
+    for turn in turns {
+        let Some(turn_obj) = turn.as_object() else {
+            continue;
+        };
+        let turn_id = string_value(turn_obj.get("id"))
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        let timestamp_ms = ahp_timestamp(turn_obj.get("startedAt"));
+        let timestamp_precise = string_value(turn_obj.get("startedAt"))
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        if created_at_ms.is_none() {
+            created_at_ms = timestamp_ms;
+        }
+        // Turn-local model from this turn's Message.model — never stick a prior
+        // turn's model onto later turns when usage.model is absent.
+        let mut turn_model: Option<String> = None;
+        let mut component_index = 0usize;
+        let mut emit = |mut event: DecodedEvent| {
+            event.component_index = component_index;
+            component_index += 1;
+            if event.native_id.is_some() {
+                event.source_offset = 0;
+                event.source_sequence = Some(0);
+            } else {
+                event.source_offset = i64::try_from(events.len()).unwrap_or(0);
+                event.source_sequence = Some(i64::try_from(events.len()).unwrap_or(0));
+            }
+            events.push(event);
+        };
+
+        if let Some(message) = turn_obj.get("message").and_then(Value::as_object) {
+            if let Some(message_model) = emit_ahp_message(
+                message,
+                turn_id.as_deref(),
+                timestamp_ms,
+                timestamp_precise.as_deref(),
+                &mut emit,
+                &mut diagnostics,
+            ) {
+                if model.is_none() {
+                    model = Some(message_model.clone());
+                }
+                turn_model = Some(message_model);
+            }
+        }
+
+        if let Some(parts) = turn_obj.get("responseParts").and_then(Value::as_array) {
+            emit_ahp_response_parts(
+                parts,
+                turn_id.as_deref(),
+                timestamp_ms,
+                timestamp_precise.as_deref(),
+                &mut emit,
+                &mut diagnostics,
+            )?;
+        }
+
+        if let Some(usage) = turn_obj.get("usage").and_then(Value::as_object) {
+            let usage_model = string_value(usage.get("model"))
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            if model.is_none() {
+                model.clone_from(&usage_model);
+            }
+            let resolved_model = usage_model.or_else(|| turn_model.clone());
+            model_invocations.push(DecodedModelInvocation {
+                native_id: turn_id.clone(),
+                source_offset: None,
+                provider: provider.clone(),
+                api_family: None,
+                requested_model: resolved_model.clone(),
+                response_model: resolved_model,
+                response_id: None,
+                stop_reason: None,
+                producer_version: None,
+                usage: Some(ModelTokenUsage {
+                    input_tokens: number_as_i64(usage.get("inputTokens")),
+                    output_tokens: number_as_i64(usage.get("outputTokens")),
+                    cache_read_tokens: number_as_i64(usage.get("cacheReadTokens")),
+                    cache_write_tokens: None,
+                    total_tokens: None,
+                }),
+                started_at_ms: timestamp_ms,
+                started_at_precise: timestamp_precise.clone(),
+                completed_at_ms: timestamp_ms,
+                completed_at_precise: timestamp_precise.clone(),
+            });
+        }
+    }
+
+    Ok(DecodedSession {
+        source: TrajectorySource::Ahp,
+        source_name: "ahp",
+        group_id,
+        cwd,
+        git_branch: None,
+        model,
+        producer_version: None,
+        created_at_ms,
+        events,
+        model_invocations,
+        diagnostics,
+    })
+}
+
+fn validate_ahp_protocol_version(
+    root: &Map<String, Value>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<(), TrajectoryError> {
+    match root.get("ahpProtocolVersion") {
+        None | Some(Value::Null) => {
+            diagnostics.push(Diagnostic {
+                code: "ahp_version_missing".into(),
+                message: "Snapshot lacks ahpProtocolVersion; assumed pinned 0.7.x.".into(),
+                input_line: None,
+                record_index: None,
+                count: None,
+            });
+            Ok(())
+        }
+        Some(Value::String(version)) => {
+            if is_compatible_ahp_version(version) {
+                Ok(())
+            } else {
+                Err(TrajectoryError::new(
+                    "invalid_input",
+                    format!("Unsupported AHP protocol version '{version}'. Expected 0.7.x."),
+                ))
+            }
+        }
+        Some(_) => Err(TrajectoryError::new(
+            "invalid_input",
+            "AHP ahpProtocolVersion must be a string.",
+        )),
+    }
+}
+
+fn is_compatible_ahp_version(version: &str) -> bool {
+    if version.is_empty() {
+        return false;
+    }
+    let core = version.split('-').next().unwrap_or(version);
+    let parts: Vec<&str> = core.split('.').collect();
+    parts.len() >= 2
+        && parts[0] == "0"
+        && parts[1] == "7"
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+}
+
+fn collect_ahp_turns(
+    chat: &Map<String, Value>,
+    partial: bool,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<Value> {
+    let mut turns: Vec<(Value, Option<i64>, String)> = Vec::new();
+    if let Some(array) = chat.get("turns").and_then(Value::as_array) {
+        for turn in array {
+            if !turn.is_object() {
+                continue;
+            }
+            let id = string_value(turn.get("id")).unwrap_or("").to_owned();
+            let started = ahp_timestamp(turn.get("startedAt"));
+            turns.push((turn.clone(), started, id));
+        }
+    }
+    // Nulls-last: missing startedAt after present timestamps, then UTF-8 id.
+    turns.sort_by(|left, right| match (left.1, right.1) {
+        (Some(a), Some(b)) if a != b => a.cmp(&b),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        _ => compare_utf8(&left.2, &right.2),
+    });
+
+    if let Some(active) = chat.get("activeTurn").filter(|value| value.is_object()) {
+        if partial {
+            // Partial mode: append open activeTurn after completed turns (§5.5).
+            let id = string_value(active.get("id")).unwrap_or("").to_owned();
+            let started = ahp_timestamp(active.get("startedAt"));
+            turns.push((active.clone(), started, id));
+        } else {
+            diagnostics.push(Diagnostic {
+                code: "ahp_active_turn_omitted".into(),
+                message: "Omitted incomplete activeTurn (snapshot whole-mode policy).".into(),
+                input_line: None,
+                record_index: None,
+                count: None,
+            });
+        }
+    }
+
+    turns.into_iter().map(|(value, _, _)| value).collect()
+}
+
+/// Emits the turn message and returns this message's model id when present
+/// (turn-local; does not mutate session model).
+fn emit_ahp_message(
+    message: &Map<String, Value>,
+    turn_id: Option<&str>,
+    timestamp_ms: Option<i64>,
+    timestamp_precise: Option<&str>,
+    emit: &mut dyn FnMut(DecodedEvent),
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    let origin_kind = message
+        .get("origin")
+        .and_then(Value::as_object)
+        .and_then(|origin| string_value(origin.get("kind")));
+    let Some(origin_kind) = origin_kind else {
+        diagnostics.push(Diagnostic {
+            code: "ahp_unknown_message_origin".into(),
+            message: "Dropped a message with an unknown origin kind.".into(),
+            input_line: None,
+            record_index: None,
+            count: None,
+        });
+        return None;
+    };
+    if origin_kind == "tool" {
+        return None;
+    }
+
+    let role = match origin_kind {
+        "user" => Role::User,
+        "agent" | "assistant" => Role::Assistant,
+        "system" | "systemNotification" => {
+            diagnostics.push(Diagnostic {
+                code: "ahp_system_as_assistant".into(),
+                message: "Mapped a system message origin to assistant.".into(),
+                input_line: None,
+                record_index: None,
+                count: None,
+            });
+            Role::Assistant
+        }
+        _other => {
+            // Fixed message only — do not echo free-form origin.kind (content-safety).
+            diagnostics.push(Diagnostic {
+                code: "ahp_unknown_message_origin".into(),
+                message: "Dropped a message with an unknown origin kind.".into(),
+                input_line: None,
+                record_index: None,
+                count: None,
+            });
+            return None;
+        }
+    };
+
+    let turn_model = message
+        .get("model")
+        .and_then(Value::as_object)
+        .and_then(|m| string_value(m.get("id")))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+
+    let text = string_value(message.get("text")).unwrap_or("").to_owned();
+    if text.is_empty() {
+        return turn_model;
+    }
+
+    emit(DecodedEvent {
+        kind: EventKind::Message,
+        role,
+        content: Some(text),
+        tool_call_id: None,
+        tool_name: None,
+        arguments_json: None,
+        is_error: None,
+        native_id: turn_id.map(str::to_owned),
+        producer_version: None,
+        source_sequence: None,
+        source_offset: 0,
+        input_line: None,
+        timestamp_ms,
+        timestamp_precise: timestamp_precise.map(str::to_owned),
+        component_index: 0,
+        model: turn_model.clone(),
+    });
+    turn_model
+}
+
+fn emit_ahp_response_parts(
+    parts: &[Value],
+    turn_id: Option<&str>,
+    timestamp_ms: Option<i64>,
+    timestamp_precise: Option<&str>,
+    emit: &mut dyn FnMut(DecodedEvent),
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<(), TrajectoryError> {
+    let mut markdown_buffer: Vec<(String, String)> = Vec::new();
+    let flush_markdown = |buffer: &mut Vec<(String, String)>,
+                          emit: &mut dyn FnMut(DecodedEvent)| {
+        if buffer.is_empty() {
+            return;
+        }
+        let content: String = buffer.iter().map(|(_, content)| content.as_str()).collect();
+        let native_id = if buffer[0].0.is_empty() {
+            turn_id.map(str::to_owned)
+        } else {
+            Some(buffer[0].0.clone())
+        };
+        buffer.clear();
+        if content.is_empty() {
+            return;
+        }
+        emit(DecodedEvent {
+            kind: EventKind::Message,
+            role: Role::Assistant,
+            content: Some(content),
+            tool_call_id: None,
+            tool_name: None,
+            arguments_json: None,
+            is_error: None,
+            native_id,
+            producer_version: None,
+            source_sequence: None,
+            source_offset: 0,
+            input_line: None,
+            timestamp_ms,
+            timestamp_precise: timestamp_precise.map(str::to_owned),
+            component_index: 0,
+            model: None,
+        });
+    };
+
+    for part in parts {
+        let Some(part_obj) = part.as_object() else {
+            continue;
+        };
+        let kind = string_value(part_obj.get("kind")).unwrap_or("");
+        if kind == "markdown" {
+            let id = string_value(part_obj.get("id"))
+                .or_else(|| string_value(part_obj.get("partId")))
+                .unwrap_or("")
+                .to_owned();
+            let content = string_value(part_obj.get("content"))
+                .unwrap_or("")
+                .to_owned();
+            markdown_buffer.push((id, content));
+            continue;
+        }
+        flush_markdown(&mut markdown_buffer, emit);
+
+        if kind == "reasoning" {
+            let content = string_value(part_obj.get("content"))
+                .unwrap_or("")
+                .to_owned();
+            if !content.trim().is_empty() {
+                let id = string_value(part_obj.get("id"))
+                    .or_else(|| string_value(part_obj.get("partId")))
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+                    .or_else(|| turn_id.map(str::to_owned));
+                emit(DecodedEvent {
+                    kind: EventKind::Reasoning,
+                    role: Role::Reasoning,
+                    content: Some(content),
+                    tool_call_id: None,
+                    tool_name: None,
+                    arguments_json: None,
+                    is_error: None,
+                    native_id: id,
+                    producer_version: None,
+                    source_sequence: None,
+                    source_offset: 0,
+                    input_line: None,
+                    timestamp_ms,
+                    timestamp_precise: timestamp_precise.map(str::to_owned),
+                    component_index: 0,
+                    model: None,
+                });
+            }
+            continue;
+        }
+
+        if kind == "toolCall" {
+            emit_ahp_tool_call(part_obj, timestamp_ms, timestamp_precise, emit)?;
+            continue;
+        }
+
+        if kind == "inputRequest" {
+            diagnostics.push(Diagnostic {
+                code: "ahp_input_request_skipped".into(),
+                message: "Skipped an inputRequest response part.".into(),
+                input_line: None,
+                record_index: None,
+                count: None,
+            });
+            continue;
+        }
+
+        if kind == "resource" {
+            // v1 does not fetch content-by-reference resource bodies.
+            diagnostics.push(Diagnostic {
+                code: "ahp_unresolved_content_ref".into(),
+                message: "Dropped a resource response part without fetching content-by-reference."
+                    .into(),
+                input_line: None,
+                record_index: None,
+                count: None,
+            });
+        }
+        // systemNotification and unknown kinds: non-identity meta; ignore body for v1.
+    }
+    flush_markdown(&mut markdown_buffer, emit);
+    Ok(())
+}
+
+fn emit_ahp_tool_call(
+    part: &Map<String, Value>,
+    timestamp_ms: Option<i64>,
+    timestamp_precise: Option<&str>,
+    emit: &mut dyn FnMut(DecodedEvent),
+) -> Result<(), TrajectoryError> {
+    let Some(tool_call) = part.get("toolCall").and_then(Value::as_object) else {
+        return Ok(());
+    };
+    let tool_call_id = string_value(tool_call.get("toolCallId"))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let tool_name = string_value(tool_call.get("toolName"))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let arguments_json = ahp_tool_arguments_json(tool_call)?;
+
+    emit(DecodedEvent {
+        kind: EventKind::ToolCall,
+        role: Role::Assistant,
+        content: None,
+        tool_call_id: tool_call_id.clone(),
+        tool_name: tool_name.clone(),
+        arguments_json,
+        is_error: None,
+        native_id: tool_call_id.clone(),
+        producer_version: None,
+        source_sequence: None,
+        source_offset: 0,
+        input_line: None,
+        timestamp_ms,
+        timestamp_precise: timestamp_precise.map(str::to_owned),
+        component_index: 0,
+        model: None,
+    });
+
+    let status = string_value(tool_call.get("status"));
+    let success = match tool_call.get("success") {
+        Some(Value::Bool(value)) => Some(*value),
+        _ => None,
+    };
+    let is_terminal = matches!(status, Some("completed" | "cancelled" | "denied" | "error"));
+    if !is_terminal && success.is_none() {
+        return Ok(());
+    }
+    let is_error =
+        success == Some(false) || matches!(status, Some("cancelled" | "denied" | "error"));
+    let content = ahp_tool_result_content(tool_call, is_error)?;
+    emit(DecodedEvent {
+        kind: EventKind::ToolResult,
+        role: Role::Tool,
+        content: Some(content),
+        tool_call_id,
+        tool_name,
+        arguments_json: None,
+        is_error: Some(is_error),
+        native_id: tool_call
+            .get("toolCallId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        producer_version: None,
+        source_sequence: None,
+        source_offset: 0,
+        input_line: None,
+        timestamp_ms,
+        timestamp_precise: timestamp_precise.map(str::to_owned),
+        component_index: 0,
+        model: None,
+    });
+    Ok(())
+}
+
+fn ahp_tool_arguments_json(
+    tool_call: &Map<String, Value>,
+) -> Result<Option<String>, TrajectoryError> {
+    if let Some(parameters) = tool_call.get("parameters") {
+        if parameters.is_object() || parameters.is_array() {
+            return Ok(Some(relaxed_json(parameters)?));
+        }
+    }
+    if let Some(input) = string_value(tool_call.get("toolInput")).filter(|value| !value.is_empty())
+    {
+        return Ok(Some(input.to_owned()));
+    }
+    // Omit when source has neither parameters nor toolInput; normalizer defaults empty object.
+    Ok(None)
+}
+
+fn ahp_tool_result_content(
+    tool_call: &Map<String, Value>,
+    is_error: bool,
+) -> Result<String, TrajectoryError> {
+    if let Some(content) = tool_call.get("content").and_then(Value::as_array) {
+        let mut parts = Vec::new();
+        for block in content {
+            let Some(block_obj) = block.as_object() else {
+                continue;
+            };
+            let type_name = string_value(block_obj.get("type"));
+            if matches!(type_name, Some("text") | None) {
+                if let Some(text) =
+                    string_value(block_obj.get("text")).filter(|value| !value.is_empty())
+                {
+                    parts.push(text.to_owned());
+                }
+            }
+        }
+        if !parts.is_empty() {
+            return Ok(parts.join("\n"));
+        }
+    }
+    if let Some(structured) = tool_call.get("structuredContent") {
+        if !structured.is_null() {
+            // Canonical JSON so .NET/TS/Rust structuredContent strings match cross-runtime.
+            return canonical_json(structured);
+        }
+    }
+    if let Some(past) = ahp_string_or_markdown(tool_call.get("pastTenseMessage")) {
+        return Ok(past);
+    }
+    if is_error {
+        if let Some(reason_message) = ahp_string_or_markdown(tool_call.get("reasonMessage")) {
+            return Ok(reason_message);
+        }
+        if let Some(reason) =
+            string_value(tool_call.get("reason")).filter(|value| !value.is_empty())
+        {
+            return Ok(reason.to_owned());
+        }
+        // ToolCallCompletedState carries error.message when success is false.
+        if let Some(error) = tool_call.get("error").and_then(Value::as_object) {
+            if let Some(message) =
+                string_value(error.get("message")).filter(|value| !value.is_empty())
+            {
+                return Ok(message.to_owned());
+            }
+        }
+        let status = string_value(tool_call.get("status"));
+        return Ok(match status {
+            Some("cancelled" | "denied") => "cancelled".into(),
+            _ => "error".into(),
+        });
+    }
+    Ok(String::new())
+}
+
+/// AHP `StringOrMarkdown`: plain string or `{ "markdown": "..." }`.
+fn ahp_string_or_markdown(value: Option<&Value>) -> Option<String> {
+    match value {
+        Some(Value::String(text)) if !text.is_empty() => Some(text.clone()),
+        Some(Value::Object(obj)) => string_value(obj.get("markdown"))
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned),
+        _ => None,
+    }
+}
+
+fn first_ahp_working_directory(
+    chat: &Map<String, Value>,
+    session: Option<&Map<String, Value>>,
+) -> Option<String> {
+    for source in [Some(chat), session].into_iter().flatten() {
+        let Some(dirs) = source.get("workingDirectories").and_then(Value::as_array) else {
+            continue;
+        };
+        for dir in dirs {
+            let Some(uri) = dir.as_str().filter(|value| !value.is_empty()) else {
+                continue;
+            };
+            if let Some(path) = uri.strip_prefix("file://") {
+                return Some(if path.is_empty() {
+                    uri.to_owned()
+                } else {
+                    path.to_owned()
+                });
+            }
+            return Some(uri.to_owned());
+        }
+    }
+    None
+}
+
+fn ahp_timestamp(value: Option<&Value>) -> Option<i64> {
+    let text = string_value(value)?;
+    DateTime::parse_from_rfc3339(text)
+        .ok()
+        .map(|dt| dt.timestamp_millis())
+}
+
+fn compare_utf8(left: &str, right: &str) -> std::cmp::Ordering {
+    left.as_bytes().cmp(right.as_bytes())
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn number_as_i64(value: Option<&Value>) -> Option<i64> {
+    value.and_then(Value::as_i64).or_else(|| {
+        value
+            .and_then(Value::as_f64)
+            .map(|number| number.trunc() as i64)
+    })
+}
+
+fn invalid_ahp_snapshot() -> TrajectoryError {
+    TrajectoryError::new(
+        "invalid_input",
+        "AHP snapshot must be a JSON object with a chat object (Shape A export).",
     )
 }
 

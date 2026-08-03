@@ -5,7 +5,13 @@ namespace Hypabolic.Trajectory;
 internal interface ISourceAdapter
 {
     TrajectorySource Source { get; }
-    DecodedSession Decode(ReadOnlyMemory<byte> transcriptUtf8);
+
+    /// <param name="transcriptUtf8">UTF-8 transcript bytes for the source container.</param>
+    /// <param name="sourceContext">
+    /// Resolved source context (partial mode, group id, base offset). Adapters
+    /// that ignore context may leave the parameter unused.
+    /// </param>
+    DecodedSession Decode(ReadOnlyMemory<byte> transcriptUtf8, SourceContext sourceContext);
 }
 
 public interface IOutputSchemaAdapter

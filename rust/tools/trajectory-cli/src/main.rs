@@ -14,10 +14,10 @@ use clap::{Parser, Subcommand, ValueEnum};
 use dialoguer::{Confirm, Select, theme::ColorfulTheme};
 use hypabolic_trajectory::{
     ListingOptions, NormalizeOptions, NormalizeRequest, RecordKind, SourceContext, Trajectory,
-    TrajectoryError, TrajectoryListing, list_claude_code_trajectories, list_codex_trajectories,
-    list_hermes_trajectories, list_openclaw_trajectories, list_pi_trajectories,
-    normalize_claude_code, normalize_codex, normalize_hermes, normalize_openclaw, normalize_pi,
-    project_hypabolic, project_letta,
+    TrajectoryError, TrajectoryListing, list_ahp_trajectories, list_claude_code_trajectories,
+    list_codex_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
+    list_pi_trajectories, normalize_ahp, normalize_claude_code, normalize_codex, normalize_hermes,
+    normalize_openclaw, normalize_pi, project_hypabolic, project_letta,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -28,15 +28,17 @@ enum SourceArg {
     Codex,
     Openclaw,
     Hermes,
+    Ahp,
 }
 
 impl SourceArg {
-    const ALL: [SourceArg; 5] = [
+    const ALL: [SourceArg; 6] = [
         SourceArg::Pi,
         SourceArg::ClaudeCode,
         SourceArg::Codex,
         SourceArg::Openclaw,
         SourceArg::Hermes,
+        SourceArg::Ahp,
     ];
 
     fn wire_name(self) -> &'static str {
@@ -46,6 +48,7 @@ impl SourceArg {
             Self::Codex => "codex",
             Self::Openclaw => "openclaw",
             Self::Hermes => "hermes",
+            Self::Ahp => "ahp",
         }
     }
 }
@@ -67,7 +70,7 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Transcript source: pi, claude-code, codex, openclaw, hermes.
+    /// Transcript source: pi, claude-code, codex, openclaw, hermes, ahp.
     #[arg(short, long, global = true, value_enum)]
     source: Option<SourceArg>,
 
@@ -445,6 +448,7 @@ fn normalize_bytes(source: SourceArg, bytes: &[u8]) -> Result<Trajectory, Trajec
         SourceArg::Codex => normalize_codex(request),
         SourceArg::Openclaw => normalize_openclaw(request),
         SourceArg::Hermes => normalize_hermes(request),
+        SourceArg::Ahp => normalize_ahp(request),
     }
 }
 
@@ -464,6 +468,7 @@ fn list_source(
         SourceArg::Codex => list_codex_trajectories(&options),
         SourceArg::Openclaw => list_openclaw_trajectories(&options),
         SourceArg::Hermes => list_hermes_trajectories(&options),
+        SourceArg::Ahp => list_ahp_trajectories(&options),
     }
 }
 
@@ -478,6 +483,7 @@ fn resolve_root(source: SourceArg, root_override: Option<&Path>) -> PathBuf {
         SourceArg::Codex => "TRAJECTORY_CODEX_ROOT",
         SourceArg::Openclaw => "TRAJECTORY_OPENCLAW_ROOT",
         SourceArg::Hermes => "TRAJECTORY_HERMES_ROOT",
+        SourceArg::Ahp => "TRAJECTORY_AHP_ROOT",
     };
     if let Ok(value) = env::var(env_key) {
         if !value.trim().is_empty() {
@@ -513,6 +519,7 @@ fn resolve_root(source: SourceArg, root_override: Option<&Path>) -> PathBuf {
             }
         }
         SourceArg::Hermes => home.join(".hermes"),
+        SourceArg::Ahp => home,
     }
 }
 
@@ -524,6 +531,7 @@ fn describe_default(source: SourceArg) -> &'static str {
         SourceArg::Openclaw => {
             "~/.openclaw if present, else ~/.clawdbot (or OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR)"
         }
+        SourceArg::Ahp => "explicit export root only (no home default)",
         SourceArg::Hermes => "~/.hermes/state.db",
     }
 }

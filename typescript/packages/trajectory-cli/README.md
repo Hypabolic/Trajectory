@@ -9,6 +9,7 @@ Local sample CLI/TUI for browsing agent sessions with
 ## What it does
 
 - Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes)
+- Normalizes AHP Shape A offline snapshots via `show --path` (no default store)
 - Interactive browse: pick source → pick session → privacy-safe summary
 - Summary includes record counts, roles, tool calls, diagnostics, and message/Hypabolic projections
 - Optional `--show-content` with an explicit privacy warning
@@ -20,9 +21,14 @@ Local sample CLI/TUI for browsing agent sessions with
 | `codex` | `~/.codex/sessions` | `TRAJECTORY_CODEX_ROOT` |
 | `openclaw` | `~/.openclaw` if present, else `~/.clawdbot` | `TRAJECTORY_OPENCLAW_ROOT`, `OPENCLAW_STATE_DIR`, or `CLAWDBOT_STATE_DIR` |
 | `hermes` | `~/.hermes` | `TRAJECTORY_HERMES_ROOT` |
+| `ahp` | _(none — export file only)_ | _(not applicable)_ |
 
 Hermes listing in the core Node package is SQLite-free and returns empty pages.
 Export message JSON from Hermes and use `show --path`.
+
+AHP listing is Phase 3 (empty stub). Normalize Shape A snapshots with
+`show --source ahp --path …`. AHP is in-tree / next package version after
+published `0.1.0` (not in registry `0.1.0`).
 
 ## Prerequisites
 
@@ -40,6 +46,9 @@ node packages/trajectory-cli/dist/cli.js list --source pi
 node packages/trajectory-cli/dist/cli.js show \
   --source pi \
   --path ../conformance/cases/pi/tool-calls/input.jsonl
+node packages/trajectory-cli/dist/cli.js show \
+  --source ahp \
+  --path ../conformance/cases/ahp/tool-calls/input.json
 node packages/trajectory-cli/dist/cli.js browse
 ```
 

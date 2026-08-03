@@ -70,6 +70,18 @@ pub fn list_codex_trajectories(
 ///
 /// Core packages stay SQLite-free: a missing store yields an empty page. Full
 /// sessions-table enumeration is optional and provider-side. `root` may be the
+/// AHP export-directory listing (Phase 3). Phase 1 returns an empty page for any root.
+pub fn list_ahp_trajectories(
+    options: &ListingOptions<'_>,
+) -> Result<TrajectoryListingPage, TrajectoryError> {
+    validate_limit(options.limit)?;
+    let _ = options.root; // Phase 3 will scan the export directory.
+    Ok(TrajectoryListingPage {
+        items: Vec::new(),
+        next_cursor: None,
+    })
+}
+
 /// `state.db` path or the directory containing it (default `~/.hermes`).
 pub fn list_hermes_trajectories(
     options: &ListingOptions<'_>,

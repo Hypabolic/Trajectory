@@ -21,6 +21,7 @@ test("workspace packages install and import through public exports", () => {
   assert.deepEqual(
     Object.keys(TrajectoryNode).sort(),
     [
+      "listAhpTrajectories",
       "listClaudeCodeTrajectories",
       "listCodexTrajectories",
       "listHermesTrajectories",

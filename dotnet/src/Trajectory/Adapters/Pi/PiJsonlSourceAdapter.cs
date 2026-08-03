@@ -11,8 +11,9 @@ internal sealed class PiJsonlSourceAdapter : ISourceAdapter
 {
     public TrajectorySource Source => TrajectorySource.Pi;
 
-    public DecodedSession Decode(ReadOnlyMemory<byte> transcriptUtf8)
+    public DecodedSession Decode(ReadOnlyMemory<byte> transcriptUtf8, SourceContext sourceContext)
     {
+        _ = sourceContext;
         var diagnostics = new List<TrajectoryDiagnostic>();
         var events = new List<DecodedEvent>();
         var modelInvocations = new List<DecodedModelInvocation>();
