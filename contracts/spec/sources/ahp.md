@@ -34,11 +34,11 @@ Phase 1 product advertising covers **Shape A offline snapshot decode only**.
 | | Multi-chat unpack helper (Phase 3) |
 | | ACP session logs as a separate source |
 
-`ahp` is advertised on branch tip in `contracts/compatibility.json` →
-`implemented.sources` once multi-runtime snapshot conformance passes (AHP-1).
-Published registry packages at `0.1.0` do not include `ahp`; first registry ship
-needs a new package version. Listing (§7) is sketch-only and **not** required
-for Phase 1 advertising.
+`ahp` is advertised on repository tip (`main`) in
+`contracts/compatibility.json` → `implemented.sources` once multi-runtime
+snapshot conformance passes (AHP-1). Published registry packages at `0.1.0` do
+not include `ahp`; first registry ship needs a new package version. Listing
+(§7) is sketch-only and **not** required for Phase 1 advertising.
 
 ---
 

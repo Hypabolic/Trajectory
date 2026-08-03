@@ -1,15 +1,14 @@
 # AHP ingest — Phase 0–1 implementation status
 
-Branch packaging note for **feature/ahp-ingest**. Normative design:
+Packaging note for **repository tip (`main`)** after PR #25. Normative design:
 [ahp-source-spec.md](ahp-source-spec.md). Wire contract:
 [`contracts/spec/sources/ahp.md`](../contracts/spec/sources/ahp.md).
 
-**Publication status:** Shipped **in-tree** on `feature/ahp-ingest` (and
-successors). **Not** included in published registry packages at **`0.1.0`**.
-Publishing AHP requires a **new** synchronized package version / tag after
-`v0.1.0` (do not retag or republish `0.1.0`). See
-[release-readiness.md](release-readiness.md) and [CHANGELOG.md](../CHANGELOG.md)
-`## [Unreleased]`.
+**Publication status:** Shipped **in-tree on `main`**. **Not** included in
+published registry packages at **`0.1.0`**. Publishing AHP requires a **new**
+synchronized package version / tag after `v0.1.0` (do not retag or republish
+`0.1.0`). See [release-readiness.md](release-readiness.md) and
+[CHANGELOG.md](../CHANGELOG.md) `## [Unreleased]`.
 
 | Phase | Scope | Status |
 | --- | --- | --- |
