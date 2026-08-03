@@ -1574,8 +1574,7 @@ fn decode_ahp(bytes: &[u8], partial: bool) -> Result<DecodedSession, TrajectoryE
     let mut diagnostics = Vec::new();
     let mut events = Vec::new();
     let mut model_invocations = Vec::new();
-    let root: Value =
-        serde_json::from_slice(bytes).map_err(|_| invalid_ahp_snapshot())?;
+    let root: Value = serde_json::from_slice(bytes).map_err(|_| invalid_ahp_snapshot())?;
     let root_obj = root.as_object().ok_or_else(invalid_ahp_snapshot)?;
 
     validate_ahp_protocol_version(root_obj, &mut diagnostics)?;
@@ -1724,9 +1723,7 @@ fn validate_ahp_protocol_version(
             } else {
                 Err(TrajectoryError::new(
                     "invalid_input",
-                    format!(
-                        "Unsupported AHP protocol version '{version}'. Expected 0.7.x."
-                    ),
+                    format!("Unsupported AHP protocol version '{version}'. Expected 0.7.x."),
                 ))
             }
         }
@@ -1746,7 +1743,9 @@ fn is_compatible_ahp_version(version: &str) -> bool {
     parts.len() >= 2
         && parts[0] == "0"
         && parts[1] == "7"
-        && parts.iter().all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
 }
 
 fn collect_ahp_turns(
@@ -1766,13 +1765,11 @@ fn collect_ahp_turns(
         }
     }
     // Nulls-last: missing startedAt after present timestamps, then UTF-8 id.
-    turns.sort_by(|left, right| {
-        match (left.1, right.1) {
-            (Some(a), Some(b)) if a != b => a.cmp(&b),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            _ => compare_utf8(&left.2, &right.2),
-        }
+    turns.sort_by(|left, right| match (left.1, right.1) {
+        (Some(a), Some(b)) if a != b => a.cmp(&b),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        _ => compare_utf8(&left.2, &right.2),
     });
 
     if let Some(active) = chat.get("activeTurn").filter(|value| value.is_object()) {
@@ -1891,7 +1888,8 @@ fn emit_ahp_response_parts(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<(), TrajectoryError> {
     let mut markdown_buffer: Vec<(String, String)> = Vec::new();
-    let flush_markdown = |buffer: &mut Vec<(String, String)>, emit: &mut dyn FnMut(DecodedEvent)| {
+    let flush_markdown = |buffer: &mut Vec<(String, String)>,
+                          emit: &mut dyn FnMut(DecodedEvent)| {
         if buffer.is_empty() {
             return;
         }
@@ -2050,15 +2048,12 @@ fn emit_ahp_tool_call(
         Some(Value::Bool(value)) => Some(*value),
         _ => None,
     };
-    let is_terminal = matches!(
-        status,
-        Some("completed" | "cancelled" | "denied" | "error")
-    );
+    let is_terminal = matches!(status, Some("completed" | "cancelled" | "denied" | "error"));
     if !is_terminal && success.is_none() {
         return Ok(());
     }
-    let is_error = success == Some(false)
-        || matches!(status, Some("cancelled" | "denied" | "error"));
+    let is_error =
+        success == Some(false) || matches!(status, Some("cancelled" | "denied" | "error"));
     let content = ahp_tool_result_content(tool_call, is_error)?;
     emit(DecodedEvent {
         kind: EventKind::ToolResult,
@@ -2137,7 +2132,8 @@ fn ahp_tool_result_content(
         if let Some(reason_message) = ahp_string_or_markdown(tool_call.get("reasonMessage")) {
             return Ok(reason_message);
         }
-        if let Some(reason) = string_value(tool_call.get("reason")).filter(|value| !value.is_empty())
+        if let Some(reason) =
+            string_value(tool_call.get("reason")).filter(|value| !value.is_empty())
         {
             return Ok(reason.to_owned());
         }
