@@ -1999,7 +1999,6 @@ fn emit_ahp_response_parts(
                 record_index: None,
                 count: None,
             });
-            continue;
         }
         // systemNotification and unknown kinds: non-identity meta; ignore body for v1.
     }
@@ -2154,7 +2153,7 @@ fn ahp_tool_result_content(
     Ok(String::new())
 }
 
-/// AHP StringOrMarkdown: plain string or `{ "markdown": "..." }`.
+/// AHP `StringOrMarkdown`: plain string or `{ "markdown": "..." }`.
 fn ahp_string_or_markdown(value: Option<&Value>) -> Option<String> {
     match value {
         Some(Value::String(text)) if !text.is_empty() => Some(text.clone()),
