@@ -79,10 +79,11 @@ native transcript
 Built-in sources for published **v1 / package `0.1.0`**: **Pi**, **Claude Code**,
 **Codex**, **OpenClaw**, **Hermes**.
 
-**Post-`0.1.0` (branch tip / next package version):** **AHP** (wire name `ahp`)
-— Shape A offline ChatState snapshot decode on .NET, TypeScript, and Rust.
-Export-directory listing, Shape B action-log reduce, multi-chat unpack, and live
-host clients are deferred. See [ahp-ingest-status.md](ahp-ingest-status.md) and
+**Post-`0.1.0` (in-tree on `main` / next package version):** **AHP** (wire name
+`ahp`) — Shape A offline ChatState snapshot decode on .NET, TypeScript, and
+Rust. Export-directory listing, Shape B action-log reduce, multi-chat unpack,
+and live host clients are deferred. See
+[ahp-ingest-status.md](ahp-ingest-status.md) and
 [`contracts/spec/sources/ahp.md`](../contracts/spec/sources/ahp.md).
 
 Adapters decode only. Shared policy (tool linking, bounds, timestamps,

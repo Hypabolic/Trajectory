@@ -20,7 +20,7 @@ Distinguish **published registry packages** from **this repository tip**.
 | Implemented sources | `pi`, `claude-code`, `codex`, `openclaw`, `hermes` (**no** `ahp`) |
 | Outputs | Hypabolic, canonical identity, message trajectory, OpenAI chat, minimal JSONL, OTEL GenAI spans |
 
-### Branch tip / next candidate (`feature/ahp-ingest` and successors)
+### Repository tip (`main`, not yet re-tagged)
 
 | Item | Value |
 | --- | --- |
@@ -28,13 +28,13 @@ Distinguish **published registry packages** from **this repository tip**.
 | Capability slice | `ML13` (historical slice id; AHP is a post-`0.1.0` source addition) |
 | Normalizer contract | `0.2.0` |
 | Implemented sources (tip) | Published set **plus** `ahp` (Shape A offline ChatState snapshot only) |
-| AHP scope | Phase 0–1 shipped in-tree; listing, Shape B action log, and live host are **not** shipped |
+| AHP scope | Phase 0–1 shipped in-tree on `main`; listing, Shape B action log, and live host are **not** shipped |
 | Next registry publish | Requires a **new** tag (`v0.1.1` / `v0.2.0` / …); skip-duplicate will not replace `0.1.0` contents |
 
 AHP phase truth: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
 [ahp-source-spec.md](ahp-source-spec.md).
 
-Machine-readable surfaces (branch tip may advertise `ahp`):
+Machine-readable surfaces (repository tip advertises `ahp`):
 
 - [`contracts/compatibility.json`](../contracts/compatibility.json)
 - Runtime `runtime-capabilities.json` files (TypeScript, Rust)

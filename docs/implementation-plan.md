@@ -16,8 +16,8 @@ Deliver a production-quality .NET implementation of Trajectory:
 - explicit-root listing;
 - Native AOT / trim-safe core package.
 
-**Post-v1 / current branch:** AHP (`ahp`) Shape A offline snapshot adapters
-exist across runtimes on `feature/ahp-ingest` (see
+**Post-v1 / repository tip:** AHP (`ahp`) Shape A offline snapshot adapters
+exist across runtimes on `main` (see
 [ahp-ingest-status.md](ahp-ingest-status.md) and
 [multi-language-plan.md](multi-language-plan.md)). Export listing and Shape B
 remain out of scope for this cut. First registry ship of AHP needs a new

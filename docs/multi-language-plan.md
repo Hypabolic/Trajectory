@@ -63,7 +63,7 @@ partial mode where applicable, synchronized package metadata
 
 | Slice | Outcome | Status |
 | --- | --- | --- |
-| AHP-0 / AHP-1 | Agent Host Protocol (`ahp`) Shape A offline ChatState snapshot ingest on .NET, TypeScript, and Rust; shared conformance cases; sample CLI `show --path` | **In-tree** on `feature/ahp-ingest` (and successors); **not** in registry packages at `0.1.0` |
+| AHP-0 / AHP-1 | Agent Host Protocol (`ahp`) Shape A offline ChatState snapshot ingest on .NET, TypeScript, and Rust; shared conformance cases; sample CLI `show --path` | **In-tree on `main`**; **not** in registry packages at `0.1.0` |
 
 Scope notes:
 

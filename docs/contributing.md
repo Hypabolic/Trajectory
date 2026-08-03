@@ -96,7 +96,7 @@ the same observable result. Parser unit fixtures stay under the runtime.
       `0.1.0` to deliver them.
 - [ ] Sample CLIs still build if listing/normalize surfaces changed.
 - [ ] Docs updated (README / adapter authoring / this file as needed). Distinguish
-      published registry capability from branch-tip capability when they differ.
+      published registry capability from repository-tip capability when they differ.
 
 ## Code style
 

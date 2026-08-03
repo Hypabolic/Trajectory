@@ -31,7 +31,7 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
 ## What you get
 
 - **Multi-source ingest** — Pi, Claude Code, Codex, OpenClaw, Hermes, and AHP
-  (Shape A offline ChatState snapshots; AHP is branch-tip / next release — see note above)
+  (Shape A offline ChatState snapshots; AHP is in-tree on `main` / next release — see note above)
 - **Deterministic normalization** — stable IDs, ordering, hashes, content-safe
   diagnostics
 - **Multiple outputs** from one decode: Hypabolic trajectory, canonical

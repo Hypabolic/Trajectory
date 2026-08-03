@@ -5,7 +5,7 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
-Post-`0.1.0` work on branch tip (not yet published to NuGet / npm / crates).
+Post-`0.1.0` work merged to `main` (not yet published to NuGet / npm / crates).
 The next public capability release that includes these items **must** use a new
 tag (for example `v0.1.1` or `v0.2.0`); do not retag or republish `0.1.0`.
 
@@ -14,8 +14,8 @@ tag (for example `v0.1.1` or `v0.2.0`); do not retag or republish `0.1.0`.
   `0.7.x` (`conformance/vendor/ahp/PROTOCOL_VERSION`). Phase 1 covers offline
   ChatState export envelopes (`ahp-export-v1`), chat-unit identity, cancel-safe
   tool mapping (including `toolCall.error.message`), and shared conformance
-  cases `ahp/tool-calls`, `ahp/multi-turn`, and `ahp/cancelled-turn`. Branch-tip
-  `contracts/compatibility.json` and runtime capability manifests advertise
+  cases `ahp/tool-calls`, `ahp/multi-turn`, and `ahp/cancelled-turn`. Repository
+  tip `contracts/compatibility.json` and runtime capability manifests advertise
   `ahp` alongside the published v1 sources.
 - **Deferred (not shipped):** Shape B action-log reduce, export-directory
   listing (Phase 3 empty stubs only), multi-chat unpack, and live host /

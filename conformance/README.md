@@ -95,8 +95,8 @@ public interchange API.
 ## Rust runner
 
 Build the workspace and run every shared case for sources advertised in
-`contracts/compatibility.json` on this tip (includes `ahp` Shape A after
-`feature/ahp-ingest`; published tag `v0.1.0` omitted `ahp`):
+`contracts/compatibility.json` on this tip (includes `ahp` Shape A on `main`;
+published tag `v0.1.0` omitted `ahp`):
 
 ```bash
 cargo +stable build --manifest-path rust/Cargo.toml \

@@ -550,7 +550,7 @@ block Phase 1 advertising. Resolve before Shape B / listing / live work.
 AHP Phase 1 is **done** for product advertising when:
 
 1. Shared conformance cases for Phase 1 pass on **.NET, TypeScript, and Rust**.
-2. `ahp` appears in branch-tip `contracts/compatibility.json` →
+2. `ahp` appears in repository-tip `contracts/compatibility.json` →
    `implemented.sources`.
 3. Runtime capability manifests advertise `ahp` with the same protocol pin.
 4. README / adapter-authoring document **export snapshot → `show --path`
