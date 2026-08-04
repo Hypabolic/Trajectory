@@ -262,41 +262,40 @@ def test_paginate_resume_matches_first_id_like_peers() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Empty registry shell
+# Registry shell + register roundtrip
 # ---------------------------------------------------------------------------
 
 
-def test_registry_is_empty_shell_and_register_roundtrip() -> None:
-    # Empty-shell acceptance: no built-in listers registered by this package yet.
-    # Snapshot so concurrent/shared process state is restored (do not rely on
-    # clearing first to "prove" emptiness).
+def test_registry_register_roundtrip_snapshot_restore() -> None:
+    """Register API works; snapshot/restore avoids deleting real built-ins.
+
+    Per-source listers (PY-05a+) self-register on import; do not assert
+    permanent emptiness of the process-wide registry.
+    """
     snapshot = dict(_LISTERS)
     try:
-        assert registered_lister_names() == frozenset(), (
-            "PY-09a registry shell must be empty before per-source listers land; "
-            f"found: {sorted(registered_lister_names())}"
-        )
-        assert get_lister("pi") is None
-
         class _Stub:
             @property
             def source(self):  # noqa: ANN201 — test stub
                 from hypabolic_trajectory._enums import TrajectorySource
 
-                return TrajectorySource.PI
+                # Use a wire name that is not a built-in registration key.
+                return TrajectorySource.CODEX
 
             def list_page(self, *, root, cursor, limit):  # noqa: ANN001,ANN201
                 _ = (root, cursor, limit)
                 return TrajectoryListingPage(items=(), next_cursor=None)
 
         register_lister(_Stub())
-        assert "pi" in registered_lister_names()
-        assert get_lister("pi") is not None
+        assert "codex" in registered_lister_names()
+        assert get_lister("codex") is not None
         clear_listers_for_tests()
         assert registered_lister_names() == frozenset()
     finally:
         _LISTERS.clear()
         _LISTERS.update(snapshot)
+        # Built-ins restored from snapshot after clear.
+        assert snapshot == dict(_LISTERS)
 
 
 def test_listing_dto_fields() -> None:
