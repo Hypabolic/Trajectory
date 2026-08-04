@@ -28,8 +28,8 @@ OUTPUTS = [
     "otel-genai-spans-v1",
 ]
 EXPECTED_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"]
-# Tip capability set advertised by peer runtimes (ML13). Progressive Python may
-# claim a subset until PY-11 / tip equality (PY-15b).
+# Tip capability set advertised by peer runtimes (ML13). PY-15b / ship require
+# python/runtime-capabilities.json equality to this set (order-sensitive).
 TIP_CAPABILITIES = [
     "normalize",
     "normalize-partial",
@@ -158,9 +158,10 @@ def main() -> None:
         if project_version != version:
             raise SystemExit(f"{path.relative_to(root)} is not version {version}.")
 
-    # Python progressive release metadata (PY-14a / §5 progressive rules).
-    # When python/pyproject.toml exists: version lockstep + progressive
-    # capabilities subsets of tip. Full tip equality is PY-15b / ship only.
+    # Python ship release metadata (PY-15b / §5 ship rules).
+    # When python/pyproject.toml exists: version lockstep + tip equality for
+    # sources / outputs / capabilities / slice (order-sensitive, same honesty
+    # peers enforce for TS/Rust sources+outputs+slice).
     pyproject_path = root / "python" / "pyproject.toml"
     python_inputs: list[Path] = []
     if pyproject_path.is_file():
@@ -187,9 +188,10 @@ def main() -> None:
                 "python/runtime-capabilities.json normalizer_contract_version "
                 "must be '0.2.0'."
             )
-        tip_sources = set(expected_sources)
-        tip_outputs = set(OUTPUTS)
-        tip_capabilities = set(TIP_CAPABILITIES)
+        if py_caps.get("slice") != SLICE:
+            raise SystemExit(
+                f"python/runtime-capabilities.json slice must be {SLICE!r}."
+            )
         claimed_sources = py_caps.get("sources")
         claimed_outputs = py_caps.get("outputs")
         claimed_capabilities = py_caps.get("capabilities")
@@ -201,23 +203,20 @@ def main() -> None:
             raise SystemExit(
                 "python/runtime-capabilities.json capabilities must be a list."
             )
-        extra_sources = set(claimed_sources) - tip_sources
-        extra_outputs = set(claimed_outputs) - tip_outputs
-        extra_caps = set(claimed_capabilities) - tip_capabilities
-        if extra_sources:
+        if claimed_sources != expected_sources:
             raise SystemExit(
-                "python/runtime-capabilities.json sources not subset of tip: "
-                f"{sorted(extra_sources)}"
+                "python/runtime-capabilities.json sources must equal tip "
+                f"{expected_sources} (got {claimed_sources})."
             )
-        if extra_outputs:
+        if claimed_outputs != OUTPUTS:
             raise SystemExit(
-                "python/runtime-capabilities.json outputs not subset of tip: "
-                f"{sorted(extra_outputs)}"
+                "python/runtime-capabilities.json outputs must equal tip "
+                f"{OUTPUTS} (got {claimed_outputs})."
             )
-        if extra_caps:
+        if claimed_capabilities != TIP_CAPABILITIES:
             raise SystemExit(
-                "python/runtime-capabilities.json capabilities not subset of tip: "
-                f"{sorted(extra_caps)}"
+                "python/runtime-capabilities.json capabilities must equal tip "
+                f"{TIP_CAPABILITIES} (got {claimed_capabilities})."
             )
         python_inputs = [pyproject_path, caps_path]
 

@@ -277,6 +277,13 @@ def test_generator_cli_exits_nonzero_on_bad_caps(tmp_path: Path) -> None:
 
 
 def test_ci_yml_python_conformance_job_topology() -> None:
+    """PY-15a maps still enforced on the (now tip-mode) python-conformance job.
+
+    PY-15b upgraded the job to unfiltered tip verify + jq tip equality; the
+    progressive generator/checker remains for §5 coverage maps and tip-equality
+    flag (proper_subset_of_tip == false). Full tip topology pins live in
+    test_py15b_tip_gate.py.
+    """
     text = CI_YML.read_text(encoding="utf-8")
     assert "python-conformance:" in text
     job = _job_block(text, "python-conformance")
@@ -285,7 +292,7 @@ def test_ci_yml_python_conformance_job_topology() -> None:
     assert "actions/setup-python" in job
     assert "python-version: '3.11'" in job or 'python-version: "3.11"' in job
 
-    # Editable install + progressive generator.
+    # Editable install + progressive generator still present (check-only).
     assert "pip install -e './python[dev]'" in job or 'pip install -e "./python[dev]"' in job
     assert "conformance_argv_from_capabilities.py" in job
     assert "--check-only" in job
@@ -302,15 +309,15 @@ def test_ci_yml_python_conformance_job_topology() -> None:
     assert "identity-baseline.sha256" in job
     assert "git diff --exit-code -- contracts conformance" in job
 
-    # Forbid continue-on-error on this progressive job.
-    assert "continue-on-error" not in job
+    # Forbid soft-fail key on this job.
+    assert "continue-on-error:" not in job
 
 
 def test_ci_yml_no_continue_on_error_for_python_jobs() -> None:
     text = CI_YML.read_text(encoding="utf-8")
     for job_id in ("python-unit", "python-conformance", "python-package-smoke"):
         job = _job_block(text, job_id)
-        assert "continue-on-error" not in job, f"{job_id} must not use continue-on-error"
+        assert "continue-on-error:" not in job, f"{job_id} must not use continue-on-error"
 
 
 def test_schema_to_op_map_covers_tip_outputs() -> None:

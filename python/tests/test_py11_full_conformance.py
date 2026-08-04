@@ -13,7 +13,7 @@ at tip surface:
   - ``conformance/identity-baseline.sha256`` still matches checked-in identity
     goldens (normalizer 0.2.0).
 
-Does **not** wire CI tip jobs (PY-15b) or OIDC/docs (PY-14b / PY-16).
+CI tip wiring is PY-15b (``test_py15b_tip_gate.py``). OIDC/docs are PY-14b / PY-16.
 """
 
 from __future__ import annotations

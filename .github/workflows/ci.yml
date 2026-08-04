@@ -267,8 +267,8 @@ jobs:
           "
 
   # PY-15-scaffold: unit + pack smoke (no OIDC).
-  # PY-15a: progressive python-conformance via argv generator/checker.
-  # PY-15b: tip equality unfiltered gate (not this job).
+  # PY-15a: progressive argv generator/checker (maps + fail-closed; still enforced).
+  # PY-15b: tip equality unfiltered gate (python-conformance job at tip).
   python-unit:
     name: Python unit / ${{ matrix.python }}
     strategy:
@@ -290,12 +290,12 @@ jobs:
       - name: Run unit tests
         run: python -m pytest python/tests -q
 
-  # PY-15a: progressive shared conformance. Filters come from
-  # python/runtime-capabilities.json via tools/conformance_argv_from_capabilities.py
-  # (§5 schema→op + capability coverage; fail closed). Never unfiltered when
-  # claimed ⊂ tip. Artifact name pin: python-conformance-candidates.
+  # PY-15b: tip shared conformance. Capability tip equality (jq, incl. capabilities)
+  # + generator --check-only (§5 maps; require proper_subset_of_tip=false) + unfiltered
+  # verify (defaults from contracts/compatibility.json tip matrix). Artifact name pin:
+  # python-conformance-candidates. Soft-fail is forbidden.
   python-conformance:
-    name: Shared conformance / Python progressive
+    name: Shared conformance / Python tip
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -306,18 +306,44 @@ jobs:
         run: |
           python -m pip install -U pip
           python -m pip install -e './python[dev]'
-      - name: Check progressive argv generator (claimed ⊆ verified maps)
-        # Fail closed if coverage rules unmet or filtered suite is empty.
-        run: >-
-          python tools/conformance_argv_from_capabilities.py
-          --repository-root .
-          --check-only
-      - name: Run claimed shared cases twice
-        # Generator emits explicit --source/--operation from capabilities.
-        # Intentionally unquoted $(...) — tokens are schema/source identifiers.
+      - name: Validate Python capability manifest (tip equality)
+        run: |
+          jq -e '
+            .runtime == "python"
+            and .slice == "ML13"
+            and .normalizer_contract_version == "0.2.0"
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"]
+            and .outputs == [
+              "letta-trajectory-v1",
+              "letta-canonical-v1",
+              "hypabolic-trajectory-v1",
+              "openai-chat-messages",
+              "jsonl-minimal",
+              "otel-genai-spans-v1"
+            ]
+            and .capabilities == [
+              "normalize",
+              "normalize-partial",
+              "list-explicit-root",
+              "typed-diagnostics",
+              "typed-fatal-errors",
+              "deterministic-rerun"
+            ]
+          ' python/runtime-capabilities.json > /dev/null
+      - name: Check progressive argv maps (claimed ⊆ verified; tip equality)
+        # Fail closed if coverage rules unmet, suite empty, or still ⊂ tip.
+        run: |
+          plan=$(python tools/conformance_argv_from_capabilities.py --repository-root . --check-only)
+          echo "$plan"
+          echo "$plan" | jq -e '
+            .status == "ok"
+            and .proper_subset_of_tip == false
+            and .matched_operations > 0
+          ' > /dev/null
+      - name: Run every advertised shared case twice (unfiltered tip)
+        # No --source/--operation: verify defaults to compatibility tip matrix.
         run: >-
           python conformance/verify.py --repository-root .
-          $(python tools/conformance_argv_from_capabilities.py --repository-root .)
           --
           env PYTHONPATH=python/tools python -m trajectory_conformance
       - name: Upload unaccepted conformance candidates

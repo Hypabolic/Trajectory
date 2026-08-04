@@ -127,7 +127,11 @@ def test_assert_release_version_includes_pypi() -> None:
     assert "hypabolic-trajectory" in data.get("pypi", [])
 
 
-def test_validate_release_metadata_progressive_python() -> None:
+def test_validate_release_metadata_python_ship_tip() -> None:
+    """PY-14a landed the Python path; PY-15b upgraded it to tip equality.
+
+    Current tip claims must still pass the ship validator.
+    """
     out = subprocess.check_output(
         [
             sys.executable,
@@ -142,6 +146,7 @@ def test_validate_release_metadata_progressive_python() -> None:
     assert data["version"] == (
         ROOT / "VERSION"
     ).read_text(encoding="utf-8").strip()
+    assert data["slice"] == "ML13"
 
 
 def test_stamp_apply_version_lists_pyproject() -> None:

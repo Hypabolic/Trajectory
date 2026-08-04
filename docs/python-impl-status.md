@@ -10,7 +10,7 @@ This note replaces the workflow’s planned **Codex gpt-5.6-sol** final review.
 
 **Partial vertical, shippable as a progress PR — not first-public-PyPI ready.**
 
-Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, the **full shared tip gate (PY-11)** (unfiltered verify + identity baseline + tip capabilities equality formalization), the **TrajectoryEngine ship surface (PY-12)**, and **CI progressive conformance (PY-15a)** (`python-conformance` + argv generator/checker) are in tree with unit tests. CI tip job (PY-15b) is **not** done. OIDC PyPI release path (PY-14b) is in tree.
+Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, the **full shared tip gate (PY-11)** (unfiltered verify + identity baseline + tip capabilities equality formalization), the **TrajectoryEngine ship surface (PY-12)**, **CI progressive conformance (PY-15a)** (argv generator/checker), and **CI tip gate (PY-15b)** (unfiltered `python-conformance` + jq tip equality + `validate_release_metadata` ship equality) are in tree with unit tests. OIDC PyPI release path (PY-14b) is in tree.
 
 ## What landed (mapped to spec §9)
 
@@ -45,7 +45,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-14b OIDC / release.yml PyPI | **Done** (validate packs `artifacts/release/pypi` + pack-smoke; `publish-pypi` download-only + `skip-existing` + OIDC `id-token: write` / env `release`; github-release needs publish-pypi + attaches pypi; `docs/publishing.md` PyPI pending-publisher + install lines; no live publish) |
 | PY-15-scaffold | **Done** (`python-unit` matrix + `python-package-smoke` on 3.11) |
 | PY-15a progressive conformance | **Done** (`python-conformance` job; `tools/conformance_argv_from_capabilities.py` §5 maps + fail-closed; artifact `python-conformance-candidates`; no continue-on-error) |
-| PY-15b tip CI gate | **Missing** |
+| PY-15b tip CI gate | **Done** (unfiltered tip verify; jq tip equality incl. capabilities; generator `proper_subset_of_tip==false`; `validate_release_metadata` ship equality; `test_py15b_tip_gate.py`) |
 | PY-16 docs integration | Partial (spec + this status) |
 | PY-17 first-ship join | **Not ready** |
 
@@ -53,12 +53,12 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 
 ## Verification performed
 
-- `pytest` under `python/`: progressive suite includes PY-08 OTEL + PY-09b list dispatcher + PY-10a runner + PY-10b-* claim-writers + **PY-10-full** join + **PY-11** tip gate + **PY-15a** progressive CI/generator (`test_py15a_progressive_conformance.py`).
+- `pytest` under `python/`: progressive suite includes PY-08 OTEL + PY-09b list dispatcher + PY-10a runner + PY-10b-* claim-writers + **PY-10-full** join + **PY-11** tip gate + **PY-15a** progressive generator + **PY-15b** tip CI gate (`test_py15b_tip_gate.py`).
 - Filtered shared verify green (full tip sources × all protocol-v1 ops), including via **generator argv**:  
   `python conformance/verify.py --repository-root . $(python tools/conformance_argv_from_capabilities.py --repository-root .) -- env PYTHONPATH=python/src:python/tools python -m trajectory_conformance` → **47 operations / 27 cases**.
-- **Bare unfiltered** `verify.py` (tip defaults from compatibility.json) green: **47 operations / 27 cases** (PY-11).
+- **Bare unfiltered** `verify.py` (tip defaults from compatibility.json) green: **47 operations / 27 cases** (PY-11 / PY-15b CI).
 - **Identity baseline** `conformance/identity-baseline.sha256` green (21 identity-bearing goldens; PY-11).
-- **Tip capabilities equality**: Python `runtime-capabilities.json` sources/outputs/capabilities/slice equal tip ML13 + TS/Rust peers (PY-11 claim ceremony).
+- **Tip capabilities equality**: Python `runtime-capabilities.json` sources/outputs/capabilities/slice equal tip ML13 + TS/Rust peers (PY-11 claim ceremony; **PY-15b** CI jq + `validate_release_metadata` ship equality).
 - Protocol: domain fatal exit 0 (`pi/missing-assistant`); protocol-error exit 2 (bad JSON / wrong version / path escape / undeclared op / unknown op).
 - Free-function exports: `from hypabolic_trajectory import normalize_to_ir, project_letta, project_canonical, project_hypabolic, project_openai, project_minimal_jsonl, project_otel_genai, serialize_projection, list_trajectories`.
 
@@ -66,15 +66,15 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 
 2. **SDK Activity sink** not shipped (optional `[otel]` helper); pure project + `emit_to`/`SpanSetSink` cover the import matrix.
 3. **Engine** shipped (PY-12); free-function isolation pin covered by unit tests.
-4. **CI tip job** (PY-15b unfiltered tip gate + validate_release_metadata ship equality) not wired yet — progressive `python-conformance` (PY-15a) is in tree; local PY-11 tests formalize tip equality.
+4. **CI tip job** (PY-15b) wired: unfiltered tip gate + validate_release_metadata ship equality.
 5. Workflow agents that hit Codex for “final review” failed; this document is the substitute gate for opening the PR.
 
 ## Recommended next PR sequence
 
-1. **PY-15b** tip CI → **PY-16** docs → **PY-17** (PY-11 tip formalization + PY-14b OIDC + PY-15a progressive already landed)
+1. **PY-16** docs → **PY-17** (PY-11 tip formalization + PY-14b OIDC + PY-15a progressive + PY-15b tip CI already landed)
 
 ## Non-goals of this PR
 
 - Cutting a version tag or publishing to PyPI  
-- CI tip job wiring (PY-15b) or docs integration (PY-16)  
+- Docs integration (PY-16)  
 - Merging incomplete stubs as “done” in release-readiness
