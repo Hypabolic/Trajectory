@@ -607,13 +607,15 @@ def test_engine_custom_projector_isolation_from_free_functions() -> None:
 
     # Custom adapter works only on the mutated engine.
     assert eng_a.project(ir, ht.LETTA_TRAJECTORY_V1) == {"custom": True}
-    # Second engine does not see the custom adapter.
+    # Second engine does not see the custom adapter (still stub until PY-12 wires
+    # built-in projectors into the engine registry).
     with pytest.raises(ht.TrajectoryError):
         eng_b.project(ir, ht.LETTA_TRAJECTORY_V1)
-    # Free project_letta never observes engine mutations (isolation pin).
-    with pytest.raises(ht.TrajectoryError) as ei:
-        ht.project_letta(ir)
-    assert ei.value.code == "invalid_input"
+    # Free project_letta never observes engine mutations (isolation pin):
+    # returns the built-in letta tree, not the custom {"custom": True} adapter.
+    free = ht.project_letta(ir)
+    assert free == {"records": [], "diagnostics": []}
+    assert free != {"custom": True}
 
     # Engine normalize uses the same free-function built-in path.
     with pytest.raises(ht.TrajectoryError) as ei2:

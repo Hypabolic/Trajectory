@@ -18,44 +18,33 @@ from hypabolic_trajectory.ir.models import TrajectoryIR
 from hypabolic_trajectory.normalize.core import normalize_to_ir as normalize_to_ir
 from hypabolic_trajectory.dto import TrajectoryListingPage
 from hypabolic_trajectory._enums import TrajectorySource
+from hypabolic_trajectory.project.core import (
+    project_canonical as project_canonical,
+    project_hypabolic as project_hypabolic,
+    project_letta as project_letta,
+    serialize_projection as serialize_projection,
+)
 
 _MSG_NOT_IMPLEMENTED = "This free function is not implemented yet."
 
 
 def normalize_to_letta(request: NormalizeRequest) -> JsonObject:
-    """Convenience: ``normalize_to_ir`` + ``project_letta`` (lands PY-07a)."""
-    _ = request
-    raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_NOT_IMPLEMENTED) from None
+    """Convenience: ``normalize_to_ir`` + ``project_letta``."""
+    return project_letta(normalize_to_ir(request))
 
 
 def normalize_to_canonical(request: NormalizeRequest) -> JsonObject:
-    """Convenience: ``normalize_to_ir`` + ``project_canonical`` (lands PY-07a)."""
-    _ = request
-    raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_NOT_IMPLEMENTED) from None
+    """Convenience: ``normalize_to_ir`` + ``project_canonical``.
+
+    May raise ``source_group_required`` for unresolved codex groups even when
+    ``normalize_to_ir`` succeeded.
+    """
+    return project_canonical(normalize_to_ir(request))
 
 
 def normalize_to_hypabolic(request: NormalizeRequest) -> JsonObject:
-    """Convenience: ``normalize_to_ir`` + ``project_hypabolic`` (lands PY-07a)."""
-    _ = request
-    raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_NOT_IMPLEMENTED) from None
-
-
-def project_letta(trajectory: TrajectoryIR) -> JsonObject:
-    """Project IR to letta-trajectory-v1 (PY-07a)."""
-    _ = trajectory
-    raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_NOT_IMPLEMENTED) from None
-
-
-def project_canonical(trajectory: TrajectoryIR) -> JsonObject:
-    """Project IR to letta-canonical-v1 (PY-07a)."""
-    _ = trajectory
-    raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_NOT_IMPLEMENTED) from None
-
-
-def project_hypabolic(trajectory: TrajectoryIR) -> JsonObject:
-    """Project IR to hypabolic-trajectory-v1 (PY-07a)."""
-    _ = trajectory
-    raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_NOT_IMPLEMENTED) from None
+    """Convenience: ``normalize_to_ir`` + ``project_hypabolic``."""
+    return project_hypabolic(normalize_to_ir(request))
 
 
 def project_openai(trajectory: TrajectoryIR) -> list[JsonObject]:
@@ -73,12 +62,6 @@ def project_minimal_jsonl(trajectory: TrajectoryIR) -> str:
 def project_otel_genai(trajectory: TrajectoryIR) -> JsonObject:
     """Project IR to otel-genai-spans-v1 pure tree (PY-08)."""
     _ = trajectory
-    raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_NOT_IMPLEMENTED) from None
-
-
-def serialize_projection(value: JsonValue, *, write_indented: bool = False) -> str:
-    """Serialize a projection tree with the shared Trajectory escape (PY-07a)."""
-    _ = (value, write_indented)
     raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_NOT_IMPLEMENTED) from None
 
 

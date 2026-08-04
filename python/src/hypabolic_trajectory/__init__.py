@@ -26,22 +26,19 @@ from hypabolic_trajectory._schema import (
     SCHEMA_IDS,
     SchemaId,
 )
-from hypabolic_trajectory._version import resolve_package_version
+from hypabolic_trajectory._version import (
+    NORMALIZER_CONTRACT_VERSION,
+    WIRE_PACKAGE_VERSION,
+    resolve_package_version,
+)
 
 # ---------------------------------------------------------------------------
 # Version / constants (normative pins — docs/python-implementation-spec.md §3)
 # ---------------------------------------------------------------------------
 
-NORMALIZER_CONTRACT_VERSION: Final[str] = "0.2.0"  # wire / identity contract
-
+# Re-exported from cycle-safe leaf `_version` (single source of truth).
 PACKAGE_VERSION: Final[str] = resolve_package_version()
 __version__ = PACKAGE_VERSION  # single public alias; not a second hand-maintained string
-
-# Embedded wire version used for Hypabolic envelope normalizer.version and
-# OTEL instrumentation_version. MUST match other tip runtimes on the same git
-# tag. Today tip + goldens pin "0.1.0". Do NOT unilaterally bind this to
-# PACKAGE_VERSION until all runtimes + goldens move.
-WIRE_PACKAGE_VERSION: Final[str] = "0.1.0"
 
 # Extension points (custom adapters) use SchemaId | str at the parameter site.
 
