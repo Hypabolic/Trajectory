@@ -1,0 +1,64 @@
+[project]
+name = "hypabolic-trajectory"
+version = "0.1.0"  # MUST equal root VERSION on main; only CI stamp rewrites
+description = "Normalize coding-agent transcripts into deterministic Trajectory contracts"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Hypabolic" }]
+keywords = ["agents", "transcripts", "observability", "jsonl"]
+# no dynamic = ["version"]
+# no [project.scripts] / [project.gui-scripts] on first ship
+
+[project.urls]
+Repository = "https://github.com/Hypabolic/Trajectory"
+Homepage = "https://github.com/Hypabolic/Trajectory"
+
+[project.optional-dependencies]
+otel = [
+  "opentelemetry-api>=1.27.0",
+  "opentelemetry-sdk>=1.27.0",
+]
+dev = [
+  "pytest>=8.0",
+  "jsonschema>=4.0",
+  "build>=1.0",
+]
+
+[build-system]
+# hatchling >=1.27 implements PEP 639 SPDX string license + license-files array
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hypabolic_trajectory"]
+artifacts = [
+  "src/hypabolic_trajectory/contracts/**",
+  "src/hypabolic_trajectory/runtime-capabilities.json",
+  "src/hypabolic_trajectory/py.typed",
+]
+
+[tool.hatch.build.targets.sdist]
+artifacts = [
+  "src/hypabolic_trajectory/contracts/**",
+  "src/hypabolic_trajectory/runtime-capabilities.json",
+  "src/hypabolic_trajectory/py.typed",
+  "LICENSE",
+  "README.md",
+  "pyproject.toml",
+]
+exclude = [
+  "tests/**",
+  "samples/**",
+  "tools/**",
+  "**/__pycache__/**",
+  "**/.pytest_cache/**",
+  ".venv/**",
+  "dist/**",
+  "**/*.pyc",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

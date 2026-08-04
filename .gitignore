@@ -300,6 +300,15 @@ node_modules/
 dist/
 typescript/packages/trajectory/contracts/
 rust/crates/hypabolic-trajectory/contracts/
+python/src/hypabolic_trajectory/contracts/
+python/src/hypabolic_trajectory/runtime-capabilities.json
+python/**/__pycache__/
+python/**/.pytest_cache/
+python/.venv/
+python/dist/
+python/*.egg-info/
+python/src/*.egg-info/
+python/**/*.egg-info/
 
 # Visual Studio 6 build log
 *.plg
