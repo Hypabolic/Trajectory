@@ -1,8 +1,8 @@
-"""Protocol v1 conformance runner (PY-10a early surface).
+"""Protocol v1 conformance runner (PY-10a + PY-10b-list).
 
 Implements the normative preamble, response templates, case→NormalizeRequest
-mapping, and free-function normalize/project ops. Listing is deferred to
-PY-10b-list.
+mapping, free-function normalize/project ops, and the full §7 listing-runner
+algorithm (``list-trajectories`` + ``$ROOT`` path rewrite).
 
 Authority:
   - docs/python-implementation-spec.md §7
@@ -14,7 +14,11 @@ Authority:
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import sys
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Final, Mapping
 
@@ -27,6 +31,7 @@ from hypabolic_trajectory import (
     ToolArgumentBounds,
     ToolResultBounds,
     TrajectoryError,
+    list_trajectories,
     normalize_to_ir,
     project_canonical,
     project_hypabolic,
@@ -37,11 +42,11 @@ from hypabolic_trajectory import (
     serialize_projection,
 )
 from hypabolic_trajectory.diagnostics import Diagnostic
+from hypabolic_trajectory.dto import TrajectoryListing, TrajectoryListingPage
 
 PROTOCOL_VERSION: Final[str] = "1"
 
-# Ops implemented in this early runner (PY-10a + free-function project surface).
-# list-trajectories is intentionally out of scope until PY-10b-list.
+# Ops implemented (PY-10a normalize/project surface + PY-10b-list).
 _NORMALIZE_OPS: Final[frozenset[str]] = frozenset(
     {
         "normalize-letta",
@@ -54,6 +59,13 @@ _NORMALIZE_OPS: Final[frozenset[str]] = frozenset(
 )
 
 _KNOWN_OPS: Final[frozenset[str]] = _NORMALIZE_OPS | frozenset({"list-trajectories"})
+
+# Sources whose declarative fixtures use a ``store/`` prefix; lister root is
+# ``{temp_root}/store`` (goldens show ``$ROOT/store/...``). All other sources
+# (pi, openclaw, hermes/ahp stubs) list at the temp root itself.
+_LISTING_STORE_PREFIX_SOURCES: Final[frozenset[str]] = frozenset(
+    {"claude-code", "codex"}
+)
 
 
 class ProtocolError(Exception):
@@ -344,16 +356,167 @@ def load_case_manifest(repository_root: Path, case_id: str) -> tuple[Path, dict[
     return case_directory, manifest
 
 
+def _parse_store_updated_at(value: str) -> float:
+    """Parse store fixture UTC timestamp to epoch seconds for ``os.utime``."""
+    text = value
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise ProtocolError(
+            "Store fixture updated_at is not a valid ISO-8601 timestamp."
+        ) from None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def _rewrite_listing_path(absolute_path: str, temporary_root: Path) -> str:
+    """Strip the temp root prefix and emit ``$ROOT/<relative>`` with forward slashes.
+
+    Rewrite is always relative to the **temporary root** (not the lister root),
+    so claude-code/codex goldens correctly show ``$ROOT/store/...``.
+    """
+    root_resolved = temporary_root.resolve()
+    item_resolved = Path(absolute_path).resolve()
+    try:
+        relative = item_resolved.relative_to(root_resolved)
+    except ValueError:
+        raise ProtocolError("Listing item path escaped the temporary root.") from None
+    # relative_to yields ``.`` when equal; a file path should never equal the root.
+    rel_posix = relative.as_posix()
+    if rel_posix == ".":
+        return "$ROOT"
+    return f"$ROOT/{rel_posix}"
+
+
+def _listing_item_to_wire(
+    item: TrajectoryListing, temporary_root: Path
+) -> dict[str, Any]:
+    """Wire item: id, path, optional updated_at / title / size_bytes (omit absent)."""
+    wire: dict[str, Any] = {
+        "id": item.id,
+        "path": _rewrite_listing_path(item.path, temporary_root),
+    }
+    if item.updated_at is not None:
+        wire["updated_at"] = item.updated_at
+    if item.title is not None:
+        wire["title"] = item.title
+    if item.size_bytes is not None:
+        wire["size_bytes"] = item.size_bytes
+    return wire
+
+
+def _listing_page_to_wire(
+    page: TrajectoryListingPage, temporary_root: Path
+) -> dict[str, Any]:
+    """Wire page object: items + always-present next_cursor (string or null)."""
+    return {
+        "items": [
+            _listing_item_to_wire(item, temporary_root) for item in page.items
+        ],
+        "next_cursor": page.next_cursor,
+    }
+
+
+def execute_listing(
+    repository_root: Path,
+    manifest: Mapping[str, Any],
+) -> str:
+    """Full §7 listing-runner algorithm. Raises ProtocolError or TrajectoryError."""
+    store_name = manifest.get("store")
+    if type(store_name) is not str or store_name == "":
+        raise ProtocolError("Listing case requires a declarative store.")
+
+    stores_root = (repository_root / "conformance" / "stores").resolve()
+    if not stores_root.is_dir():
+        raise ProtocolError("conformance/stores is missing under repository_root.")
+    store_path = safe_join(stores_root, f"{store_name}/store.json")
+    try:
+        store_raw = json.loads(store_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise ProtocolError("Store fixture is not valid JSON.") from None
+    if type(store_raw) is not dict:
+        raise ProtocolError("Store fixture must be a JSON object.")
+    files = store_raw.get("files")
+    if type(files) is not list:
+        raise ProtocolError("Store fixture field 'files' must be an array.")
+
+    source = manifest.get("source")
+    if type(source) is not str or source == "":
+        raise ProtocolError("Case field 'source' must be a non-empty string.")
+
+    listing_opts = _optional_object(manifest, "listing")
+    limit_raw = listing_opts.get("limit", 50)
+    if type(limit_raw) is not int or isinstance(limit_raw, bool):
+        raise ProtocolError("listing.limit must be an integer when present.")
+    limit = limit_raw
+    all_pages_raw = listing_opts.get("all_pages", False)
+    if type(all_pages_raw) is not bool:
+        raise ProtocolError("listing.all_pages must be a boolean when present.")
+    all_pages = all_pages_raw
+
+    temporary_root = Path(
+        tempfile.mkdtemp(prefix="trajectory-conformance-")
+    )
+    try:
+        for entry in files:
+            if type(entry) is not dict:
+                raise ProtocolError("Each store.files entry must be an object.")
+            relative = entry.get("path")
+            if type(relative) is not str or relative == "":
+                raise ProtocolError(
+                    "Store file path must be a non-empty relative path."
+                )
+            content = entry.get("content")
+            if type(content) is not str:
+                raise ProtocolError("Store file content must be a string.")
+            destination = safe_join(temporary_root, relative)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(content, encoding="utf-8")
+            if "updated_at" in entry and entry["updated_at"] is not None:
+                updated_at = entry["updated_at"]
+                if type(updated_at) is not str:
+                    raise ProtocolError(
+                        "Store file updated_at must be a string when present."
+                    )
+                epoch = _parse_store_updated_at(updated_at)
+                os.utime(destination, (epoch, epoch))
+
+        if source in _LISTING_STORE_PREFIX_SOURCES:
+            listing_root: Path = temporary_root / "store"
+        else:
+            listing_root = temporary_root
+
+        pages_wire: list[dict[str, Any]] = []
+        cursor: str | None = None
+        while True:
+            page = list_trajectories(
+                source=source,
+                root=listing_root,
+                cursor=cursor,
+                limit=limit,
+            )
+            pages_wire.append(_listing_page_to_wire(page, temporary_root))
+            cursor = page.next_cursor
+            if not all_pages or cursor is None:
+                break
+
+        if all_pages:
+            return serialize_projection(pages_wire)
+        return serialize_projection(pages_wire[0])
+    finally:
+        # Best-effort cleanup — never leave declarative fixture trees behind.
+        shutil.rmtree(temporary_root, ignore_errors=True)
+
+
 def execute_normalize(
     case_directory: Path,
     manifest: Mapping[str, Any],
     operation: str,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Map case → request, normalize, project, serialize. Raises TrajectoryError."""
-    if operation == "list-trajectories":
-        raise ProtocolError(
-            "Operation 'list-trajectories' is not implemented in this early runner."
-        )
     if operation not in _NORMALIZE_OPS:
         raise ProtocolError(f"Unsupported operation '{operation}'.")
 
@@ -431,9 +594,13 @@ def execute(request: Mapping[str, str]) -> dict[str, Any]:
         )
 
     try:
-        output_text, diagnostics = execute_normalize(
-            case_directory, manifest, operation
-        )
+        if operation == "list-trajectories":
+            output_text = execute_listing(repository_root, manifest)
+            diagnostics: list[dict[str, Any]] = []
+        else:
+            output_text, diagnostics = execute_normalize(
+                case_directory, manifest, operation
+            )
     except TrajectoryError as err:
         return fatal_error_response(case_id, operation, err.code, err.message)
     except ProtocolError:
