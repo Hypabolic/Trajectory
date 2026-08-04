@@ -85,14 +85,17 @@ def test_hermes_lister_registered_on_package_import() -> None:
     assert lister.source.value == "hermes"
 
 
-def test_runtime_capabilities_not_edited_by_py06_hermes() -> None:
-    """PY-06-hermes must not claim sources — claim-writer issues only."""
+def test_runtime_capabilities_claim_writer_owns_hermes_source() -> None:
+    """Hermes source claim is owned by PY-10b-sources-hermes (verify-green).
+
+    PY-06-hermes only registered the adapter; claim-writer issues own membership
+    in runtime-capabilities.json. After PY-10b-sources-hermes, hermes is claimed.
+    """
     caps_path = _REPO_ROOT / "python" / "runtime-capabilities.json"
     caps = json.loads(caps_path.read_text(encoding="utf-8"))
     assert caps["runtime"] == "python"
-    # Hermes must not appear in claimed sources until PY-10b-sources-hermes.
     claimed = caps.get("sources") or []
-    assert "hermes" not in claimed
+    assert "hermes" in claimed
 
 
 # ---------------------------------------------------------------------------
