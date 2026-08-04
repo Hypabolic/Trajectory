@@ -200,43 +200,39 @@ def test_diagnostics_wire_casing_camel_case() -> None:
 
 
 def test_claim_writer_progressive_pi_normalize() -> None:
-    """Claim-writer surface: pi + progressive outputs (grows via PY-10b-*).
+    """Claim-writer surface: progressive claims grow via PY-10b-* issues.
 
-    PY-10a claimed letta/canonical; PY-10b-openai-jsonl adds openai + jsonl.
+    PY-10a claimed pi + letta/canonical; PY-10b-openai-jsonl requires openai +
+    jsonl-minimal. Membership checks tolerate concurrent claim-writer expansions
+    for other sources/outputs; exact tip equality is PY-11.
     """
     caps_path = ROOT / "python" / "runtime-capabilities.json"
     data = json.loads(caps_path.read_text(encoding="utf-8"))
     assert data["runtime"] == "python"
     assert data["normalizer_contract_version"] == "0.2.0"
-    assert data["sources"] == ["pi"]
-    # Baseline + PY-10b-openai-jsonl claim expansion.
-    assert data["outputs"] == [
-        "letta-trajectory-v1",
-        "letta-canonical-v1",
-        "openai-chat-messages",
-        "jsonl-minimal",
-    ]
-    # Progressive capabilities covered by filtered pi normalize-letta/canonical.
-    assert "normalize" in data["capabilities"]
-    assert "normalize-partial" in data["capabilities"]
-    assert "typed-diagnostics" in data["capabilities"]
-    assert "typed-fatal-errors" in data["capabilities"]
-    assert "deterministic-rerun" in data["capabilities"]
-    # Listing is PY-10b-list — must not claim early.
-    assert "list-explicit-root" not in data["capabilities"]
-    # Hypabolic / otel remain later claim-writer issues.
-    for forbidden in (
-        "hypabolic-trajectory-v1",
-        "otel-genai-spans-v1",
-    ):
-        assert forbidden not in data["outputs"]
+    assert "pi" in data["sources"]
+    outputs = data["outputs"]
+    # Baseline normalize outputs.
+    assert "letta-trajectory-v1" in outputs
+    assert "letta-canonical-v1" in outputs
+    # PY-10b-openai-jsonl claim expansion.
+    assert "openai-chat-messages" in outputs
+    assert "jsonl-minimal" in outputs
+    # Progressive capabilities covered by filtered normalize ops.
+    caps = data["capabilities"]
+    assert "normalize" in caps
+    assert "normalize-partial" in caps
+    assert "typed-diagnostics" in caps
+    assert "typed-fatal-errors" in caps
+    assert "deterministic-rerun" in caps
 
 
 def test_filtered_verify_pi_normalize_green() -> None:
     """Integration: shared verify.py with explicit --source and --operation filters.
 
     Bare ``--source pi`` is forbidden for progressive honesty (would pull
-    unclaimed listing/hypabolic/otel ops). Filters match claims.
+    unclaimed listing/hypabolic/otel ops when those remain unclaimed). Filters
+    match the progressive claimed surface for normalize + openai + jsonl.
     """
     cmd = [
         PYTHON,

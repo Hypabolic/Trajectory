@@ -27,8 +27,10 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-07b openai + jsonl-minimal | Done |
 | PY-08 OTEL pure + extra | **Done** (pure `project_otel_genai` in core; `otel.SpanSetSink`/`emit_to`; no SDK in core; no capabilities claim; unit + unicode-boundaries golden) |
 | PY-09b `list_trajectories` dispatcher | **Done** (dispatch-by-registry; invalid_input / listing_unavailable; unit tests) |
+| PY-10b-sources-openclaw | **Done** (claim-writer: `openclaw` in sources; filtered normalize-letta/canonical green; listing not claimed) |
 | PY-10a early runner (pi normalize) | **Done** (`python/tools/trajectory_conformance`; protocol v1; free-function normalize-letta/canonical; filtered verify green; claim-writer pi + letta/canonical + coverage caps; list-trajectories deferred to PY-10b-list) |
-| PY-10b-sources-ahp | **Done** (claim-writer: `ahp` in progressive sources when filtered normalize-letta/canonical green — 3 cases / 4 ops; tip-order sources; interior lockstep) |
+| PY-10b-sources-claude-codex | **Done** (claim-writer: `claude-code` + `codex` in progressive sources; filtered normalize-letta/canonical green — 21 ops / 14 cases) |
+| PY-10b-sources-ahp | **Done** (claim-writer: `ahp` when filtered normalize-letta/canonical green — 3 cases / 4 ops) |
 | PY-10b-hypabolic | **Done** (`normalize-hypabolic` via free-function `project_hypabolic` + `serialize_projection`; filtered verify green; claim-writer adds `hypabolic-trajectory-v1`) |
 | PY-10b-openai-jsonl | **Done** (runner ops wired; claim-writer `openai-chat-messages` + `jsonl-minimal`; filtered verify 12 ops / 6 cases green) |
 | PY-10b-* remaining claim expansion | **Missing** (hypabolic, list, otel, other sources still open) |
@@ -41,7 +43,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-16 docs integration | Partial (spec + this status) |
 | PY-17 first-ship join | **Not ready** |
 
-`python/runtime-capabilities.json` claims progressive pi surface (`sources: [pi]`, outputs letta/canonical + openai-chat-messages + jsonl-minimal, coverage capabilities). Do not treat `IMPLEMENTED_SOURCES` in `__init__.py` as registry claims. Remaining outputs/sources require later claim-writer issues with filtered verify green.
+`python/runtime-capabilities.json` claims progressive pi surface (`sources` includes `pi`, `claude-code`, `codex` (and any concurrent progressive claims), outputs letta/canonical + openai-chat-messages + jsonl-minimal, coverage capabilities). Do not treat `IMPLEMENTED_SOURCES` in `__init__.py` as registry claims. Remaining outputs/sources require later claim-writer issues with filtered verify green.
 
 ## Verification performed
 
