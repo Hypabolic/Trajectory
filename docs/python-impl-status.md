@@ -10,7 +10,7 @@ This note replaces the workflow’s planned **Codex gpt-5.6-sol** final review.
 
 **Partial vertical, shippable as a progress PR — not first-public-PyPI ready.**
 
-Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), and the early protocol-v1 conformance runner with progressive pi normalize claims (PY-10a) are in tree with unit tests. Full tip claims, listing-runner algorithm, engine ship surface, and CI/OIDC release integration are **not** done.
+Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), and the early protocol-v1 conformance runner with progressive pi normalize claims (PY-10a), and the **TrajectoryEngine ship surface (PY-12)** are in tree with unit tests. Full tip claims, remaining listing-runner/claim expansion, and CI/OIDC release integration are **not** done.
 
 ## What landed (mapped to spec §9)
 
@@ -28,9 +28,11 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-08 OTEL pure + extra | **Done** (pure `project_otel_genai` in core; `otel.SpanSetSink`/`emit_to`; no SDK in core; no capabilities claim; unit + unicode-boundaries golden) |
 | PY-09b `list_trajectories` dispatcher | **Done** (dispatch-by-registry; invalid_input / listing_unavailable; unit tests) |
 | PY-10a early runner (pi normalize) | **Done** (`python/tools/trajectory_conformance`; protocol v1; free-function normalize-letta/canonical; filtered verify green; claim-writer pi + letta/canonical + coverage caps; list-trajectories deferred to PY-10b-list) |
-| PY-10b-* claim expansion | **Missing** (ops mostly wired in runner; claims/listing still open) |
+| PY-10b-hypabolic | **Done** (`normalize-hypabolic` via free-function `project_hypabolic` + `serialize_projection`; filtered verify green; claim-writer adds `hypabolic-trajectory-v1`) |
+| PY-10b-openai-jsonl | **Done** (runner ops wired; claim-writer `openai-chat-messages` + `jsonl-minimal`; filtered verify 12 ops / 6 cases green) |
+| PY-10b-* remaining claim expansion | **Missing** (hypabolic, list, otel, other sources still open) |
 | PY-11 full shared conformance | **Missing** |
-| PY-12 TrajectoryEngine ship surface | Intermediate stub; not verified as DoD |
+| PY-12 TrajectoryEngine ship surface | **Done** (`create_default` tip matrix incl. pure otel; `project` / `add_output_adapter`; duplicate→ValueError; unknown→`unknown_output_schema`; root `__all__`; binding isolation units) |
 | PY-13 sample CLI | **Missing** |
 | PY-14a packaging stamp / pack-smoke | Done |
 | PY-14b OIDC / release.yml PyPI | **Missing** |
@@ -38,29 +40,29 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-16 docs integration | Partial (spec + this status) |
 | PY-17 first-ship join | **Not ready** |
 
-`python/runtime-capabilities.json` now claims progressive pi normalize surface only (`sources: [pi]`, outputs letta/canonical, coverage capabilities). Do not treat `IMPLEMENTED_SOURCES` in `__init__.py` as registry claims. Remaining outputs/sources require later claim-writer issues with filtered verify green.
+`python/runtime-capabilities.json` claims progressive pi surface (`sources: [pi]`, outputs letta/canonical + openai-chat-messages + jsonl-minimal, coverage capabilities). Do not treat `IMPLEMENTED_SOURCES` in `__init__.py` as registry claims. Remaining outputs/sources require later claim-writer issues with filtered verify green.
 
 ## Verification performed
 
-- `pytest` under `python/`: **417 passed** (includes PY-08 OTEL + PY-09b list dispatcher + PY-10a runner).
-- Filtered shared verify green:  
-  `python conformance/verify.py --repository-root . --source pi --operation normalize-letta --operation normalize-canonical -- env PYTHONPATH=python/tools python -m trajectory_conformance` → **10 operations / 6 cases**.
+- `pytest` under `python/`: progressive suite includes PY-08 OTEL + PY-09b list dispatcher + PY-10a runner + PY-10b-openai-jsonl.
+- Filtered shared verify green (claimed surface):  
+  `python conformance/verify.py --repository-root . --source pi --operation normalize-letta --operation normalize-canonical --operation project-openai --operation project-minimal-jsonl -- env PYTHONPATH=python/tools python -m trajectory_conformance` → **12 operations / 6 cases**.
 - Protocol: domain fatal exit 0 (`pi/missing-assistant`); protocol-error exit 2 (bad JSON / wrong version / path escape / undeclared op).
-- Free-function exports: `from hypabolic_trajectory import normalize_to_ir, project_letta, project_canonical, serialize_projection`.
+- Free-function exports: `from hypabolic_trajectory import normalize_to_ir, project_letta, project_canonical, project_openai, project_minimal_jsonl, serialize_projection`.
 - Bare `--source pi` without `--operation` filters is **not** used for progressive claims (would pull unclaimed listing / other outputs).
 
 ## Issues / follow-ups (non-blocking for this PR)
 
 1. **Listing runner algorithm** (`list-trajectories` + `$ROOT` rewrite) deferred to PY-10b-list.
-2. **Claim expansion** for hypabolic / openai / jsonl / otel / other sources still open (PY-10b-*).
+2. **Claim expansion** for hypabolic / otel / other sources still open (PY-10b-*).
 3. **SDK Activity sink** not shipped (optional `[otel]` helper); pure project + `emit_to`/`SpanSetSink` cover the import matrix.
-4. **Engine** present as intermediate module; confirm isolation vs free functions before PY-17.
+4. **Engine** shipped (PY-12); free-function isolation pin covered by unit tests.
 5. **CI progressive conformance job** (PY-15a argv generator/checker) not wired yet — runner path exists for local/CI invocation.
 6. Workflow agents that hit Codex for “final review” failed; this document is the substitute gate for opening the PR.
 
 ## Recommended next PR sequence
 
-1. PY-10b-* claim expansion parallel (hypabolic, openai/jsonl, list, otel, other sources)  
+1. Remaining PY-10b-* claim expansion parallel (hypabolic, list, otel, other sources)  
 2. PY-11 + PY-15 CI + PY-14b OIDC → PY-17  
 
 ## Non-goals of this PR

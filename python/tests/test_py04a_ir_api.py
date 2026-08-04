@@ -30,8 +30,8 @@ from hypabolic_trajectory.sources.protocol import (
     registered_source_names,
 )
 
-# Exhaustive root __all__ names landed under PY-04a export owner (TrajectoryEngine
-# deferred to PY-12 per intermediate-build pin).
+# Exhaustive root __all__ names under PY-04a export owner (TrajectoryEngine
+# finalized by PY-12 first-ship pin).
 _EXPECTED_ROOT_ALL = frozenset(
     {
         "NORMALIZER_CONTRACT_VERSION",
@@ -62,6 +62,7 @@ _EXPECTED_ROOT_ALL = frozenset(
         "TrajectoryListingPage",
         "Diagnostic",
         "TrajectoryError",
+        "TrajectoryEngine",
         "normalize_to_ir",
         "normalize_to_letta",
         "normalize_to_canonical",
@@ -148,8 +149,9 @@ def test_ir_all_stable_subset() -> None:
         assert hasattr(ir_mod, n)
 
 
-def test_trajectory_engine_not_in_root_all_until_py12() -> None:
-    assert "TrajectoryEngine" not in ht.__all__
+def test_trajectory_engine_in_root_all_after_py12() -> None:
+    assert "TrajectoryEngine" in ht.__all__
+    assert ht.TrajectoryEngine is TrajectoryEngine
 
 
 def test_free_function_signatures_frozen() -> None:
@@ -576,11 +578,15 @@ def test_engine_custom_projector_isolation_from_free_functions() -> None:
     def _fake(_ir: ht.TrajectoryIR) -> ht.JsonObject:
         return {"custom": True}
 
-    # Register under the built-in letta schema id so free project_letta
-    # would share the lookup key if isolation were broken.
-    eng_a.add_output_adapter(ht.LETTA_TRAJECTORY_V1, _fake)
-    with pytest.raises(ValueError):
+    # Built-ins are already registered: re-adding the same schema_id is ValueError.
+    with pytest.raises(ValueError, match="already registered"):
         eng_a.add_output_adapter(ht.LETTA_TRAJECTORY_V1, _fake)
+
+    # Custom schema lives only on eng_a (isolation across engines).
+    custom_id = "test-custom-output-v1"
+    eng_a.add_output_adapter(custom_id, _fake)
+    with pytest.raises(ValueError, match="already registered"):
+        eng_a.add_output_adapter(custom_id, _fake)
 
     # Minimal IR for projection dispatch (no normalize behaviour required).
     cfg = ht.AppliedConfig(
@@ -606,13 +612,21 @@ def test_engine_custom_projector_isolation_from_free_functions() -> None:
     )
 
     # Custom adapter works only on the mutated engine.
-    assert eng_a.project(ir, ht.LETTA_TRAJECTORY_V1) == {"custom": True}
-    # Second engine does not see the custom adapter (still stub until PY-12 wires
-    # built-in projectors into the engine registry).
-    with pytest.raises(ht.TrajectoryError):
-        eng_b.project(ir, ht.LETTA_TRAJECTORY_V1)
-    # Free project_letta never observes engine mutations (isolation pin):
-    # returns the built-in letta tree, not the custom {"custom": True} adapter.
+    assert eng_a.project(ir, custom_id) == {"custom": True}
+    # Second engine does not see the custom adapter.
+    with pytest.raises(ht.TrajectoryError) as ei_unknown:
+        eng_b.project(ir, custom_id)
+    assert ei_unknown.value.code == "unknown_output_schema"
+    # Built-in letta still works on both engines (create_default registry).
+    assert eng_a.project(ir, ht.LETTA_TRAJECTORY_V1) == {
+        "records": [],
+        "diagnostics": [],
+    }
+    assert eng_b.project(ir, ht.LETTA_TRAJECTORY_V1) == {
+        "records": [],
+        "diagnostics": [],
+    }
+    # Free project_letta never observes engine mutations (isolation pin).
     free = ht.project_letta(ir)
     assert free == {"records": [], "diagnostics": []}
     assert free != {"custom": True}

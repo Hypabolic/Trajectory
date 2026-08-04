@@ -4,8 +4,9 @@ Only names listed in root ``__all__`` (and ``ir.__all__`` / ``otel.__all__`` onc
 landed) are semver-stable. Other import paths are unsupported.
 
 **Export owner (PY-04a through PY-12):** this module is the single owner of root
-``__all__`` and ``api.py`` re-export merge. Parallel free-function/source issues
-land implementations in internal modules and update root exports only under this
+``__all__`` and ``api.py`` re-export merge. PY-12 finalizes the working
+``TrajectoryEngine`` export. Parallel free-function/source issues land
+implementations in internal modules and update root exports only under this
 owner's review. Built-in source/lister registration hooks run on package import
 as free functions land.
 """
@@ -101,11 +102,7 @@ from hypabolic_trajectory.api import (
     project_otel_genai,
     serialize_projection,
 )
-
-# TrajectoryEngine: intermediate stub lands in engine.py; listed in root __all__
-# only when methods work (first-ship pin — PY-12). Free-function isolation pin is
-# documented on engine.py and enforced by free functions never reading engine state.
-# from hypabolic_trajectory.engine import TrajectoryEngine  # PY-12
+from hypabolic_trajectory.engine import TrajectoryEngine
 
 # Import-time registration hooks for built-in sources/listers.
 # Per-source owners self-register from submodules imported here (side effect).
@@ -154,10 +151,11 @@ __all__ = [
     "NormalizeRequest",
     "TrajectoryListing",
     "TrajectoryListingPage",
-    # Diagnostics / errors
+    # Diagnostics / errors / engine
     "Diagnostic",
     "TrajectoryError",
-    # Free functions (stubs for exclusive owners still open; normalize_to_ir = skeleton)
+    "TrajectoryEngine",
+    # Free functions
     "normalize_to_ir",
     "normalize_to_letta",
     "normalize_to_canonical",
