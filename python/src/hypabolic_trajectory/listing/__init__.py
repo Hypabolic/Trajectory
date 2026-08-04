@@ -28,7 +28,10 @@ from hypabolic_trajectory.listing.protocol import (
 )
 
 # Built-in listers (self-register on import). Root package also imports these.
+from hypabolic_trajectory.listing import hermes as _hermes  # noqa: E402, F401
 from hypabolic_trajectory.listing import openclaw as _openclaw  # noqa: E402, F401
+
+
 
 __all__ = [
     "DEFAULT_LISTING_LIMIT",

@@ -759,9 +759,31 @@ def test_normalize_to_ir_uses_adapter_when_registered() -> None:
 def test_normalize_to_ir_still_not_implemented_without_adapter() -> None:
     import hypabolic_trajectory as ht
 
-    assert get_source_adapter("hermes") is None
+    # Prefer a tip source that is not yet registered by a PY-05/06 owner.
+    # Fall back to temporarily unregistering if wave-D owners have all landed.
+    wire = None
+    for candidate in ("claude-code", "codex", "openclaw", "hermes", "ahp", "pi"):
+        if get_source_adapter(candidate) is None:
+            wire = candidate
+            break
+    if wire is None:
+        # All tip sources registered — exercise the no-adapter path by popping.
+        from hypabolic_trajectory.sources import protocol as proto
+
+        wire = "codex"
+        prior = proto._ADAPTERS.pop(wire, None)  # noqa: SLF001
+        try:
+            with pytest.raises(TrajectoryError) as ei:
+                ht.normalize_to_ir(NormalizeRequest(source=wire, transcript=b"{}"))
+            assert ei.value.code == "invalid_input"
+            assert "not implemented" in ei.value.message
+        finally:
+            if prior is not None:
+                proto._ADAPTERS[wire] = prior  # noqa: SLF001
+        return
+
     with pytest.raises(TrajectoryError) as ei:
-        ht.normalize_to_ir(NormalizeRequest(source="hermes", transcript=b"{}"))
+        ht.normalize_to_ir(NormalizeRequest(source=wire, transcript=b"{}"))
     assert ei.value.code == "invalid_input"
     assert "not implemented" in ei.value.message
 
