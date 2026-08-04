@@ -127,11 +127,11 @@ the same observable result. Parser unit fixtures stay under the runtime.
 ## Sample CLIs
 
 The unpublished TUIs under `dotnet/samples/Trajectory.Cli`,
-`typescript/packages/trajectory-cli`, and `rust/tools/trajectory-cli` are the
-fastest way to exercise listing and normalize against real local stores. See
-the [README sample CLI section](../README.md#sample-clis) and each sample’s
-own README. Python sample CLI is optional/unpublished (use free functions from
-[`python/README.md`](../python/README.md) meanwhile).
+`typescript/packages/trajectory-cli`, `rust/tools/trajectory-cli`, and
+`python/samples/trajectory_cli` are the fastest way to exercise listing and
+normalize against real local stores. See the
+[README sample CLI section](../README.md#sample-clis) and each sample’s own
+README. The Python sample is monorepo-only (not a PyPI console script).
 
 ## Reporting issues
 

@@ -10,7 +10,7 @@ This note replaces the workflow’s planned **Codex gpt-5.6-sol** final review.
 
 **Partial vertical, shippable as a progress PR — not first-public-PyPI ready.**
 
-Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, the **full shared tip gate (PY-11)** (unfiltered verify + identity baseline + tip capabilities equality formalization), the **TrajectoryEngine ship surface (PY-12)**, **CI progressive conformance (PY-15a)** (argv generator/checker), **CI tip gate (PY-15b)** (unfiltered `python-conformance` + jq tip equality + `validate_release_metadata` ship equality), and **docs integration (PY-16)** (product docs + package README: package map, install, imports, filters, dual timestamps, escape/formulas, OTEL import matrix, filtered runner argv) are in tree with unit tests. OIDC PyPI release path (PY-14b) is in tree.
+Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, the **full shared tip gate (PY-11)** (unfiltered verify + identity baseline + tip capabilities equality formalization), the **TrajectoryEngine ship surface (PY-12)**, the **unpublished sample CLI (PY-13)** (`python/samples/trajectory_cli` browse/list/show), **CI progressive conformance (PY-15a)** (argv generator/checker), **CI tip gate (PY-15b)** (unfiltered `python-conformance` + jq tip equality + `validate_release_metadata` ship equality), and **docs integration (PY-16)** (product docs + package README: package map, install, imports, filters, dual timestamps, escape/formulas, OTEL import matrix, filtered runner argv) are in tree with unit tests. OIDC PyPI release path (PY-14b) is in tree.
 
 ## What landed (mapped to spec §9)
 
@@ -40,7 +40,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-10-full | **Done** (all 7 protocol-v1 ops wired; `PROTOCOL_V1_OPERATIONS` pins request schema enum; filtered tip sources×ops verify **47 ops / 27 cases** green; join tests in `test_py10_full.py`) |
 | PY-11 full shared conformance | **Done** (unfiltered tip verify 47 ops / 27 cases green; identity-baseline 21 goldens; tip capabilities equality claim formalized vs compatibility + TS/Rust peers; `test_py11_full_conformance.py`) |
 | PY-12 TrajectoryEngine ship surface | **Done** (`create_default` tip matrix incl. pure otel; `project` / `add_output_adapter`; duplicate→ValueError; unknown→`unknown_output_schema`; root `__all__`; binding isolation units) |
-| PY-13 sample CLI | **Missing** |
+| PY-13 sample CLI | **Done** (`python/samples/trajectory_cli` browse/list/show; unpublished; no console script; unit tests) |
 | PY-14a packaging stamp / pack-smoke | Done |
 | PY-14b OIDC / release.yml PyPI | **Done** (validate packs `artifacts/release/pypi` + pack-smoke; `publish-pypi` download-only + `skip-existing` + OIDC `id-token: write` / env `release`; github-release needs publish-pypi + attaches pypi; `docs/publishing.md` PyPI pending-publisher + install lines; no live publish) |
 | PY-15-scaffold | **Done** (`python-unit` matrix + `python-package-smoke` on 3.11) |
@@ -61,6 +61,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 - **Tip capabilities equality**: Python `runtime-capabilities.json` sources/outputs/capabilities/slice equal tip ML13 + TS/Rust peers (PY-11 claim ceremony; **PY-15b** CI jq + `validate_release_metadata` ship equality).
 - Protocol: domain fatal exit 0 (`pi/missing-assistant`); protocol-error exit 2 (bad JSON / wrong version / path escape / undeclared op / unknown op).
 - Free-function exports: `from hypabolic_trajectory import normalize_to_ir, project_letta, project_canonical, project_hypabolic, project_openai, project_minimal_jsonl, project_otel_genai, serialize_projection, list_trajectories`.
+- Sample CLI (PY-13): `PYTHONPATH=python/samples python -m trajectory_cli show --source pi --path conformance/cases/pi/tool-calls/input.jsonl` (unpublished; no console script).
 
 ## Issues / follow-ups (non-blocking for this PR)
 
@@ -71,7 +72,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 
 ## Recommended next PR sequence
 
-1. **PY-17** first-ship join (docs PY-16 + tip formalization PY-11 + OIDC PY-14b + progressive/tip CI PY-15a/b + engine PY-12 already landed; optional PY-13 sample CLI may follow after ship)
+1. **PY-17** first-ship join (docs PY-16 + tip formalization PY-11 + OIDC PY-14b + progressive/tip CI PY-15a/b + engine PY-12 already landed; optional PY-13 sample CLI also landed)
 
 ## Non-goals of this PR
 

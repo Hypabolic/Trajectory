@@ -246,7 +246,7 @@ diagnostics—no transcript body by default).
 | .NET | [`dotnet/samples/Trajectory.Cli`](dotnet/samples/Trajectory.Cli/README.md) | `dotnet run --project …` |
 | TypeScript | [`typescript/packages/trajectory-cli`](typescript/packages/trajectory-cli/README.md) | `node packages/trajectory-cli/dist/cli.js` |
 | Rust | [`rust/tools/trajectory-cli`](rust/tools/trajectory-cli/README.md) | `cargo run -p trajectory-cli` |
-| Python | sample CLI optional / unpublished (PY-13) | use free functions or peers for now |
+| Python | [`python/samples/trajectory_cli`](python/samples/trajectory_cli/README.md) | `PYTHONPATH=python/samples python -m trajectory_cli` |
 
 ### Commands (same shape across CLIs)
 
@@ -294,6 +294,13 @@ cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- show \
 cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- show \
   --source ahp \
   --path conformance/cases/ahp/tool-calls/input.json
+
+# Python (unpublished sample; requires editable install or PYTHONPATH=python/src:python/samples)
+PYTHONPATH=python/samples python -m trajectory_cli list --source pi
+PYTHONPATH=python/samples python -m trajectory_cli show \
+  --source pi \
+  --path conformance/cases/pi/tool-calls/input.jsonl
+PYTHONPATH=python/samples python -m trajectory_cli browse
 ```
 
 **Notes**

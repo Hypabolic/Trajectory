@@ -29,7 +29,7 @@ wire contracts and shared conformance suite as .NET, TypeScript, and Rust.
 | **`hypabolic-trajectory`** (core wheel) | `hypabolic_trajectory` | Normalize, project (including **pure** `project_otel_genai`), listing, bundled contracts + `runtime-capabilities.json`, and **`hypabolic_trajectory.otel`** (`SpanSetSink` / `emit_to`, no SDK) |
 | **`hypabolic-trajectory[otel]`** | same `hypabolic_trajectory.otel` | Optional OpenTelemetry **SDK sink helpers** + `opentelemetry-*` deps only. Does **not** gate pure projection or `emit_to` with a pure sink. |
 | Conformance runner | **not published** | `python/tools/trajectory_conformance` — stdin/stdout protocol v1 for `conformance/verify.py` |
-| Sample CLI | **not published** | Dev-only when present under `python/samples/` |
+| Sample CLI | **not published** | `python/samples/trajectory_cli` — browse/list/show (no console script) |
 
 Cross-ecosystem map (same product):
 
@@ -55,6 +55,19 @@ python -m pip install -e './python[dev]'
 
 The published wheel has **no** console scripts. The conformance runner and sample
 CLI are monorepo-only.
+
+### Sample CLI (unpublished)
+
+```bash
+# After editable install of the core package:
+PYTHONPATH=python/samples python -m trajectory_cli list --source pi
+PYTHONPATH=python/samples python -m trajectory_cli show \
+  --source pi \
+  --path conformance/cases/pi/tool-calls/input.jsonl
+PYTHONPATH=python/samples python -m trajectory_cli browse
+```
+
+See [`samples/trajectory_cli/README.md`](samples/trajectory_cli/README.md).
 
 ---
 
