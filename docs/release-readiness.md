@@ -41,7 +41,7 @@ Machine-readable surfaces (repository tip advertises `ahp`):
 - `tools/validate_release_metadata.py`
 - CI preview packaging + **Release** workflow (see [publishing.md](publishing.md))
 
-### Python runtime (in-tree; first public PyPI pending)
+### Python runtime (first-ship join green; public PyPI pending tag)
 
 | Item | Value |
 | --- | --- |
@@ -50,7 +50,8 @@ Machine-readable surfaces (repository tip advertises `ahp`):
 | Capabilities | [`python/runtime-capabilities.json`](../python/runtime-capabilities.json) — tip equality with compatibility + peers |
 | Conformance | Unpublished protocol v1 runner `python/tools/trajectory_conformance` |
 | Optional extra | `[otel]` — SDK sinks only; pure `project_otel_genai` + `otel` submodule always in core |
-| First public PyPI | Next synchronized multi-registry tag after `v0.1.0` (includes AHP Shape A; do not retag `0.1.0`) |
+| First-ship join (PY-17) | §11 DoD green on `feature/python-impl` (`test_py17_first_ship_join.py`); no tag/publish yet |
+| First public PyPI | Next synchronized multi-registry tag after `v0.1.0` (includes AHP Shape A; do **not** retag `0.1.0`) |
 | Status | [python-impl-status.md](python-impl-status.md) · package docs [python/README.md](../python/README.md) |
 
 ## Provenance of release evidence

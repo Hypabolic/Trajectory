@@ -40,23 +40,28 @@ artifacts = [
 ]
 
 [tool.hatch.build.targets.sdist]
+# Root-anchored artifact names: bare "README.md"/"LICENSE" match any nested
+# path of that name and would force-include samples/**/README.md even when
+# samples/ is excluded (PY-17 first-ship pack-smoke).
 artifacts = [
   "src/hypabolic_trajectory/contracts/**",
   "src/hypabolic_trajectory/runtime-capabilities.json",
   "src/hypabolic_trajectory/py.typed",
-  "LICENSE",
-  "README.md",
-  "pyproject.toml",
+  "/LICENSE",
+  "/README.md",
+  "/pyproject.toml",
 ]
 exclude = [
-  "tests/**",
-  "samples/**",
-  "tools/**",
-  "**/__pycache__/**",
-  "**/.pytest_cache/**",
-  ".venv/**",
-  "dist/**",
+  "/tests",
+  "/samples",
+  "/tools",
+  "**/__pycache__",
+  "**/.pytest_cache",
+  "/.venv",
+  "/dist",
   "**/*.pyc",
+  "/uv.lock",
+  "/.gitignore",
 ]
 
 [tool.pytest.ini_options]

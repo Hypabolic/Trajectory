@@ -2,15 +2,13 @@
 
 **Branch:** `feature/python-impl`  
 **Review date:** 2026-08-04  
-**Reviewer:** orchestrator (Codex final step unavailable — usage limit)
-
-This note replaces the workflow’s planned **Codex gpt-5.6-sol** final review.
+**Reviewer:** orchestrator (Codex final step unavailable — usage limit; PY-17 self-review + join gate)
 
 ## Verdict
 
-**Partial vertical, shippable as a progress PR — not first-public-PyPI ready.**
+**First-ship join (PY-17) green on this branch — ready for a multi-registry ship tag, but not yet tagged or published.**
 
-Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, the **full shared tip gate (PY-11)** (unfiltered verify + identity baseline + tip capabilities equality formalization), the **TrajectoryEngine ship surface (PY-12)**, the **unpublished sample CLI (PY-13)** (`python/samples/trajectory_cli` browse/list/show), **CI progressive conformance (PY-15a)** (argv generator/checker), **CI tip gate (PY-15b)** (unfiltered `python-conformance` + jq tip equality + `validate_release_metadata` ship equality), and **docs integration (PY-16)** (product docs + package README: package map, install, imports, filters, dual timestamps, escape/formulas, OTEL import matrix, filtered runner argv) are in tree with unit tests. OIDC PyPI release path (PY-14b) is in tree.
+§11 Definition of Done holds for independence, tip capabilities honesty, full shared verify (47 ops / 27 cases), identity baseline (21 goldens), free-function + `TrajectoryEngine` API, pure OTEL + always-importable `otel` submodule, listing, packaging (two-column pack-smoke + root-anchored sdist artifacts), CI tip gate + OIDC release path, and docs. **Do not retag `0.1.0`.** First public PyPI cut is the **next** synchronized multi-registry tag after existing NuGet/npm/crates `0.1.0`.
 
 ## What landed (mapped to spec §9)
 
@@ -25,7 +23,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-05a/b, PY-06-* sources + listers | Done |
 | PY-07a core projections + `serialize_projection` | Done |
 | PY-07b openai + jsonl-minimal | Done |
-| PY-08 OTEL pure + extra | **Done** (pure `project_otel_genai` in core; `otel.SpanSetSink`/`emit_to`; no SDK in core; no capabilities claim; unit + unicode-boundaries golden) |
+| PY-08 OTEL pure + extra | **Done** (pure `project_otel_genai` in core; `otel.SpanSetSink`/`emit_to`; no SDK in core; unit + unicode-boundaries golden) |
 | PY-09b `list_trajectories` dispatcher | **Done** (dispatch-by-registry; invalid_input / listing_unavailable; unit tests) |
 | PY-10b-sources-openclaw | **Done** (claim-writer: `openclaw` in sources; filtered normalize-letta/canonical green; listing not claimed) |
 | PY-10a early runner (pi normalize) | **Done** (`python/tools/trajectory_conformance`; protocol v1; free-function normalize-letta/canonical; filtered verify green; claim-writer pi + letta/canonical + coverage caps; list-trajectories wired (PY-10b-list)) |
@@ -47,34 +45,37 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-15a progressive conformance | **Done** (`python-conformance` job; `tools/conformance_argv_from_capabilities.py` §5 maps + fail-closed; artifact `python-conformance-candidates`; no continue-on-error) |
 | PY-15b tip CI gate | **Done** (unfiltered tip verify; jq tip equality incl. capabilities; generator `proper_subset_of_tip==false`; `validate_release_metadata` ship equality; `test_py15b_tip_gate.py`) |
 | PY-16 docs integration | **Done** (package map, install, imports, filters, dual timestamps, escape/formulas, OTEL matrix, filtered runner argv; product docs + `python/README.md` + this status) |
-| PY-17 first-ship join | **Not ready** |
+| PY-17 first-ship join | **Done** (§11 DoD join tests in `test_py17_first_ship_join.py`; sdist root-anchored artifacts so `samples/**` cannot leak via nested README; pack-smoke green; no tag/publish) |
 
 `python/runtime-capabilities.json` claims the full tip surface with **tip equality formalized (PY-11)**: all six sources (`pi` … `ahp`), all six outputs (letta / canonical / hypabolic / openai / jsonl-minimal / otel-genai-spans-v1), required capabilities including `list-explicit-root`, and `slice: ML13` — equal to `contracts/compatibility.json` and peer TS/Rust manifests. Do not treat `IMPLEMENTED_SOURCES` in `__init__.py` as registry claims.
 
 ## Verification performed
 
-- `pytest` under `python/`: progressive suite includes PY-08 OTEL + PY-09b list dispatcher + PY-10a runner + PY-10b-* claim-writers + **PY-10-full** join + **PY-11** tip gate + **PY-15a** progressive generator + **PY-15b** tip CI gate (`test_py15b_tip_gate.py`).
+- `pytest` under `python/`: full suite including **PY-17** §11 join (`test_py17_first_ship_join.py`) + prior PY-08…PY-16 gates.
 - Filtered shared verify green (full tip sources × all protocol-v1 ops), including via **generator argv**:  
   `python conformance/verify.py --repository-root . $(python tools/conformance_argv_from_capabilities.py --repository-root .) -- env PYTHONPATH=python/src:python/tools python -m trajectory_conformance` → **47 operations / 27 cases**.
-- **Bare unfiltered** `verify.py` (tip defaults from compatibility.json) green: **47 operations / 27 cases** (PY-11 / PY-15b CI).
-- **Identity baseline** `conformance/identity-baseline.sha256` green (21 identity-bearing goldens; PY-11).
+- **Bare unfiltered** `verify.py` (tip defaults from compatibility.json) green: **47 operations / 27 cases** (PY-11 / PY-15b / PY-17 CI).
+- **Identity baseline** `conformance/identity-baseline.sha256` green (21 identity-bearing goldens).
 - **Tip capabilities equality**: Python `runtime-capabilities.json` sources/outputs/capabilities/slice equal tip ML13 + TS/Rust peers (PY-11 claim ceremony; **PY-15b** CI jq + `validate_release_metadata` ship equality).
+- **Pack-smoke** two-column green after PY-17 sdist artifact root-anchoring (`/README.md`, `/LICENSE`, `/pyproject.toml`); sdist/wheel free of `tests/`/`samples/`/`tools/`.
 - Protocol: domain fatal exit 0 (`pi/missing-assistant`); protocol-error exit 2 (bad JSON / wrong version / path escape / undeclared op / unknown op).
 - Free-function exports: `from hypabolic_trajectory import normalize_to_ir, project_letta, project_canonical, project_hypabolic, project_openai, project_minimal_jsonl, project_otel_genai, serialize_projection, list_trajectories`.
 - Sample CLI (PY-13): `PYTHONPATH=python/samples python -m trajectory_cli show --source pi --path conformance/cases/pi/tool-calls/input.jsonl` (unpublished; no console script).
 
-## Issues / follow-ups (non-blocking for this PR)
+## Residual non-blockers (post-join)
 
-2. **SDK Activity sink** not shipped (optional `[otel]` helper); pure project + `emit_to`/`SpanSetSink` cover the import matrix.
-3. **Engine** shipped (PY-12); free-function isolation pin covered by unit tests.
-4. **CI tip job** (PY-15b) wired: unfiltered tip gate + validate_release_metadata ship equality.
-5. Workflow agents that hit Codex for “final review” failed; this document is the substitute gate for opening the PR.
+1. **SDK Activity sink** not shipped (optional `[otel]` helper); pure project + `emit_to`/`SpanSetSink` cover the import matrix.
+2. **Pending PyPI publisher** must be confirmed on pypi.org org Hypabolic before the first live `publish-pypi` (documented; OIDC path wired).
+3. **Ship tag / publish** are intentional non-goals of this branch until operators cut the next multi-registry tag (not `v0.1.0` retag).
 
-## Recommended next PR sequence
+## Recommended next steps
 
-1. **PY-17** first-ship join (docs PY-16 + tip formalization PY-11 + OIDC PY-14b + progressive/tip CI PY-15a/b + engine PY-12 already landed; optional PY-13 sample CLI also landed)
+1. Operator: cut next synchronized multi-registry tag (e.g. `v0.1.1` / `v0.2.0`) with Python included — **not** retag `v0.1.0`.
+2. Confirm PyPI Trusted Publishing pending publisher for org `Hypabolic` / package `hypabolic-trajectory` / workflow `release.yml` / env `release`.
+3. Optional: post-ship polish for SDK Activity sink if product wants it.
 
-## Non-goals of this PR
+## Non-goals of this join
 
 - Cutting a version tag or publishing to PyPI  
-- Merging incomplete stubs as “done” in release-readiness
+- Retagging or overwriting existing registry `0.1.0` artifacts  
+- Shipping sample CLI or conformance runner as console scripts  

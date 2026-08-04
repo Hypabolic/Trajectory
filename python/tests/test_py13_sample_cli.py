@@ -246,8 +246,14 @@ def test_not_a_console_script_in_pyproject() -> None:
         line.strip().startswith("[project.gui-scripts]")
         for line in pyproject.splitlines()
     )
-    # sdist exclude must keep samples out of the published payload.
-    assert '"samples/**"' in pyproject or "'samples/**'" in pyproject
+    # sdist exclude must keep samples out of the published payload
+    # (root-anchored "/samples" or legacy "samples/**").
+    assert (
+        '"/samples"' in pyproject
+        or "'/samples'" in pyproject
+        or '"samples/**"' in pyproject
+        or "'samples/**'" in pyproject
+    )
 
 
 def test_browse_empty_declines_path_prompt(
