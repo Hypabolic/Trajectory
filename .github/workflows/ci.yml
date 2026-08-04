@@ -266,6 +266,48 @@ jobs:
             if (!TrajectoryEngine || !listTrajectories || !projectOpenTelemetry) process.exit(1);
           "
 
+  # PY-15-scaffold: unit + pack smoke only (no conformance / OIDC).
+  # Progressive conformance is PY-15a; tip gate is PY-15b.
+  python-unit:
+    name: Python unit / ${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install package (editable + dev)
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e './python[dev]'
+      - name: Assert runtime-capabilities.json is present
+        run: test -f python/runtime-capabilities.json
+      - name: Run unit tests
+        run: python -m pytest python/tests -q
+
+  python-package-smoke:
+    name: Python package smoke / 3.11
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install build tooling
+        run: python -m pip install -U pip build
+      - name: Prepare, build, two-column pack-smoke, isolated install
+        # PY-14a tool: prepare (overwrite) → build sdist+wheel → archive asserts
+        # → Requires-Dist audit → isolated sdist/wheel install (no monorepo contracts).
+        run: >-
+          python tools/python_package_smoke.py
+          --repository-root .
+          --outdir artifacts/ci/pypi
+          --python "$(command -v python)"
+
   rust:
     name: Rust ${{ matrix.rust }} / ${{ matrix.os }}
     strategy:

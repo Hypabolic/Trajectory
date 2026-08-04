@@ -10,7 +10,7 @@ This note replaces the workflow’s planned **Codex gpt-5.6-sol** final review.
 
 **Partial vertical, shippable as a progress PR — not first-public-PyPI ready.**
 
-Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, and the **TrajectoryEngine ship surface (PY-12)** are in tree with unit tests. Full shared tip gate (identity baseline + tip capabilities equality formalization), CI progressive/tip jobs, and OIDC release integration are **not** done.
+Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, and the **TrajectoryEngine ship surface (PY-12)** are in tree with unit tests. Full shared tip gate (identity baseline + tip capabilities equality formalization) and CI progressive/tip jobs are **not** done. OIDC PyPI release path (PY-14b) is in tree.
 
 ## What landed (mapped to spec §9)
 
@@ -42,7 +42,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-12 TrajectoryEngine ship surface | **Done** (`create_default` tip matrix incl. pure otel; `project` / `add_output_adapter`; duplicate→ValueError; unknown→`unknown_output_schema`; root `__all__`; binding isolation units) |
 | PY-13 sample CLI | **Missing** |
 | PY-14a packaging stamp / pack-smoke | Done |
-| PY-14b OIDC / release.yml PyPI | **Missing** |
+| PY-14b OIDC / release.yml PyPI | **Done** (validate packs `artifacts/release/pypi` + pack-smoke; `publish-pypi` download-only + `skip-existing` + OIDC `id-token: write` / env `release`; github-release needs publish-pypi + attaches pypi; `docs/publishing.md` PyPI pending-publisher + install lines; no live publish) |
 | PY-15* CI jobs | **Missing** |
 | PY-16 docs integration | Partial (spec + this status) |
 | PY-17 first-ship join | **Not ready** |
@@ -69,7 +69,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 ## Recommended next PR sequence
 
 1. **PY-11** (full shared conformance + identity baseline + tip equality)  
-2. PY-15 CI + PY-14b OIDC → PY-17  
+2. PY-15 CI → **PY-17** (PY-14b OIDC path already landed)
 
 ## Non-goals of this PR
 
