@@ -7,11 +7,10 @@ Only names listed in root ``__all__`` (and, once landed, ``ir.__all__`` /
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Final, Literal, TypeAlias
+from typing import Final, Literal
 
+from hypabolic_trajectory._json_types import JsonObject, JsonPrimitive, JsonValue
 from hypabolic_trajectory._version import resolve_package_version
-from hypabolic_trajectory.diagnostics import Diagnostic
-from hypabolic_trajectory.errors import TrajectoryError
 
 # ---------------------------------------------------------------------------
 # Version / constants (normative pins — docs/python-implementation-spec.md §3)
@@ -47,7 +46,7 @@ SCHEMA_IDS: Final[frozenset[str]] = frozenset(
 )
 
 # Built-in schema ids only — do NOT union with str (that collapses the Literal).
-SchemaId: TypeAlias = Literal[
+SchemaId = Literal[
     "letta-trajectory-v1",
     "letta-canonical-v1",
     "hypabolic-trajectory-v1",
@@ -78,17 +77,22 @@ class TrajectorySource(StrEnum):
     AHP = "ahp"
 
 
-# ---------------------------------------------------------------------------
-# Public JSON type aliases (py.typed — normative)
-# ---------------------------------------------------------------------------
+# PY-02: public canonical_json (+ identity/escape live in internal modules).
+from hypabolic_trajectory.canonical import canonical_json
 
-JsonPrimitive: TypeAlias = None | bool | int | float | str
-JsonValue: TypeAlias = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
-JsonObject: TypeAlias = dict[str, JsonValue]
+# Progressive root exports from parallel issues (PY-03 Diagnostic / TrajectoryError).
+# Imported when present so wave B packages can co-exist in one working tree;
+# root ``__all__`` is finalized under the PY-04a export-owner role through PY-12.
+try:
+    from hypabolic_trajectory.diagnostics import Diagnostic as Diagnostic
+    from hypabolic_trajectory.errors import TrajectoryError as TrajectoryError
 
-# Progressive root exports: PY-01 constants + PY-03 Diagnostic / TrajectoryError.
+    _PY03_EXPORTS = ("Diagnostic", "TrajectoryError")
+except ImportError:  # pragma: no cover - package may ship before PY-03 lands
+    _PY03_EXPORTS = ()
+
 # Free functions, DTOs, IR, engine, and otel land in later issues.
-# Root ``__all__`` grows under the PY-04a export-owner role through PY-12.
+# Exclusive free-function owners may re-export their symbol as it lands.
 __all__ = [
     "NORMALIZER_CONTRACT_VERSION",
     "PACKAGE_VERSION",
@@ -107,6 +111,6 @@ __all__ = [
     "JsonPrimitive",
     "JsonValue",
     "JsonObject",
-    "Diagnostic",
-    "TrajectoryError",
+    "canonical_json",
+    *_PY03_EXPORTS,
 ]
