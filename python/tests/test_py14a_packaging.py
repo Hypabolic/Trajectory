@@ -111,6 +111,8 @@ def test_prepare_overwrite_semantics(tmp_path: Path) -> None:
 
 
 def test_assert_release_version_includes_pypi() -> None:
+    # Assert against the checked-in VERSION file (release stamp target).
+    package_version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     out = subprocess.check_output(
         [
             sys.executable,
@@ -118,7 +120,7 @@ def test_assert_release_version_includes_pypi() -> None:
             "--repository-root",
             str(ROOT),
             "--version",
-            "0.1.0",
+            package_version,
         ],
         text=True,
     )

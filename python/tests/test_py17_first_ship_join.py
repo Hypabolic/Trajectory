@@ -293,8 +293,11 @@ def test_dod_05_api_surface_and_engine() -> None:
     assert frozenset(otel_mod.__all__) == _EXPECTED_OTEL_ALL
 
     assert ht.NORMALIZER_CONTRACT_VERSION == NORMALIZER_CONTRACT_VERSION
+    # Wire package version is pinned for golden identity (not package SemVer).
     assert ht.WIRE_PACKAGE_VERSION == "0.1.0"
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.1.0"
+    package_version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    assert package_version == ht.PACKAGE_VERSION
+    assert package_version  # non-empty synchronized SemVer
 
     # Free functions callable.
     for name in (
