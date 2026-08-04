@@ -76,6 +76,14 @@ Scope notes:
 Authoritative phase table: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
 [ahp-source-spec.md](ahp-source-spec.md).
 
+## Python runtime (planned)
+
+An independent native **Python 3.11+** implementation is specified for PyPI as
+`hypabolic-trajectory` under org Hypabolic. It is **not implemented** yet (no
+`python/` tree or published package). The full product, packaging, conformance,
+and work-breakdown plan is in
+[python-implementation-spec.md](python-implementation-spec.md).
+
 ## Post-v1 ideas (not scheduled)
 
 Further source families, store backends, AHP Shape B / listing / live host, or
