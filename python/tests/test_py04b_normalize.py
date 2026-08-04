@@ -658,12 +658,26 @@ def test_normalize_is_deterministic() -> None:
     cfg = _cfg(group_id="g", base=50)
     a = normalize_decoded(s, config=cfg)
     b = normalize_decoded(s, config=cfg)
-    assert a.group_id == b.group_id
-    assert [r.id for r in a.records] == [r.id for r in b.records]
-    assert [r.hashes.content_sha256 for r in a.records] == [
-        r.hashes.content_sha256 for r in b.records
+    assert a == b
+
+
+def test_checked_add_rejects_out_of_range_operands() -> None:
+    inv = DecodedModelInvocation(source_offset=2**63)  # not a signed int64
+    with pytest.raises(TrajectoryError) as ei:
+        map_model_invocation(inv, "g", -1)
+    assert ei.value.code == "invalid_input"
+
+
+def test_negative_timestamp_interpolation_truncates_result() -> None:
+    events = [
+        _msg(TrajectoryRole.USER, "u", native="u", ts=-1),
+        _msg(TrajectoryRole.ASSISTANT, "m", native="m"),  # mid
+        _msg(TrajectoryRole.ASSISTANT, "a", native="a", ts=0),
     ]
-    assert a.execution.model_invocations[0].id == b.execution.model_invocations[0].id
+    ir = normalize_decoded(_session(events), config=_cfg())
+    body = [r for r in ir.records if r.kind is not RecordKind.META]
+    # trunc((-1 + 0) / 2) toward zero → 0 (not start + trunc(span*pos/gap) = -1)
+    assert body[1].timestamp_ms == 0
 
 
 # ---------------------------------------------------------------------------

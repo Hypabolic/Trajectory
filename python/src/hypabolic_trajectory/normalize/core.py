@@ -111,6 +111,7 @@ _MSG_MISSING_ASSISTANT = (
 _MSG_TS_SYNTH_OOR = "Synthesized timestamp is out of range."
 _MSG_TS_INTERP_OOR = "Interpolated timestamp is out of range."
 _MSG_RECORD_ORDER_OOR = "Record order exceeds signed 64-bit range."
+_MSG_INT64_FIELD = "Integer field is out of range."
 
 
 def _is_exact_int(value: object) -> bool:
@@ -264,8 +265,17 @@ def _apply_config(request: NormalizeRequest) -> AppliedConfig:
     )
 
 
+def _require_signed_int64(value: int, message: str) -> int:
+    """Reject values outside signed int64 (content-safe fixed message)."""
+    if not _is_exact_int(value) or value < _INT64_MIN or value > _INT64_MAX:
+        raise TrajectoryError(FATAL_INVALID_INPUT, message) from None
+    return value
+
+
 def _checked_add_i64(left: int, right: int, message: str) -> int:
-    """Signed int64 addition; overflow → invalid_input."""
+    """Signed int64 addition; either operand or sum out of range → invalid_input."""
+    _require_signed_int64(left, message)
+    _require_signed_int64(right, message)
     total = left + right
     if total < _INT64_MIN or total > _INT64_MAX:
         raise TrajectoryError(FATAL_INVALID_INPUT, message) from None
@@ -417,15 +427,16 @@ def fill_timestamps(
         start_index = indexes[cursor]
         end_index = indexes[cursor + 1]
         start = anchors[start_index]
-        span = anchors[end_index] - start
+        end_ms = anchors[end_index]
+        span = end_ms - start
         output[start_index] = start
         gap = end_index - start_index
         for index in range(start_index + 1, end_index):
-            # Truncate toward zero (Python // truncates toward -inf for negatives;
-            # match tip: integer division toward zero for positive spans; use
-            # int(float) style via trunc div that matches Rust i128 /).
-            numerator = span * (index - start_index)
-            value = start + _div_toward_zero(numerator, gap)
+            # Linear interpolation then truncate the *result* toward zero
+            # (timestamps.md): trunc((start*gap + span*pos) / gap).
+            # Equivalent to trunc(start + span*pos/gap) without float.
+            pos = index - start_index
+            value = _div_toward_zero(start * gap + span * pos, gap)
             if value < _INT64_MIN or value > _INT64_MAX:
                 raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_TS_INTERP_OOR) from None
             output[index] = value
@@ -527,6 +538,13 @@ def _resolve_stable_identity(
     """
     native = _non_empty(event.native_record_id)
     if native is not None:
+        # Still validate optional int64 fields when present.
+        if event.source_offset is not None:
+            _require_signed_int64(event.source_offset, _MSG_BYTE_ANCHOR_OOR)
+        if event.source_sequence is not None:
+            _require_signed_int64(event.source_sequence, _MSG_INT64_FIELD)
+        if event.timestamp_ms is not None:
+            _require_signed_int64(event.timestamp_ms, _MSG_INT64_FIELD)
         return native, SourceIdentityKind.NATIVE, event.source_offset
 
     if event.source_offset is not None:
@@ -538,15 +556,16 @@ def _resolve_stable_identity(
             offset_for_id = absolute
             provenance_offset = absolute
         else:
-            offset_for_id = event.source_offset
-            provenance_offset = event.source_offset
+            offset_for_id = _require_signed_int64(
+                event.source_offset, _MSG_BYTE_ANCHOR_OOR
+            )
+            provenance_offset = offset_for_id
         stable = location_identity(group_id, anchor.value, offset_for_id)
         return stable, SourceIdentityKind.LOCATION, provenance_offset
 
     if event.source_sequence is not None:
-        stable = location_identity(
-            group_id, SourceAnchorKind.SEQUENCE.value, event.source_sequence
-        )
+        seq = _require_signed_int64(event.source_sequence, _MSG_INT64_FIELD)
+        stable = location_identity(group_id, SourceAnchorKind.SEQUENCE.value, seq)
         return stable, SourceIdentityKind.LOCATION, None
 
     # Content fallback (identity.md).
@@ -987,6 +1006,12 @@ def _resolve_model(
     return items[0][0]
 
 
+def _optional_int64(value: int | None, message: str = _MSG_INT64_FIELD) -> int | None:
+    if value is None:
+        return None
+    return _require_signed_int64(value, message)
+
+
 def map_model_invocation(
     invocation: DecodedModelInvocation,
     group_id: str,
@@ -1013,27 +1038,38 @@ def map_model_invocation(
     else:
         identity = "model-invocation"
 
+    # Validate optional signed int64 domain fields before constructing usage/times.
+    input_tokens = _optional_int64(invocation.input_tokens)
+    output_tokens = _optional_int64(invocation.output_tokens)
+    cache_read_tokens = _optional_int64(invocation.cache_read_tokens)
+    cache_write_tokens = _optional_int64(invocation.cache_write_tokens)
+    total_tokens = _optional_int64(invocation.total_tokens)
+    source_sequence = _optional_int64(invocation.source_sequence)
+    started_at_ms = _optional_int64(invocation.started_at_ms)
+    first_response_at_ms = _optional_int64(invocation.first_response_at_ms)
+    completed_at_ms = _optional_int64(invocation.completed_at_ms)
+
     usage: ModelTokenUsage | None = None
     tokens = (
-        invocation.input_tokens,
-        invocation.output_tokens,
-        invocation.cache_read_tokens,
-        invocation.cache_write_tokens,
-        invocation.total_tokens,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
+        total_tokens,
     )
     if any(t is not None for t in tokens):
         usage = ModelTokenUsage(
-            input_tokens=invocation.input_tokens,
-            output_tokens=invocation.output_tokens,
-            cache_read_tokens=invocation.cache_read_tokens,
-            cache_write_tokens=invocation.cache_write_tokens,
-            total_tokens=invocation.total_tokens,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
+            total_tokens=total_tokens,
         )
 
     return ModelInvocation(
         id=model_invocation_id(group_id, identity),
         native_record_id=invocation.native_record_id,
-        source_sequence=invocation.source_sequence,
+        source_sequence=source_sequence,
         source_offset=absolute_offset,
         provider=invocation.provider,
         api_family=invocation.api_family,
@@ -1043,11 +1079,11 @@ def map_model_invocation(
         stop_reason=invocation.stop_reason,
         producer_version=invocation.producer_version,
         usage=usage,
-        started_at_ms=invocation.started_at_ms,
+        started_at_ms=started_at_ms,
         started_at_precise=invocation.started_at_precise,
-        first_response_at_ms=invocation.first_response_at_ms,
+        first_response_at_ms=first_response_at_ms,
         first_response_at_precise=invocation.first_response_at_precise,
-        completed_at_ms=invocation.completed_at_ms,
+        completed_at_ms=completed_at_ms,
         completed_at_precise=invocation.completed_at_precise,
     )
 
