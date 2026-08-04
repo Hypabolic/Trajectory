@@ -73,6 +73,9 @@ native transcript
 | .NET | `Hypabolic.Trajectory` | `Hypabolic.Trajectory.OpenTelemetry`, `Hypabolic.Trajectory.Testing` |
 | TypeScript | `@hypabolic/trajectory` | `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
 | Rust | `hypabolic-trajectory` | `hypabolic-trajectory-opentelemetry` |
+| Python (Planned) | `hypabolic-trajectory` | `[otel]` SDK sinks only |
+
+Python is **not implemented** yet. Spec: [python-implementation-spec.md](python-implementation-spec.md).
 
 ## Source adapters
 
