@@ -6,6 +6,8 @@ identity, diagnostics sequencing, and model-invocation absolute offset + id form
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from hypabolic_trajectory import (
@@ -318,6 +320,31 @@ def test_shrink_arguments_reshapes_non_object() -> None:
     assert '"_raw"' in args
 
 
+def test_shrink_arguments_rejects_non_finite_constants() -> None:
+    for raw in ('{"x":NaN}', '{"x":Infinity}', '{"x":-Infinity}'):
+        args, reshaped, truncated = shrink_arguments(raw, None)
+        assert reshaped is True
+        assert truncated is False
+        assert '"_raw"' in args
+
+
+def test_shrink_arguments_leaf_floor_retains_prefix() -> None:
+    # Leaf > 2000; limit large enough that floor shrink (keep ≥ 2000) fits
+    # inside the outer JSON object envelope.
+    leaf = "a" * 5000
+    raw = json.dumps({"big": leaf}, separators=(",", ":"))
+    # keep = max(2000, 5000//2)=2500 + "…" → value ~2501; envelope needs ~2515.
+    args, reshaped, truncated = shrink_arguments(raw, 2600)
+    assert reshaped is False
+    assert truncated is True
+    parsed = json.loads(args)
+    assert "big" in parsed
+    # Preferred floor: keep at least 2000 scalars (plus ellipsis if truncated).
+    assert len(parsed["big"]) >= 2000
+    assert parsed["big"].startswith("a" * 2000)
+    assert "…" in parsed["big"]
+
+
 def test_truncate_result_head_tail_uses_ellipsis() -> None:
     # Match tip unicode-boundaries style: short limit keeps ellipsis marker.
     text = "αβγ😀eXXXXりXYZ"  # multi-scalar
@@ -405,6 +432,20 @@ def test_timestamps_interpolated_between_anchors() -> None:
     assert body[1].timestamp_ms == 2_000  # linear mid
     assert body[2].timestamp_ms == 3_000
     assert any(d.code == "timestamps_interpolated" for d in ir.diagnostics)
+
+
+def test_timestamps_interpolation_int_math_large_span() -> None:
+    """Toward-zero integer division must not use float (mantissa loss > 2^53)."""
+    from hypabolic_trajectory.normalize.core import _div_toward_zero
+
+    assert _div_toward_zero(10, 3) == 3
+    assert _div_toward_zero(-10, 3) == -3
+    assert _div_toward_zero(10, -3) == -3
+    assert _div_toward_zero(-10, -3) == 3
+    # Magnitude above float mantissa; exact floor ratio via integers.
+    big = 2**60 + 3
+    assert _div_toward_zero(big, 2) == big // 2
+    assert _div_toward_zero(-big, 2) == -(big // 2)
 
 
 # ---------------------------------------------------------------------------

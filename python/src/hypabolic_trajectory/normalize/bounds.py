@@ -1,15 +1,21 @@
 """Tool-argument shrinking and tool-result truncation (Unicode scalar lengths).
 
-Authority: contracts/spec/normalization.md + tip Rust/TS normalizers.
-Goldens (e.g. pi/unicode-boundaries) pin the ellipsis truncation marker.
+Authority: contracts/spec/normalization.md + tip Rust/TS/.NET normalizers.
+Goldens (e.g. pi/unicode-boundaries) pin the ellipsis truncation marker for
+tool *results*. Object-argument shrinking retains the 2,000-scalar preferred
+leaf floor (contract pin) with tip-compatible zeroing fallback.
 """
 
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Literal
 
 from hypabolic_trajectory.canonical import compact_json
+
+# Preferred floor while shrinking object string leaves (normalization.md pin).
+_ARGUMENT_LEAF_FLOOR = 2_000
 
 
 def code_point_length(value: str) -> int:
@@ -60,6 +66,32 @@ def wrap_raw(raw: str, limit: int | None = None) -> str:
     return best
 
 
+def _reject_non_finite_constant(name: str) -> float:
+    raise ValueError(f"non-finite JSON constant: {name}")
+
+
+def _parse_arguments_json(raw: str) -> Any | None:
+    """Parse tool arguments JSON; reject non-finite number constants.
+
+    ``json.loads`` accepts bare ``NaN``/``Infinity`` by default; those are not
+    valid JSON and must be reshaped to ``_raw`` like other non-object values.
+    """
+    try:
+        return json.loads(raw, parse_constant=_reject_non_finite_constant)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+
+def _contains_non_finite(value: Any) -> bool:
+    if type(value) is float:
+        return not math.isfinite(value)
+    if isinstance(value, dict):
+        return any(_contains_non_finite(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_contains_non_finite(v) for v in value)
+    return False
+
+
 def _collect_string_leaves(
     value: Any,
     leaves: list[tuple[Any, Any]],
@@ -79,24 +111,82 @@ def _collect_string_leaves(
                 _collect_string_leaves(child, leaves)
 
 
+def _clone_object(raw: str) -> dict[str, Any]:
+    parsed = json.loads(raw, parse_constant=_reject_non_finite_constant)
+    assert isinstance(parsed, dict)
+    return parsed
+
+
+def _shrink_object_with_floor(clone: dict[str, Any], limit: int) -> str:
+    """Progressive leaf shrink preferring the 2,000-scalar floor (.NET legacy)."""
+    leaves: list[tuple[Any, Any]] = []
+    _collect_string_leaves(clone, leaves)
+    serialized = compact_json(clone)
+    seen: set[str] = set()
+    while code_point_length(serialized) > limit and leaves:
+        if serialized in seen:
+            break
+        seen.add(serialized)
+        largest_parent: Any = None
+        largest_key: Any = None
+        largest_len = -1
+        for parent, key in leaves:
+            text = parent[key]
+            if not isinstance(text, str):
+                continue
+            length = code_point_length(text)
+            if length > largest_len:
+                largest_len = length
+                largest_parent = parent
+                largest_key = key
+        if largest_parent is None or largest_len <= _ARGUMENT_LEAF_FLOOR:
+            break
+        value = largest_parent[largest_key]
+        value_len = code_point_length(value)
+        keep = max(_ARGUMENT_LEAF_FLOOR, value_len // 2)
+        largest_parent[largest_key] = (
+            slice_code_points(value, 0, keep) + truncation_marker(value_len - keep)
+        )
+        serialized = compact_json(clone)
+    return serialized
+
+
+def _shrink_object_zero_leaves(clone: dict[str, Any], limit: int) -> str:
+    """Tip fallback: zero longest string leaves until under limit or exhausted."""
+    leaves: list[tuple[Any, Any]] = []
+    _collect_string_leaves(clone, leaves)
+    lengths = [
+        code_point_length(parent[key]) if isinstance(parent[key], str) else 0
+        for parent, key in leaves
+    ]
+    serialized = compact_json(clone)
+    while code_point_length(serialized) > limit:
+        candidates = [(i, length) for i, length in enumerate(lengths) if length > 0]
+        if not candidates:
+            break
+        # Rust: max_by_key(|(index, length)| (**length, Reverse(*index)))
+        largest = max(candidates, key=lambda pair: (pair[1], -pair[0]))[0]
+        parent, key = leaves[largest]
+        parent[key] = ""
+        lengths[largest] = 0
+        serialized = compact_json(clone)
+    return serialized
+
+
 def shrink_arguments(
     raw_input: str | None,
     limit: int | None,
 ) -> tuple[str, bool, bool]:
     """Return ``(arguments_json, reshaped, truncated)`` for a tool call.
 
-    Empty / non-object arguments become a JSON object with ``_raw``. Object
-    arguments over *limit* zero out the longest string leaves until they fit
-    (tip Rust/TS algorithm). Falls back to bounded ``_raw`` when still too large.
+    Empty / non-object / non-finite arguments become a JSON object with ``_raw``.
+    Object arguments over *limit* shrink string leaves with a 2,000-scalar
+    preferred floor, then zero remaining leaves (tip), then bounded ``_raw``.
     """
     raw = raw_input if raw_input else "{}"
-    parsed: Any = None
-    try:
-        parsed = json.loads(raw)
-    except (json.JSONDecodeError, TypeError, ValueError):
-        parsed = None
+    parsed = _parse_arguments_json(raw)
 
-    if not isinstance(parsed, dict):
+    if not isinstance(parsed, dict) or _contains_non_finite(parsed):
         full = wrap_raw(raw)
         if limit is None or code_point_length(full) <= limit:
             return full, True, False
@@ -105,30 +195,14 @@ def shrink_arguments(
     if limit is None or code_point_length(raw) <= limit:
         return raw, False, False
 
-    # Deep-copy via round-trip so mutations don't affect caller state.
-    clone: dict[str, Any] = json.loads(raw)
-    leaves: list[tuple[Any, Any]] = []
-    _collect_string_leaves(clone, leaves)
-    lengths = [
-        code_point_length(parent[key]) if isinstance(parent[key], str) else 0
-        for parent, key in leaves
-    ]
+    floor_shrunk = _shrink_object_with_floor(_clone_object(raw), limit)
+    if code_point_length(floor_shrunk) <= limit:
+        return floor_shrunk, False, True
 
-    serialized = compact_json(clone)
-    while code_point_length(serialized) > limit:
-        # Rust max_by_key(|(index, length)| (**length, Reverse(*index))):
-        # largest length wins; for equal lengths, smaller index wins.
-        candidates = [(i, length) for i, length in enumerate(lengths) if length > 0]
-        if not candidates:
-            break
-        largest = max(candidates, key=lambda pair: (pair[1], -pair[0]))[0]
-        parent, key = leaves[largest]
-        parent[key] = ""
-        lengths[largest] = 0
-        serialized = compact_json(clone)
+    zeroed = _shrink_object_zero_leaves(_clone_object(raw), limit)
+    if code_point_length(zeroed) <= limit:
+        return zeroed, False, True
 
-    if code_point_length(serialized) <= limit:
-        return serialized, False, True
     return wrap_raw(raw, limit), True, True
 
 

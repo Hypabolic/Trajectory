@@ -451,11 +451,19 @@ def fill_timestamps(
 
 
 def _div_toward_zero(numerator: int, denominator: int) -> int:
-    """Integer division truncating toward zero (peer ``i128`` / ``Math.trunc``)."""
+    """Integer division truncating toward zero (peer ``i128`` / ``Math.trunc``).
+
+    Uses only integer arithmetic — never float — so signed-int64 magnitudes
+    remain exact (``int(n / d)`` loses precision above 2^53).
+    """
     if denominator == 0:
         raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_TS_INTERP_OOR) from None
-    # True division + int() truncates toward zero for both signs.
-    return int(numerator / denominator)
+    # Python ``//`` floors toward -inf; convert to trunc-toward-zero.
+    if numerator == 0:
+        return 0
+    same_sign = (numerator > 0) == (denominator > 0)
+    q = abs(numerator) // abs(denominator)
+    return q if same_sign else -q
 
 
 # ---------------------------------------------------------------------------
