@@ -252,6 +252,38 @@ def assert_sdist_column(members: set[str], schema_names: list[str]) -> None:
         fail(f"sdist contains forbidden members: {sorted(set(bad))}")
 
 
+def assert_sdist_gitignore_not_monorepo(sdist: Path) -> None:
+    """Reject monorepo-root .gitignore content leaked into the sdist."""
+    with tarfile.open(sdist, "r:gz") as tf:
+        gi_members = [
+            m
+            for m in tf.getmembers()
+            if strip_sdist_prefix(m.name.lstrip("./")) == ".gitignore"
+        ]
+        if not gi_members:
+            # Ideal, but hatch currently always ships one — ok either way.
+            return
+        if len(gi_members) != 1:
+            fail(f"sdist has unexpected .gitignore members: {[m.name for m in gi_members]}")
+        raw = tf.extractfile(gi_members[0])
+        if raw is None:
+            fail("sdist .gitignore member is not a regular file")
+        text = raw.read().decode("utf-8", errors="replace")
+    monorepo_markers = (
+        "Get latest from `dotnet new gitignore`",
+        "/rust/target/",
+        "*.rsuser",
+        "[Bb]in/",
+        "node_modules",
+    )
+    hits = [m for m in monorepo_markers if m in text]
+    if hits:
+        fail(
+            "sdist .gitignore looks like monorepo-root ignore content "
+            f"(markers={hits!r}); keep a package-local python/.gitignore"
+        )
+
+
 def assert_wheel_column(members: set[str], schema_names: list[str], meta: str) -> None:
     required = {
         "hypabolic_trajectory/contracts/compatibility.json",
@@ -643,6 +675,8 @@ def main() -> None:
     sdist_members = list_sdist_members(sdist)
     wheel_members = list_wheel_members(wheel)
     assert_sdist_column(sdist_members, schemas)
+    # Hatch force-includes project .gitignore; reject monorepo-root content.
+    assert_sdist_gitignore_not_monorepo(sdist)
     meta = read_wheel_metadata(wheel)
     assert_wheel_column(wheel_members, schemas, meta)
     assert_no_console_scripts_entry_points(wheel)

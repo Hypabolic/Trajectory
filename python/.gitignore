@@ -1,0 +1,14 @@
+# Package-local VCS ignore for hatchling sdist.
+# Hatch always force-includes the first .gitignore found under the project
+# root (python/); without this file it would ship the monorepo-root
+# .gitignore (dotnet/rust Visual Studio content). Keep this file minimal and
+# package-scoped.
+/.venv/
+/dist/
+/.pytest_cache/
+**/__pycache__/
+**/*.pyc
+# Staged interiors are force-included via [tool.hatch.build] artifacts;
+# listing them documents local-dev ignore after prepare.
+/src/hypabolic_trajectory/contracts/
+/src/hypabolic_trajectory/runtime-capabilities.json

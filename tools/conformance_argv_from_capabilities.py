@@ -54,6 +54,7 @@ KNOWN_CAPABILITIES: frozenset[str] = frozenset(
 )
 
 NORMALIZER_CONTRACT_VERSION = "0.2.0"
+REQUIRED_SLICE = "ML13"
 CAPS_REL = Path("python") / "runtime-capabilities.json"
 COMPAT_REL = Path("contracts") / "compatibility.json"
 CASES_REL = Path("conformance") / "cases"
@@ -102,6 +103,12 @@ def validate_capabilities(
         raise GeneratorError(
             f"runtime-capabilities.json runtime must be 'python' (got {runtime!r})"
         )
+    slice_id = caps.get("slice")
+    if slice_id != REQUIRED_SLICE:
+        raise GeneratorError(
+            f"runtime-capabilities.json slice must be {REQUIRED_SLICE!r} "
+            f"(got {slice_id!r})"
+        )
     ncv = caps.get("normalizer_contract_version")
     if ncv != NORMALIZER_CONTRACT_VERSION:
         raise GeneratorError(
@@ -145,6 +152,22 @@ def validate_capabilities(
     if not sources:
         raise GeneratorError(
             "claimed sources is empty — fail closed (zero operations)"
+        )
+
+    # When claimed is not a proper subset of tip (set equality), require
+    # order-sensitive list equality to tip peers (same honesty as CI jq /
+    # validate_release_metadata). Progressive proper subsets may reorder.
+    claimed_equal_tip = (
+        set(sources) == tip_s and set(outputs) == tip_o and set(capabilities) == tip_c
+    )
+    if claimed_equal_tip and (
+        sources != list(tip_sources)
+        or outputs != list(tip_outputs)
+        or capabilities != list(tip_capabilities)
+    ):
+        raise GeneratorError(
+            "claimed sources/outputs/capabilities equal tip set-wise but "
+            "order differs from contracts/compatibility.json tip peers"
         )
 
     return sources, outputs, capabilities

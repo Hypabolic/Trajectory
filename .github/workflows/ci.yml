@@ -288,7 +288,9 @@ jobs:
       - name: Assert runtime-capabilities.json is present
         run: test -f python/runtime-capabilities.json
       - name: Run unit tests
-        run: python -m pytest python/tests -q
+        # Skip heavy unfiltered tip verify / pack-smoke join tests — those run
+        # in python-conformance and python-package-smoke (avoid triple tip cost).
+        run: python -m pytest python/tests -q -m "not heavy"
 
   # PY-15b: tip shared conformance. Capability tip equality (jq, incl. capabilities)
   # + generator --check-only (§5 maps; require proper_subset_of_tip=false) + unfiltered

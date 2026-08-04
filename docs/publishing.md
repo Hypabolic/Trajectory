@@ -159,16 +159,18 @@ in GitHub.
 ## Install a released version
 
 Latest published public packages are **`0.1.0`** for NuGet / npm / crates (no
-AHP). Python on PyPI ships with the first tag that includes the Python package
-(see release readiness). Unversioned install commands resolve to that surface
-until the next tag ships.
+AHP). Python is **not** on PyPI at `0.1.0`; it first appears on the **next**
+synchronized multi-registry tag after that cut (see release readiness). Use
+`<tag-semver>` for Python until that tag ships. Unversioned NuGet/npm/crates
+install commands resolve to published `0.1.0` until the next tag.
 
 ```bash
 dotnet add package Hypabolic.Trajectory --version 0.1.0
 npm install @hypabolic/trajectory@0.1.0
 cargo add hypabolic-trajectory@0.1.0
-pip install hypabolic-trajectory==0.1.0
-pip install 'hypabolic-trajectory[otel]==0.1.0'   # optional OpenTelemetry SDK sinks
+# Python first ships on the next multi-registry tag (not published at 0.1.0):
+pip install hypabolic-trajectory==<tag-semver>
+pip install 'hypabolic-trajectory[otel]==<tag-semver>'   # optional OpenTelemetry SDK sinks
 ```
 
 ## Comparison with Hypa

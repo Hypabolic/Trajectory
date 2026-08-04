@@ -61,9 +61,16 @@ exclude = [
   "/dist",
   "**/*.pyc",
   "/uv.lock",
+  # Hatch always force-includes the project-root .gitignore into sdists
+  # (needed so wheel-from-sdist respects VCS ignores). Exclude is a no-op
+  # for that path; python/.gitignore is package-local so monorepo-root
+  # dotnet/rust ignore content is not what gets shipped.
   "/.gitignore",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+  "heavy: unfiltered tip verify or full pack-smoke (skip in python-unit matrix)",
+]

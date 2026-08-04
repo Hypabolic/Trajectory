@@ -20,6 +20,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import pytest
+
 import hypabolic_trajectory as ht
 from hypabolic_trajectory import ir as ir_mod
 from hypabolic_trajectory import otel as otel_mod
@@ -224,6 +226,7 @@ def test_dod_03_capabilities_tip_honesty() -> None:
     assert caps["capabilities"] == compat["capabilities"]["required"]
 
 
+@pytest.mark.heavy
 def test_dod_04_unfiltered_verify_and_identity_baseline() -> None:
     cmd = [
         PYTHON,
@@ -409,8 +412,13 @@ def test_dod_08_sdist_artifacts_are_root_anchored() -> None:
     assert "/samples" in section or "samples/**" in section or "samples/" in section
 
 
+@pytest.mark.heavy
 def test_dod_08_pack_smoke_two_column_green() -> None:
-    """Full two-column pack-smoke including isolated sdist install."""
+    """Full two-column pack-smoke including isolated sdist install.
+
+    Marked heavy: CI python-unit matrix skips this; python-package-smoke runs
+    the same pack-smoke tool directly.
+    """
     with tempfile.TemporaryDirectory(prefix="py17-pack-") as tmp:
         outdir = Path(tmp)
         completed = subprocess.run(

@@ -58,12 +58,13 @@ def _write_caps(
     capabilities: list[str],
     runtime: str = "python",
     ncv: str = "0.2.0",
+    slice_id: str = "ML13",
 ) -> None:
     path.write_text(
         json.dumps(
             {
                 "runtime": runtime,
-                "slice": "ML13",
+                "slice": slice_id,
                 "normalizer_contract_version": ncv,
                 "sources": sources,
                 "outputs": outputs,
@@ -240,6 +241,45 @@ def test_generator_fail_closed_wrong_runtime(tmp_path: Path) -> None:
         runtime="typescript",
     )
     with pytest.raises(GeneratorError, match="runtime must be 'python'"):
+        generate(ROOT, capabilities_path=caps_path)
+
+
+def test_generator_fail_closed_wrong_or_missing_slice(tmp_path: Path) -> None:
+    """slice must be ML13 (same fail-closed gate as CI jq / release metadata)."""
+    caps_path = tmp_path / "runtime-capabilities.json"
+    _write_caps(
+        caps_path,
+        sources=["pi"],
+        outputs=["letta-canonical-v1"],
+        capabilities=["normalize", "typed-diagnostics", "deterministic-rerun"],
+        slice_id="ML12",
+    )
+    with pytest.raises(GeneratorError, match=r"slice must be 'ML13'"):
+        generate(ROOT, capabilities_path=caps_path)
+
+    # Missing slice (null / omitted via empty string substitute) also fails closed.
+    payload = json.loads(caps_path.read_text(encoding="utf-8"))
+    del payload["slice"]
+    caps_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    with pytest.raises(GeneratorError, match=r"slice must be 'ML13'"):
+        generate(ROOT, capabilities_path=caps_path)
+
+
+def test_generator_fail_closed_tip_set_equality_wrong_order(tmp_path: Path) -> None:
+    """When claimed == tip set-wise, list order must match tip peers."""
+    caps = json.loads(CAPS_PATH.read_text(encoding="utf-8"))
+    tip_sources = list(caps["sources"])
+    assert len(tip_sources) >= 2
+    reordered = list(reversed(tip_sources))
+    assert reordered != tip_sources
+    caps_path = tmp_path / "runtime-capabilities.json"
+    _write_caps(
+        caps_path,
+        sources=reordered,
+        outputs=list(caps["outputs"]),
+        capabilities=list(caps["capabilities"]),
+    )
+    with pytest.raises(GeneratorError, match="order differs"):
         generate(ROOT, capabilities_path=caps_path)
 
 

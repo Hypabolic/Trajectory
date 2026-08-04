@@ -25,6 +25,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 PYTHON = sys.executable
 TOOLS = ROOT / "python" / "tools"
@@ -130,12 +132,16 @@ def test_tip_capabilities_equality_claim() -> None:
     assert interior == caps
 
 
+@pytest.mark.heavy
 def test_unfiltered_verify_full_tip_matrix_green() -> None:
     """Bare unfiltered verify.py is green for the full tip surface including ahp.
 
     No --source/--operation filters: verify defaults to compatibility
     implemented.sources (tip matrix). Double-run equality is enforced inside
     verify.py.
+
+    Marked heavy: CI python-unit matrix skips this; python-conformance runs the
+    same unfiltered tip verify directly.
     """
     cmd: list[str] = [
         PYTHON,
