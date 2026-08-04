@@ -10,7 +10,7 @@ This note replaces the workflow’s planned **Codex gpt-5.6-sol** final review.
 
 **Partial vertical, shippable as a progress PR — not first-public-PyPI ready.**
 
-Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), and projections through letta / canonical / hypabolic / openai / jsonl-minimal are in tree with unit tests. Shared conformance runner, capability claims, OTEL pure projection, `list_trajectories` dispatcher, engine ship surface, and CI/OIDC release integration are **not** done.
+Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal, and the `list_trajectories` registry dispatcher (PY-09b) are in tree with unit tests. Shared conformance runner, capability claims, OTEL pure projection, engine ship surface, and CI/OIDC release integration are **not** done.
 
 ## What landed (mapped to spec §9)
 
@@ -26,7 +26,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-07a core projections + `serialize_projection` | Done |
 | PY-07b openai + jsonl-minimal | Done (this commit) |
 | PY-08 OTEL pure + extra | **Stub only** (`project_otel_genai` raises) |
-| PY-09b `list_trajectories` dispatcher | **Stub only** (raises) |
+| PY-09b `list_trajectories` dispatcher | **Done** (dispatch-by-registry; invalid_input / listing_unavailable; unit tests) |
 | PY-10* conformance runner + claims | **Missing** |
 | PY-11 full shared conformance | **Missing** |
 | PY-12 TrajectoryEngine ship surface | Intermediate stub; not verified as DoD |
@@ -41,15 +41,16 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 
 ## Verification performed
 
-- `pytest` under `python/`: **362 passed** (includes PY-07b after uncommitted work applied).
+- `pytest` under `python/`: **381 passed** (includes PY-09b dispatcher units; excludes in-progress PY-08 worktree files).
 - Manual smoke: `normalize_to_ir` + projections on `conformance/cases/pi/tool-calls/input.jsonl` produced 8 IR records and successful letta/canonical/hypabolic/openai/jsonl + `serialize_projection`.
-- Honest stubs: `project_otel_genai` and `list_trajectories` raise typed `TrajectoryError` rather than silent empty success.
+- `list_trajectories` dispatches by registry only; missing lister → `listing_unavailable`; bad limit/cursor → `invalid_input` at free-function entry; no `$HOME` defaults.
+- Honest stub: `project_otel_genai` still raises typed `TrajectoryError` until PY-08 lands.
 
 ## Issues / follow-ups (non-blocking for this PR)
 
 1. **No `verify.py` runner** — cannot yet gate golden parity for pi (or any source) in CI.
 2. **No capability claims** — correct for now; must not publish to PyPI advertising tip matrix until PY-10/11 green.
-3. **OTEL / list free functions** exported in root `__all__` but unimplemented — acceptable mid-DAG if documented; first ship must implement or drop from `__all__`.
+3. **OTEL free function** exported in root `__all__` but unimplemented — acceptable mid-DAG if documented; first ship must implement or drop from `__all__`. `list_trajectories` is implemented (PY-09b).
 4. **Engine** present as intermediate module; confirm isolation vs free functions before PY-17.
 5. **Golden byte parity** not re-checked against shared expected.*.json in this review (unit coverage only).
 6. Workflow agents that hit Codex for “final review” failed; this document is the substitute gate for opening the PR.
@@ -57,10 +58,9 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 ## Recommended next PR sequence
 
 1. PY-08 OTEL pure + `hypabolic_trajectory.otel` surface  
-2. PY-09b `list_trajectories` dispatcher (registry already has listers)  
-3. PY-10a early runner (pi normalize ops) + progressive capabilities  
-4. PY-10b-* claim expansion parallel  
-5. PY-11 + PY-15 CI + PY-14b OIDC → PY-17  
+2. PY-10a early runner (pi normalize ops) + progressive capabilities  
+3. PY-10b-* claim expansion parallel  
+4. PY-11 + PY-15 CI + PY-14b OIDC → PY-17  
 
 ## Non-goals of this PR
 
