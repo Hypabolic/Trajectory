@@ -22,6 +22,7 @@ from hypabolic_trajectory.sources.protocol import (
 from hypabolic_trajectory.sources import ahp as _ahp  # noqa: E402, F401
 from hypabolic_trajectory.sources import hermes as _hermes  # noqa: E402, F401
 from hypabolic_trajectory.sources import openclaw as _openclaw  # noqa: E402, F401
+from hypabolic_trajectory.sources import pi as _pi  # noqa: E402, F401
 
 
 __all__ = [

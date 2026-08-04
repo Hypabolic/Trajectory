@@ -112,9 +112,11 @@ from hypabolic_trajectory.api import (
 from hypabolic_trajectory.listing import ahp as _ahp_listing  # noqa: F401
 from hypabolic_trajectory.listing import hermes as _hermes_listing  # noqa: F401
 from hypabolic_trajectory.listing import openclaw as _openclaw_listing  # noqa: F401
+from hypabolic_trajectory.listing import pi as _pi_listing  # noqa: F401
 from hypabolic_trajectory.sources import ahp as _ahp_source  # noqa: F401
 from hypabolic_trajectory.sources import hermes as _hermes_source  # noqa: F401
 from hypabolic_trajectory.sources import openclaw as _openclaw_source  # noqa: F401
+from hypabolic_trajectory.sources import pi as _pi_source  # noqa: F401
 
 # Exhaustive inventory target: docs/python-implementation-spec.md §3 root __all__.
 # Progressive: names land with their owning issues under this export owner.
