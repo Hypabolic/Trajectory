@@ -10,7 +10,7 @@ This note replaces the workflow’s planned **Codex gpt-5.6-sol** final review.
 
 **Partial vertical, shippable as a progress PR — not first-public-PyPI ready.**
 
-Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), and the early protocol-v1 conformance runner with progressive pi normalize claims (PY-10a), and the **TrajectoryEngine ship surface (PY-12)** are in tree with unit tests. Full tip claims, remaining listing-runner/claim expansion, and CI/OIDC release integration are **not** done.
+Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, and the **TrajectoryEngine ship surface (PY-12)** are in tree with unit tests. Full shared tip gate (identity baseline + tip capabilities equality formalization), CI progressive/tip jobs, and OIDC release integration are **not** done.
 
 ## What landed (mapped to spec §9)
 
@@ -36,8 +36,9 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-10b-list | **Done** (full §7 listing algorithm + `$ROOT` rewrite; `list-explicit-root` claimed; filtered verify green for list-trajectories) |
 | PY-10b-sources-hermes | **Done** (claim-writer: `hermes` in sources tip-order; filtered hermes normalize-letta/canonical green; listing not claimed) |
 | PY-10b-otel | **Done** (runner `project-otel` via free-function `project_otel_genai` + `serialize_projection`; filtered verify green; claim-writer adds `otel-genai-spans-v1`) |
-| PY-10b-* remaining claim expansion | **Missing** (any residual claim gaps after parallel writers) |
-| PY-11 full shared conformance | **Missing** |
+| PY-10b-* remaining claim expansion | **Done** (tip sources + tip outputs + required capabilities all claimed via PY-10a/PY-10b-* writers; no residual gaps) |
+| PY-10-full | **Done** (all 7 protocol-v1 ops wired; `PROTOCOL_V1_OPERATIONS` pins request schema enum; filtered tip sources×ops verify **47 ops / 27 cases** green; join tests in `test_py10_full.py`) |
+| PY-11 full shared conformance | **Missing** (identity baseline + unfiltered tip gate + tip capabilities equality formalization) |
 | PY-12 TrajectoryEngine ship surface | **Done** (`create_default` tip matrix incl. pure otel; `project` / `add_output_adapter`; duplicate→ValueError; unknown→`unknown_output_schema`; root `__all__`; binding isolation units) |
 | PY-13 sample CLI | **Missing** |
 | PY-14a packaging stamp / pack-smoke | Done |
@@ -46,20 +47,20 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-16 docs integration | Partial (spec + this status) |
 | PY-17 first-ship join | **Not ready** |
 
-`python/runtime-capabilities.json` claims progressive pi surface (`sources` includes `pi`, `claude-code`, `codex` (and any concurrent progressive claims), outputs letta/canonical + openai-chat-messages + jsonl-minimal, coverage capabilities). Do not treat `IMPLEMENTED_SOURCES` in `__init__.py` as registry claims. Remaining outputs/sources require later claim-writer issues with filtered verify green.
+`python/runtime-capabilities.json` claims the full tip surface: all six sources (`pi` … `ahp`), all six outputs (letta / canonical / hypabolic / openai / jsonl-minimal / otel-genai-spans-v1), and all required capabilities including `list-explicit-root`. Do not treat `IMPLEMENTED_SOURCES` in `__init__.py` as registry claims. Formal tip-equality gate + identity baseline remain **PY-11**.
 
 ## Verification performed
 
-- `pytest` under `python/`: progressive suite includes PY-08 OTEL + PY-09b list dispatcher + PY-10a runner + PY-10b-openai-jsonl.
-- Filtered shared verify green (claimed surface):  
-  `python conformance/verify.py --repository-root . --source pi --operation normalize-letta --operation normalize-canonical --operation project-openai --operation project-minimal-jsonl -- env PYTHONPATH=python/tools python -m trajectory_conformance` → **12 operations / 6 cases**.
-- Protocol: domain fatal exit 0 (`pi/missing-assistant`); protocol-error exit 2 (bad JSON / wrong version / path escape / undeclared op).
-- Free-function exports: `from hypabolic_trajectory import normalize_to_ir, project_letta, project_canonical, project_openai, project_minimal_jsonl, serialize_projection`.
-- Bare `--source pi` without `--operation` filters is **not** used for progressive claims (would pull unclaimed later outputs when filters omit them).
+- `pytest` under `python/`: progressive suite includes PY-08 OTEL + PY-09b list dispatcher + PY-10a runner + PY-10b-* claim-writers + **PY-10-full** join.
+- Filtered shared verify green (full tip sources × all protocol-v1 ops):  
+  `python conformance/verify.py --repository-root . --source pi --source claude-code --source codex --source openclaw --source hermes --source ahp --operation normalize-letta --operation normalize-canonical --operation normalize-hypabolic --operation project-openai --operation project-minimal-jsonl --operation project-otel --operation list-trajectories -- env PYTHONPATH=python/src:python/tools python -m trajectory_conformance` → **47 operations / 27 cases**.
+- Protocol: domain fatal exit 0 (`pi/missing-assistant`); protocol-error exit 2 (bad JSON / wrong version / path escape / undeclared op / unknown op).
+- Free-function exports: `from hypabolic_trajectory import normalize_to_ir, project_letta, project_canonical, project_hypabolic, project_openai, project_minimal_jsonl, project_otel_genai, serialize_projection, list_trajectories`.
+- Bare unfiltered `verify.py` (tip equality / identity-baseline) remains **PY-11**.
 
 ## Issues / follow-ups (non-blocking for this PR)
 
-2. **Claim expansion** residual gaps only (otel claimed by PY-10b-otel).
+2. **PY-11** full shared conformance (unfiltered tip + identity baseline + tip capabilities equality formalization). Progressive claims already match tip sources/outputs/required caps at claim level.
 3. **SDK Activity sink** not shipped (optional `[otel]` helper); pure project + `emit_to`/`SpanSetSink` cover the import matrix.
 4. **Engine** shipped (PY-12); free-function isolation pin covered by unit tests.
 5. **CI progressive conformance job** (PY-15a argv generator/checker) not wired yet — runner path exists for local/CI invocation.
@@ -67,11 +68,11 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 
 ## Recommended next PR sequence
 
-1. Residual PY-10b-* claim gaps if any after parallel writers; then PY-11  
-2. PY-11 + PY-15 CI + PY-14b OIDC → PY-17  
+1. **PY-11** (full shared conformance + identity baseline + tip equality)  
+2. PY-15 CI + PY-14b OIDC → PY-17  
 
 ## Non-goals of this PR
 
 - Cutting a version tag or publishing to PyPI  
-- Claiming full tip ML13 matrix on Python  
+- Formal PY-11 tip gate (unfiltered verify + identity-baseline + tip equality claim ceremony)  
 - Merging incomplete stubs as “done” in release-readiness

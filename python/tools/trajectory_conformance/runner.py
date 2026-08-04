@@ -1,11 +1,19 @@
-"""Protocol v1 conformance runner (PY-10a + PY-10b-list).
+"""Protocol v1 conformance runner (PY-10-full).
 
-Implements the normative preamble, response templates, case→NormalizeRequest
-mapping, free-function normalize/project ops, and the full §7 listing-runner
-algorithm (``list-trajectories`` + ``$ROOT`` path rewrite).
+Implements the full protocol-v1 surface:
+
+- Normative preamble, response templates, case→NormalizeRequest mapping
+- Free-function normalize/project ops for all six output schemas
+- Full §7 listing-runner algorithm (``list-trajectories`` + ``$ROOT`` rewrite)
+
+Protocol v1 operations (request-v1.schema.json enum — all wired):
+
+- ``normalize-letta`` / ``normalize-canonical`` / ``normalize-hypabolic``
+- ``project-openai`` / ``project-minimal-jsonl`` / ``project-otel``
+- ``list-trajectories``
 
 Authority:
-  - docs/python-implementation-spec.md §7
+  - docs/python-implementation-spec.md §7 + §9 PY-10-full
   - conformance/protocol/request-v1.schema.json
   - conformance/protocol/response-v1.schema.json
   - peer runners (dotnet Program.cs, typescript cli.ts, rust main.rs)
@@ -46,7 +54,20 @@ from hypabolic_trajectory.dto import TrajectoryListing, TrajectoryListingPage
 
 PROTOCOL_VERSION: Final[str] = "1"
 
-# Ops implemented (PY-10a normalize/project surface + PY-10b-list).
+# Full protocol-v1 operation set (must match request-v1.schema.json enum).
+PROTOCOL_V1_OPERATIONS: Final[frozenset[str]] = frozenset(
+    {
+        "normalize-letta",
+        "normalize-canonical",
+        "normalize-hypabolic",
+        "project-openai",
+        "project-minimal-jsonl",
+        "project-otel",
+        "list-trajectories",
+    }
+)
+
+# Normalize/project ops share the case→NormalizeRequest + free-function path.
 _NORMALIZE_OPS: Final[frozenset[str]] = frozenset(
     {
         "normalize-letta",
@@ -58,7 +79,7 @@ _NORMALIZE_OPS: Final[frozenset[str]] = frozenset(
     }
 )
 
-_KNOWN_OPS: Final[frozenset[str]] = _NORMALIZE_OPS | frozenset({"list-trajectories"})
+_KNOWN_OPS: Final[frozenset[str]] = PROTOCOL_V1_OPERATIONS
 
 # Sources whose declarative fixtures use a ``store/`` prefix; lister root is
 # ``{temp_root}/store`` (goldens show ``$ROOT/store/...``). All other sources
