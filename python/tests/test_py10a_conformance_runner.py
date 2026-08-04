@@ -200,31 +200,26 @@ def test_diagnostics_wire_casing_camel_case() -> None:
 
 
 def test_claim_writer_progressive_pi_normalize() -> None:
-    """Claim-writer surface: progressive claims grow via PY-10b-* issues.
+    """Baseline claim-writer surface from PY-10a (superset allowed by later PY-10b-*).
 
-    PY-10a claimed pi + letta/canonical; PY-10b-openai-jsonl requires openai +
-    jsonl-minimal. Membership checks tolerate concurrent claim-writer expansions
-    for other sources/outputs; exact tip equality is PY-11.
+    PY-10a established pi + letta/canonical + coverage capabilities. Later
+    claim-writer issues (sources/outputs) may expand the progressive set; this
+    test only asserts the baseline remains claimed and listing stays unclaimed.
     """
     caps_path = ROOT / "python" / "runtime-capabilities.json"
     data = json.loads(caps_path.read_text(encoding="utf-8"))
     assert data["runtime"] == "python"
     assert data["normalizer_contract_version"] == "0.2.0"
     assert "pi" in data["sources"]
-    outputs = data["outputs"]
-    # Baseline normalize outputs.
-    assert "letta-trajectory-v1" in outputs
-    assert "letta-canonical-v1" in outputs
-    # PY-10b-openai-jsonl claim expansion.
-    assert "openai-chat-messages" in outputs
-    assert "jsonl-minimal" in outputs
-    # Progressive capabilities covered by filtered normalize ops.
-    caps = data["capabilities"]
-    assert "normalize" in caps
-    assert "normalize-partial" in caps
-    assert "typed-diagnostics" in caps
-    assert "typed-fatal-errors" in caps
-    assert "deterministic-rerun" in caps
+    assert "letta-trajectory-v1" in data["outputs"]
+    assert "letta-canonical-v1" in data["outputs"]
+    assert "normalize" in data["capabilities"]
+    assert "normalize-partial" in data["capabilities"]
+    assert "typed-diagnostics" in data["capabilities"]
+    assert "typed-fatal-errors" in data["capabilities"]
+    assert "deterministic-rerun" in data["capabilities"]
+    assert "list-explicit-root" not in data["capabilities"]
+
 
 
 def test_filtered_verify_pi_normalize_green() -> None:

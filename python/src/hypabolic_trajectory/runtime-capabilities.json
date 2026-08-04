@@ -4,11 +4,12 @@
   "normalizer_contract_version": "0.2.0",
   "sources": [
     "pi",
-    "hermes"
+    "ahp"
   ],
   "outputs": [
     "letta-trajectory-v1",
-    "letta-canonical-v1"
+    "letta-canonical-v1",
+    "hypabolic-trajectory-v1"
   ],
   "capabilities": [
     "normalize",
