@@ -10,6 +10,8 @@ from enum import StrEnum
 from typing import Final, Literal, TypeAlias
 
 from hypabolic_trajectory._version import resolve_package_version
+from hypabolic_trajectory.diagnostics import Diagnostic
+from hypabolic_trajectory.errors import TrajectoryError
 
 # ---------------------------------------------------------------------------
 # Version / constants (normative pins — docs/python-implementation-spec.md §3)
@@ -84,8 +86,8 @@ JsonPrimitive: TypeAlias = None | bool | int | float | str
 JsonValue: TypeAlias = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
 JsonObject: TypeAlias = dict[str, JsonValue]
 
-# PY-01 scaffold exports: version/constants + JSON aliases only.
-# Free functions, DTOs, IR, engine, and otel land in later issues (PY-02+).
+# Progressive root exports: PY-01 constants + PY-03 Diagnostic / TrajectoryError.
+# Free functions, DTOs, IR, engine, and otel land in later issues.
 # Root ``__all__`` grows under the PY-04a export-owner role through PY-12.
 __all__ = [
     "NORMALIZER_CONTRACT_VERSION",
@@ -105,4 +107,6 @@ __all__ = [
     "JsonPrimitive",
     "JsonValue",
     "JsonObject",
+    "Diagnostic",
+    "TrajectoryError",
 ]
