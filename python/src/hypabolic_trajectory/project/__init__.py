@@ -15,6 +15,7 @@ from hypabolic_trajectory.project.core import (
     serialize_projection,
     to_letta_record,
 )
+from hypabolic_trajectory.project.otel_genai import project_otel_genai
 
 __all__ = [
     "project_canonical",
@@ -22,6 +23,7 @@ __all__ = [
     "project_letta",
     "project_minimal_jsonl",
     "project_openai",
+    "project_otel_genai",
     "serialize_projection",
     "to_letta_record",
 ]

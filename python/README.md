@@ -6,7 +6,7 @@ Normalize coding-agent transcripts into deterministic Trajectory contracts.
 
 - Package root `hypabolic_trajectory` — names re-exported via explicit `__all__`
 - `hypabolic_trajectory.ir` — multi-project IR surface (lands with later issues)
-- `hypabolic_trajectory.otel` — OTEL sink Protocol + `emit_to` (lands with later issues)
+- `hypabolic_trajectory.otel` — OTEL sink Protocol + `emit_to` (pure project in core)
 
 Only names listed in root `__all__`, `hypabolic_trajectory.ir.__all__`, and
 `hypabolic_trajectory.otel.__all__` are semver-stable. Other import paths are

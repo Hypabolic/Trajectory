@@ -15,12 +15,7 @@ from typing import Final
 from hypabolic_trajectory._enums import TrajectorySource
 from hypabolic_trajectory._json_types import JsonObject
 from hypabolic_trajectory.dto import NormalizeRequest, TrajectoryListingPage
-from hypabolic_trajectory.errors import (
-    FATAL_INVALID_INPUT,
-    FATAL_LISTING_UNAVAILABLE,
-    TrajectoryError,
-)
-from hypabolic_trajectory.ir.models import TrajectoryIR
+from hypabolic_trajectory.errors import FATAL_LISTING_UNAVAILABLE, TrajectoryError
 from hypabolic_trajectory.listing.common import decode_cursor, validate_limit
 from hypabolic_trajectory.listing.protocol import get_lister
 from hypabolic_trajectory.normalize.core import (
@@ -35,8 +30,9 @@ from hypabolic_trajectory.project.core import (
     project_openai as project_openai,
     serialize_projection as serialize_projection,
 )
-
-_MSG_NOT_IMPLEMENTED = "This free function is not implemented yet."
+from hypabolic_trajectory.project.otel_genai import (
+    project_otel_genai as project_otel_genai,
+)
 
 # Peer pin (.NET TrajectoryEngine.ListTrajectoriesAsync) — content-safe fixed text.
 _MSG_LISTING_UNAVAILABLE: Final[str] = (
@@ -61,12 +57,6 @@ def normalize_to_canonical(request: NormalizeRequest) -> JsonObject:
 def normalize_to_hypabolic(request: NormalizeRequest) -> JsonObject:
     """Convenience: ``normalize_to_ir`` + ``project_hypabolic``."""
     return project_hypabolic(normalize_to_ir(request))
-
-
-def project_otel_genai(trajectory: TrajectoryIR) -> JsonObject:
-    """Project IR to otel-genai-spans-v1 pure tree (PY-08)."""
-    _ = trajectory
-    raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_NOT_IMPLEMENTED) from None
 
 
 def list_trajectories(
