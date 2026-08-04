@@ -200,13 +200,22 @@ def test_diagnostics_wire_casing_camel_case() -> None:
 
 
 def test_claim_writer_progressive_pi_normalize() -> None:
-    """Claim-writer surface after filtered green: pi + letta/canonical outputs."""
+    """Claim-writer surface: pi + progressive outputs (grows via PY-10b-*).
+
+    PY-10a claimed letta/canonical; PY-10b-openai-jsonl adds openai + jsonl.
+    """
     caps_path = ROOT / "python" / "runtime-capabilities.json"
     data = json.loads(caps_path.read_text(encoding="utf-8"))
     assert data["runtime"] == "python"
     assert data["normalizer_contract_version"] == "0.2.0"
     assert data["sources"] == ["pi"]
-    assert data["outputs"] == ["letta-trajectory-v1", "letta-canonical-v1"]
+    # Baseline + PY-10b-openai-jsonl claim expansion.
+    assert data["outputs"] == [
+        "letta-trajectory-v1",
+        "letta-canonical-v1",
+        "openai-chat-messages",
+        "jsonl-minimal",
+    ]
     # Progressive capabilities covered by filtered pi normalize-letta/canonical.
     assert "normalize" in data["capabilities"]
     assert "normalize-partial" in data["capabilities"]
@@ -215,11 +224,9 @@ def test_claim_writer_progressive_pi_normalize() -> None:
     assert "deterministic-rerun" in data["capabilities"]
     # Listing is PY-10b-list — must not claim early.
     assert "list-explicit-root" not in data["capabilities"]
-    # Hypabolic / openai / jsonl / otel are later claim-writer issues.
+    # Hypabolic / otel remain later claim-writer issues.
     for forbidden in (
         "hypabolic-trajectory-v1",
-        "openai-chat-messages",
-        "jsonl-minimal",
         "otel-genai-spans-v1",
     ):
         assert forbidden not in data["outputs"]
@@ -229,7 +236,7 @@ def test_filtered_verify_pi_normalize_green() -> None:
     """Integration: shared verify.py with explicit --source and --operation filters.
 
     Bare ``--source pi`` is forbidden for progressive honesty (would pull
-    unclaimed listing/hypabolic/openai/jsonl/otel ops). Filters match claims.
+    unclaimed listing/hypabolic/otel ops). Filters match claims.
     """
     cmd = [
         PYTHON,
@@ -242,6 +249,10 @@ def test_filtered_verify_pi_normalize_green() -> None:
         "normalize-letta",
         "--operation",
         "normalize-canonical",
+        "--operation",
+        "project-openai",
+        "--operation",
+        "project-minimal-jsonl",
         "--",
         *RUNNER_CMD,
     ]

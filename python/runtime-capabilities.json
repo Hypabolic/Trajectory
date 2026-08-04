@@ -5,7 +5,9 @@
   "sources": ["pi"],
   "outputs": [
     "letta-trajectory-v1",
-    "letta-canonical-v1"
+    "letta-canonical-v1",
+    "openai-chat-messages",
+    "jsonl-minimal"
   ],
   "capabilities": [
     "normalize",
