@@ -345,6 +345,32 @@ def test_shrink_arguments_leaf_floor_retains_prefix() -> None:
     assert "…" in parsed["big"]
 
 
+def test_shrink_arguments_large_int_no_typeerror() -> None:
+    """Object re-emit must not TypeError on ints outside signed int64.
+
+    identity compact_json rejects n >= 2**63; bounds shrink must still produce
+    peer-compatible object or bounded _raw under the limit.
+    """
+    from hypabolic_trajectory.normalize.bounds import code_point_length
+
+    leaf = "a" * 5000
+    n = 2**63  # one past signed int64 max
+    raw = json.dumps({"n": n, "big": leaf}, separators=(",", ":"))
+    # Force shrink: raw is far over limit.
+    args, reshaped, truncated = shrink_arguments(raw, 2600)
+    assert truncated is True or reshaped is True
+    assert code_point_length(args) <= 2600
+    parsed = json.loads(args)
+    assert isinstance(parsed, dict)
+    if set(parsed.keys()) == {"_raw"}:
+        assert isinstance(parsed["_raw"], str)
+    else:
+        # Object path retained: large int preserved via bounds-local emit.
+        assert parsed["n"] == n
+        assert "big" in parsed
+        assert isinstance(parsed["big"], str)
+
+
 def test_truncate_result_head_tail_uses_ellipsis() -> None:
     # Match tip unicode-boundaries style: short limit keeps ellipsis marker.
     text = "αβγ😀eXXXXりXYZ"  # multi-scalar

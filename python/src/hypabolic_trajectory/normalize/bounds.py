@@ -12,7 +12,7 @@ import json
 import math
 from typing import Any, Literal
 
-from hypabolic_trajectory.canonical import compact_json
+from hypabolic_trajectory.canonical import compact_json, escape_json_string
 
 # Preferred floor while shrinking object string leaves (normalization.md pin).
 _ARGUMENT_LEAF_FLOOR = 2_000
@@ -64,6 +64,68 @@ def wrap_raw(raw: str, limit: int | None = None) -> str:
         else:
             high = keep - 1
     return best
+
+
+def _bounds_relaxed_json(value: Any) -> str:
+    """Compact emit for tool-argument re-serialize (peer tip ``relaxed_json``).
+
+    Unlike identity ``compact_json`` / ``canonical_json``, integers are emitted
+    with invariant decimal formatting and **no** signed-int64 rejection. Tool
+    argument payloads may contain arbitrary JSON numbers; peers (TS/Rust/.NET)
+    re-emit those without hard-failing the bounds path.
+    """
+    return _bounds_write_value(value, active=set())
+
+
+def _bounds_write_value(value: Any, *, active: set[int]) -> str:
+    if value is None:
+        return "null"
+    # bool before int (bool is a subclass of int).
+    if type(value) is bool:
+        return "true" if value else "false"
+    if type(value) is int:
+        return str(value)
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise TypeError(
+                "bounds relaxed JSON does not accept non-finite floats"
+            )
+        return json.dumps(value, allow_nan=False)
+    if type(value) is str:
+        return escape_json_string(value)
+    if type(value) is dict:
+        obj_id = id(value)
+        if obj_id in active:
+            raise TypeError("bounds relaxed JSON does not accept cyclic trees")
+        active.add(obj_id)
+        try:
+            parts: list[str] = []
+            for k, v in value.items():
+                if type(k) is not str:
+                    raise TypeError(
+                        f"JSON object keys must be str, got {type(k).__name__}"
+                    )
+                parts.append(
+                    f"{escape_json_string(k)}:{_bounds_write_value(v, active=active)}"
+                )
+            return "{" + ",".join(parts) + "}"
+        finally:
+            active.discard(obj_id)
+    if type(value) is list:
+        list_id = id(value)
+        if list_id in active:
+            raise TypeError("bounds relaxed JSON does not accept cyclic trees")
+        active.add(list_id)
+        try:
+            body = ",".join(
+                _bounds_write_value(item, active=active) for item in value
+            )
+            return "[" + body + "]"
+        finally:
+            active.discard(list_id)
+    raise TypeError(
+        f"value is not JSON-serializable for bounds emit: {type(value).__name__}"
+    )
 
 
 def _reject_non_finite_constant(name: str) -> float:
@@ -121,7 +183,7 @@ def _shrink_object_with_floor(clone: dict[str, Any], limit: int) -> str:
     """Progressive leaf shrink preferring the 2,000-scalar floor (.NET legacy)."""
     leaves: list[tuple[Any, Any]] = []
     _collect_string_leaves(clone, leaves)
-    serialized = compact_json(clone)
+    serialized = _bounds_relaxed_json(clone)
     seen: set[str] = set()
     while code_point_length(serialized) > limit and leaves:
         if serialized in seen:
@@ -147,7 +209,7 @@ def _shrink_object_with_floor(clone: dict[str, Any], limit: int) -> str:
         largest_parent[largest_key] = (
             slice_code_points(value, 0, keep) + truncation_marker(value_len - keep)
         )
-        serialized = compact_json(clone)
+        serialized = _bounds_relaxed_json(clone)
     return serialized
 
 
@@ -159,7 +221,7 @@ def _shrink_object_zero_leaves(clone: dict[str, Any], limit: int) -> str:
         code_point_length(parent[key]) if isinstance(parent[key], str) else 0
         for parent, key in leaves
     ]
-    serialized = compact_json(clone)
+    serialized = _bounds_relaxed_json(clone)
     while code_point_length(serialized) > limit:
         candidates = [(i, length) for i, length in enumerate(lengths) if length > 0]
         if not candidates:
@@ -169,7 +231,7 @@ def _shrink_object_zero_leaves(clone: dict[str, Any], limit: int) -> str:
         parent, key = leaves[largest]
         parent[key] = ""
         lengths[largest] = 0
-        serialized = compact_json(clone)
+        serialized = _bounds_relaxed_json(clone)
     return serialized
 
 
@@ -182,6 +244,9 @@ def shrink_arguments(
     Empty / non-object / non-finite arguments become a JSON object with ``_raw``.
     Object arguments over *limit* shrink string leaves with a 2,000-scalar
     preferred floor, then zero remaining leaves (tip), then bounded ``_raw``.
+
+    Object re-emit uses bounds-local relaxed JSON (arbitrary JSON ints allowed).
+    On non-JSON emit failure, falls back to bounded ``_raw`` like exhausted leaves.
     """
     raw = raw_input if raw_input else "{}"
     parsed = _parse_arguments_json(raw)
@@ -195,13 +260,17 @@ def shrink_arguments(
     if limit is None or code_point_length(raw) <= limit:
         return raw, False, False
 
-    floor_shrunk = _shrink_object_with_floor(_clone_object(raw), limit)
-    if code_point_length(floor_shrunk) <= limit:
-        return floor_shrunk, False, True
+    try:
+        floor_shrunk = _shrink_object_with_floor(_clone_object(raw), limit)
+        if code_point_length(floor_shrunk) <= limit:
+            return floor_shrunk, False, True
 
-    zeroed = _shrink_object_zero_leaves(_clone_object(raw), limit)
-    if code_point_length(zeroed) <= limit:
-        return zeroed, False, True
+        zeroed = _shrink_object_zero_leaves(_clone_object(raw), limit)
+        if code_point_length(zeroed) <= limit:
+            return zeroed, False, True
+    except TypeError:
+        # Emit failure (unexpected tree shape, etc.): peer-compatible _raw wrap.
+        return wrap_raw(raw, limit), True, True
 
     return wrap_raw(raw, limit), True, True
 
