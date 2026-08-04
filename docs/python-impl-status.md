@@ -1,14 +1,16 @@
-# Python implementation status (final review, human)
+# Python implementation status (first-ship join green)
 
 **Branch:** `feature/python-impl`  
 **Review date:** 2026-08-04  
-**Reviewer:** orchestrator (Codex final step unavailable — usage limit; PY-17 self-review + join gate)
+**Reviewer:** orchestrator (Codex final step unavailable — usage limit; PY-17 self-review + join gate; ship-continuation pass)
 
 ## Verdict
 
 **First-ship join (PY-17) green on this branch — ready for a multi-registry ship tag, but not yet tagged or published.**
 
 §11 Definition of Done holds for independence, tip capabilities honesty, full shared verify (47 ops / 27 cases), identity baseline (21 goldens), free-function + `TrajectoryEngine` API, pure OTEL + always-importable `otel` submodule, listing, packaging (two-column pack-smoke + root-anchored sdist artifacts), CI tip gate + OIDC release path, and docs. **Do not retag `0.1.0`.** First public PyPI cut is the **next** synchronized multi-registry tag after existing NuGet/npm/crates `0.1.0`.
+
+**Ship-continuation pass (DoD recheck):** 526 pytest green; filtered pi verify **16 ops / 7 cases** green; unfiltered tip **47 ops / 27 cases** green; identity **21/21**; pack-smoke + tip capabilities honesty OK. Hermes/AHP empty-page listing is **documented policy** (SQLite-free hermes / AHP Phase 3 deferred), not a silent stub.
 
 ## What landed (mapped to spec §9)
 
@@ -51,22 +53,24 @@
 
 ## Verification performed
 
-- `pytest` under `python/`: full suite including **PY-17** §11 join (`test_py17_first_ship_join.py`) + prior PY-08…PY-16 gates.
+- `pytest` under `python/`: **526** green, including **PY-17** §11 join (`test_py17_first_ship_join.py`) + prior PY-08…PY-16 gates.
+- Filtered pi shared verify green: **16 operations / 7 cases** (early runner / progressive path sanity).
 - Filtered shared verify green (full tip sources × all protocol-v1 ops), including via **generator argv**:  
   `python conformance/verify.py --repository-root . $(python tools/conformance_argv_from_capabilities.py --repository-root .) -- env PYTHONPATH=python/src:python/tools python -m trajectory_conformance` → **47 operations / 27 cases**.
 - **Bare unfiltered** `verify.py` (tip defaults from compatibility.json) green: **47 operations / 27 cases** (PY-11 / PY-15b / PY-17 CI).
 - **Identity baseline** `conformance/identity-baseline.sha256` green (21 identity-bearing goldens).
 - **Tip capabilities equality**: Python `runtime-capabilities.json` sources/outputs/capabilities/slice equal tip ML13 + TS/Rust peers (PY-11 claim ceremony; **PY-15b** CI jq + `validate_release_metadata` ship equality).
 - **Pack-smoke** two-column green after PY-17 sdist artifact root-anchoring (`/README.md`, `/LICENSE`, `/pyproject.toml`); sdist/wheel free of `tests/`/`samples/`/`tools/`.
+- **Hermes / AHP listing:** empty-page listers are intentional documented policy (core SQLite-free Hermes; AHP Phase 3 export-tree listing deferred). Normalize paths are claimed and verify-green; listing is not a silent incomplete stub.
 - Protocol: domain fatal exit 0 (`pi/missing-assistant`); protocol-error exit 2 (bad JSON / wrong version / path escape / undeclared op / unknown op).
 - Free-function exports: `from hypabolic_trajectory import normalize_to_ir, project_letta, project_canonical, project_hypabolic, project_openai, project_minimal_jsonl, project_otel_genai, serialize_projection, list_trajectories`.
 - Sample CLI (PY-13): `PYTHONPATH=python/samples python -m trajectory_cli show --source pi --path conformance/cases/pi/tool-calls/input.jsonl` (unpublished; no console script).
 
-## Residual non-blockers (post-join)
+## Residual non-blockers (post-join; not ship-blocking)
 
-1. **SDK Activity sink** not shipped (optional `[otel]` helper); pure project + `emit_to`/`SpanSetSink` cover the import matrix.
+1. **Next multi-registry tag** must be a new version (e.g. `v0.1.1` / `v0.2.0`) — **not** a `0.1.0` / `v0.1.0` retag of existing NuGet/npm/crates artifacts.
 2. **Pending PyPI publisher** must be confirmed on pypi.org org Hypabolic before the first live `publish-pypi` (documented; OIDC path wired).
-3. **Ship tag / publish** are intentional non-goals of this branch until operators cut the next multi-registry tag (not `v0.1.0` retag).
+3. **Optional SDK Activity sink** not shipped (`[otel]` helper); pure `project_otel_genai` + `emit_to`/`SpanSetSink` cover the import matrix.
 
 ## Recommended next steps
 
