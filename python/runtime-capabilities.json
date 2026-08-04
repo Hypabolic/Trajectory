@@ -15,7 +15,8 @@
     "letta-canonical-v1",
     "hypabolic-trajectory-v1",
     "openai-chat-messages",
-    "jsonl-minimal"
+    "jsonl-minimal",
+    "otel-genai-spans-v1"
   ],
   "capabilities": [
     "normalize",
