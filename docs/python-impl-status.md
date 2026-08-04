@@ -34,6 +34,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-10b-hypabolic | **Done** (`normalize-hypabolic` via free-function `project_hypabolic` + `serialize_projection`; filtered verify green; claim-writer adds `hypabolic-trajectory-v1`) |
 | PY-10b-openai-jsonl | **Done** (runner ops wired; claim-writer `openai-chat-messages` + `jsonl-minimal`; filtered verify 12 ops / 6 cases green) |
 | PY-10b-list | **Done** (full §7 listing algorithm + `$ROOT` rewrite; `list-explicit-root` claimed; filtered verify green for list-trajectories) |
+| PY-10b-sources-hermes | **Done** (claim-writer: `hermes` in sources tip-order; filtered hermes normalize-letta/canonical green; listing not claimed) |
 | PY-10b-* remaining claim expansion | **Missing** (list, otel, remaining source claims if clobbered) |
 | PY-11 full shared conformance | **Missing** |
 | PY-12 TrajectoryEngine ship surface | **Done** (`create_default` tip matrix incl. pure otel; `project` / `add_output_adapter`; duplicate→ValueError; unknown→`unknown_output_schema`; root `__all__`; binding isolation units) |
