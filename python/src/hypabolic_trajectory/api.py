@@ -22,6 +22,8 @@ from hypabolic_trajectory.project.core import (
     project_canonical as project_canonical,
     project_hypabolic as project_hypabolic,
     project_letta as project_letta,
+    project_minimal_jsonl as project_minimal_jsonl,
+    project_openai as project_openai,
     serialize_projection as serialize_projection,
 )
 
@@ -45,18 +47,6 @@ def normalize_to_canonical(request: NormalizeRequest) -> JsonObject:
 def normalize_to_hypabolic(request: NormalizeRequest) -> JsonObject:
     """Convenience: ``normalize_to_ir`` + ``project_hypabolic``."""
     return project_hypabolic(normalize_to_ir(request))
-
-
-def project_openai(trajectory: TrajectoryIR) -> list[JsonObject]:
-    """Project IR to openai-chat-messages (PY-07b)."""
-    _ = trajectory
-    raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_NOT_IMPLEMENTED) from None
-
-
-def project_minimal_jsonl(trajectory: TrajectoryIR) -> str:
-    """Project IR to jsonl-minimal document string (PY-07b)."""
-    _ = trajectory
-    raise TrajectoryError(FATAL_INVALID_INPUT, _MSG_NOT_IMPLEMENTED) from None
 
 
 def project_otel_genai(trajectory: TrajectoryIR) -> JsonObject:

@@ -1,14 +1,20 @@
-"""Core projections: letta / canonical / hypabolic + serialize_projection.
+"""Core projections: letta / canonical / hypabolic / openai / jsonl-minimal.
 
 Authority:
   - docs/python-implementation-spec.md §3 (emit architecture, hypabolic pins,
-    diagnostic casing matrix, serialize_projection, null policy)
+    diagnostic casing matrix, serialize_projection, null policy,
+    project_openai list root, project_minimal_jsonl filled-ms +00:00)
   - tip Rust ``projection.rs`` / TS ``projections.ts`` field order + shapes
-  - conformance goldens (expected.letta/canonical/hypabolic.json)
+  - conformance goldens (expected.letta/canonical/hypabolic/openai.json,
+    expected.minimal.jsonl)
 
 PY-07a exclusive owner of:
   ``project_letta``, ``project_canonical``, ``project_hypabolic``,
   ``normalize_to_*`` (via api convenience), and public ``serialize_projection``.
+
+PY-07b exclusive owner of:
+  ``project_openai`` (JSON array root) and ``project_minimal_jsonl`` (str;
+  shared escape via ``compact_json`` per line; **not** ``serialize_projection``).
 """
 
 from __future__ import annotations
@@ -42,7 +48,7 @@ from hypabolic_trajectory.ir.models import (
     TrajectoryIR,
     TrajectoryRole,
 )
-from hypabolic_trajectory.timestamps import format_ms
+from hypabolic_trajectory.timestamps import format_ms, format_ms_jsonl
 
 # Exact message from conformance/cases/codex/missing-group/expected.error.json
 MSG_SOURCE_GROUP_REQUIRED: str = (
@@ -169,6 +175,116 @@ def project_hypabolic(trajectory: TrajectoryIR) -> JsonObject:
         "records": [_hypabolic_record(record) for record in trajectory.records],
         "diagnostics": _diagnostics_value(trajectory.diagnostics, snake_case=True),
     }
+
+
+def project_openai(trajectory: TrajectoryIR) -> list[JsonObject]:
+    """Project IR to ``openai-chat-messages`` (JSON array root).
+
+    Skips ``meta`` and ``reasoning`` records. No diagnostics array on the
+    product root (tip Rust ``openai_value`` / TS ``projectOpenAI``).
+    """
+    messages: list[JsonObject] = []
+    for record in trajectory.records:
+        if record.kind == RecordKind.META or record.role == TrajectoryRole.REASONING:
+            continue
+        if record.kind == RecordKind.ASSISTANT_TOOL_CALLS:
+            messages.append(
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.name,
+                                "arguments": call.arguments_json,
+                            },
+                        }
+                        for call in record.tool_calls
+                    ],
+                }
+            )
+            continue
+        if record.kind == RecordKind.TOOL_RESULT:
+            message: JsonObject = {
+                "role": "tool",
+                "content": record.content if record.content is not None else "",
+                "tool_call_id": (
+                    record.tool_call_id if record.tool_call_id is not None else ""
+                ),
+            }
+            if record.tool_name is not None:
+                message["name"] = record.tool_name
+            messages.append(message)
+            continue
+        if record.kind == RecordKind.MESSAGE:
+            messages.append(
+                {
+                    "role": str(record.role),
+                    "content": record.content if record.content is not None else "",
+                }
+            )
+            continue
+        # Closed RecordKind enum today (meta skipped above). Fail loud if extended.
+        raise TrajectoryError(
+            FATAL_INVALID_INPUT,
+            f"Unsupported record kind for openai projection: {record.kind!s}",
+        ) from None
+    return messages
+
+
+def project_minimal_jsonl(trajectory: TrajectoryIR) -> str:
+    """Project IR to ``jsonl-minimal`` document string.
+
+    One compact JSON object per IR record **including meta**, each line
+    terminated by ``\\n`` (final newline required when any records exist).
+    Body ``timestamp`` uses **filled** ``timestamp_ms`` only as
+    ``...fff+00:00`` (never ``source_timestamp_ms``). Escaping uses the shared
+    Trajectory algorithm via ``compact_json`` per line — do **not** pass the
+    completed document through ``serialize_projection``.
+    """
+    lines: list[str] = []
+    for record in trajectory.records:
+        lines.append(compact_json(_minimal_record(record)))
+    if not lines:
+        return ""
+    return "\n".join(lines) + "\n"
+
+
+def _minimal_record(record: IrRecord) -> JsonObject:
+    """Build one jsonl-minimal object in fixed field-construction order.
+
+    Order: ``id``, ``order``, ``kind``, ``role``, then optional ``timestamp``,
+    ``content``, ``tool_call_id``, ``tool_name``, ``is_error``, ``tool_calls``.
+    ``kind`` is IR wire kind with all ``_`` removed.
+    """
+    value: JsonObject = {
+        "id": record.id,
+        "order": record.order,
+        "kind": str(record.kind).replace("_", ""),
+        "role": str(record.role),
+    }
+    # Filled IR clock only — omit when None (typical meta).
+    if record.timestamp_ms is not None:
+        value["timestamp"] = format_ms_jsonl(record.timestamp_ms)
+    if record.content is not None:
+        value["content"] = record.content
+    if record.tool_call_id is not None:
+        value["tool_call_id"] = record.tool_call_id
+    if record.tool_name is not None:
+        value["tool_name"] = record.tool_name
+    if record.is_error is not None:
+        value["is_error"] = record.is_error
+    if record.tool_calls:
+        value["tool_calls"] = [
+            {
+                "id": call.id,
+                "name": call.name,
+                "arguments_json": call.arguments_json,
+            }
+            for call in record.tool_calls
+        ]
+    return value
 
 
 # ---------------------------------------------------------------------------
