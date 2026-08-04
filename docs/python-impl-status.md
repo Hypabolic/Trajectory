@@ -35,7 +35,8 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-10b-openai-jsonl | **Done** (runner ops wired; claim-writer `openai-chat-messages` + `jsonl-minimal`; filtered verify 12 ops / 6 cases green) |
 | PY-10b-list | **Done** (full §7 listing algorithm + `$ROOT` rewrite; `list-explicit-root` claimed; filtered verify green for list-trajectories) |
 | PY-10b-sources-hermes | **Done** (claim-writer: `hermes` in sources tip-order; filtered hermes normalize-letta/canonical green; listing not claimed) |
-| PY-10b-* remaining claim expansion | **Missing** (list, otel, remaining source claims if clobbered) |
+| PY-10b-otel | **Done** (runner `project-otel` via free-function `project_otel_genai` + `serialize_projection`; filtered verify green; claim-writer adds `otel-genai-spans-v1`) |
+| PY-10b-* remaining claim expansion | **Missing** (any residual claim gaps after parallel writers) |
 | PY-11 full shared conformance | **Missing** |
 | PY-12 TrajectoryEngine ship surface | **Done** (`create_default` tip matrix incl. pure otel; `project` / `add_output_adapter`; duplicate→ValueError; unknown→`unknown_output_schema`; root `__all__`; binding isolation units) |
 | PY-13 sample CLI | **Missing** |
@@ -58,7 +59,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 
 ## Issues / follow-ups (non-blocking for this PR)
 
-2. **Claim expansion** for otel / other sources still open (PY-10b-*).
+2. **Claim expansion** residual gaps only (otel claimed by PY-10b-otel).
 3. **SDK Activity sink** not shipped (optional `[otel]` helper); pure project + `emit_to`/`SpanSetSink` cover the import matrix.
 4. **Engine** shipped (PY-12); free-function isolation pin covered by unit tests.
 5. **CI progressive conformance job** (PY-15a argv generator/checker) not wired yet — runner path exists for local/CI invocation.
@@ -66,7 +67,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 
 ## Recommended next PR sequence
 
-1. Remaining PY-10b-* claim expansion parallel (list, otel, other sources; hypabolic claimed)  
+1. Residual PY-10b-* claim gaps if any after parallel writers; then PY-11  
 2. PY-11 + PY-15 CI + PY-14b OIDC → PY-17  
 
 ## Non-goals of this PR
