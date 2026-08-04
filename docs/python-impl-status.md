@@ -10,7 +10,7 @@ This note replaces the workflow’s planned **Codex gpt-5.6-sol** final review.
 
 **Partial vertical, shippable as a progress PR — not first-public-PyPI ready.**
 
-Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, the **full shared tip gate (PY-11)** (unfiltered verify + identity baseline + tip capabilities equality formalization), the **TrajectoryEngine ship surface (PY-12)**, **CI progressive conformance (PY-15a)** (argv generator/checker), and **CI tip gate (PY-15b)** (unfiltered `python-conformance` + jq tip equality + `validate_release_metadata` ship equality) are in tree with unit tests. OIDC PyPI release path (PY-14b) is in tree.
+Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, the **full shared tip gate (PY-11)** (unfiltered verify + identity baseline + tip capabilities equality formalization), the **TrajectoryEngine ship surface (PY-12)**, **CI progressive conformance (PY-15a)** (argv generator/checker), **CI tip gate (PY-15b)** (unfiltered `python-conformance` + jq tip equality + `validate_release_metadata` ship equality), and **docs integration (PY-16)** (product docs + package README: package map, install, imports, filters, dual timestamps, escape/formulas, OTEL import matrix, filtered runner argv) are in tree with unit tests. OIDC PyPI release path (PY-14b) is in tree.
 
 ## What landed (mapped to spec §9)
 
@@ -46,7 +46,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-15-scaffold | **Done** (`python-unit` matrix + `python-package-smoke` on 3.11) |
 | PY-15a progressive conformance | **Done** (`python-conformance` job; `tools/conformance_argv_from_capabilities.py` §5 maps + fail-closed; artifact `python-conformance-candidates`; no continue-on-error) |
 | PY-15b tip CI gate | **Done** (unfiltered tip verify; jq tip equality incl. capabilities; generator `proper_subset_of_tip==false`; `validate_release_metadata` ship equality; `test_py15b_tip_gate.py`) |
-| PY-16 docs integration | Partial (spec + this status) |
+| PY-16 docs integration | **Done** (package map, install, imports, filters, dual timestamps, escape/formulas, OTEL matrix, filtered runner argv; product docs + `python/README.md` + this status) |
 | PY-17 first-ship join | **Not ready** |
 
 `python/runtime-capabilities.json` claims the full tip surface with **tip equality formalized (PY-11)**: all six sources (`pi` … `ahp`), all six outputs (letta / canonical / hypabolic / openai / jsonl-minimal / otel-genai-spans-v1), required capabilities including `list-explicit-root`, and `slice: ML13` — equal to `contracts/compatibility.json` and peer TS/Rust manifests. Do not treat `IMPLEMENTED_SOURCES` in `__init__.py` as registry claims.
@@ -71,10 +71,9 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 
 ## Recommended next PR sequence
 
-1. **PY-16** docs → **PY-17** (PY-11 tip formalization + PY-14b OIDC + PY-15a progressive + PY-15b tip CI already landed)
+1. **PY-17** first-ship join (docs PY-16 + tip formalization PY-11 + OIDC PY-14b + progressive/tip CI PY-15a/b + engine PY-12 already landed; optional PY-13 sample CLI may follow after ship)
 
 ## Non-goals of this PR
 
 - Cutting a version tag or publishing to PyPI  
-- Docs integration (PY-16)  
 - Merging incomplete stubs as “done” in release-readiness

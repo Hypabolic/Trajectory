@@ -11,7 +11,16 @@ Trajectory follows the same release model as **Hypabolic/Hypa**:
 | NuGet | `Hypabolic.Trajectory`, `.OpenTelemetry`, `.Testing` |
 | npm | `@hypabolic/trajectory`, `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
 | crates.io | `hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry` |
-| PyPI | `hypabolic-trajectory` (optional extra `[otel]` for SDK sinks) |
+| PyPI | `hypabolic-trajectory` (core includes pure OTEL project + `hypabolic_trajectory.otel`; optional extra `[otel]` for SDK sinks only) |
+
+Cross-ecosystem package map (core vs optional):
+
+| Ecosystem | Core | Optional |
+| --- | --- | --- |
+| .NET | `Hypabolic.Trajectory` | `.OpenTelemetry`, `.Testing` |
+| TypeScript | `@hypabolic/trajectory` | `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
+| Rust | `hypabolic-trajectory` | `hypabolic-trajectory-opentelemetry` |
+| Python | `hypabolic-trajectory` | `[otel]` SDK sinks only |
 
 ## Create a release (normal path)
 

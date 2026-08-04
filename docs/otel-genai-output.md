@@ -19,9 +19,18 @@ The output is a Trajectory projection whose compatibility target is a pinned Ope
 
 ## Package boundary
 
-The BCL-only core package must not acquire OpenTelemetry SDK, OTLP protobuf, or exporter dependencies.
+Core packages must not hard-depend on OpenTelemetry SDK, OTLP protobuf, or
+exporter dependencies. Pure `otel-genai-spans-v1` projection remains available
+without those deps.
 
-The package split is:
+| Ecosystem | Core (decode / normalize / pure project) | Optional SDK emission |
+| --- | --- | --- |
+| .NET | `Hypabolic.Trajectory` | `Hypabolic.Trajectory.OpenTelemetry` |
+| TypeScript | `@hypabolic/trajectory` | `@hypabolic/trajectory-otel` |
+| Rust | `hypabolic-trajectory` | `hypabolic-trajectory-opentelemetry` |
+| Python | `hypabolic-trajectory` — pure `project_otel_genai` + always-present `hypabolic_trajectory.otel` (`SpanSetSink` / `emit_to`) | extra `[otel]` for SDK sink helpers only |
+
+### .NET package split
 
 | Package | Responsibility |
 | --- | --- |

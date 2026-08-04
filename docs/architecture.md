@@ -14,8 +14,9 @@ Primary uses include:
 - feeding structured experience into Hypabolic systems and other stores;
 - observability via deterministic OpenTelemetry GenAI span projections.
 
-Native implementations exist for .NET, TypeScript, and Rust. Each is idiomatic
-to its ecosystem and governed by the same contracts and conformance suite.
+Native implementations exist for .NET, TypeScript, Rust, and Python. Each is
+idiomatic to its ecosystem and governed by the same contracts and conformance
+suite.
 
 ## Design principles
 
@@ -73,9 +74,13 @@ native transcript
 | .NET | `Hypabolic.Trajectory` | `Hypabolic.Trajectory.OpenTelemetry`, `Hypabolic.Trajectory.Testing` |
 | TypeScript | `@hypabolic/trajectory` | `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
 | Rust | `hypabolic-trajectory` | `hypabolic-trajectory-opentelemetry` |
-| Python (Planned) | `hypabolic-trajectory` | `[otel]` SDK sinks only |
+| Python | `hypabolic-trajectory` | `[otel]` SDK sinks only (pure OTEL project + `otel` submodule always in core) |
 
-Python is **not implemented** yet. Spec: [python-implementation-spec.md](python-implementation-spec.md).
+Python is an independent native **3.11+** implementation under `python/`
+(import `hypabolic_trajectory`). First public PyPI ships on the next
+synchronized multi-registry tag after published `0.1.0` (tip sources include
+AHP Shape A). Package docs: [`python/README.md`](../python/README.md). Spec:
+[python-implementation-spec.md](python-implementation-spec.md).
 
 ## Source adapters
 

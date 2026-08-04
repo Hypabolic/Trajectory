@@ -37,9 +37,21 @@ AHP phase truth: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
 Machine-readable surfaces (repository tip advertises `ahp`):
 
 - [`contracts/compatibility.json`](../contracts/compatibility.json)
-- Runtime `runtime-capabilities.json` files (TypeScript, Rust)
+- Runtime `runtime-capabilities.json` files (TypeScript, Rust, Python)
 - `tools/validate_release_metadata.py`
 - CI preview packaging + **Release** workflow (see [publishing.md](publishing.md))
+
+### Python runtime (in-tree; first public PyPI pending)
+
+| Item | Value |
+| --- | --- |
+| Package | `hypabolic-trajectory` (import `hypabolic_trajectory`) |
+| Layout | [`python/`](../python/) |
+| Capabilities | [`python/runtime-capabilities.json`](../python/runtime-capabilities.json) — tip equality with compatibility + peers |
+| Conformance | Unpublished protocol v1 runner `python/tools/trajectory_conformance` |
+| Optional extra | `[otel]` — SDK sinks only; pure `project_otel_genai` + `otel` submodule always in core |
+| First public PyPI | Next synchronized multi-registry tag after `v0.1.0` (includes AHP Shape A; do not retag `0.1.0`) |
+| Status | [python-impl-status.md](python-impl-status.md) · package docs [python/README.md](../python/README.md) |
 
 ## Provenance of release evidence
 
@@ -104,7 +116,8 @@ After the first multi-registry release:
 ### Capability (complete at ML13)
 
 - [x] Required conformance cases pass on .NET, TypeScript, and Rust for
-      advertised capabilities.
+      advertised capabilities; Python tip suite green in-tree (first public
+      PyPI on next multi-registry tag).
 - [x] Compatibility and runtime manifests agree at slice `ML13`.
 - [x] CI and `validate_release_metadata.py` enforce the v1 source/output set.
 - [x] Privacy and fixture sanitization rules are documented.
@@ -113,14 +126,19 @@ After the first multi-registry release:
 
 ### Publish process
 
-- [x] Release workflow packs and can publish all three ecosystems.
+- [x] Release workflow packs and can publish NuGet / npm / crates / PyPI.
 - [x] npm packages bootstrapped under `@hypabolic` (local CLI); OIDC Trusted
       Publisher configured for steady-state CI publishes.
 - [ ] GitHub Environment `release` protection rules as desired.
 - [x] NuGet / npm / crates.io Trusted Publishing (OIDC) for multi-registry Release.
-- [x] Public version tag `v0.1.0` published (sources through `hermes` only).
+- [x] PyPI Trusted Publishing path (OIDC pending publisher org `Hypabolic`,
+      package `hypabolic-trajectory`) wired in `release.yml` (first live upload
+      on the next tag).
+- [x] Public version tag `v0.1.0` published on NuGet / npm / crates (sources
+      through `hermes` only; **no** PyPI `0.1.0`).
 - [ ] Explicit decision to cut the **next** public version tag when ready
-      (required before AHP or other post-`0.1.0` capabilities reach registries).
+      (required before AHP, Python on PyPI, or other post-`0.1.0` capabilities
+      reach registries).
 
 ### Explicit non-goals for v1
 

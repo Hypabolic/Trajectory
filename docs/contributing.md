@@ -1,8 +1,9 @@
 # Contributing to Trajectory
 
 Thanks for contributing. Trajectory is a multi-language product: changes that
-affect wire behaviour must stay aligned across **.NET**, **TypeScript**, and
-**Rust**, with shared evidence under `contracts/` and `conformance/`.
+affect wire behaviour must stay aligned across **.NET**, **TypeScript**,
+**Rust**, and **Python**, with shared evidence under `contracts/` and
+`conformance/`.
 
 ## Before you start
 
@@ -21,6 +22,7 @@ Clone the repo and use the toolchain for the runtime you touch:
 | .NET | SDK for `net8.0` / `net9.0` / `net10.0` (tests/conformance on `net10.0`) |
 | TypeScript | Node.js 22+ |
 | Rust | 1.85 (MSRV) and stable |
+| Python | 3.11+ |
 
 ```bash
 # .NET
@@ -34,6 +36,10 @@ cd typescript && npm ci && npm test
 cargo test --manifest-path rust/Cargo.toml --workspace --locked
 cargo fmt --manifest-path rust/Cargo.toml --all -- --check
 cargo clippy --manifest-path rust/Cargo.toml --workspace --all-targets -- -D warnings
+
+# Python
+python -m pip install -e './python[dev]'
+python -m pytest python/tests -q
 ```
 
 ### Shared conformance (required for behaviour changes)
@@ -55,13 +61,23 @@ python3 conformance/verify.py --repository-root . -- \
 cargo build --manifest-path rust/Cargo.toml --release --bin trajectory-conformance
 python3 conformance/verify.py --repository-root . -- \
   rust/target/release/trajectory-conformance
+
+# Python (runner is monorepo-only; not a published console script)
+python -m pip install -e './python[dev]'
+python3 conformance/verify.py --repository-root . -- \
+  env PYTHONPATH=python/src:python/tools python -m trajectory_conformance
 ```
 
-Filter by source while iterating:
+Filter by source / operation while iterating (required when claimed capabilities
+are a proper subset of tip — see `tools/conformance_argv_from_capabilities.py`):
 
 ```bash
 python3 conformance/verify.py --repository-root . --source pi -- \
   rust/target/release/trajectory-conformance
+
+python3 conformance/verify.py --repository-root . \
+  --source pi --operation normalize-letta --operation normalize-canonical -- \
+  env PYTHONPATH=python/src:python/tools python -m trajectory_conformance
 ```
 
 ## What belongs where
@@ -71,7 +87,7 @@ python3 conformance/verify.py --repository-root . --source pi -- \
 | `contracts/` | Normative schemas and behavioural specs |
 | `conformance/cases/` | Shared inputs + reviewed goldens (all runtimes must match) |
 | `conformance/stores/` | Declarative listing store fixtures |
-| `dotnet/`, `typescript/`, `rust/` | Idiomatic runtime code and unit fixtures |
+| `dotnet/`, `typescript/`, `rust/`, `python/` | Idiomatic runtime code and unit fixtures |
 | `docs/` | Product and contributor documentation |
 
 A fixture is shared only when another independent implementation must produce
@@ -81,22 +97,24 @@ the same observable result. Parser unit fixtures stay under the runtime.
 
 - [ ] Behaviour change has or updates a shared conformance case (when applicable).
 - [ ] Goldens are hand-reviewed; CI never regenerates and accepts in one step.
-- [ ] All three runtimes updated for source/output/capability changes (or an
-      explicit temporary capability gap is documented and not advertised).
+- [ ] All claiming runtimes updated for source/output/capability changes (or an
+      explicit temporary capability gap is documented and not advertised) —
+      including Python when `python/` claims the surface.
 - [ ] `contracts/compatibility.json` and runtime `runtime-capabilities.json`
-      stay in sync when capabilities change.
+      files (TypeScript, Rust, Python) stay in sync when capabilities change.
 - [ ] Diagnostics remain content-safe (no transcript secrets in messages).
 - [ ] Identity-bearing bytes unchanged under the same normalizer contract
       version (`0.2.0`), or a contract version bump is included.
 - [ ] Package versions remain synchronized (currently checked-in `VERSION` is
       `0.1.0`) unless this PR is an intentional version bump across NuGet, npm,
-      and crates. **New advertised sources or outputs** (AHP is the first
+      crates, and PyPI. **New advertised sources or outputs** (AHP is the first
       post-`0.1.0` case) require a synchronized package version bump before the
       next public registry release; do not retag or expect republish of
-      `0.1.0` to deliver them.
+      `0.1.0` to deliver them. First public PyPI ships on that next tag.
 - [ ] Sample CLIs still build if listing/normalize surfaces changed.
-- [ ] Docs updated (README / adapter authoring / this file as needed). Distinguish
-      published registry capability from repository-tip capability when they differ.
+- [ ] Docs updated (README / adapter authoring / `python/README.md` / this file
+      as needed). Distinguish published registry capability from repository-tip
+      capability when they differ.
 
 ## Code style
 
@@ -112,7 +130,8 @@ The unpublished TUIs under `dotnet/samples/Trajectory.Cli`,
 `typescript/packages/trajectory-cli`, and `rust/tools/trajectory-cli` are the
 fastest way to exercise listing and normalize against real local stores. See
 the [README sample CLI section](../README.md#sample-clis) and each sample’s
-own README.
+own README. Python sample CLI is optional/unpublished (use free functions from
+[`python/README.md`](../python/README.md) meanwhile).
 
 ## Reporting issues
 

@@ -6,7 +6,7 @@
 **Trajectory** normalizes coding-agent session transcripts into stable, versioned
 records you can store, search, replay, evaluate, train on, and observe.
 
-One product. Three native packages. The same wire contracts and conformance
+One product. Four native packages. The same wire contracts and conformance
 suite in every ecosystem.
 
 | Ecosystem | Package | Install |
@@ -14,18 +14,21 @@ suite in every ecosystem.
 | .NET | [`Hypabolic.Trajectory`](https://www.nuget.org/packages/Hypabolic.Trajectory) | `dotnet add package Hypabolic.Trajectory` |
 | TypeScript | [`@hypabolic/trajectory`](https://www.npmjs.com/package/@hypabolic/trajectory) | `npm install @hypabolic/trajectory` |
 | Rust | [`hypabolic-trajectory`](https://crates.io/crates/hypabolic-trajectory) | `cargo add hypabolic-trajectory` |
+| Python | [`hypabolic-trajectory`](https://pypi.org/project/hypabolic-trajectory/) (first public cut with next multi-registry tag) | `pip install hypabolic-trajectory==<tag-semver>` |
 
-Optional OpenTelemetry packages: `Hypabolic.Trajectory.OpenTelemetry`,
-`@hypabolic/trajectory-otel`, `hypabolic-trajectory-opentelemetry`.
+Optional OpenTelemetry: `Hypabolic.Trajectory.OpenTelemetry`,
+`@hypabolic/trajectory-otel`, `hypabolic-trajectory-opentelemetry`, and Python
+extra `hypabolic-trajectory[otel]` (SDK sinks only — pure OTEL project is in core).
 
 Releases use the **git tag as the version** (same model as Hypa): push
-`vX.Y.Z` and CI stamps packages, publishes NuGet/npm/crates, and creates a
+`vX.Y.Z` and CI stamps packages, publishes NuGet/npm/crates/PyPI, and creates a
 GitHub Release. See [docs/publishing.md](docs/publishing.md).
 
-> **Published vs this tree:** Registry packages at **`0.1.0`** include Pi, Claude
-> Code, Codex, OpenClaw, and Hermes only. **AHP** Shape A offline snapshot ingest
-> is implemented **in this repository tip** and will ship under the **next**
-> synchronized package version (a new tag after `v0.1.0`). Install unversioned
+> **Published vs this tree:** NuGet / npm / crates at **`0.1.0`** include Pi, Claude
+> Code, Codex, OpenClaw, and Hermes only (**no** AHP, **no** PyPI yet). **AHP**
+> Shape A offline snapshot ingest and the **Python** runtime are implemented
+> **in this repository tip** and ship under the **next** synchronized package
+> version (a new tag after `v0.1.0`). Install unversioned NuGet/npm/crates
 > commands resolve to latest published `0.1.0` until that cut.
 
 ## What you get
@@ -39,7 +42,8 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
   optional OpenTelemetry GenAI spans
 - **Local store listing** with explicit roots and pagination
 - **Partial / chunked input** where the source supports append-only sessions
-- **Native AOT–friendly .NET**, ESM TypeScript (Node 22+), Rust 2024 (MSRV 1.85)
+- **Native AOT–friendly .NET**, ESM TypeScript (Node 22+), Rust 2024 (MSRV 1.85),
+  Python 3.11+
 
 ## Install
 
@@ -56,6 +60,13 @@ npm install @hypabolic/trajectory-node   # local listing
 # Rust
 cargo add hypabolic-trajectory
 # optional: cargo add hypabolic-trajectory-opentelemetry
+
+# Python (first public PyPI cut ships with the next multi-registry tag after 0.1.0)
+pip install hypabolic-trajectory==<tag-semver>
+# optional SDK sinks only:
+pip install 'hypabolic-trajectory[otel]==<tag-semver>'
+# monorepo / pre-publish:
+#   python -m pip install -e './python[dev]'
 ```
 
 ## Usage examples
@@ -164,6 +175,48 @@ let canonical = project_canonical(&ir)?;
 
 Also: `list_pi_trajectories`, `list_codex_trajectories`, `list_openclaw_trajectories`
 with matching `normalize_*` helpers.
+
+### Python — list, then normalize
+
+Listing always takes an **explicit root** (no home-directory default in the
+library). Pure OTEL GenAI projection needs no OpenTelemetry SDK.
+
+```python
+from pathlib import Path
+from hypabolic_trajectory import (
+    NormalizeRequest,
+    TrajectorySource,
+    list_trajectories,
+    normalize_to_ir,
+    project_canonical,
+    project_hypabolic,
+    project_otel_genai,
+    serialize_projection,
+)
+
+page = list_trajectories(
+    source=TrajectorySource.CLAUDE_CODE,
+    root=Path.home() / ".claude" / "projects",
+    limit=20,
+)
+session = page.items[0]
+
+ir = normalize_to_ir(
+    NormalizeRequest(
+        source=TrajectorySource.CLAUDE_CODE,
+        transcript=Path(session.path).read_bytes(),
+    )
+)
+hypabolic = project_hypabolic(ir)
+canonical = project_canonical(ir)
+spans = project_otel_genai(ir)  # pure; no opentelemetry-* required
+wire = serialize_projection(hypabolic)
+```
+
+Also: any wire source name (`"pi"`, `"codex"`, `"openclaw"`, `"hermes"`, `"ahp"`,
+…). Package docs: [`python/README.md`](python/README.md) (filters, dual
+timestamps, identity formulas, OTEL import matrix, filtered conformance argv).
+
 ## Supported sources
 
 | Source | Typical input | Default local store |
@@ -193,8 +246,9 @@ diagnostics—no transcript body by default).
 | .NET | [`dotnet/samples/Trajectory.Cli`](dotnet/samples/Trajectory.Cli/README.md) | `dotnet run --project …` |
 | TypeScript | [`typescript/packages/trajectory-cli`](typescript/packages/trajectory-cli/README.md) | `node packages/trajectory-cli/dist/cli.js` |
 | Rust | [`rust/tools/trajectory-cli`](rust/tools/trajectory-cli/README.md) | `cargo run -p trajectory-cli` |
+| Python | sample CLI optional / unpublished (PY-13) | use free functions or peers for now |
 
-### Commands (same shape in all three)
+### Commands (same shape across CLIs)
 
 | Command | Purpose |
 | --- | --- |
@@ -271,8 +325,9 @@ conformance/   shared fixtures, goldens, verify.py, private runners’ protocol
 dotnet/        libraries, tests, AOT smoke, sample CLI
 typescript/    npm packages, tests, sample CLI
 rust/          crates, conformance binary, sample CLI
+python/        PyPI package, tests, unpublished conformance runner
 docs/          architecture, authoring, contributing, publishing
-tools/         release and npm bootstrap helpers
+tools/         release, packaging, and npm bootstrap helpers
 ```
 
 ## Build from source
@@ -297,16 +352,28 @@ cd typescript && npm ci && npm run typecheck && npm test
 cargo test --manifest-path rust/Cargo.toml --workspace --locked
 ```
 
+### Python
+
+```bash
+python -m pip install -e './python[dev]'
+python -m pytest python/tests -q
+```
+
 ### Shared conformance
 
 ```bash
 dotnet build dotnet/tests/Trajectory.Conformance/Trajectory.Conformance.csproj -c Release
 python3 conformance/verify.py --repository-root . -- \
   dotnet dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll
+
+# Python tip suite (protocol v1 runner is monorepo-only, not a PyPI script):
+python conformance/verify.py --repository-root . -- \
+  env PYTHONPATH=python/src:python/tools python -m trajectory_conformance
 ```
 
 See [conformance/README.md](conformance/README.md) for case authoring and all
-runners.
+runners. Python package docs (imports, filters, dual timestamps, formulas,
+OTEL matrix, filtered argv): [`python/README.md`](python/README.md).
 
 ## Contributing
 
