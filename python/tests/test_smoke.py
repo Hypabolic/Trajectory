@@ -83,10 +83,10 @@ def test_authoritative_runtime_capabilities_exists() -> None:
     data = json.loads(caps_path.read_text(encoding="utf-8"))
     assert data["runtime"] == "python"
     assert data["normalizer_contract_version"] == "0.2.0"
-    # Progressive scaffold: claim nothing until claim-writer issues (PY-10*).
-    assert data["sources"] == []
-    assert data["outputs"] == []
-    assert data["capabilities"] == []
+    # Progressive claims owned by claim-writer issues (PY-10a+). Structural shape only.
+    assert isinstance(data["sources"], list)
+    assert isinstance(data["outputs"], list)
+    assert isinstance(data["capabilities"], list)
 
 
 def test_py_typed_marker_present() -> None:

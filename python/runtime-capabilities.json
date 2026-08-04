@@ -2,7 +2,16 @@
   "runtime": "python",
   "slice": "ML13",
   "normalizer_contract_version": "0.2.0",
-  "sources": [],
-  "outputs": [],
-  "capabilities": []
+  "sources": ["pi"],
+  "outputs": [
+    "letta-trajectory-v1",
+    "letta-canonical-v1"
+  ],
+  "capabilities": [
+    "normalize",
+    "normalize-partial",
+    "typed-diagnostics",
+    "typed-fatal-errors",
+    "deterministic-rerun"
+  ]
 }
