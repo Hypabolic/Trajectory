@@ -4,7 +4,7 @@
     <AssemblyName>Hypabolic.Trajectory.OpenTelemetry</AssemblyName>
     <RootNamespace>Hypabolic.Trajectory.OpenTelemetry</RootNamespace>
     <PackageId>Hypabolic.Trajectory.OpenTelemetry</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Description>OpenTelemetry GenAI projection and emission for Hypabolic.Trajectory.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/Hypabolic/Trajectory</RepositoryUrl>

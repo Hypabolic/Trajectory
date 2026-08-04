@@ -12,13 +12,14 @@ and [ahp-ingest-status.md](ahp-ingest-status.md).
 
 ## Decision
 
-Trajectory is one product with three native implementations:
+Trajectory is one product with four native implementations:
 
 | Ecosystem | Package | Strategy |
 | --- | --- | --- |
 | .NET | `Hypabolic.Trajectory` | Original implementation and baseline |
 | TypeScript | `@hypabolic/trajectory` | Independent implementation from Hypabolic specs + conformance |
 | Rust | `hypabolic-trajectory` | Independent idiomatic Rust implementation |
+| Python | `hypabolic-trajectory` (PyPI) | Independent native Python 3.11+ from the same specs + conformance |
 
 No implementation may call another through FFI, subprocess, WASM, or a hosted
 service. Observable behaviour for the same inputs, options, and contract
@@ -63,7 +64,7 @@ partial mode where applicable, synchronized package metadata
 
 | Slice | Outcome | Status |
 | --- | --- | --- |
-| AHP-0 / AHP-1 | Agent Host Protocol (`ahp`) Shape A offline ChatState snapshot ingest on .NET, TypeScript, and Rust; shared conformance cases; sample CLI `show --path` | **In-tree on `main`**; **not** in registry packages at `0.1.0` |
+| AHP-0 / AHP-1 | Agent Host Protocol (`ahp`) Shape A offline ChatState snapshot ingest on .NET, TypeScript, Rust, and Python; shared conformance cases; sample CLI `show --path` (Python sample CLI optional) | **In-tree on tip**; **not** in registry packages at `0.1.0` |
 
 Scope notes:
 
@@ -76,13 +77,24 @@ Scope notes:
 Authoritative phase table: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
 [ahp-source-spec.md](ahp-source-spec.md).
 
-## Python runtime (planned)
+## Python runtime (in-tree)
 
-An independent native **Python 3.11+** implementation is specified for PyPI as
-`hypabolic-trajectory` under org Hypabolic. It is **not implemented** yet (no
-`python/` tree or published package). The full product, packaging, conformance,
-and work-breakdown plan is in
-[python-implementation-spec.md](python-implementation-spec.md).
+An independent native **Python 3.11+** implementation lives under `python/`
+and publishes as PyPI **`hypabolic-trajectory`** (org Hypabolic; import
+`hypabolic_trajectory`). Pure OTEL GenAI projection and `hypabolic_trajectory.otel`
+(`SpanSetSink` / `emit_to`) ship in the **core** wheel; optional extra
+`[otel]` adds SDK sink helpers only.
+
+| Item | Status |
+| --- | --- |
+| Sources / outputs / tip capabilities | Tip ML13 matrix including `ahp` Shape A (`python/runtime-capabilities.json`) |
+| Shared conformance | Protocol v1 runner + tip verify green (see [python-impl-status.md](python-impl-status.md)) |
+| First public PyPI | Next synchronized multi-registry tag after published `0.1.0` (do not retag `v0.1.0`) |
+
+Package quickstart: [`python/README.md`](../python/README.md). Full product,
+packaging, conformance, and work-breakdown plan:
+[python-implementation-spec.md](python-implementation-spec.md). Status:
+[python-impl-status.md](python-impl-status.md).
 
 ## Post-v1 ideas (not scheduled)
 

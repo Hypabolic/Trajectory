@@ -1,6 +1,6 @@
 {
   "name": "@hypabolic/trajectory-testing",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -19,9 +19,9 @@
     "trajectory-conformance": "./dist/cli.js"
   },
   "dependencies": {
-    "@hypabolic/trajectory": "0.1.0",
-    "@hypabolic/trajectory-node": "0.1.0",
-    "@hypabolic/trajectory-otel": "0.1.0"
+    "@hypabolic/trajectory": "0.1.1",
+    "@hypabolic/trajectory-node": "0.1.1",
+    "@hypabolic/trajectory-otel": "0.1.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

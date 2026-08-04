@@ -266,6 +266,119 @@ jobs:
             if (!TrajectoryEngine || !listTrajectories || !projectOpenTelemetry) process.exit(1);
           "
 
+  # PY-15-scaffold: unit + pack smoke (no OIDC).
+  # PY-15a: progressive argv generator/checker (maps + fail-closed; still enforced).
+  # PY-15b: tip equality unfiltered gate (python-conformance job at tip).
+  python-unit:
+    name: Python unit / ${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install package (editable + dev)
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e './python[dev]'
+      - name: Assert runtime-capabilities.json is present
+        run: test -f python/runtime-capabilities.json
+      - name: Run unit tests
+        # Skip heavy unfiltered tip verify / pack-smoke join tests — those run
+        # in python-conformance and python-package-smoke (avoid triple tip cost).
+        run: python -m pytest python/tests -q -m "not heavy"
+
+  # PY-15b: tip shared conformance. Capability tip equality (jq, incl. capabilities)
+  # + generator --check-only (§5 maps; require proper_subset_of_tip=false) + unfiltered
+  # verify (defaults from contracts/compatibility.json tip matrix). Artifact name pin:
+  # python-conformance-candidates. Soft-fail is forbidden.
+  python-conformance:
+    name: Shared conformance / Python tip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package (editable + dev)
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e './python[dev]'
+      - name: Validate Python capability manifest (tip equality)
+        run: |
+          jq -e '
+            .runtime == "python"
+            and .slice == "ML13"
+            and .normalizer_contract_version == "0.2.0"
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"]
+            and .outputs == [
+              "letta-trajectory-v1",
+              "letta-canonical-v1",
+              "hypabolic-trajectory-v1",
+              "openai-chat-messages",
+              "jsonl-minimal",
+              "otel-genai-spans-v1"
+            ]
+            and .capabilities == [
+              "normalize",
+              "normalize-partial",
+              "list-explicit-root",
+              "typed-diagnostics",
+              "typed-fatal-errors",
+              "deterministic-rerun"
+            ]
+          ' python/runtime-capabilities.json > /dev/null
+      - name: Check progressive argv maps (claimed ⊆ verified; tip equality)
+        # Fail closed if coverage rules unmet, suite empty, or still ⊂ tip.
+        run: |
+          plan=$(python tools/conformance_argv_from_capabilities.py --repository-root . --check-only)
+          echo "$plan"
+          echo "$plan" | jq -e '
+            .status == "ok"
+            and .proper_subset_of_tip == false
+            and .matched_operations > 0
+          ' > /dev/null
+      - name: Run every advertised shared case twice (unfiltered tip)
+        # No --source/--operation: verify defaults to compatibility tip matrix.
+        run: >-
+          python conformance/verify.py --repository-root .
+          --
+          env PYTHONPATH=python/tools python -m trajectory_conformance
+      - name: Upload unaccepted conformance candidates
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-conformance-candidates
+          path: artifacts/conformance-candidates
+          if-no-files-found: ignore
+      - name: Prove checked-in identity goldens are unchanged
+        run: sha256sum --check conformance/identity-baseline.sha256
+      - name: Reject fixture mutation
+        run: git diff --exit-code -- contracts conformance
+
+  python-package-smoke:
+    name: Python package smoke / 3.11
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install build tooling
+        run: python -m pip install -U pip build
+      - name: Prepare, build, two-column pack-smoke, isolated install
+        # PY-14a tool: prepare (overwrite) → build sdist+wheel → archive asserts
+        # → Requires-Dist audit → isolated sdist/wheel install (no monorepo contracts).
+        run: >-
+          python tools/python_package_smoke.py
+          --repository-root .
+          --outdir artifacts/ci/pypi
+          --python "$(command -v python)"
+
   rust:
     name: Rust ${{ matrix.rust }} / ${{ matrix.os }}
     strategy:

@@ -14,9 +14,9 @@
 
 ### Status
 
-Trajectory already ships three independent native runtimes (.NET, TypeScript, Rust) governed by shared wire contracts and a shared conformance suite. There is **no** `python/` tree, `pyproject.toml`, or PyPI project under org Hypabolic yet.
+Trajectory ships independent native runtimes (.NET, TypeScript, Rust, and **Python**) governed by shared wire contracts and a shared conformance suite. The **`python/`** tree, `python/pyproject.toml`, and packaging path for PyPI org Hypabolic are **in-tree** on the implementation branch; first **public** PyPI upload is deferred to the next synchronized multi-registry tag (see [python-impl-status.md](python-impl-status.md) and [python/README.md](../python/README.md)).
 
-Published multi-registry packages are at **`0.1.0`** with sources `pi`, `claude-code`, `codex`, `openclaw`, `hermes` only (**no** `ahp`). Repository tip on `main` implements **AHP Shape A** offline ChatState snapshot decode under wire name `ahp` (protocol pin `0.7.x`) and advertises it in `contracts/compatibility.json` and runtime `runtime-capabilities.json`. Shipping AHP to registries requires a **new** git tag after `v0.1.0`; never retag or rewrite published `0.1.0`.
+Published multi-registry packages (NuGet / npm / crates) are at **`0.1.0`** with sources `pi`, `claude-code`, `codex`, `openclaw`, `hermes` only (**no** `ahp`, **no** PyPI `0.1.0`). Repository tip implements **AHP Shape A** offline ChatState snapshot decode under wire name `ahp` (protocol pin `0.7.x`) and advertises it in `contracts/compatibility.json` and runtime `runtime-capabilities.json` (including Python). Shipping AHP + Python to registries requires a **new** git tag after `v0.1.0`; never retag or rewrite published `0.1.0`.
 
 ### Goals
 
@@ -1418,23 +1418,27 @@ artifacts = [
 ]
 
 [tool.hatch.build.targets.sdist]
+# Root-anchored artifact names only — bare "README.md"/"LICENSE" match any
+# nested path of that name and would force-include samples/**/README.md.
 artifacts = [
   "src/hypabolic_trajectory/contracts/**",
   "src/hypabolic_trajectory/runtime-capabilities.json",
   "src/hypabolic_trajectory/py.typed",
-  "LICENSE",
-  "README.md",
-  "pyproject.toml",
+  "/LICENSE",
+  "/README.md",
+  "/pyproject.toml",
 ]
 exclude = [
-  "tests/**",
-  "samples/**",
-  "tools/**",
-  "**/__pycache__/**",
-  "**/.pytest_cache/**",
-  ".venv/**",
-  "dist/**",
+  "/tests",
+  "/samples",
+  "/tools",
+  "**/__pycache__",
+  "**/.pytest_cache",
+  "/.venv",
+  "/dist",
   "**/*.pyc",
+  "/uv.lock",
+  "/.gitignore",
 ]
 ```
 

@@ -3,14 +3,24 @@
 Trajectory follows the same release model as **Hypabolic/Hypa**:
 
 > **The git tag is the version.**  
-> CI stamps NuGet / npm / crates metadata at pack and publish time.  
-> You do **not** need to run a Python version script before tagging.
+> CI stamps NuGet / npm / crates / PyPI metadata at pack and publish time.  
+> You do **not** need to run a version script before tagging.
 
 | Ecosystem | Packages |
 | --- | --- |
 | NuGet | `Hypabolic.Trajectory`, `.OpenTelemetry`, `.Testing` |
 | npm | `@hypabolic/trajectory`, `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
 | crates.io | `hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry` |
+| PyPI | `hypabolic-trajectory` (core includes pure OTEL project + `hypabolic_trajectory.otel`; optional extra `[otel]` for SDK sinks only) |
+
+Cross-ecosystem package map (core vs optional):
+
+| Ecosystem | Core | Optional |
+| --- | --- | --- |
+| .NET | `Hypabolic.Trajectory` | `.OpenTelemetry`, `.Testing` |
+| TypeScript | `@hypabolic/trajectory` | `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
+| Rust | `hypabolic-trajectory` | `hypabolic-trajectory-opentelemetry` |
+| Python | `hypabolic-trajectory` | `[otel]` SDK sinks only |
 
 ## Create a release (normal path)
 
@@ -34,8 +44,8 @@ That is the whole developer step. The **Release** workflow then:
 1. Optionally waits for CI checks on the tagged commit (Hypa-style gate)
 2. Checks out the tag
 3. **Stamps** package versions from the tag (`tools/stamp_release_version.py` — CI only)
-4. Packs versioned NuGet / npm / crates artifacts
-5. Publishes to NuGet.org, npm, and crates.io
+4. Packs versioned NuGet / npm / crates / **PyPI** artifacts (Python: prepare + build into `artifacts/release/pypi` + pack-smoke)
+5. Publishes to NuGet.org, npm, crates.io, and **PyPI** (PyPI job downloads validated artifacts only — **no rebuild**)
 6. Creates/updates a **GitHub Release** with notes and attached packages
 
 ### Manual dispatch
@@ -80,8 +90,9 @@ That helper is for **repo hygiene**, not the release trigger.
 | NuGet Trusted Publishing | OIDC for `hypabolic` owner: workflow `release.yml`, env `release` |
 | npm Trusted Publisher | OIDC for `@hypabolic/*` on workflow `release.yml`, env `release` |
 | crates.io Trusted Publishing | OIDC per crate: workflow `release.yml`, env `release` |
+| PyPI Trusted Publishing | OIDC for org **`Hypabolic`**, package **`hypabolic-trajectory`**: workflow `release.yml`, env `release` (pending publisher until first ship) |
 
-No long-lived registry API tokens are required for NuGet, npm, or crates.io.
+No long-lived registry API tokens are required for NuGet, npm, crates.io, or PyPI.
 
 ### NuGet Trusted Publishing
 
@@ -124,15 +135,42 @@ machine (after a tag or with stamped version):
 
 Then configure Trusted Publisher on each package. Later releases use OIDC only.
 
+### PyPI Trusted Publishing (pending publisher)
+
+On [pypi.org](https://pypi.org/) → Publishing → Trusted publishers (or
+[pending publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
+before the first upload of `hypabolic-trajectory`), register:
+
+| Field | Value |
+| --- | --- |
+| Owner / org | **`Hypabolic`** ([pypi.org/org/Hypabolic](https://pypi.org/org/Hypabolic/)) |
+| Package | `hypabolic-trajectory` |
+| Publisher | GitHub Actions |
+| Repository | `Hypabolic/Trajectory` |
+| Workflow | `release.yml` |
+| Environment | `release` |
+
+The Release **`publish-pypi`** job uses `pypa/gh-action-pypi-publish` with
+`id-token: write`, environment `release`, `packages-dir: artifacts/release/pypi`,
+and `skip-existing: true`. It **downloads** the validate-job artifact only —
+it does **not** rebuild sdist/wheel. No long-lived `PYPI_API_TOKEN` is stored
+in GitHub.
+
 ## Install a released version
 
-Latest published public packages are **`0.1.0`** (no AHP). Unversioned install
-commands resolve to that surface until the next tag ships.
+Latest published public packages are **`0.1.0`** for NuGet / npm / crates (no
+AHP). Python is **not** on PyPI at `0.1.0`; it first appears on the **next**
+synchronized multi-registry tag after that cut (see release readiness). Use
+`<tag-semver>` for Python until that tag ships. Unversioned NuGet/npm/crates
+install commands resolve to published `0.1.0` until the next tag.
 
 ```bash
 dotnet add package Hypabolic.Trajectory --version 0.1.0
 npm install @hypabolic/trajectory@0.1.0
 cargo add hypabolic-trajectory@0.1.0
+# Python first ships on the next multi-registry tag (not published at 0.1.0):
+pip install hypabolic-trajectory==<tag-semver>
+pip install 'hypabolic-trajectory[otel]==<tag-semver>'   # optional OpenTelemetry SDK sinks
 ```
 
 ## Comparison with Hypa
@@ -146,6 +184,7 @@ cargo add hypabolic-trajectory@0.1.0
 | npm auth | OIDC | OIDC (after bootstrap) |
 | NuGet auth | API key / OIDC | OIDC Trusted Publishing (`NuGet/login@v1`) |
 | crates auth | API token / OIDC | OIDC Trusted Publishing (`crates-io-auth-action`) |
+| PyPI auth | — | OIDC Trusted Publishing (`pypa/gh-action-pypi-publish`, pending publisher) |
 
 ## Failure recovery
 
@@ -155,9 +194,11 @@ cargo add hypabolic-trajectory@0.1.0
 | NuGet already published | `--skip-duplicate` makes re-run a no-op (does **not** replace package contents — new capability such as AHP needs a new version) |
 | npm already published | Workflow continues if version exists on registry (same: new features need a new version) |
 | crates already uploaded | Treated as success (same: new features need a new version) |
+| PyPI already published | `skip-existing: true` makes re-run a no-op (same: new features need a new version) |
 | OIDC 404 / NuGet login fail | Match Trusted Publisher: owner `hypabolic`, workflow `release.yml`, env `release` |
 | crates.io OIDC auth fail | Match Trusted Publishing on **both** crates; workflow `release.yml`, env `release` |
 | npm OIDC 404 | Fix Trusted Publisher or bootstrap package once |
+| PyPI OIDC / pending publisher fail | Match pending publisher: org `Hypabolic`, package `hypabolic-trajectory`, workflow `release.yml`, env `release`; ensure environment protection allows the run |
 
 ## Related
 

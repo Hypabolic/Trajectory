@@ -76,6 +76,7 @@ Implement in each runtime without sharing IR types across languages:
 | .NET | `dotnet/src/Trajectory/Adapters/<Source>/`, register in generated default registry |
 | TypeScript | `typescript/packages/trajectory/src/internal.ts` (+ listing in `trajectory-node`) |
 | Rust | `rust/crates/hypabolic-trajectory/src/normalize.rs` (+ `listing.rs`) |
+| Python | `python/src/hypabolic_trajectory/sources/<source>.py` (+ `listing/<source>.py`; register on package import) |
 
 Checklist for decode quality:
 
@@ -108,7 +109,9 @@ stay free of SQLite dependencies.
 
 ```bash
 python3 conformance/verify.py --repository-root . --source <source> -- <runner>
-# then full suite on .NET, TypeScript, and Rust runners
+# then full suite on .NET, TypeScript, Rust, and Python runners
+# Python example:
+#   env PYTHONPATH=python/src:python/tools python -m trajectory_conformance
 ```
 
 Update `conformance/identity-baseline.sha256` only when intentionally adding
@@ -139,6 +142,7 @@ multi-output) or new cases:
 | .NET | `OutputSchemaAdapter<T>` + register on `TrajectoryEngine` |
 | TypeScript | Projector function + `TrajectoryEngine.addOutputAdapter` / exports |
 | Rust | `OutputAdapter` / `project_*` + `schema_ids` constant |
+| Python | `project_*` free functions + `TrajectoryEngine.add_output_adapter` / root exports |
 
 Rules:
 
@@ -209,6 +213,36 @@ let hypabolic = project_hypabolic(&ir)?;
 
 Custom sources implement `SourceAdapter` and are invoked from application code
 or added to the public normalize surface when promoted to a first-class source.
+
+## Python sketch
+
+```python
+from hypabolic_trajectory import (
+    NormalizeRequest,
+    TrajectoryEngine,
+    TrajectorySource,
+    normalize_to_ir,
+    project_hypabolic,
+    serialize_projection,
+)
+
+request = NormalizeRequest(
+    source=TrajectorySource.PI,
+    transcript=transcript_bytes,
+)
+ir = normalize_to_ir(request)
+hypabolic = project_hypabolic(ir)
+wire = serialize_projection(hypabolic)
+
+# Engine tip matrix (pure otel included); free functions ignore engine mutations.
+engine = TrajectoryEngine.create_default()
+out = engine.project(ir, "hypabolic-trajectory-v1")
+engine.add_output_adapter("my-format-v1", project_my_format)  # duplicate → ValueError
+```
+
+Built-in sources self-register on package import. Only root / `ir` / `otel`
+`__all__` names are semver-stable — see [`python/README.md`](../python/README.md)
+for the OTEL import matrix, dual timestamps, identity formulas, and filters.
 
 ## Anti-patterns
 

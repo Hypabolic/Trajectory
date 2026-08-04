@@ -42,6 +42,7 @@ name: **`ahp`**. Advertised on this tip in `contracts/compatibility.json` →
 | .NET | `dotnet/src/Trajectory/Adapters/Ahp/` | `AhpJsonSourceAdapter`; listing stub returns empty |
 | TypeScript | `typescript/packages/trajectory/src/internal.ts` (+ node listing stub) | Registered on engine / CLI |
 | Rust | `rust/crates/hypabolic-trajectory/src/normalize.rs` (+ listing stub) | Registered on engine / CLI |
+| Python | `python/src/hypabolic_trajectory/sources/ahp.py` (+ listing stub) | Registered on package import / engine |
 
 Also: sample CLIs accept `--source ahp` and `show --path` for Shape A
 snapshots; runners include `ahp` in multi-runtime conformance.

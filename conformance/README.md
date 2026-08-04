@@ -107,6 +107,24 @@ python3 conformance/verify.py --repository-root . -- \
 
 Focused filters remain available (`--source pi --source hermes`,
 `--operation normalize-letta`, and so on). The executable is unpublished
-private test infrastructure. All three runtimes share the same request and
-response schemas; runners add operations and sources without a protocol
-redesign.
+private test infrastructure. All four tip runtimes (.NET, TypeScript, Rust,
+Python) share the same request and response schemas; runners add operations
+and sources without a protocol redesign.
+
+## Python runner
+
+Install the editable package, then run the monorepo protocol v1 module
+(`python/tools/trajectory_conformance` — **not** a published console script):
+
+```bash
+python3 -m pip install -e './python[dev]'
+python3 conformance/verify.py --repository-root . -- \
+  env PYTHONPATH=python/src:python/tools python3 -m trajectory_conformance
+```
+
+When claimed capabilities are a **proper subset** of tip, pass explicit
+`--source` / `--operation` filters (or argv from
+`tools/conformance_argv_from_capabilities.py`). Unfiltered verify defaults to
+the tip set in `contracts/compatibility.json`. See
+[`python/README.md`](../python/README.md) for the OTEL import matrix, dual
+timestamps, identity formulas, and package map.

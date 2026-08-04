@@ -9,8 +9,9 @@ name: Release
 #
 # Or: Actions → Release → Run workflow → tag=v0.1.0, dry_run=false
 #
-# NuGet + npm + crates.io: OIDC Trusted Publishing
+# NuGet + npm + crates.io + PyPI: OIDC Trusted Publishing
 # (workflow release.yml + environment "release")
+# PyPI: download-only publish of artifacts/release/pypi (no rebuild)
 # See docs/publishing.md
 
 on:
@@ -190,6 +191,10 @@ jobs:
         with:
           workspaces: rust
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Stamp package metadata from tag (Hypa-style)
         run: |
           set -euo pipefail
@@ -288,6 +293,30 @@ jobs:
             [[ "$base" == *"${VERSION}"* ]] || { echo "Bad crate name: $base" >&2; exit 1; }
           done
           ls -la artifacts/release/crates/
+
+      - name: Pack Python (PyPI)
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.resolve.outputs.version }}"
+          # prepare (overwrite) + build sdist/wheel into artifacts/release/pypi
+          # + two-column pack-smoke (isolated sdist install + Requires-Dist audit)
+          python3 tools/python_package_smoke.py \
+            --repository-root . \
+            --outdir artifacts/release/pypi
+          shopt -s nullglob
+          arts=(artifacts/release/pypi/*.whl artifacts/release/pypi/*.tar.gz)
+          if [[ ${#arts[@]} -eq 0 ]]; then
+            echo "No PyPI artifacts under artifacts/release/pypi" >&2
+            exit 1
+          fi
+          for art in "${arts[@]}"; do
+            base="$(basename "$art")"
+            [[ "$base" == *"${VERSION}"* ]] || {
+              echo "Bad pypi artifact name: $base (expected version ${VERSION})" >&2
+              exit 1
+            }
+          done
+          ls -la artifacts/release/pypi/
 
       - name: Checksums and release notes
         run: |
@@ -490,9 +519,43 @@ jobs:
           done
           exit 1
 
+  publish-pypi:
+    name: Publish PyPI
+    needs: [resolve, validate]
+    if: ${{ needs.resolve.outputs.dry_run != 'true' && needs.validate.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: release
+    # PyPI Trusted Publishing (OIDC) — pending publisher on pypi.org:
+    # org Hypabolic, package hypabolic-trajectory, workflow release.yml, env release
+    # https://docs.pypi.org/trusted-publishers/
+    # Download-only: never rebuild; publish validated artifacts/release/pypi only.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: trajectory-release-${{ needs.resolve.outputs.version }}
+          path: artifacts
+      - name: Assert PyPI artifacts present (no rebuild)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          arts=(artifacts/release/pypi/*.whl artifacts/release/pypi/*.tar.gz)
+          if [[ ${#arts[@]} -eq 0 ]]; then
+            echo "No PyPI packages under artifacts/release/pypi after download" >&2
+            exit 1
+          fi
+          ls -la artifacts/release/pypi/
+      - name: Publish to PyPI (Trusted Publishing OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: artifacts/release/pypi
+          skip-existing: true
+
   github-release:
     name: GitHub Release
-    needs: [resolve, validate, publish-nuget, publish-npm, publish-crates]
+    needs: [resolve, validate, publish-nuget, publish-npm, publish-crates, publish-pypi]
     if: |
       always() &&
       needs.resolve.result == 'success' &&
@@ -500,7 +563,8 @@ jobs:
       needs.resolve.outputs.dry_run != 'true' &&
       needs.publish-nuget.result == 'success' &&
       needs.publish-npm.result == 'success' &&
-      needs.publish-crates.result == 'success'
+      needs.publish-crates.result == 'success' &&
+      needs.publish-pypi.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -550,6 +614,10 @@ jobs:
             echo "**crates.io** — \`cargo add hypabolic-trajectory@${VERSION}\`"
             echo "- https://crates.io/crates/hypabolic-trajectory/${VERSION}"
             echo "- https://crates.io/crates/hypabolic-trajectory-opentelemetry/${VERSION}"
+            echo
+            echo "**PyPI** — \`pip install hypabolic-trajectory==${VERSION}\`"
+            echo "- https://pypi.org/project/hypabolic-trajectory/${VERSION}/"
+            echo "- Optional OTEL SDK: \`pip install 'hypabolic-trajectory[otel]==${VERSION}'\`"
           } > release-body.md
           cat release-body.md
       - name: Create or update GitHub Release
@@ -564,6 +632,7 @@ jobs:
               artifacts/release/nuget/* \
               artifacts/release/npm/* \
               artifacts/release/crates/* \
+              artifacts/release/pypi/* \
               artifacts/evidence/* \
               --clobber
             gh release edit "$TAG" --title "Trajectory ${VERSION}" --notes-file release-body.md
@@ -572,6 +641,7 @@ jobs:
               artifacts/release/nuget/* \
               artifacts/release/npm/* \
               artifacts/release/crates/* \
+              artifacts/release/pypi/* \
               artifacts/evidence/* \
               --title "Trajectory ${VERSION}" \
               --notes-file release-body.md \
