@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Set the synchronized package version across NuGet, npm, and crates metadata.
+"""Set the synchronized package version across NuGet, npm, crates, and PyPI metadata.
 
 Single source of truth: repository-root VERSION file (also updated by this tool).
+
+When ``python/pyproject.toml`` exists, rewrites exactly one static
+``version = "…"`` under ``[project]`` (PY-14a monorepo stamp lockstep). Does
+not touch ``WIRE_PACKAGE_VERSION`` or other source constants.
 
 Does not rewrite conformance goldens. If the normalizer embeds the package
 version in identity-bearing outputs, update goldens in the same release commit
@@ -112,6 +116,48 @@ def replace_cargo_workspace_version(path: Path, version: str) -> None:
     write_text(path, text3)
 
 
+def replace_pyproject_version(path: Path, version: str) -> None:
+    """Rewrite exactly one static ``version = "…"`` under ``[project]``.
+
+    Never touches WIRE_PACKAGE_VERSION or other source constants. Only the
+    top-level ``[project]`` table is considered (not nested tables).
+    """
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+    in_project = False
+    project_version_line: int | None = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            # Enter only top-level [project]; leave on any other table header.
+            in_project = stripped == "[project]"
+            continue
+        if not in_project:
+            continue
+        if re.match(r'^version\s*=\s*"[^"]*"\s*(#.*)?$', stripped):
+            if project_version_line is not None:
+                raise SystemExit(
+                    f"Multiple static version lines under [project] in {path}"
+                )
+            project_version_line = i
+    if project_version_line is None:
+        raise SystemExit(
+            f'Could not find static version = "…" under [project] in {path}'
+        )
+    original = lines[project_version_line]
+    body = original.rstrip("\r\n")
+    newline = original[len(body) :]
+    # Preserve any trailing comment after the assignment.
+    comment = ""
+    if "#" in body:
+        hash_idx = body.find("#")
+        comment_text = body[hash_idx:].lstrip()  # includes leading '#'
+        comment = f"  {comment_text}"
+    lines[project_version_line] = f'version = "{version}"{comment}{newline}'
+    write_text(path, "".join(lines))
+
+
+
 def apply_version(root: Path, version: str) -> list[str]:
     changed: list[str] = []
 
@@ -144,7 +190,14 @@ def apply_version(root: Path, version: str) -> list[str]:
     replace_cargo_workspace_version(cargo, version)
     changed.append(str(cargo.relative_to(root)))
 
+    # Python: only when scaffold exists (PY-14a monorepo stamp lockstep).
+    pyproject = root / "python" / "pyproject.toml"
+    if pyproject.is_file():
+        replace_pyproject_version(pyproject, version)
+        changed.append(str(pyproject.relative_to(root)))
+
     return changed
+
 
 
 def main() -> None:

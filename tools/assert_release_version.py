@@ -77,29 +77,42 @@ def main() -> None:
         if project_version != version:
             raise SystemExit(f"{path.relative_to(root)} Version is not {version}.")
 
-    print(
-        json.dumps(
-            {
-                "status": "success",
-                "version": version,
-                "tag": f"v{version}",
-                "nuget": [
-                    "Hypabolic.Trajectory",
-                    "Hypabolic.Trajectory.OpenTelemetry",
-                    "Hypabolic.Trajectory.Testing",
-                ],
-                "npm": [
-                    "@hypabolic/trajectory",
-                    "@hypabolic/trajectory-node",
-                    "@hypabolic/trajectory-otel",
-                ],
-                "crates": [
-                    "hypabolic-trajectory",
-                    "hypabolic-trajectory-opentelemetry",
-                ],
-            }
-        )
-    )
+    # Python package (PY-14a): when scaffold exists, [project].version must match.
+    pyproject_path = root / "python" / "pyproject.toml"
+    pypi_packages: list[str] = []
+    if pyproject_path.is_file():
+        pyproject = load_toml(pyproject_path)
+        py_version = pyproject.get("project", {}).get("version")
+        if py_version != version:
+            raise SystemExit(
+                f"python/pyproject.toml [project].version is not {version} "
+                f"(got {py_version!r})."
+            )
+        pypi_packages.append("hypabolic-trajectory")
+
+    package_map = {
+        "status": "success",
+        "version": version,
+        "tag": f"v{version}",
+        "nuget": [
+            "Hypabolic.Trajectory",
+            "Hypabolic.Trajectory.OpenTelemetry",
+            "Hypabolic.Trajectory.Testing",
+        ],
+        "npm": [
+            "@hypabolic/trajectory",
+            "@hypabolic/trajectory-node",
+            "@hypabolic/trajectory-otel",
+        ],
+        "crates": [
+            "hypabolic-trajectory",
+            "hypabolic-trajectory-opentelemetry",
+        ],
+    }
+    if pypi_packages:
+        package_map["pypi"] = pypi_packages
+    print(json.dumps(package_map))
+
 
 
 if __name__ == "__main__":

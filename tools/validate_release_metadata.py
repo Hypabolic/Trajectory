@@ -28,6 +28,17 @@ OUTPUTS = [
     "otel-genai-spans-v1",
 ]
 EXPECTED_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"]
+# Tip capability set advertised by peer runtimes (ML13). Progressive Python may
+# claim a subset until PY-11 / tip equality (PY-15b).
+TIP_CAPABILITIES = [
+    "normalize",
+    "normalize-partial",
+    "list-explicit-root",
+    "typed-diagnostics",
+    "typed-fatal-errors",
+    "deterministic-rerun",
+]
+
 
 
 def load_json(path: Path) -> dict:
@@ -147,6 +158,69 @@ def main() -> None:
         if project_version != version:
             raise SystemExit(f"{path.relative_to(root)} is not version {version}.")
 
+    # Python progressive release metadata (PY-14a / §5 progressive rules).
+    # When python/pyproject.toml exists: version lockstep + progressive
+    # capabilities subsets of tip. Full tip equality is PY-15b / ship only.
+    pyproject_path = root / "python" / "pyproject.toml"
+    python_inputs: list[Path] = []
+    if pyproject_path.is_file():
+        pyproject = load_toml(pyproject_path)
+        py_version = pyproject.get("project", {}).get("version")
+        if py_version != version:
+            raise SystemExit(
+                f"python/pyproject.toml [project].version is not {version} "
+                f"(got {py_version!r})."
+            )
+        caps_path = root / "python" / "runtime-capabilities.json"
+        if not caps_path.is_file():
+            raise SystemExit(
+                "python/runtime-capabilities.json is required when "
+                "python/pyproject.toml exists."
+            )
+        py_caps = load_json(caps_path)
+        if py_caps.get("runtime") != "python":
+            raise SystemExit(
+                "python/runtime-capabilities.json runtime must be 'python'."
+            )
+        if py_caps.get("normalizer_contract_version") != "0.2.0":
+            raise SystemExit(
+                "python/runtime-capabilities.json normalizer_contract_version "
+                "must be '0.2.0'."
+            )
+        tip_sources = set(expected_sources)
+        tip_outputs = set(OUTPUTS)
+        tip_capabilities = set(TIP_CAPABILITIES)
+        claimed_sources = py_caps.get("sources")
+        claimed_outputs = py_caps.get("outputs")
+        claimed_capabilities = py_caps.get("capabilities")
+        if not isinstance(claimed_sources, list):
+            raise SystemExit("python/runtime-capabilities.json sources must be a list.")
+        if not isinstance(claimed_outputs, list):
+            raise SystemExit("python/runtime-capabilities.json outputs must be a list.")
+        if not isinstance(claimed_capabilities, list):
+            raise SystemExit(
+                "python/runtime-capabilities.json capabilities must be a list."
+            )
+        extra_sources = set(claimed_sources) - tip_sources
+        extra_outputs = set(claimed_outputs) - tip_outputs
+        extra_caps = set(claimed_capabilities) - tip_capabilities
+        if extra_sources:
+            raise SystemExit(
+                "python/runtime-capabilities.json sources not subset of tip: "
+                f"{sorted(extra_sources)}"
+            )
+        if extra_outputs:
+            raise SystemExit(
+                "python/runtime-capabilities.json outputs not subset of tip: "
+                f"{sorted(extra_outputs)}"
+            )
+        if extra_caps:
+            raise SystemExit(
+                "python/runtime-capabilities.json capabilities not subset of tip: "
+                f"{sorted(extra_caps)}"
+            )
+        python_inputs = [pyproject_path, caps_path]
+
     inputs = [
         root / "VERSION",
         root / "contracts/compatibility.json",
@@ -156,7 +230,9 @@ def main() -> None:
         root / "rust/Cargo.toml",
         root / "rust/Cargo.lock",
         *projects,
+        *python_inputs,
     ]
+
     source_commit = os.environ.get("GITHUB_SHA") or os.environ.get("SOURCE_COMMIT")
     evidence = {
         "format": "trajectory-preview-provenance-v1",
