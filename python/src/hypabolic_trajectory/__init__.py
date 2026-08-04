@@ -1,15 +1,31 @@
 """hypabolic-trajectory — normalize coding-agent transcripts into Trajectory contracts.
 
-Only names listed in root ``__all__`` (and, once landed, ``ir.__all__`` /
-``otel.__all__``) are semver-stable. Other import paths are unsupported.
+Only names listed in root ``__all__`` (and ``ir.__all__`` / ``otel.__all__`` once
+landed) are semver-stable. Other import paths are unsupported.
+
+**Export owner (PY-04a through PY-12):** this module is the single owner of root
+``__all__`` and ``api.py`` re-export merge. Parallel free-function/source issues
+land implementations in internal modules and update root exports only under this
+owner's review. Built-in source/lister registration hooks run on package import
+as free functions land.
 """
 
 from __future__ import annotations
 
-from enum import StrEnum
-from typing import Final, Literal
+from typing import Final
 
+from hypabolic_trajectory._enums import TrajectorySource
 from hypabolic_trajectory._json_types import JsonObject, JsonPrimitive, JsonValue
+from hypabolic_trajectory._schema import (
+    HYPABOLIC_TRAJECTORY_V1,
+    JSONL_MINIMAL,
+    LETTA_CANONICAL_V1,
+    LETTA_TRAJECTORY_V1,
+    OPENAI_CHAT_MESSAGES,
+    OTEL_GENAI_SPANS_V1,
+    SCHEMA_IDS,
+    SchemaId,
+)
 from hypabolic_trajectory._version import resolve_package_version
 
 # ---------------------------------------------------------------------------
@@ -27,33 +43,6 @@ __version__ = PACKAGE_VERSION  # single public alias; not a second hand-maintain
 # PACKAGE_VERSION until all runtimes + goldens move.
 WIRE_PACKAGE_VERSION: Final[str] = "0.1.0"
 
-LETTA_TRAJECTORY_V1: Final[str] = "letta-trajectory-v1"
-LETTA_CANONICAL_V1: Final[str] = "letta-canonical-v1"
-HYPABOLIC_TRAJECTORY_V1: Final[str] = "hypabolic-trajectory-v1"
-OPENAI_CHAT_MESSAGES: Final[str] = "openai-chat-messages"
-JSONL_MINIMAL: Final[str] = "jsonl-minimal"
-OTEL_GENAI_SPANS_V1: Final[str] = "otel-genai-spans-v1"
-
-SCHEMA_IDS: Final[frozenset[str]] = frozenset(
-    {
-        LETTA_TRAJECTORY_V1,
-        LETTA_CANONICAL_V1,
-        HYPABOLIC_TRAJECTORY_V1,
-        OPENAI_CHAT_MESSAGES,
-        JSONL_MINIMAL,
-        OTEL_GENAI_SPANS_V1,
-    }
-)
-
-# Built-in schema ids only — do NOT union with str (that collapses the Literal).
-SchemaId = Literal[
-    "letta-trajectory-v1",
-    "letta-canonical-v1",
-    "hypabolic-trajectory-v1",
-    "openai-chat-messages",
-    "jsonl-minimal",
-    "otel-genai-spans-v1",
-]
 # Extension points (custom adapters) use SchemaId | str at the parameter site.
 
 IMPLEMENTED_SOURCES: Final[tuple[str, ...]] = (
@@ -65,35 +54,70 @@ IMPLEMENTED_SOURCES: Final[tuple[str, ...]] = (
     "ahp",
 )
 
+# ---------------------------------------------------------------------------
+# PY-02 / PY-03 / PY-04a public surface
+# ---------------------------------------------------------------------------
 
-class TrajectorySource(StrEnum):
-    """Canonical public source type. Values equal wire names."""
-
-    PI = "pi"
-    CLAUDE_CODE = "claude-code"
-    CODEX = "codex"
-    OPENCLAW = "openclaw"
-    HERMES = "hermes"
-    AHP = "ahp"
-
-
-# PY-02: public canonical_json (+ identity/escape live in internal modules).
 from hypabolic_trajectory.canonical import canonical_json
+from hypabolic_trajectory.diagnostics import Diagnostic
+from hypabolic_trajectory.dto import (
+    Bounds,
+    Filters,
+    NormalizeOptions,
+    NormalizeRequest,
+    SourceContext,
+    ToolArgumentBounds,
+    ToolResultBounds,
+    TrajectoryListing,
+    TrajectoryListingPage,
+)
+from hypabolic_trajectory.errors import TrajectoryError
+from hypabolic_trajectory.ir import (
+    AppliedBounds,
+    AppliedConfig,
+    AppliedFilters,
+    IrRecord,
+    ModelInvocation,
+    ModelTokenUsage,
+    Provenance,
+    RecordHashes,
+    RecordKind,
+    SourceAnchorKind,
+    SourceIdentityKind,
+    ToolCall,
+    TrajectoryExecution,
+    TrajectoryIR,
+    TrajectoryRole,
+    WorkflowInvocation,
+)
+from hypabolic_trajectory.api import (
+    list_trajectories,
+    normalize_to_canonical,
+    normalize_to_hypabolic,
+    normalize_to_ir,
+    normalize_to_letta,
+    project_canonical,
+    project_hypabolic,
+    project_letta,
+    project_minimal_jsonl,
+    project_openai,
+    project_otel_genai,
+    serialize_projection,
+)
 
-# Progressive root exports from parallel issues (PY-03 Diagnostic / TrajectoryError).
-# Imported when present so wave B packages can co-exist in one working tree;
-# root ``__all__`` is finalized under the PY-04a export-owner role through PY-12.
-try:
-    from hypabolic_trajectory.diagnostics import Diagnostic as Diagnostic
-    from hypabolic_trajectory.errors import TrajectoryError as TrajectoryError
+# TrajectoryEngine: intermediate stub lands in engine.py; listed in root __all__
+# only when methods work (first-ship pin — PY-12). Free-function isolation pin is
+# documented on engine.py and enforced by free functions never reading engine state.
+# from hypabolic_trajectory.engine import TrajectoryEngine  # PY-12
 
-    _PY03_EXPORTS = ("Diagnostic", "TrajectoryError")
-except ImportError:  # pragma: no cover - package may ship before PY-03 lands
-    _PY03_EXPORTS = ()
+# Import-time registration hooks for built-in sources/listers (no-op until owners land).
+# Later issues call register_source_adapter / register_lister from submodules imported here.
 
-# Free functions, DTOs, IR, engine, and otel land in later issues.
-# Exclusive free-function owners may re-export their symbol as it lands.
+
+# Exhaustive inventory target: docs/python-implementation-spec.md §3 root __all__.
+# Progressive: names land with their owning issues under this export owner.
 __all__ = [
+    # Version / constants
     "NORMALIZER_CONTRACT_VERSION",
     "PACKAGE_VERSION",
     "__version__",
@@ -108,9 +132,52 @@ __all__ = [
     "SchemaId",
     "IMPLEMENTED_SOURCES",
     "TrajectorySource",
+    # JSON aliases
     "JsonPrimitive",
     "JsonValue",
     "JsonObject",
+    # Request / listing DTOs
+    "SourceContext",
+    "ToolArgumentBounds",
+    "ToolResultBounds",
+    "Bounds",
+    "Filters",
+    "NormalizeOptions",
+    "NormalizeRequest",
+    "TrajectoryListing",
+    "TrajectoryListingPage",
+    # Diagnostics / errors
+    "Diagnostic",
+    "TrajectoryError",
+    # Free functions (stubs for exclusive owners still open; normalize_to_ir = skeleton)
+    "normalize_to_ir",
+    "normalize_to_letta",
+    "normalize_to_canonical",
+    "normalize_to_hypabolic",
+    "project_letta",
+    "project_canonical",
+    "project_hypabolic",
+    "project_openai",
+    "project_minimal_jsonl",
+    "project_otel_genai",
+    "list_trajectories",
+    "serialize_projection",
     "canonical_json",
-    *_PY03_EXPORTS,
+    # IR re-exports (ir.__all__ multi-project subset)
+    "TrajectoryIR",
+    "IrRecord",
+    "RecordKind",
+    "TrajectoryRole",
+    "ToolCall",
+    "Provenance",
+    "SourceIdentityKind",
+    "SourceAnchorKind",
+    "RecordHashes",
+    "AppliedConfig",
+    "AppliedBounds",
+    "AppliedFilters",
+    "TrajectoryExecution",
+    "ModelInvocation",
+    "ModelTokenUsage",
+    "WorkflowInvocation",
 ]
