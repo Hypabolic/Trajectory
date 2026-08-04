@@ -5,19 +5,25 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
-Post-`0.1.0` work merged to `main` (not yet published to NuGet / npm / crates).
-The next public capability release that includes these items **must** use a new
-tag (for example `v0.1.1` or `v0.2.0`); do not retag or republish `0.1.0`.
+## 0.1.1 — 2026-08-05
 
+Synchronized multi-registry release (NuGet / npm / crates / **PyPI**). Do not
+retag or republish `0.1.0`.
+
+- Added **Python** native runtime `hypabolic-trajectory` (import
+  `hypabolic_trajectory`) under PyPI org Hypabolic: decode → normalize →
+  project for tip sources (`pi`, `claude-code`, `codex`, `openclaw`, `hermes`,
+  `ahp`), listing, pure OTEL GenAI projection + optional `[otel]` extra,
+  shared conformance runner, CI gates, and OIDC publish path. Package version
+  locksteps with NuGet/npm/crates on this tag.
 - Added **AHP** (Agent Host Protocol) Shape A offline snapshot source adapters
-  across .NET, TypeScript, and Rust. Wire source name is `ahp`; protocol pin is
-  `0.7.x` (`conformance/vendor/ahp/PROTOCOL_VERSION`). Phase 1 covers offline
-  ChatState export envelopes (`ahp-export-v1`), chat-unit identity, cancel-safe
-  tool mapping (including `toolCall.error.message`), and shared conformance
-  cases `ahp/tool-calls`, `ahp/multi-turn`, and `ahp/cancelled-turn`. Repository
-  tip `contracts/compatibility.json` and runtime capability manifests advertise
-  `ahp` alongside the published v1 sources.
-- **Deferred (not shipped):** Shape B action-log reduce, export-directory
+  across .NET, TypeScript, Rust, and Python. Wire source name is `ahp`;
+  protocol pin is `0.7.x` (`conformance/vendor/ahp/PROTOCOL_VERSION`). Phase 1
+  covers offline ChatState export envelopes (`ahp-export-v1`), chat-unit
+  identity, cancel-safe tool mapping (including `toolCall.error.message`), and
+  shared conformance cases `ahp/tool-calls`, `ahp/multi-turn`, and
+  `ahp/cancelled-turn`.
+- **Deferred (not shipped):** AHP Shape B action-log reduce, export-directory
   listing (Phase 3 empty stubs only), multi-chat unpack, and live host /
   WebSocket clients. See `docs/ahp-ingest-status.md` and
   `docs/ahp-source-spec.md`.

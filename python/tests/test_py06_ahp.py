@@ -717,37 +717,27 @@ def test_token_counts_reject_fractional_and_non_finite() -> None:
 
 def test_deeply_nested_parameters_is_domain_error() -> None:
     # Valid JSON tree deep enough that compact_json recursion fails.
-    nested: object = {}
-    cur: dict[str, object] = nested  # type: ignore[assignment]
+    # Build nested JSON text iteratively — json.dumps of a 1200-deep Python
+    # dict hits RecursionError on CPython 3.11 before the decoder runs.
+    nested = "{}"
     for _ in range(1_200):
-        nxt: dict[str, object] = {}
-        cur["n"] = nxt
-        cur = nxt
-    payload = {
-        "ahpProtocolVersion": "0.7.0",
-        "chat": {
-            "turns": [
-                {
-                    "id": "t1",
-                    "message": {"text": "hi", "origin": {"kind": "user"}},
-                    "responseParts": [
-                        {
-                            "kind": "toolCall",
-                            "toolCall": {
-                                "toolCallId": "tc1",
-                                "toolName": "x",
-                                "parameters": nested,
-                                "status": "completed",
-                                "success": True,
-                            },
-                        }
-                    ],
-                }
-            ],
-        },
-    }
+        nested = '{"n":' + nested + "}"
+    raw = (
+        '{"ahpProtocolVersion":"0.7.0","chat":{"turns":[{'
+        '"id":"t1",'
+        '"message":{"text":"hi","origin":{"kind":"user"}},'
+        '"responseParts":[{'
+        '"kind":"toolCall",'
+        '"toolCall":{'
+        '"toolCallId":"tc1",'
+        '"toolName":"x",'
+        f'"parameters":{nested},'
+        '"status":"completed",'
+        '"success":true'
+        "}}]}]}}"
+    )
     with pytest.raises(TrajectoryError) as ei:
-        decode_ahp_snapshot(_bytes(payload))
+        decode_ahp_snapshot(raw.encode("utf-8"))
     assert ei.value.code == FATAL_INVALID_INPUT
     assert ei.value.__cause__ is None
 
