@@ -10,7 +10,7 @@ This note replaces the workflow’s planned **Codex gpt-5.6-sol** final review.
 
 **Partial vertical, shippable as a progress PR — not first-public-PyPI ready.**
 
-Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, and the **TrajectoryEngine ship surface (PY-12)** are in tree with unit tests. Full shared tip gate (identity baseline + tip capabilities equality formalization) and CI progressive/tip jobs are **not** done. OIDC PyPI release path (PY-14b) is in tree.
+Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters (Pi, Claude Code, Codex, OpenClaw, Hermes, AHP Shape A), listing helpers + per-source listers (stubs where expected), projections through letta / canonical / hypabolic / openai / jsonl-minimal / pure OTEL GenAI, `hypabolic_trajectory.otel` (`SpanSetSink`/`emit_to`), the `list_trajectories` registry dispatcher (PY-09b), the **protocol-v1 conformance runner with all seven ops wired (PY-10-full)** plus progressive tip claims from PY-10a/PY-10b-*, the **full shared tip gate (PY-11)** (unfiltered verify + identity baseline + tip capabilities equality formalization), and the **TrajectoryEngine ship surface (PY-12)** are in tree with unit tests. CI progressive/tip jobs (PY-15a/b) are **not** done. OIDC PyPI release path (PY-14b) is in tree.
 
 ## What landed (mapped to spec §9)
 
@@ -38,41 +38,41 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 | PY-10b-otel | **Done** (runner `project-otel` via free-function `project_otel_genai` + `serialize_projection`; filtered verify green; claim-writer adds `otel-genai-spans-v1`) |
 | PY-10b-* remaining claim expansion | **Done** (tip sources + tip outputs + required capabilities all claimed via PY-10a/PY-10b-* writers; no residual gaps) |
 | PY-10-full | **Done** (all 7 protocol-v1 ops wired; `PROTOCOL_V1_OPERATIONS` pins request schema enum; filtered tip sources×ops verify **47 ops / 27 cases** green; join tests in `test_py10_full.py`) |
-| PY-11 full shared conformance | **Missing** (identity baseline + unfiltered tip gate + tip capabilities equality formalization) |
+| PY-11 full shared conformance | **Done** (unfiltered tip verify 47 ops / 27 cases green; identity-baseline 21 goldens; tip capabilities equality claim formalized vs compatibility + TS/Rust peers; `test_py11_full_conformance.py`) |
 | PY-12 TrajectoryEngine ship surface | **Done** (`create_default` tip matrix incl. pure otel; `project` / `add_output_adapter`; duplicate→ValueError; unknown→`unknown_output_schema`; root `__all__`; binding isolation units) |
 | PY-13 sample CLI | **Missing** |
 | PY-14a packaging stamp / pack-smoke | Done |
 | PY-14b OIDC / release.yml PyPI | **Done** (validate packs `artifacts/release/pypi` + pack-smoke; `publish-pypi` download-only + `skip-existing` + OIDC `id-token: write` / env `release`; github-release needs publish-pypi + attaches pypi; `docs/publishing.md` PyPI pending-publisher + install lines; no live publish) |
-| PY-15* CI jobs | **Missing** |
+| PY-15* CI jobs | **Missing** (scaffold/progressive/tip jobs owned by PY-15-scaffold / PY-15a / PY-15b) |
 | PY-16 docs integration | Partial (spec + this status) |
 | PY-17 first-ship join | **Not ready** |
 
-`python/runtime-capabilities.json` claims the full tip surface: all six sources (`pi` … `ahp`), all six outputs (letta / canonical / hypabolic / openai / jsonl-minimal / otel-genai-spans-v1), and all required capabilities including `list-explicit-root`. Do not treat `IMPLEMENTED_SOURCES` in `__init__.py` as registry claims. Formal tip-equality gate + identity baseline remain **PY-11**.
+`python/runtime-capabilities.json` claims the full tip surface with **tip equality formalized (PY-11)**: all six sources (`pi` … `ahp`), all six outputs (letta / canonical / hypabolic / openai / jsonl-minimal / otel-genai-spans-v1), required capabilities including `list-explicit-root`, and `slice: ML13` — equal to `contracts/compatibility.json` and peer TS/Rust manifests. Do not treat `IMPLEMENTED_SOURCES` in `__init__.py` as registry claims.
 
 ## Verification performed
 
-- `pytest` under `python/`: progressive suite includes PY-08 OTEL + PY-09b list dispatcher + PY-10a runner + PY-10b-* claim-writers + **PY-10-full** join.
+- `pytest` under `python/`: progressive suite includes PY-08 OTEL + PY-09b list dispatcher + PY-10a runner + PY-10b-* claim-writers + **PY-10-full** join + **PY-11** tip gate (`test_py11_full_conformance.py`).
 - Filtered shared verify green (full tip sources × all protocol-v1 ops):  
   `python conformance/verify.py --repository-root . --source pi --source claude-code --source codex --source openclaw --source hermes --source ahp --operation normalize-letta --operation normalize-canonical --operation normalize-hypabolic --operation project-openai --operation project-minimal-jsonl --operation project-otel --operation list-trajectories -- env PYTHONPATH=python/src:python/tools python -m trajectory_conformance` → **47 operations / 27 cases**.
+- **Bare unfiltered** `verify.py` (tip defaults from compatibility.json) green: **47 operations / 27 cases** (PY-11).
+- **Identity baseline** `conformance/identity-baseline.sha256` green (21 identity-bearing goldens; PY-11).
+- **Tip capabilities equality**: Python `runtime-capabilities.json` sources/outputs/capabilities/slice equal tip ML13 + TS/Rust peers (PY-11 claim ceremony).
 - Protocol: domain fatal exit 0 (`pi/missing-assistant`); protocol-error exit 2 (bad JSON / wrong version / path escape / undeclared op / unknown op).
 - Free-function exports: `from hypabolic_trajectory import normalize_to_ir, project_letta, project_canonical, project_hypabolic, project_openai, project_minimal_jsonl, project_otel_genai, serialize_projection, list_trajectories`.
-- Bare unfiltered `verify.py` (tip equality / identity-baseline) remains **PY-11**.
 
 ## Issues / follow-ups (non-blocking for this PR)
 
-2. **PY-11** full shared conformance (unfiltered tip + identity baseline + tip capabilities equality formalization). Progressive claims already match tip sources/outputs/required caps at claim level.
-3. **SDK Activity sink** not shipped (optional `[otel]` helper); pure project + `emit_to`/`SpanSetSink` cover the import matrix.
-4. **Engine** shipped (PY-12); free-function isolation pin covered by unit tests.
-5. **CI progressive conformance job** (PY-15a argv generator/checker) not wired yet — runner path exists for local/CI invocation.
-6. Workflow agents that hit Codex for “final review” failed; this document is the substitute gate for opening the PR.
+2. **SDK Activity sink** not shipped (optional `[otel]` helper); pure project + `emit_to`/`SpanSetSink` cover the import matrix.
+3. **Engine** shipped (PY-12); free-function isolation pin covered by unit tests.
+4. **CI progressive/tip jobs** (PY-15a argv generator/checker; PY-15b unfiltered tip gate + validate_release_metadata ship equality) not wired yet — local PY-11 tests formalize the tip gate; runner path exists for local/CI invocation.
+5. Workflow agents that hit Codex for “final review” failed; this document is the substitute gate for opening the PR.
 
 ## Recommended next PR sequence
 
-1. **PY-11** (full shared conformance + identity baseline + tip equality)  
-2. PY-15 CI → **PY-17** (PY-14b OIDC path already landed)
+1. **PY-15a/b** progressive + tip CI → **PY-16** docs → **PY-17** (PY-11 tip formalization + PY-14b OIDC already landed)
 
 ## Non-goals of this PR
 
 - Cutting a version tag or publishing to PyPI  
-- Formal PY-11 tip gate (unfiltered verify + identity-baseline + tip equality claim ceremony)  
+- CI tip job wiring (PY-15b) or docs integration (PY-16)  
 - Merging incomplete stubs as “done” in release-readiness

@@ -159,7 +159,7 @@ def test_filtered_verify_full_protocol_v1_tip_surface_green() -> None:
     """Honesty gate: filtered tip sources × all protocol-v1 ops is verify-green.
 
     This is the PY-10-full join check. Tip *capabilities equality claim* and
-    identity-baseline remain PY-11.
+    identity-baseline are formalized in test_py11_full_conformance.py (PY-11).
     """
     cmd: list[str] = [
         PYTHON,
