@@ -88,8 +88,6 @@ def test_claim_writer_includes_ahp() -> None:
     # (other claim-writers may add more outputs — do not forbid them here).
     assert "letta-trajectory-v1" in data["outputs"]
     assert "letta-canonical-v1" in data["outputs"]
-    # Listing remains unclaimed until PY-10b-list.
-    assert "list-explicit-root" not in data["capabilities"]
     # Packaged interior copy must match authoritative path.
     interior = json.loads(INTERIOR_CAPS.read_text(encoding="utf-8"))
     assert interior == data
