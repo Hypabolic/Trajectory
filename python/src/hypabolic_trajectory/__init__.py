@@ -107,8 +107,10 @@ from hypabolic_trajectory.api import (
 # documented on engine.py and enforced by free functions never reading engine state.
 # from hypabolic_trajectory.engine import TrajectoryEngine  # PY-12
 
-# Import-time registration hooks for built-in sources/listers (no-op until owners land).
-# Later issues call register_source_adapter / register_lister from submodules imported here.
+# Import-time registration hooks for built-in sources/listers.
+# Per-source owners self-register from submodules imported here (side effect).
+from hypabolic_trajectory.listing import openclaw as _openclaw_listing  # noqa: F401
+from hypabolic_trajectory.sources import openclaw as _openclaw_source  # noqa: F401
 
 
 # Exhaustive inventory target: docs/python-implementation-spec.md §3 root __all__.

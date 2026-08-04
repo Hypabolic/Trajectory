@@ -18,6 +18,9 @@ from hypabolic_trajectory.sources.protocol import (
     registered_source_names,
 )
 
+# Built-in adapters (self-register on import). Root package also imports these.
+from hypabolic_trajectory.sources import openclaw as _openclaw  # noqa: E402, F401
+
 __all__ = [
     "DecodedEvent",
     "DecodedModelInvocation",
