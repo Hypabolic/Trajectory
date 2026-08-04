@@ -58,7 +58,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 
 ## Issues / follow-ups (non-blocking for this PR)
 
-2. **Claim expansion** for hypabolic / otel / other sources still open (PY-10b-*).
+2. **Claim expansion** for otel / other sources still open (PY-10b-*).
 3. **SDK Activity sink** not shipped (optional `[otel]` helper); pure project + `emit_to`/`SpanSetSink` cover the import matrix.
 4. **Engine** shipped (PY-12); free-function isolation pin covered by unit tests.
 5. **CI progressive conformance job** (PY-15a argv generator/checker) not wired yet — runner path exists for local/CI invocation.
@@ -66,7 +66,7 @@ Core scaffold, identity/JSON, IR freezes, normalization, all six source adapters
 
 ## Recommended next PR sequence
 
-1. Remaining PY-10b-* claim expansion parallel (hypabolic, list, otel, other sources)  
+1. Remaining PY-10b-* claim expansion parallel (list, otel, other sources; hypabolic claimed)  
 2. PY-11 + PY-15 CI + PY-14b OIDC → PY-17  
 
 ## Non-goals of this PR

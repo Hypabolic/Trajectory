@@ -20,6 +20,7 @@
   "capabilities": [
     "normalize",
     "normalize-partial",
+    "list-explicit-root",
     "typed-diagnostics",
     "typed-fatal-errors",
     "deterministic-rerun"
