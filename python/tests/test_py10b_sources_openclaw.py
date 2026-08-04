@@ -76,8 +76,7 @@ def test_claim_writer_openclaw_when_green() -> None:
     # Claimed normalize outputs must include letta + canonical (openclaw cases).
     assert "letta-trajectory-v1" in data["outputs"]
     assert "letta-canonical-v1" in data["outputs"]
-    # Listing is PY-10b-list — must not claim via this source expansion.
-    assert "list-explicit-root" not in data["capabilities"]
+    # Listing claim is owned by PY-10b-list (may be present).
 
 
 def test_filtered_verify_openclaw_normalize_green() -> None:

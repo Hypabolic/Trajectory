@@ -58,8 +58,7 @@ def test_claim_writer_sources_hermes() -> None:
     tip_rank = {name: i for i, name in enumerate(TIP_SOURCE_ORDER)}
     ranks = [tip_rank[s] for s in sources]
     assert ranks == sorted(ranks), f"sources not tip-ordered: {sources}"
-    # This issue does not claim listing.
-    assert "list-explicit-root" not in data["capabilities"]
+    # Listing claim is owned by PY-10b-list (may be present).
     # letta/canonical remain claimed normalize outputs (PY-10a).
     outputs = data["outputs"]
     assert "letta-trajectory-v1" in outputs
