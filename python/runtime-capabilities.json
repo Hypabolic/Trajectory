@@ -4,6 +4,9 @@
   "normalizer_contract_version": "0.2.0",
   "sources": [
     "pi",
+    "claude-code",
+    "codex",
+    "openclaw",
     "hermes"
   ],
   "outputs": [
