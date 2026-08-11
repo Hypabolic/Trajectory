@@ -10,10 +10,11 @@ use chrono::DateTime;
 use hypabolic_trajectory::{
     ListingOptions, NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError,
     TruncationStrategy, list_ahp_trajectories, list_claude_code_trajectories,
-    list_codex_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
-    list_pi_trajectories, normalize_ahp, normalize_claude_code, normalize_codex, normalize_hermes,
-    normalize_openclaw, normalize_pi, project_canonical, project_hypabolic, project_letta,
-    project_minimal_jsonl, project_openai, project_opentelemetry,
+    list_codex_trajectories, list_grok_build_trajectories, list_hermes_trajectories,
+    list_openclaw_trajectories, list_pi_trajectories, normalize_ahp, normalize_claude_code,
+    normalize_codex, normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi,
+    project_canonical, project_hypabolic, project_letta, project_minimal_jsonl, project_openai,
+    project_opentelemetry,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -47,6 +48,24 @@ struct SourceContextManifest {
     group_id: Option<String>,
     base_byte_offset: Option<i64>,
     partial: Option<bool>,
+    /// Spec allows boolean true OR string `"true"` (match .NET/TS).
+    #[serde(default, deserialize_with = "deserialize_include_encrypted_reasoning")]
+    include_encrypted_reasoning: Option<bool>,
+}
+
+fn deserialize_include_encrypted_reasoning<'de, D>(
+    deserializer: D,
+) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(match value {
+        None | Some(Value::Null) => None,
+        Some(Value::Bool(flag)) => Some(flag),
+        Some(Value::String(text)) => Some(text.eq_ignore_ascii_case("true")),
+        Some(_) => Some(false),
+    })
 }
 
 #[derive(Default, Deserialize)]
@@ -141,7 +160,7 @@ fn run() -> Result<Value, String> {
     }
     if !matches!(
         manifest.source.as_str(),
-        "pi" | "claude-code" | "codex" | "openclaw" | "hermes" | "ahp"
+        "pi" | "claude-code" | "codex" | "openclaw" | "hermes" | "ahp" | "grok-build"
     ) {
         return Err(format!(
             "Rust does not support source '{}'.",
@@ -211,6 +230,10 @@ fn execute(
             group_id: manifest.source_context.group_id.as_deref(),
             base_byte_offset: manifest.source_context.base_byte_offset.unwrap_or(0),
             partial: manifest.source_context.partial.unwrap_or(false),
+            include_encrypted_reasoning: manifest
+                .source_context
+                .include_encrypted_reasoning
+                .unwrap_or(false),
         },
         options: NormalizeOptions {
             tool_arguments_max_characters: manifest
@@ -238,6 +261,7 @@ fn execute(
         "openclaw" => normalize_openclaw(normalize_request),
         "hermes" => normalize_hermes(normalize_request),
         "ahp" => normalize_ahp(normalize_request),
+        "grok-build" => normalize_grok_build(normalize_request),
         _ => unreachable!("source is validated before execution"),
     }?;
     let output = match operation {
@@ -291,7 +315,10 @@ fn execute_listing(repository_root: &Path, manifest: &Manifest) -> Result<String
         let mut pages = Vec::new();
         let mut cursor = None;
         loop {
-            let listing_root = if matches!(manifest.source.as_str(), "claude-code" | "codex") {
+            let listing_root = if matches!(
+                manifest.source.as_str(),
+                "claude-code" | "codex" | "grok-build"
+            ) {
                 root.join("store")
             } else {
                 root.clone()
@@ -308,6 +335,7 @@ fn execute_listing(repository_root: &Path, manifest: &Manifest) -> Result<String
                 "openclaw" => list_openclaw_trajectories(&options),
                 "hermes" => list_hermes_trajectories(&options),
                 "ahp" => list_ahp_trajectories(&options),
+                "grok-build" => list_grok_build_trajectories(&options),
                 _ => unreachable!("source is validated before execution"),
             }?;
             let items = page
@@ -317,12 +345,18 @@ fn execute_listing(repository_root: &Path, manifest: &Manifest) -> Result<String
                     let relative = item.path.strip_prefix(&root).map_err(|_| {
                         TrajectoryError::new("invalid_input", "Listing escaped its explicit root.")
                     })?;
-                    Ok(json!({
+                    let mut obj = json!({
                         "id": item.id,
                         "path": format!("$ROOT/{}", relative.to_string_lossy().replace('\\', "/")),
                         "updated_at": item.updated_at,
                         "size_bytes": item.size_bytes,
-                    }))
+                    });
+                    if let Some(title) = &item.title {
+                        obj.as_object_mut()
+                            .expect("listing item object")
+                            .insert("title".into(), json!(title));
+                    }
+                    Ok(obj)
                 })
                 .collect::<Result<Vec<_>, TrajectoryError>>()?;
             let next = page.next_cursor.clone();

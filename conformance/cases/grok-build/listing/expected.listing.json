@@ -1,0 +1,38 @@
+[
+  {
+    "items": [
+      {
+        "id": "019f0000-0000-7000-8000-000000000002",
+        "path": "$ROOT/store/%2Fworkspace%2Fdemo/019f0000-0000-7000-8000-000000000002/chat_history.jsonl",
+        "updated_at": "2026-04-03T00:00:00.000Z",
+        "size_bytes": 32,
+        "title": "Newer session"
+      }
+    ],
+    "next_cursor": "MQowCjAxOWYwMDAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMg"
+  },
+  {
+    "items": [
+      {
+        "id": "019f0000-0000-7000-8000-000000000003",
+        "path": "$ROOT/store/%2Fworkspace%2Fother/019f0000-0000-7000-8000-000000000003/chat_history.jsonl",
+        "updated_at": "2026-04-02T00:00:00.000Z",
+        "size_bytes": 32,
+        "title": "Mid session"
+      }
+    ],
+    "next_cursor": "MQoxCjAxOWYwMDAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMw"
+  },
+  {
+    "items": [
+      {
+        "id": "019f0000-0000-7000-8000-000000000001",
+        "path": "$ROOT/store/%2Fworkspace%2Fdemo/019f0000-0000-7000-8000-000000000001/chat_history.jsonl",
+        "updated_at": "2026-04-01T00:00:00.000Z",
+        "size_bytes": 32,
+        "title": "Older session"
+      }
+    ],
+    "next_cursor": null
+  }
+]

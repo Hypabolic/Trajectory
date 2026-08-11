@@ -14,8 +14,8 @@ Related:
 - [Contributing](contributing.md)
 - [AHP source design](ahp-source-spec.md) — Agent Host Protocol Shape A offline
   snapshot source (`ahp`); action-log reduce, listing, and live host are later
-  phases. Phase status: [ahp-ingest-status.md](ahp-ingest-status.md). AHP is
-  in-tree / next package version after published `0.1.0`.
+  phases. Phase status: [ahp-ingest-status.md](ahp-ingest-status.md).
+- [Grok Build source](grok-build-source-spec.md) — Grok Build (`grok-build`) session history
 
 ## Architecture reminder
 

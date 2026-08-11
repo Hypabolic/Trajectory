@@ -1,6 +1,6 @@
 {
   "name": "@hypabolic/trajectory-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Local sample TUI for browsing agent sessions with @hypabolic/trajectory",
   "license": "MIT",
@@ -22,8 +22,8 @@
     "README.md"
   ],
   "dependencies": {
-    "@hypabolic/trajectory": "0.1.1",
-    "@hypabolic/trajectory-node": "0.1.1"
+    "@hypabolic/trajectory": "0.1.2",
+    "@hypabolic/trajectory-node": "0.1.2"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -1,0 +1,62 @@
+{
+  "records": [
+    {
+      "role": "meta",
+      "source": "grok-build",
+      "model": "grok-4.5"
+    },
+    {
+      "role": "user",
+      "content": "Write notes.txt then cat it.",
+      "timestamp": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_w1",
+          "name": "write",
+          "args": "{\"path\":\"notes.txt\",\"content\":\"todo\"}"
+        }
+      ],
+      "timestamp": "2026-01-01T00:00:15.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_b1",
+          "name": "bash",
+          "args": "{\"command\":\"cat notes.txt\"}"
+        }
+      ],
+      "timestamp": "2026-01-01T00:00:30.000Z"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_w1",
+      "content": "wrote 4 bytes",
+      "timestamp": "2026-01-01T00:00:45.000Z"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_b1",
+      "content": "todo",
+      "timestamp": "2026-01-01T00:01:00.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Done.",
+      "timestamp": "2026-01-01T00:01:15.000Z"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "timestamps_synthesized",
+      "message": "Synthesized timestamps for 6 normalized records.",
+      "count": 6
+    }
+  ]
+}

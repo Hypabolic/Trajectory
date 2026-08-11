@@ -4,7 +4,7 @@
     <AssemblyName>Hypabolic.Trajectory</AssemblyName>
     <RootNamespace>Hypabolic.Trajectory</RootNamespace>
     <PackageId>Hypabolic.Trajectory</PackageId>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Description>Normalize coding-agent session transcripts into deterministic trajectory formats.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/Hypabolic/Trajectory</RepositoryUrl>

@@ -5,6 +5,31 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+## 0.1.2 — 2026-08-11
+
+Tip release merging `develop` (Grok Build + listing titles) onto `main` (Python + AHP).
+
+- Added **Grok Build** (`grok-build`, CLI alias `grok`) multi-runtime source adapters
+  and shared conformance fixtures across **.NET, TypeScript, Rust, and Python**.
+  Native container is `chat_history.jsonl` under `$GROK_HOME/sessions` or
+  `~/.grok/sessions` (`<cwd-dir>/<session-uuid>/…`). Supports system/user/assistant
+  turns, tool calls, backend tool synthesis, optional encrypted reasoning via
+  `source_context.include_encrypted_reasoning`, and explicit-root listing with
+  `summary.json` titles. Advertised in `contracts/compatibility.json` and all
+  runtime capability manifests (slice `ML13`).
+
+- Listing **titles** for Codex / Claude Code / Pi / OpenClaw (skip harness injection
+  noise) and optional `title` on listing items; Grok Build titles from
+  `generated_title` / `session_summary`.
+
+- **Conflict resolution (release merge):** unioned tip sources to
+  `pi`, `claude-code`, `codex`, `openclaw`, `hermes`, `ahp`, `grok-build` across
+  compatibility manifests, peer/Python capability files, CI gates, and
+  `tools/validate_release_metadata.py`. Python gained a Grok Build adapter/lister
+  for tip equality with peers; normalizer/projection map `meta` message roles for
+  Grok system and synthetic-user rows. Identity baseline is the union of main
+  (AHP) and develop (Grok Build) hashes.
+
 ## 0.1.1 — 2026-08-05
 
 Synchronized multi-registry release (NuGet / npm / crates / **PyPI**). Do not

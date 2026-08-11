@@ -1,0 +1,2 @@
+{"type":"user","content":[{"type":"text","text":"chunk user"}]}
+{"type":"assistant","content":"chunk assistant","model_id":"grok-4.5"}

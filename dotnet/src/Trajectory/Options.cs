@@ -5,6 +5,12 @@ public sealed record SourceContext
     public string? GroupId { get; init; }
     public long? BaseByteOffset { get; init; }
     public bool Partial { get; init; }
+
+    /// <summary>
+    /// When true, Grok Build reasoning items may project encrypted_content blobs.
+    /// Default false (privacy).
+    /// </summary>
+    public bool IncludeEncryptedReasoning { get; init; }
 }
 
 public enum ToolResultTruncationStrategy

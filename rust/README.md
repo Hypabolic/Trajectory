@@ -9,8 +9,8 @@ additionally implements **AHP** Shape A offline snapshot ingest (wire name
 `ahp`; listing deferred). AHP is **not** in registry packages at `0.1.0` and
 needs a new tag to publish.
 
-- byte-oriented Pi, Claude Code, Codex, OpenClaw, and Hermes decoding and
-  normalization;
+- byte-oriented Pi, Claude Code, Codex, OpenClaw, Hermes, and Grok Build
+  decoding and normalization;
 - AHP Shape A ChatState snapshot decode (export file / `show --path`; listing
   empty stub);
 - Claude Code producer/context and model-invocation metadata retention;
@@ -53,11 +53,10 @@ python3 conformance/verify.py --repository-root . -- \
 
 `runtime-capabilities.json` is the machine-readable declaration of implemented
 sources and six outputs (slice `ML13`). On this tip the source set includes
-`ahp` (Shape A only); published registry `0.1.0` stopped at Hermes. See
+`ahp` and `grok-build`; published registry `0.1.0` stopped at Hermes. See
 [docs/release-readiness.md](../docs/release-readiness.md) and
 [docs/ahp-ingest-status.md](../docs/ahp-ingest-status.md). `write_schema` and
 `write_minimal_jsonl` provide `std::io::Write` surfaces; the latter emits one
-record at a time without materializing the full JSONL document.
 
 Run the dependency-free representative benchmark:
 

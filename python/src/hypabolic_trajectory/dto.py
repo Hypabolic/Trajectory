@@ -20,6 +20,8 @@ class SourceContext:
     group_id: str | None = None
     base_byte_offset: int = 0  # signed int64 checked at free-function entry
     partial: bool = False
+    # Grok Build: project encrypted_content into reasoning text when true.
+    include_encrypted_reasoning: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

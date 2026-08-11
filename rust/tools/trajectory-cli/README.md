@@ -7,7 +7,7 @@ Local sample TUI for browsing agent sessions with
 
 ## What it does
 
-- Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes)
+- Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes, Grok Build)
 - Normalizes AHP Shape A offline snapshots via `show --path` (no default store)
 - Interactive browse with `dialoguer` selection prompts
 - Privacy-safe summaries (record counts, roles, tool calls, diagnostics)
@@ -21,6 +21,7 @@ Local sample TUI for browsing agent sessions with
 | `openclaw` | `~/.openclaw` if present, else `~/.clawdbot` | `TRAJECTORY_OPENCLAW_ROOT`, `OPENCLAW_STATE_DIR`, or `CLAWDBOT_STATE_DIR` |
 | `hermes` | `~/.hermes` | `TRAJECTORY_HERMES_ROOT` |
 | `ahp` | _(none — export file only)_ | _(not applicable)_ |
+| `grok-build` (alias `grok`) | `$GROK_HOME/sessions` or `~/.grok/sessions` | `TRAJECTORY_GROK_BUILD_ROOT` or `GROK_HOME` |
 
 Hermes core listing is SQLite-free and returns empty pages. Export message JSON
 from Hermes and use `show --path`.

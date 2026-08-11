@@ -2,6 +2,7 @@
 using Hypabolic.Trajectory.Adapters.Ahp;
 using Hypabolic.Trajectory.Adapters.ClaudeCode;
 using Hypabolic.Trajectory.Adapters.Codex;
+using Hypabolic.Trajectory.Adapters.GrokBuild;
 using Hypabolic.Trajectory.Adapters.Hermes;
 using Hypabolic.Trajectory.Adapters.Hypabolic;
 using Hypabolic.Trajectory.Adapters.Letta;
@@ -18,6 +19,7 @@ internal static class DefaultAdapterRegistry
         .AddBuiltInSource(new AhpJsonSourceAdapter())
         .AddBuiltInSource(new ClaudeCodeJsonlSourceAdapter())
         .AddBuiltInSource(new CodexJsonlSourceAdapter())
+        .AddBuiltInSource(new GrokBuildJsonlSourceAdapter())
         .AddBuiltInSource(new HermesJsonSourceAdapter())
         .AddBuiltInSource(new OpenClawJsonlSourceAdapter())
         .AddBuiltInSource(new PiJsonlSourceAdapter())
@@ -29,6 +31,7 @@ internal static class DefaultAdapterRegistry
         .AddBuiltInLister(new AhpTrajectoryLister())
         .AddBuiltInLister(new ClaudeCodeTrajectoryLister())
         .AddBuiltInLister(new CodexTrajectoryLister())
+        .AddBuiltInLister(new GrokBuildTrajectoryLister())
         .AddBuiltInLister(new HermesTrajectoryLister())
         .AddBuiltInLister(new OpenClawTrajectoryLister())
         .AddBuiltInLister(new PiTrajectoryLister());

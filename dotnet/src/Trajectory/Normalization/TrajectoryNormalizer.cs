@@ -390,6 +390,7 @@ internal sealed class TrajectoryNormalizer
     {
         var type = role switch
         {
+            TrajectoryRole.Meta => "meta",
             TrajectoryRole.User => "user",
             TrajectoryRole.Reasoning => "reasoning",
             _ => "assistant",
@@ -915,6 +916,7 @@ internal sealed class TrajectoryNormalizer
 
     private static string RecordType(DecodedEvent sourceEvent) => sourceEvent.Kind switch
     {
+        DecodedEventKind.Message when sourceEvent.Role == TrajectoryRole.Meta => "meta",
         DecodedEventKind.Message when sourceEvent.Role == TrajectoryRole.User => "user",
         DecodedEventKind.Message => "assistant",
         DecodedEventKind.Reasoning => "reasoning",
@@ -926,6 +928,7 @@ internal sealed class TrajectoryNormalizer
     internal static string RecordType(IRRecord record) => record switch
     {
         MetaIR => "meta",
+        MessageIR { Role: TrajectoryRole.Meta } => "meta",
         MessageIR { Role: TrajectoryRole.User } => "user",
         MessageIR { Role: TrajectoryRole.Reasoning } => "reasoning",
         MessageIR => "assistant",

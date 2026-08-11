@@ -50,6 +50,7 @@ internal static class Sources
         "openclaw",
         "hermes",
         "ahp",
+        "grok-build",
     ];
 
     public static TrajectorySource Parse(string value) => value.Trim().ToLowerInvariant() switch
@@ -60,9 +61,10 @@ internal static class Sources
         "openclaw" => TrajectorySource.OpenClaw,
         "hermes" => TrajectorySource.Hermes,
         "ahp" => TrajectorySource.Ahp,
+        "grok-build" or "grok" => TrajectorySource.GrokBuild,
         _ => throw new TrajectoryNormalizationException(
             NormalizationErrorCode.UnknownSource,
-            $"Unknown source '{value}'. Expected one of: {string.Join(", ", Names)}."),
+            $"Unknown source '{value}'. Expected one of: {string.Join(", ", Names)} (alias: grok)."),
     };
 
     public static string WireName(TrajectorySource source) => source switch
@@ -73,6 +75,7 @@ internal static class Sources
         TrajectorySource.OpenClaw => "openclaw",
         TrajectorySource.Hermes => "hermes",
         TrajectorySource.Ahp => "ahp",
+        TrajectorySource.GrokBuild => "grok-build",
         _ => source.ToString().ToLowerInvariant(),
     };
 }
@@ -94,6 +97,7 @@ internal static class StoreRoots
             TrajectorySource.OpenClaw => "TRAJECTORY_OPENCLAW_ROOT",
             TrajectorySource.Hermes => "TRAJECTORY_HERMES_ROOT",
             TrajectorySource.Ahp => "TRAJECTORY_AHP_ROOT",
+            TrajectorySource.GrokBuild => "TRAJECTORY_GROK_BUILD_ROOT",
             _ => null,
         };
         if (envKey is not null)
@@ -121,8 +125,20 @@ internal static class StoreRoots
                     : Path.Combine(home, ".clawdbot"))!,
             TrajectorySource.Hermes => Path.Combine(home, ".hermes"),
             TrajectorySource.Ahp => home,
+            TrajectorySource.GrokBuild => ResolveGrokBuildRoot(home),
             _ => home,
         };
+    }
+
+    private static string ResolveGrokBuildRoot(string home)
+    {
+        var grokHome = Environment.GetEnvironmentVariable("GROK_HOME")?.Trim();
+        if (!string.IsNullOrEmpty(grokHome))
+        {
+            return Path.Combine(Expand(grokHome), "sessions");
+        }
+
+        return Path.Combine(home, ".grok", "sessions");
     }
 
     public static string DescribeDefault(TrajectorySource source) => source switch
@@ -133,6 +149,7 @@ internal static class StoreRoots
         TrajectorySource.OpenClaw => "~/.openclaw if present, else ~/.clawdbot (or OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR)",
         TrajectorySource.Hermes => "~/.hermes/state.db",
         TrajectorySource.Ahp => "explicit export root only (no home default)",
+        TrajectorySource.GrokBuild => "$GROK_HOME/sessions or ~/.grok/sessions (or TRAJECTORY_GROK_BUILD_ROOT)",
         _ => "n/a",
     };
 
@@ -170,7 +187,7 @@ internal static class CliFormat
 internal class GlobalSettings : CommandSettings
 {
     [CommandOption("-s|--source <SOURCE>")]
-    [Description("Transcript source: pi, claude-code, codex, openclaw, hermes, ahp.")]
+    [Description("Transcript source: pi, claude-code, codex, openclaw, hermes, ahp, grok-build (alias: grok).")]
     public string? Source { get; init; }
 
     [CommandOption("-r|--root <PATH>")]
@@ -210,12 +227,6 @@ internal sealed class ListCommand : AsyncCommand<ListCommand.Settings>
             {
                 AnsiConsole.MarkupLine(
                     "[grey]Hermes core listing is SQLite-free and returns empty pages. Export message JSON and use `show --path`.[/]");
-            }
-
-            if (source == TrajectorySource.Ahp)
-            {
-                AnsiConsole.MarkupLine(
-                    "[grey]AHP listing is Phase 3; use `show --path` with a Shape A snapshot export.[/]");
             }
 
             return 0;
@@ -276,16 +287,21 @@ internal sealed class ShowCommand : AsyncCommand<ShowCommand.Settings>
     {
         var source = Sources.Parse(settings.Source ?? "pi");
         var root = StoreRoots.Resolve(source, settings.Root);
-        var path = await ResolvePathAsync(source, root, settings.Path, settings.Id, settings.Limit);
-        if (path is null)
+        var resolved = await ResolvePathAsync(source, root, settings.Path, settings.Id, settings.Limit);
+        if (resolved is null)
         {
             return 2;
         }
 
-        return SessionSummary.Print(source, path, settings.ShowContent, settings.Format);
+        return SessionSummary.Print(
+            source,
+            resolved.Value.Path,
+            settings.ShowContent,
+            settings.Format,
+            groupId: resolved.Value.GroupId);
     }
 
-    private static async Task<string?> ResolvePathAsync(
+    private static async Task<(string Path, string? GroupId)?> ResolvePathAsync(
         TrajectorySource source,
         string root,
         string? path,
@@ -294,7 +310,7 @@ internal sealed class ShowCommand : AsyncCommand<ShowCommand.Settings>
     {
         if (!string.IsNullOrWhiteSpace(path))
         {
-            return path;
+            return (path, string.IsNullOrWhiteSpace(id) ? null : id);
         }
 
         if (string.IsNullOrWhiteSpace(id))
@@ -312,7 +328,7 @@ internal sealed class ShowCommand : AsyncCommand<ShowCommand.Settings>
             return null;
         }
 
-        return match.Path;
+        return (match.Path, match.Id);
     }
 }
 
@@ -362,13 +378,6 @@ internal sealed class InteractiveCommand : AsyncCommand<GlobalSettings>
                 AnsiConsole.MarkupLine(
                     "[grey]  trajectory show --source hermes --path ./session.json[/]");
             }
-            else if (source == TrajectorySource.Ahp)
-            {
-                AnsiConsole.MarkupLine(
-                    "[grey]AHP listing is Phase 3. Normalize a Shape A snapshot with:[/]");
-                AnsiConsole.MarkupLine(
-                    "[grey]  trajectory show --source ahp --path ./chat-export.json[/]");
-            }
             else
             {
                 AnsiConsole.MarkupLine("[grey]Create a session with the agent, or pass --root to another store.[/]");
@@ -403,7 +412,12 @@ internal sealed class InteractiveCommand : AsyncCommand<GlobalSettings>
         var index = choices.IndexOf(selected);
         var listing = page.Items[index];
         AnsiConsole.WriteLine();
-        return SessionSummary.Print(source, listing.Path, settings.ShowContent, "both");
+        return SessionSummary.Print(
+            source,
+            listing.Path,
+            settings.ShowContent,
+            "both",
+            groupId: listing.Id);
     }
 
     private static string FormatChoice(TrajectoryListing item)
@@ -417,7 +431,12 @@ internal sealed class InteractiveCommand : AsyncCommand<GlobalSettings>
 
 internal static class SessionSummary
 {
-    public static int Print(TrajectorySource source, string path, bool showContent, string format)
+    public static int Print(
+        TrajectorySource source,
+        string path,
+        bool showContent,
+        string format,
+        string? groupId = null)
     {
         if (!File.Exists(path))
         {
@@ -439,7 +458,10 @@ internal static class SessionSummary
         TrajectoryIR ir;
         try
         {
-            ir = TrajectoryConverter.NormalizeToIR(source, transcript);
+            SourceContext? context = string.IsNullOrEmpty(groupId)
+                ? null
+                : new SourceContext { GroupId = groupId };
+            ir = TrajectoryConverter.NormalizeToIR(source, transcript, sourceContext: context);
         }
         catch (TrajectoryNormalizationException error)
         {

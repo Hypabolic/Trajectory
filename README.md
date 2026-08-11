@@ -33,8 +33,8 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
 
 ## What you get
 
-- **Multi-source ingest** — Pi, Claude Code, Codex, OpenClaw, Hermes, and AHP
-  (Shape A offline ChatState snapshots; AHP is in-tree on `main` / next release — see note above)
+- **Multi-source ingest** — Pi, Claude Code, Codex, OpenClaw, Hermes, AHP
+  (Shape A offline ChatState snapshots), and Grok Build (`grok-build`)
 - **Deterministic normalization** — stable IDs, ordering, hashes, content-safe
   diagnostics
 - **Multiple outputs** from one decode: Hypabolic trajectory, canonical
@@ -226,7 +226,8 @@ timestamps, identity formulas, OTEL import matrix, filtered conformance argv).
 | Codex | Rollout JSONL | `~/.codex/sessions` |
 | OpenClaw | Session JSONL | `~/.openclaw` or legacy `~/.clawdbot` |
 | Hermes | Message array or `{ session, messages }` JSON | Export file; core listing is SQLite-free |
-| AHP | Shape A chat snapshot `{ chat, session? }` JSON | Export file only; listing is Phase 3 (empty stub). In-tree / next package version after `0.1.0` — not in published `0.1.0` registries |
+| AHP | Shape A chat snapshot `{ chat, session? }` JSON | Export file only; listing is Phase 3 (empty stub) |
+| Grok Build | `chat_history.jsonl` (alias `grok`) | `$GROK_HOME/sessions` or `~/.grok/sessions` |
 
 Override listing roots with `--root` / `TRAJECTORY_<SOURCE>_ROOT` in the sample
 CLIs, or pass an explicit root to listing APIs.
@@ -260,7 +261,7 @@ Shared flags:
 
 | Flag | Meaning |
 | --- | --- |
-| `--source <name>` | `pi`, `claude-code`, `codex`, `openclaw`, `hermes`, `ahp` |
+| `--source <name>` | `pi`, `claude-code`, `codex`, `openclaw`, `hermes`, `ahp`, `grok-build` (alias `grok`) |
 | `--root <path>` | Override store root |
 | `--limit <n>` | Listing page size (default 50) |
 | `--format <f>` | `both` (default), `messages`, or `hypabolic` |

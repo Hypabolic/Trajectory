@@ -302,6 +302,7 @@ public sealed class HypabolicTrajectoryV1OutputAdapter : OutputSchemaAdapter<Hyp
         TrajectorySource.Hermes => "hermes",
         TrajectorySource.DeepAgents => "deepagents",
         TrajectorySource.Ahp => "ahp",
+        TrajectorySource.GrokBuild => "grok-build",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 

@@ -57,7 +57,8 @@
       "codex",
       "openclaw",
       "hermes",
-      "ahp"
+      "ahp",
+      "grok-build"
     ],
     "outputs": [
       "letta-trajectory-v1",

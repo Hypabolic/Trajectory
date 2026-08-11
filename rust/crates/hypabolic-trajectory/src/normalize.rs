@@ -224,6 +224,570 @@ pub fn normalize_codex(request: NormalizeRequest<'_>) -> Result<Trajectory, Traj
     normalize_decoded(config, decoded)
 }
 
+/// Native Grok Build chat-history JSONL source adapter.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct GrokBuildSourceAdapter;
+
+impl SourceAdapter for GrokBuildSourceAdapter {
+    fn source(&self) -> &'static str {
+        "grok-build"
+    }
+
+    fn normalize(&self, request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+        normalize_grok_build(request)
+    }
+}
+
+/// Normalizes a Grok Build `chat_history.jsonl` transcript into the private Rust IR.
+pub fn normalize_grok_build(request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
+    let config = resolve_config(request)?;
+    let decoded = decode_grok_build(
+        request.transcript,
+        request.source_context.include_encrypted_reasoning,
+    )?;
+    normalize_decoded(config, decoded)
+}
+
+fn decode_grok_build(
+    bytes: &[u8],
+    include_encrypted_reasoning: bool,
+) -> Result<DecodedSession, TrajectoryError> {
+    let mut events = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut model_invocations = Vec::new();
+    let mut model = None;
+    let mut encrypted_included = 0_usize;
+    // tool_call_id → input lines that carry a matching tool_result (for later-result checks).
+    let mut tool_result_lines: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut offset = 0_usize;
+    let mut line = 1_usize;
+
+    // First pass: collect tool_result id → line numbers so synthesis requires a later match.
+    {
+        let mut scan_offset = 0_usize;
+        let mut scan_line = 1_usize;
+        loop {
+            let relative_end = bytes[scan_offset..]
+                .iter()
+                .position(|value| *value == b'\n');
+            let end = relative_end.map_or(bytes.len(), |value| scan_offset + value);
+            let line_end = if end > scan_offset && bytes[end - 1] == b'\r' {
+                end - 1
+            } else {
+                end
+            };
+            let slice = &bytes[scan_offset..line_end];
+            if !slice
+                .iter()
+                .all(|value| matches!(*value, b' ' | b'\t' | b'\r'))
+            {
+                if let Ok(text) = std::str::from_utf8(slice) {
+                    if let Ok(Value::Object(row)) = serde_json::from_str::<Value>(text) {
+                        if string_value(row.get("type")) == Some("tool_result") {
+                            if let Some(id) = string_value(row.get("tool_call_id"))
+                                .filter(|value| !value.is_empty())
+                            {
+                                tool_result_lines
+                                    .entry(id.to_owned())
+                                    .or_default()
+                                    .push(scan_line);
+                            }
+                        }
+                    }
+                }
+            }
+            if end == bytes.len() {
+                break;
+            }
+            scan_offset = end + 1;
+            scan_line += 1;
+        }
+    }
+
+    loop {
+        let relative_end = bytes[offset..].iter().position(|value| *value == b'\n');
+        let end = relative_end.map_or(bytes.len(), |value| offset + value);
+        let line_end = if end > offset && bytes[end - 1] == b'\r' {
+            end - 1
+        } else {
+            end
+        };
+        let slice = &bytes[offset..line_end];
+        if !slice
+            .iter()
+            .all(|value| matches!(*value, b' ' | b'\t' | b'\r'))
+        {
+            let source_offset = i64::try_from(offset).map_err(|_| {
+                TrajectoryError::new(
+                    "invalid_input",
+                    "Transcript byte offset exceeds signed 64-bit range.",
+                )
+            })?;
+            let parsed = std::str::from_utf8(slice)
+                .ok()
+                .and_then(|text| serde_json::from_str::<Value>(text).ok());
+            match parsed {
+                Some(Value::Object(row)) => {
+                    let row_type = string_value(row.get("type")).unwrap_or("");
+                    let mut component_index = 0_usize;
+                    let mut emit =
+                        |kind: EventKind,
+                         role: Role,
+                         content: Option<String>,
+                         tool_call_id: Option<String>,
+                         tool_name: Option<String>,
+                         arguments_json: Option<String>,
+                         is_error: Option<bool>,
+                         native_id: Option<String>,
+                         event_model: Option<String>| {
+                            events.push(DecodedEvent {
+                                kind,
+                                role,
+                                content,
+                                tool_call_id,
+                                tool_name,
+                                arguments_json,
+                                is_error,
+                                native_id,
+                                producer_version: None,
+                                source_sequence: None,
+                                source_offset,
+                                input_line: Some(line),
+                                timestamp_ms: None,
+                                timestamp_precise: None,
+                                component_index,
+                                model: event_model,
+                            });
+                            component_index += 1;
+                        };
+
+                    match row_type {
+                        "system" => {
+                            let content = scalar_string(row.get("content")).unwrap_or_default();
+                            if !content.trim().is_empty() {
+                                emit(
+                                    EventKind::Message,
+                                    Role::Meta,
+                                    Some(content),
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                );
+                            }
+                        }
+                        "user" => {
+                            let (text, dropped_image) = grok_join_content_parts(row.get("content"));
+                            if dropped_image {
+                                diagnostics.push(Diagnostic {
+                                    code: "image_content_dropped".into(),
+                                    message: format!(
+                                        "Dropped image content on Grok Build user item line {line}."
+                                    ),
+                                    input_line: Some(line),
+                                    record_index: None,
+                                    count: None,
+                                });
+                            }
+                            if !text.trim().is_empty() {
+                                let synthetic = row.get("synthetic_reason").is_some()
+                                    && !matches!(row.get("synthetic_reason"), Some(Value::Null));
+                                emit(
+                                    EventKind::Message,
+                                    if synthetic { Role::Meta } else { Role::User },
+                                    Some(text),
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                );
+                            }
+                        }
+                        "assistant" => {
+                            let model_id = non_empty(string_value(row.get("model_id")));
+                            if model.is_none() {
+                                if let Some(value) = model_id.as_ref() {
+                                    model = Some(value.clone());
+                                }
+                            }
+                            if model_id.is_some() {
+                                // Only source-backed fields: model_id is the response model.
+                                // Do not invent provider or requested_model.
+                                model_invocations.push(DecodedModelInvocation {
+                                    native_id: None,
+                                    source_offset: Some(source_offset),
+                                    provider: None,
+                                    api_family: None,
+                                    requested_model: None,
+                                    response_model: model_id.clone(),
+                                    response_id: None,
+                                    stop_reason: None,
+                                    producer_version: None,
+                                    usage: None,
+                                    started_at_ms: None,
+                                    started_at_precise: None,
+                                    completed_at_ms: None,
+                                    completed_at_precise: None,
+                                });
+                            }
+                            let content = match row.get("content") {
+                                Some(Value::String(value)) => value.clone(),
+                                Some(Value::Array(_)) => {
+                                    grok_join_content_parts(row.get("content")).0
+                                }
+                                _ => String::new(),
+                            };
+                            if !content.trim().is_empty() {
+                                emit(
+                                    EventKind::Message,
+                                    Role::Assistant,
+                                    Some(content),
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    model_id.clone(),
+                                );
+                            }
+                            if let Some(Value::Array(calls)) = row.get("tool_calls") {
+                                for call in calls {
+                                    let Value::Object(call) = call else {
+                                        continue;
+                                    };
+                                    let id = string_value(call.get("id")).map(str::to_owned);
+                                    let name = string_value(call.get("name")).map(str::to_owned);
+                                    let arguments = match call.get("arguments") {
+                                        Some(Value::String(value)) => value.clone(),
+                                        Some(value) if !value.is_null() => relaxed_json(value)?,
+                                        _ => "{}".into(),
+                                    };
+                                    emit(
+                                        EventKind::ToolCall,
+                                        Role::Assistant,
+                                        None,
+                                        id,
+                                        name,
+                                        Some(arguments),
+                                        None,
+                                        None,
+                                        model_id.clone(),
+                                    );
+                                }
+                            }
+                        }
+                        "tool_result" => {
+                            let (text, dropped_image) = grok_join_content_parts(row.get("content"));
+                            let mut dropped_image = dropped_image;
+                            if let Some(Value::Array(images)) = row.get("images") {
+                                if !images.is_empty() {
+                                    dropped_image = true;
+                                }
+                            }
+                            if dropped_image {
+                                diagnostics.push(Diagnostic {
+                                    code: "image_content_dropped".into(),
+                                    message: format!(
+                                        "Dropped image content on Grok Build tool result line {line}."
+                                    ),
+                                    input_line: Some(line),
+                                    record_index: None,
+                                    count: None,
+                                });
+                            }
+                            // String content is the common form.
+                            let content = if text.is_empty() {
+                                match row.get("content") {
+                                    Some(Value::String(value)) => value.clone(),
+                                    _ => text,
+                                }
+                            } else {
+                                text
+                            };
+                            emit(
+                                EventKind::ToolResult,
+                                Role::Tool,
+                                Some(content),
+                                string_value(row.get("tool_call_id")).map(str::to_owned),
+                                None,
+                                None,
+                                Some(false),
+                                None,
+                                None,
+                            );
+                        }
+                        "reasoning" => {
+                            let mut body = grok_reasoning_summary(row.get("summary"));
+                            // Also accept plain text content (parity with .NET/TS).
+                            if let Some(content_text) = match row.get("content") {
+                                Some(Value::String(value)) if !value.trim().is_empty() => {
+                                    Some(value.clone())
+                                }
+                                Some(Value::Array(_)) => {
+                                    let text = grok_join_content_parts(row.get("content")).0;
+                                    if text.trim().is_empty() {
+                                        None
+                                    } else {
+                                        Some(text)
+                                    }
+                                }
+                                _ => None,
+                            } {
+                                if body.is_empty() {
+                                    body = content_text;
+                                } else {
+                                    body = format!("{body}\n{content_text}");
+                                }
+                            }
+                            let encrypted = string_value(row.get("encrypted_content"))
+                                .filter(|value| !value.is_empty());
+                            if include_encrypted_reasoning {
+                                if let Some(blob) = encrypted {
+                                    if body.is_empty() {
+                                        body = format!(
+                                            "<encrypted_content>\n{blob}\n</encrypted_content>"
+                                        );
+                                    } else {
+                                        body = format!(
+                                            "{body}\n\n<encrypted_content>\n{blob}\n</encrypted_content>"
+                                        );
+                                    }
+                                    encrypted_included += 1;
+                                }
+                            }
+                            if !body.trim().is_empty() {
+                                let native_id = non_empty(string_value(row.get("id")));
+                                emit(
+                                    EventKind::Reasoning,
+                                    Role::Reasoning,
+                                    Some(body),
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    native_id,
+                                    None,
+                                );
+                            }
+                        }
+                        "backend_tool_call" => {
+                            let kind = row.get("kind").and_then(Value::as_object);
+                            let tool_type = kind
+                                .and_then(|value| string_value(value.get("tool_type")))
+                                .unwrap_or("backend_tool")
+                                .to_owned();
+                            let call_id = kind
+                                .and_then(|value| string_value(value.get("id")))
+                                .filter(|value| !value.is_empty())
+                                .map(str::to_owned);
+                            let action = kind.and_then(|value| value.get("action")).cloned();
+                            let arguments = if let Some(action) = action.as_ref() {
+                                let mut map = Map::new();
+                                map.insert("action".into(), action.clone());
+                                relaxed_json(&Value::Object(map))?
+                            } else {
+                                let mut map = Map::new();
+                                if let Some(kind) = kind {
+                                    for key in ["query", "input", "code"] {
+                                        if let Some(value) =
+                                            kind.get(key).filter(|value| !value.is_null())
+                                        {
+                                            map.insert(key.into(), value.clone());
+                                        }
+                                    }
+                                }
+                                if map.is_empty() {
+                                    "{}".into()
+                                } else {
+                                    relaxed_json(&Value::Object(map))?
+                                }
+                            };
+                            let status = kind.and_then(|value| string_value(value.get("status")));
+                            let completed = matches!(status, Some("completed") | None);
+                            emit(
+                                EventKind::ToolCall,
+                                Role::Assistant,
+                                None,
+                                call_id.clone(),
+                                Some(tool_type.clone()),
+                                Some(arguments),
+                                None,
+                                None,
+                                None,
+                            );
+                            if completed {
+                                if let Some(id) = &call_id {
+                                    let has_later = tool_result_lines
+                                        .get(id)
+                                        .is_some_and(|lines| lines.iter().any(|l| *l > line));
+                                    if !has_later {
+                                        let summary = grok_backend_result_summary(
+                                            &tool_type,
+                                            action.as_ref(),
+                                        );
+                                        // Emit in order (match .NET/TS); do not batch at end.
+                                        diagnostics.push(Diagnostic {
+                                            code: "backend_tool_result_synthesized".into(),
+                                            // Content-safe: no source-native tool-call IDs.
+                                            message:
+                                                "Synthesized a tool result for a backend tool call."
+                                                    .into(),
+                                            input_line: Some(line),
+                                            record_index: None,
+                                            count: None,
+                                        });
+                                        emit(
+                                            EventKind::ToolResult,
+                                            Role::Tool,
+                                            Some(summary),
+                                            Some(id.clone()),
+                                            None,
+                                            None,
+                                            Some(false),
+                                            None,
+                                            None,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        "" => {}
+                        _ => diagnostics.push(Diagnostic {
+                            code: "unknown_semantic_record".into(),
+                            message: format!(
+                                "Skipped an unknown Grok Build semantic record on line {line}."
+                            ),
+                            input_line: Some(line),
+                            record_index: None,
+                            count: None,
+                        }),
+                    }
+                }
+                Some(_) => diagnostics.push(Diagnostic {
+                    code: "non_object_json_line".into(),
+                    message: format!("Skipped non-object JSON on line {line}."),
+                    input_line: Some(line),
+                    record_index: None,
+                    count: None,
+                }),
+                None => diagnostics.push(Diagnostic {
+                    code: "invalid_json_line".into(),
+                    message: format!("Skipped invalid JSON on line {line}."),
+                    input_line: Some(line),
+                    record_index: None,
+                    count: None,
+                }),
+            }
+        }
+        if end == bytes.len() {
+            break;
+        }
+        offset = end + 1;
+        line += 1;
+    }
+
+    if encrypted_included > 0 {
+        diagnostics.push(Diagnostic {
+            code: "encrypted_reasoning_included".into(),
+            message: format!(
+                "Included encrypted reasoning content for {encrypted_included} item(s)."
+            ),
+            input_line: None,
+            record_index: None,
+            count: Some(encrypted_included),
+        });
+    }
+
+    Ok(DecodedSession {
+        source: TrajectorySource::GrokBuild,
+        source_name: "grok-build",
+        group_id: None,
+        cwd: None,
+        git_branch: None,
+        model,
+        producer_version: None,
+        created_at_ms: None,
+        events,
+        model_invocations,
+        diagnostics,
+    })
+}
+
+fn grok_join_content_parts(value: Option<&Value>) -> (String, bool) {
+    match value {
+        Some(Value::String(text)) => (text.clone(), false),
+        Some(Value::Array(parts)) => {
+            let mut texts = Vec::new();
+            let mut dropped_image = false;
+            for part in parts {
+                let Value::Object(part) = part else {
+                    continue;
+                };
+                match string_value(part.get("type")) {
+                    Some("text") => {
+                        if let Some(text) =
+                            string_value(part.get("text")).filter(|value| !value.is_empty())
+                        {
+                            texts.push(text.to_owned());
+                        }
+                    }
+                    Some("image") => {
+                        dropped_image = true;
+                    }
+                    _ => {}
+                }
+            }
+            (texts.join("\n"), dropped_image)
+        }
+        _ => (String::new(), false),
+    }
+}
+
+fn grok_reasoning_summary(value: Option<&Value>) -> String {
+    let Some(Value::Array(parts)) = value else {
+        return String::new();
+    };
+    parts
+        .iter()
+        .filter_map(|part| {
+            let Value::Object(part) = part else {
+                return None;
+            };
+            match string_value(part.get("type")) {
+                Some("summary_text") | None => string_value(part.get("text"))
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned),
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn grok_backend_result_summary(tool_type: &str, action: Option<&Value>) -> String {
+    let action_type = action
+        .and_then(Value::as_object)
+        .and_then(|value| string_value(value.get("type")))
+        .unwrap_or("action");
+    let detail = action
+        .and_then(Value::as_object)
+        .and_then(|value| {
+            string_value(value.get("query"))
+                .or_else(|| string_value(value.get("input")))
+                .or_else(|| string_value(value.get("code")))
+        })
+        .unwrap_or("");
+    if detail.is_empty() {
+        format!("[backend {tool_type}] {action_type}")
+    } else {
+        format!("[backend {tool_type}] {action_type}: {detail}")
+    }
+}
+
 fn normalize_decoded(
     config: AppliedConfig,
     decoded: DecodedSession,
@@ -3683,6 +4247,7 @@ mod tests {
                         group_id: None,
                         base_byte_offset: 0,
                         partial: true,
+                        include_encrypted_reasoning: false,
                     },
                     options: Default::default(),
                 })
@@ -3694,6 +4259,7 @@ mod tests {
                         group_id: Some("codex-chunk-session"),
                         base_byte_offset: i64::try_from(split).expect("fixture offset fits i64"),
                         partial: true,
+                        include_encrypted_reasoning: false,
                     },
                     options: Default::default(),
                 })

@@ -17,3 +17,4 @@ class TrajectorySource(StrEnum):
     OPENCLAW = "openclaw"
     HERMES = "hermes"
     AHP = "ahp"
+    GROK_BUILD = "grok-build"

@@ -107,12 +107,14 @@ from hypabolic_trajectory.engine import TrajectoryEngine
 # Import-time registration hooks for built-in sources/listers.
 # Per-source owners self-register from submodules imported here (side effect).
 from hypabolic_trajectory.listing import ahp as _ahp_listing  # noqa: F401
+from hypabolic_trajectory.listing import grok_build as _grok_build_listing  # noqa: F401
 from hypabolic_trajectory.listing import claude_code as _claude_code_listing  # noqa: F401
 from hypabolic_trajectory.listing import codex as _codex_listing  # noqa: F401
 from hypabolic_trajectory.listing import hermes as _hermes_listing  # noqa: F401
 from hypabolic_trajectory.listing import openclaw as _openclaw_listing  # noqa: F401
 from hypabolic_trajectory.listing import pi as _pi_listing  # noqa: F401
 from hypabolic_trajectory.sources import ahp as _ahp_source  # noqa: F401
+from hypabolic_trajectory.sources import grok_build as _grok_build_source  # noqa: F401
 from hypabolic_trajectory.sources import claude_code as _claude_code_source  # noqa: F401
 from hypabolic_trajectory.sources import codex as _codex_source  # noqa: F401
 from hypabolic_trajectory.sources import hermes as _hermes_source  # noqa: F401

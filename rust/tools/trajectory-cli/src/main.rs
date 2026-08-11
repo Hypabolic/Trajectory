@@ -15,9 +15,10 @@ use dialoguer::{Confirm, Select, theme::ColorfulTheme};
 use hypabolic_trajectory::{
     ListingOptions, NormalizeOptions, NormalizeRequest, RecordKind, SourceContext, Trajectory,
     TrajectoryError, TrajectoryListing, list_ahp_trajectories, list_claude_code_trajectories,
-    list_codex_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
-    list_pi_trajectories, normalize_ahp, normalize_claude_code, normalize_codex, normalize_hermes,
-    normalize_openclaw, normalize_pi, project_hypabolic, project_letta,
+    list_codex_trajectories, list_grok_build_trajectories, list_hermes_trajectories,
+    list_openclaw_trajectories, list_pi_trajectories, normalize_ahp, normalize_claude_code,
+    normalize_codex, normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi,
+    project_hypabolic, project_letta,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -29,16 +30,19 @@ enum SourceArg {
     Openclaw,
     Hermes,
     Ahp,
+    #[value(name = "grok-build", alias = "grok")]
+    GrokBuild,
 }
 
 impl SourceArg {
-    const ALL: [SourceArg; 6] = [
+    const ALL: [SourceArg; 7] = [
         SourceArg::Pi,
         SourceArg::ClaudeCode,
         SourceArg::Codex,
         SourceArg::Openclaw,
         SourceArg::Hermes,
         SourceArg::Ahp,
+        SourceArg::GrokBuild,
     ];
 
     fn wire_name(self) -> &'static str {
@@ -49,6 +53,7 @@ impl SourceArg {
             Self::Openclaw => "openclaw",
             Self::Hermes => "hermes",
             Self::Ahp => "ahp",
+            Self::GrokBuild => "grok-build",
         }
     }
 }
@@ -70,7 +75,7 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Transcript source: pi, claude-code, codex, openclaw, hermes, ahp.
+    /// Transcript source: pi, claude-code, codex, openclaw, hermes, ahp, grok-build.
     #[arg(short, long, global = true, value_enum)]
     source: Option<SourceArg>,
 
@@ -154,8 +159,8 @@ fn run_show(
 ) -> Result<ExitCode, TrajectoryError> {
     let source = cli.source.unwrap_or(SourceArg::Pi);
     let root = resolve_root(source, cli.root.as_deref());
-    let path = resolve_path(source, &root, path, id, cli.limit)?;
-    print_summary(source, &path, cli.show_content, format)
+    let (path, group_id) = resolve_path(source, &root, path, id, cli.limit)?;
+    print_summary(source, &path, group_id.as_deref(), cli.show_content, format)
 }
 
 fn run_browse(cli: &Cli) -> Result<ExitCode, TrajectoryError> {
@@ -190,6 +195,7 @@ fn run_browse(cli: &Cli) -> Result<ExitCode, TrajectoryError> {
             return print_summary(
                 source,
                 Path::new(&expand_home(&path)),
+                None,
                 cli.show_content,
                 FormatArg::Both,
             );
@@ -224,9 +230,11 @@ fn run_browse(cli: &Cli) -> Result<ExitCode, TrajectoryError> {
     }
 
     println!();
+    let selected = &page.items[selection];
     print_summary(
         source,
-        &page.items[selection].path,
+        &selected.path,
+        Some(selected.id.as_str()),
         cli.show_content,
         FormatArg::Both,
     )
@@ -238,9 +246,9 @@ fn resolve_path(
     path: Option<PathBuf>,
     id: Option<String>,
     limit: usize,
-) -> Result<PathBuf, TrajectoryError> {
+) -> Result<(PathBuf, Option<String>), TrajectoryError> {
     if let Some(path) = path {
-        return Ok(path);
+        return Ok((path, id));
     }
     let Some(id) = id else {
         return Err(TrajectoryError::new(
@@ -252,7 +260,7 @@ fn resolve_path(
     page.items
         .into_iter()
         .find(|item| item.id == id)
-        .map(|item| item.path)
+        .map(|item| (item.path, Some(item.id)))
         .ok_or_else(|| {
             TrajectoryError::new(
                 "invalid_input",
@@ -264,6 +272,7 @@ fn resolve_path(
 fn print_summary(
     source: SourceArg,
     path: &Path,
+    group_id: Option<&str>,
     show_content: bool,
     format: FormatArg,
 ) -> Result<ExitCode, TrajectoryError> {
@@ -281,7 +290,7 @@ fn print_summary(
         )
     })?;
 
-    let trajectory = normalize_bytes(source, &bytes)?;
+    let trajectory = normalize_bytes(source, &bytes, group_id)?;
 
     println!("── {} {} ──", source.wire_name(), path_file_name(path));
     println!("path     {}", path.display());
@@ -436,10 +445,17 @@ fn snippet_for(record: &hypabolic_trajectory::IrRecord) -> String {
     }
 }
 
-fn normalize_bytes(source: SourceArg, bytes: &[u8]) -> Result<Trajectory, TrajectoryError> {
+fn normalize_bytes(
+    source: SourceArg,
+    bytes: &[u8],
+    group_id: Option<&str>,
+) -> Result<Trajectory, TrajectoryError> {
     let request = NormalizeRequest {
         transcript: bytes,
-        source_context: SourceContext::default(),
+        source_context: SourceContext {
+            group_id,
+            ..SourceContext::default()
+        },
         options: NormalizeOptions::default(),
     };
     match source {
@@ -449,6 +465,7 @@ fn normalize_bytes(source: SourceArg, bytes: &[u8]) -> Result<Trajectory, Trajec
         SourceArg::Openclaw => normalize_openclaw(request),
         SourceArg::Hermes => normalize_hermes(request),
         SourceArg::Ahp => normalize_ahp(request),
+        SourceArg::GrokBuild => normalize_grok_build(request),
     }
 }
 
@@ -469,6 +486,7 @@ fn list_source(
         SourceArg::Openclaw => list_openclaw_trajectories(&options),
         SourceArg::Hermes => list_hermes_trajectories(&options),
         SourceArg::Ahp => list_ahp_trajectories(&options),
+        SourceArg::GrokBuild => list_grok_build_trajectories(&options),
     }
 }
 
@@ -484,6 +502,7 @@ fn resolve_root(source: SourceArg, root_override: Option<&Path>) -> PathBuf {
         SourceArg::Openclaw => "TRAJECTORY_OPENCLAW_ROOT",
         SourceArg::Hermes => "TRAJECTORY_HERMES_ROOT",
         SourceArg::Ahp => "TRAJECTORY_AHP_ROOT",
+        SourceArg::GrokBuild => "TRAJECTORY_GROK_BUILD_ROOT",
     };
     if let Ok(value) = env::var(env_key) {
         if !value.trim().is_empty() {
@@ -520,6 +539,14 @@ fn resolve_root(source: SourceArg, root_override: Option<&Path>) -> PathBuf {
         }
         SourceArg::Hermes => home.join(".hermes"),
         SourceArg::Ahp => home,
+        SourceArg::GrokBuild => {
+            if let Ok(value) = env::var("GROK_HOME") {
+                if !value.trim().is_empty() {
+                    return PathBuf::from(expand_home(value.trim())).join("sessions");
+                }
+            }
+            home.join(".grok").join("sessions")
+        }
     }
 }
 
@@ -531,8 +558,11 @@ fn describe_default(source: SourceArg) -> &'static str {
         SourceArg::Openclaw => {
             "~/.openclaw if present, else ~/.clawdbot (or OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR)"
         }
-        SourceArg::Ahp => "explicit export root only (no home default)",
         SourceArg::Hermes => "~/.hermes/state.db",
+        SourceArg::Ahp => "explicit export root only (no home default)",
+        SourceArg::GrokBuild => {
+            "~/.grok/sessions (or $GROK_HOME/sessions / TRAJECTORY_GROK_BUILD_ROOT)"
+        }
     }
 }
 

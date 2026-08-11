@@ -1,0 +1,10 @@
+{
+  "store_version": 1,
+  "files": [
+    {
+      "path": "store/2026/04/02/session.jsonl",
+      "content": "{\"timestamp\":\"2026-04-02T00:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"codex-title-session\",\"timestamp\":\"2026-04-02T00:00:00.000Z\"}}\n{\"timestamp\":\"2026-04-02T00:00:00.100Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"# AGENTS.md instructions\\n\\n<INSTRUCTIONS>\\n@/home/x/.codex/HYPA.md\\n</INSTRUCTIONS>\\n\\n<environment_context>\\n  <cwd>/repo</cwd>\\n</environment_context>\"}]}}\n{\"timestamp\":\"2026-04-02T00:00:01.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Inspect the repository.\"}]}}\n",
+      "updated_at": "2026-04-02T00:00:00.000Z"
+    }
+  ]
+}

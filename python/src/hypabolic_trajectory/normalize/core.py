@@ -202,6 +202,8 @@ def validate_normalize_entry(request: NormalizeRequest) -> tuple[TrajectorySourc
         raise TypeError("source_context.group_id must be str or None")
     if type(ctx.partial) is not bool:
         raise TypeError("source_context.partial must be bool")
+    if type(ctx.include_encrypted_reasoning) is not bool:
+        raise TypeError("source_context.include_encrypted_reasoning must be bool")
     if type(ctx.base_byte_offset) is not int:
         raise TypeError("source_context.base_byte_offset must be int")
 
@@ -489,6 +491,8 @@ def _record_type_name(kind: RecordKind, role: TrajectoryRole) -> str:
         return "assistant-tool-call"
     if kind is RecordKind.TOOL_RESULT:
         return "tool"
+    if role is TrajectoryRole.META:
+        return "meta"
     if role is TrajectoryRole.USER:
         return "user"
     if role is TrajectoryRole.REASONING:
@@ -503,6 +507,8 @@ def _decoded_record_type(event: DecodedEvent) -> str:
         return "assistant-tool-call"
     if event.kind == "tool-result":
         return "tool"
+    if event.role is TrajectoryRole.META:
+        return "meta"
     if event.role is TrajectoryRole.USER:
         return "user"
     return "assistant"
@@ -767,6 +773,8 @@ def _normalize_event(
         component_key = f"{bucket}:{ordinal}"
         if event.kind == "reasoning" or role is TrajectoryRole.REASONING:
             record_type = "reasoning"
+        elif role is TrajectoryRole.META:
+            record_type = "meta"
         elif role is TrajectoryRole.USER:
             record_type = "user"
         else:

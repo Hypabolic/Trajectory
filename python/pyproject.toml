@@ -1,6 +1,6 @@
 [project]
 name = "hypabolic-trajectory"
-version = "0.1.1"  # MUST equal root VERSION on main; only CI stamp rewrites
+version = "0.1.2"  # MUST equal root VERSION on main; only CI stamp rewrites
 description = "Normalize coding-agent transcripts into deterministic Trajectory contracts"
 readme = "README.md"
 requires-python = ">=3.11"

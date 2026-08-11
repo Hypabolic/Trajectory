@@ -11,6 +11,7 @@ public enum TrajectorySource
     Hermes,
     DeepAgents,
     Ahp,
+    GrokBuild,
 }
 
 public enum TrajectoryRole
