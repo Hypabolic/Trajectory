@@ -6,4 +6,5 @@ session ID is resolved from `session_meta.payload.id` or caller-supplied source
 context; canonical normalization rejects missing or conflicting group context.
 
 The default lister walks `~/.codex/sessions/YYYY/MM/DD/*.jsonl` and returns
-newest-first file metadata without reading transcript content.
+newest-first file metadata. Optional `title` is derived from a bounded early
+scan that skips harness-injection user rows (see `contracts/spec/listing.md`).

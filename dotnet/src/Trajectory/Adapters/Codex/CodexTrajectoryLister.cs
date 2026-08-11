@@ -51,6 +51,7 @@ internal sealed class CodexTrajectoryLister : ITrajectoryLister
                         Id = Path.GetFileNameWithoutExtension(path),
                         Path = path,
                         UpdatedAt = info.LastWriteTimeUtc,
+                        Title = ListingTitle.DeriveCodexTitle(path),
                         SizeBytes = info.Length,
                     });
                 }

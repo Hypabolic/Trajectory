@@ -55,6 +55,7 @@ internal sealed class OpenClawTrajectoryLister : ITrajectoryLister
                         Id = Path.GetFileNameWithoutExtension(path),
                         Path = path,
                         UpdatedAt = info.LastWriteTimeUtc,
+                        Title = ListingTitle.DeriveGenericUserTitle(path),
                         SizeBytes = info.Length,
                     });
                 }
