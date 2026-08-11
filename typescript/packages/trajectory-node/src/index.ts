@@ -93,7 +93,9 @@ export async function listAhpTrajectories(
   options: ListingOptions,
 ): Promise<TrajectoryListingPage> {
   return listDiscovered(options, discoverAhp);
+}
 
+/**
  * Grok Build sessions: `<sessions-root>/<cwd-dir>/<session-uuid>/chat_history.jsonl`.
  */
 export async function listGrokBuildTrajectories(
@@ -116,6 +118,7 @@ async function discoverAhp(root: string): Promise<TrajectoryListing[]> {
   // Phase 3; return empty so show --path remains the supported path.
   void root;
   return [];
+}
 
 async function discoverGrokBuild(root: string): Promise<TrajectoryListing[]> {
   const absoluteRoot = isAbsolute(root) ? root : resolve(root);

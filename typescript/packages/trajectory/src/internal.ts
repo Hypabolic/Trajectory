@@ -197,6 +197,8 @@ export function normalizeAhp(request: NormalizeRequest & { transcriptBytes: Uint
   const config = resolveConfig(request.options, request.sourceContext);
   const partial = config.sourceContext.partial || config.sourceContext.baseByteOffset > 0n;
   return normalizeDecoded(request, decodeAhp(request.transcriptBytes, partial));
+}
+
 export function normalizeGrokBuild(request: NormalizeRequest & { transcriptBytes: Uint8Array }): TrajectoryIR {
   return normalizeDecoded(request, decodeGrokBuild(request.transcriptBytes, request.sourceContext));
 }

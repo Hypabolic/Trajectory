@@ -187,6 +187,7 @@ def test_dto_field_names_frozen() -> None:
         "group_id",
         "base_byte_offset",
         "partial",
+        "include_encrypted_reasoning",
     ]
     assert [f.name for f in dataclasses.fields(ht.TrajectoryIR)] == [
         "source",

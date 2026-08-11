@@ -50,6 +50,7 @@ IMPLEMENTED_SOURCES: Final[tuple[str, ...]] = (
     "openclaw",
     "hermes",
     "ahp",
+    "grok-build",
 )
 
 # ---------------------------------------------------------------------------

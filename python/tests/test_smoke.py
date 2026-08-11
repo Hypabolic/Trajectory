@@ -65,9 +65,11 @@ def test_schema_and_source_constants() -> None:
         "openclaw",
         "hermes",
         "ahp",
+        "grok-build",
     )
     assert ht.TrajectorySource.PI == "pi"
     assert ht.TrajectorySource.AHP == "ahp"
+    assert ht.TrajectorySource.GROK_BUILD == "grok-build"
     assert set(ht.TrajectorySource) == set(ht.IMPLEMENTED_SOURCES)
 
 

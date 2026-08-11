@@ -44,6 +44,7 @@ TIP_SOURCE_ORDER = (
     "openclaw",
     "hermes",
     "ahp",
+    "grok-build",
 )
 
 
