@@ -195,6 +195,7 @@ internal static class ConformanceProgram
                 }
             }
 
+            // Pi / OpenClaw fixtures place agent roots at temp root; others use store/.
             var listingRoot = source is TrajectorySource.Pi or TrajectorySource.OpenClaw
                 ? temporaryRoot
                 : Path.Combine(temporaryRoot, "store");
@@ -237,7 +238,23 @@ internal static class ConformanceProgram
             ? offset.GetInt64()
             : null,
         Partial = element.TryGetProperty("partial", out var partial) && partial.GetBoolean(),
+        IncludeEncryptedReasoning = ReadIncludeEncryptedReasoning(element),
     };
+
+    private static bool ReadIncludeEncryptedReasoning(JsonElement element)
+    {
+        if (!element.TryGetProperty("include_encrypted_reasoning", out var value))
+            return false;
+        return value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.String => string.Equals(
+                value.GetString(),
+                "true",
+                StringComparison.OrdinalIgnoreCase),
+            _ => false,
+        };
+    }
 
     private static NormalizeOptions ReadOptions(JsonElement manifest)
     {
@@ -413,6 +430,7 @@ internal static class ConformanceProgram
         "codex" => TrajectorySource.Codex,
         "openclaw" => TrajectorySource.OpenClaw,
         "hermes" => TrajectorySource.Hermes,
+        "grok-build" => TrajectorySource.GrokBuild,
         _ => throw new ProtocolException($"Unsupported conformance source '{source}'."),
     };
 

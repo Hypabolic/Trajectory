@@ -18,10 +18,16 @@ First public multi-ecosystem release of Trajectory.
   package metadata, npm OIDC steady-state publish, and local
   `./tools/bootstrap_npm_packages.sh` for first `@hypabolic/*` create.
 
+- Added **Grok Build** (`grok-build`, CLI alias `grok`) source adapters and
+  shared conformance fixtures across .NET, TypeScript, and Rust. Advertised in
+  `contracts/compatibility.json` and runtime capability manifests after
+  multi-runtime parity. Native container is `chat_history.jsonl` under
+  `$GROK_HOME/sessions` or `~/.grok/sessions`.
+
 - Completed ML13 1.0 parity and release hardening. Runtime capability manifests
   advertise slice `ML13` with the full v1 source set (`pi`, `claude-code`,
-  `codex`, `openclaw`, `hermes`) and six deterministic outputs. CI capability
-  gates and `tools/validate_release_metadata.py` require Hermes and ML13
+  `codex`, `openclaw`, `hermes`, `grok-build`) and six deterministic outputs. CI
+  capability gates and `tools/validate_release_metadata.py` require ML13
   agreement; preview packaging remains dry-run only with provenance evidence
   tied to commit and contract version. Documented privacy/fixture sanitization,
   upgrade guidance,

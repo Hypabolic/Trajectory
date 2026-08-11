@@ -77,7 +77,7 @@ native transcript
 ## Source adapters
 
 Built-in sources for v1: **Pi**, **Claude Code**, **Codex**, **OpenClaw**,
-**Hermes**.
+**Hermes**, **Grok Build**.
 
 Adapters decode only. Shared policy (tool linking, bounds, timestamps,
 diagnostics, identity) lives in the normalizer.

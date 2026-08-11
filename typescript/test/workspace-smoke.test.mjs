@@ -23,6 +23,7 @@ test("workspace packages install and import through public exports", () => {
     [
       "listClaudeCodeTrajectories",
       "listCodexTrajectories",
+      "listGrokBuildTrajectories",
       "listHermesTrajectories",
       "listOpenClawTrajectories",
       "listPiTrajectories",

@@ -1,0 +1,45 @@
+{
+  "store_version": 1,
+  "files": [
+    {
+      "path": "store/%2Fworkspace%2Fdemo/019f0000-0000-7000-8000-000000000001/chat_history.jsonl",
+      "content": "{\"type\":\"system\",\"content\":\"x\"}\n",
+      "updated_at": "2026-04-01T00:00:00.000Z"
+    },
+    {
+      "path": "store/%2Fworkspace%2Fdemo/019f0000-0000-7000-8000-000000000001/summary.json",
+      "content": "{\"info\":{\"id\":\"019f0000-0000-7000-8000-000000000001\",\"cwd\":\"/workspace/demo\"},\"session_summary\":\"Older session\",\"generated_title\":\"Older session\",\"updated_at\":\"2026-04-01T00:00:00.000Z\",\"last_active_at\":\"2026-04-01T00:00:00.000Z\",\"current_model_id\":\"grok-4.5\",\"chat_format_version\":1}\n",
+      "updated_at": "2026-04-01T00:00:00.000Z"
+    },
+    {
+      "path": "store/%2Fworkspace%2Fother/019f0000-0000-7000-8000-000000000003/chat_history.jsonl",
+      "content": "{\"type\":\"system\",\"content\":\"x\"}\n",
+      "updated_at": "2026-04-02T00:00:00.000Z"
+    },
+    {
+      "path": "store/%2Fworkspace%2Fother/019f0000-0000-7000-8000-000000000003/summary.json",
+      "content": "{\"info\":{\"id\":\"019f0000-0000-7000-8000-000000000003\",\"cwd\":\"/workspace/other\"},\"session_summary\":\"Mid session\",\"generated_title\":\"Mid session\",\"updated_at\":\"2026-04-02T00:00:00.000Z\",\"last_active_at\":\"2026-04-02T00:00:00.000Z\",\"current_model_id\":\"grok-4.5\",\"chat_format_version\":1}\n",
+      "updated_at": "2026-04-02T00:00:00.000Z"
+    },
+    {
+      "path": "store/%2Fworkspace%2Fdemo/019f0000-0000-7000-8000-000000000002/chat_history.jsonl",
+      "content": "{\"type\":\"system\",\"content\":\"x\"}\n",
+      "updated_at": "2026-04-03T00:00:00.000Z"
+    },
+    {
+      "path": "store/%2Fworkspace%2Fdemo/019f0000-0000-7000-8000-000000000002/summary.json",
+      "content": "{\"info\":{\"id\":\"019f0000-0000-7000-8000-000000000002\",\"cwd\":\"/workspace/demo\"},\"session_summary\":\"Newer session\",\"generated_title\":\"Newer session\",\"updated_at\":\"2026-04-03T00:00:00.000Z\",\"last_active_at\":\"2026-04-03T00:00:00.000Z\",\"current_model_id\":\"grok-4.5\",\"chat_format_version\":1}\n",
+      "updated_at": "2026-04-03T00:00:00.000Z"
+    },
+    {
+      "path": "store/%2Fworkspace%2Fdemo/ignored.txt",
+      "content": "not a session\n",
+      "updated_at": "2026-04-04T00:00:00.000Z"
+    },
+    {
+      "path": "store/%2Fworkspace%2Fdemo/019f0000-0000-7000-8000-000000000002/updates.jsonl",
+      "content": "{}\n",
+      "updated_at": "2026-04-04T00:00:00.000Z"
+    }
+  ]
+}

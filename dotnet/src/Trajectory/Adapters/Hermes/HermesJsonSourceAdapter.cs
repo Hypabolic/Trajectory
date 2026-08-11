@@ -17,7 +17,7 @@ internal sealed class HermesJsonSourceAdapter : ISourceAdapter
 
     public TrajectorySource Source => TrajectorySource.Hermes;
 
-    public DecodedSession Decode(ReadOnlyMemory<byte> transcriptUtf8)
+    public DecodedSession Decode(ReadOnlyMemory<byte> transcriptUtf8, SourceContext sourceContext)
     {
         var diagnostics = new List<TrajectoryDiagnostic>();
         var events = new List<DecodedEvent>();

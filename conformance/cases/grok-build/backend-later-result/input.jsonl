@@ -1,0 +1,4 @@
+{"type":"user","content":[{"type":"text","text":"Search something."}]}
+{"type":"backend_tool_call","kind":{"tool_type":"web_search","id":"ws_later_1","status":"completed","action":{"type":"search","query":"trajectory"}}}
+{"type":"tool_result","tool_call_id":"ws_later_1","content":"real later result"}
+{"type":"assistant","content":"Found it.","model_id":"grok-4.5"}

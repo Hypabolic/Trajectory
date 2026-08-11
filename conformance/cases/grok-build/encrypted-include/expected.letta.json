@@ -1,0 +1,36 @@
+{
+  "records": [
+    {
+      "role": "meta",
+      "source": "grok-build",
+      "model": "grok-4.5"
+    },
+    {
+      "role": "user",
+      "content": "Think carefully.",
+      "timestamp": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "role": "reasoning",
+      "content": "Visible summary.\n\n<encrypted_content>\nenc_payload_abc\n</encrypted_content>",
+      "timestamp": "2026-01-01T00:00:15.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Done thinking.",
+      "timestamp": "2026-01-01T00:00:30.000Z"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "encrypted_reasoning_included",
+      "message": "Included encrypted reasoning content for 1 item(s).",
+      "count": 1
+    },
+    {
+      "code": "timestamps_synthesized",
+      "message": "Synthesized timestamps for 3 normalized records.",
+      "count": 3
+    }
+  ]
+}

@@ -38,6 +38,14 @@ additional items remain.
   `sessions` table; `path` is the store locator used when exporting message
   rows. Core packages stay SQLite-free, so missing stores list as empty and
   full sessions-table enumeration is optional/provider-side.
+- Grok Build: `<sessions-root>/<cwd-dir>/<session-id>/chat_history.jsonl`, two
+  directory levels under the sessions root (URL-encoded or slug-hash CWD dir,
+  then session UUID). The default sessions root is `$GROK_HOME/sessions` when
+  `GROK_HOME` is non-empty, otherwise `~/.grok/sessions`. Item IDs are the
+  session directory name (UUID). Prefer `summary.json` fields for `title`
+  (`generated_title` then `session_summary`) and `updated_at`
+  (`last_active_at` then `updated_at`); otherwise use the history file mtime.
+  Ignore non-session files (locks, `events.jsonl`, `updates.jsonl`, etc.).
 
 Missing stores return an empty page. Inaccessible or concurrently removed
 subtrees are skipped. A source without an installed lister fails with

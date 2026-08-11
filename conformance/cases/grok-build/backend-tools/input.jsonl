@@ -1,0 +1,3 @@
+{"type":"user","content":[{"type":"text","text":"Search for Trajectory listing docs."}]}
+{"type":"backend_tool_call","kind":{"tool_type":"web_search","id":"ws_backend_1","status":"completed","action":{"type":"search","query":"Trajectory listing contract","sources":[{"type":"url","url":"https://example.com/listing"}]}}}
+{"type":"assistant","content":"Listing uses explicit roots.","model_id":"grok-4.5"}

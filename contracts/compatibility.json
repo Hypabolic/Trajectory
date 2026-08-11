@@ -56,7 +56,8 @@
       "claude-code",
       "codex",
       "openclaw",
-      "hermes"
+      "hermes",
+      "grok-build"
     ],
     "outputs": [
       "letta-trajectory-v1",

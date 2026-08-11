@@ -19,7 +19,7 @@ internal sealed class CodexJsonlSourceAdapter : ISourceAdapter
 
     public TrajectorySource Source => TrajectorySource.Codex;
 
-    public DecodedSession Decode(ReadOnlyMemory<byte> transcriptUtf8)
+    public DecodedSession Decode(ReadOnlyMemory<byte> transcriptUtf8, SourceContext sourceContext)
     {
         var diagnostics = new List<TrajectoryDiagnostic>();
         var events = new List<DecodedEvent>();

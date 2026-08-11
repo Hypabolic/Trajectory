@@ -8,7 +8,7 @@ Local sample CLI/TUI for browsing agent sessions with
 
 ## What it does
 
-- Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes)
+- Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes, Grok Build)
 - Interactive browse: pick source → pick session → privacy-safe summary
 - Summary includes record counts, roles, tool calls, diagnostics, and message/Hypabolic projections
 - Optional `--show-content` with an explicit privacy warning
@@ -20,6 +20,7 @@ Local sample CLI/TUI for browsing agent sessions with
 | `codex` | `~/.codex/sessions` | `TRAJECTORY_CODEX_ROOT` |
 | `openclaw` | `~/.openclaw` if present, else `~/.clawdbot` | `TRAJECTORY_OPENCLAW_ROOT`, `OPENCLAW_STATE_DIR`, or `CLAWDBOT_STATE_DIR` |
 | `hermes` | `~/.hermes` | `TRAJECTORY_HERMES_ROOT` |
+| `grok-build` (alias `grok`) | `$GROK_HOME/sessions` or `~/.grok/sessions` | `TRAJECTORY_GROK_BUILD_ROOT` or `GROK_HOME` |
 
 Hermes listing in the core Node package is SQLite-free and returns empty pages.
 Export message JSON from Hermes and use `show --path`.

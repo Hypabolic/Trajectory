@@ -1,0 +1,41 @@
+{
+  "records": [
+    {
+      "role": "meta",
+      "source": "grok-build",
+      "model": "grok-4.5"
+    },
+    {
+      "role": "user",
+      "content": "hello",
+      "timestamp": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "ok",
+      "timestamp": "2026-01-01T00:00:15.000Z"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "invalid_json_line",
+      "message": "Skipped invalid JSON on line 1.",
+      "inputLine": 1
+    },
+    {
+      "code": "non_object_json_line",
+      "message": "Skipped non-object JSON on line 3.",
+      "inputLine": 3
+    },
+    {
+      "code": "unknown_semantic_record",
+      "message": "Skipped an unknown Grok Build semantic record on line 4.",
+      "inputLine": 4
+    },
+    {
+      "code": "timestamps_synthesized",
+      "message": "Synthesized timestamps for 2 normalized records.",
+      "count": 2
+    }
+  ]
+}

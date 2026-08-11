@@ -13,6 +13,7 @@ Related:
 - [Conformance case authoring](../conformance/README.md)
 - [Contributing](contributing.md)
 - [AHP source design (draft)](ahp-source-spec.md) — Agent Host Protocol as a post-v1 source
+- [Grok Build source](grok-build-source-spec.md) — Grok Build (`grok-build`) session history
 
 ## Architecture reminder
 

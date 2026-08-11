@@ -1,5 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { basename, isAbsolute, join, resolve } from "node:path";
 
 import { TrajectoryNormalizationError } from "@hypabolic/trajectory";
 
@@ -15,6 +15,7 @@ export interface TrajectoryListing {
   readonly id: string;
   readonly path: string;
   readonly updatedAt: string;
+  readonly title?: string;
   readonly sizeBytes: number;
 }
 
@@ -56,6 +57,15 @@ export async function listHermesTrajectories(
   return listDiscovered(options, discoverHermes);
 }
 
+/**
+ * Grok Build sessions: `<sessions-root>/<cwd-dir>/<session-uuid>/chat_history.jsonl`.
+ */
+export async function listGrokBuildTrajectories(
+  options: ListingOptions,
+): Promise<TrajectoryListingPage> {
+  return listDiscovered(options, discoverGrokBuild);
+}
+
 async function discoverHermes(root: string): Promise<TrajectoryListing[]> {
   // SQLite-backed session discovery is intentionally not implemented in the
   // core Node listing package so package dependencies stay free of native
@@ -63,6 +73,88 @@ async function discoverHermes(root: string): Promise<TrajectoryListing[]> {
   // for normalize. Optional provider packages may replace this discoverer.
   void root;
   return [];
+}
+
+async function discoverGrokBuild(root: string): Promise<TrajectoryListing[]> {
+  const absoluteRoot = isAbsolute(root) ? root : resolve(root);
+  const items: TrajectoryListing[] = [];
+  let cwdDirs;
+  try {
+    cwdDirs = await readdir(absoluteRoot, { withFileTypes: true });
+  } catch (error) {
+    if (isMissingOrDenied(error)) return items;
+    throw error;
+  }
+  for (const cwdDir of cwdDirs) {
+    if (!cwdDir.isDirectory()) continue;
+    const cwdPath = join(absoluteRoot, cwdDir.name);
+    let sessionDirs;
+    try {
+      sessionDirs = await readdir(cwdPath, { withFileTypes: true });
+    } catch (error) {
+      if (isMissingOrDenied(error)) continue;
+      throw error;
+    }
+    for (const sessionDir of sessionDirs) {
+      if (!sessionDir.isDirectory()) continue;
+      const historyPath = join(cwdPath, sessionDir.name, "chat_history.jsonl");
+      try {
+        const info = await stat(historyPath);
+        if (!info.isFile()) continue;
+        const meta = await readGrokBuildSummaryMeta(
+          join(cwdPath, sessionDir.name, "summary.json"),
+          info.mtime,
+        );
+        items.push({
+          id: sessionDir.name,
+          path: historyPath,
+          updatedAt: meta.updatedAt,
+          ...(meta.title === undefined ? {} : { title: meta.title }),
+          sizeBytes: info.size,
+        });
+      } catch (error) {
+        if (!isMissingOrDenied(error)) throw error;
+      }
+    }
+  }
+  return items;
+}
+
+async function readGrokBuildSummaryMeta(
+  summaryPath: string,
+  fallbackMtime: Date,
+): Promise<{ updatedAt: string; title?: string }> {
+  try {
+    const raw = await readFile(summaryPath, "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const summary = parsed as Record<string, unknown>;
+      let title: string | undefined;
+      if (typeof summary.generated_title === "string" && summary.generated_title) {
+        title = summary.generated_title;
+      } else if (typeof summary.session_summary === "string" && summary.session_summary) {
+        title = summary.session_summary;
+      }
+      const lastActive = summary.last_active_at;
+      const updated = summary.updated_at;
+      if (typeof lastActive === "string" && lastActive) {
+        const date = new Date(lastActive);
+        if (!Number.isNaN(date.valueOf())) {
+          return { updatedAt: date.toISOString(), ...(title === undefined ? {} : { title }) };
+        }
+      }
+      if (typeof updated === "string" && updated) {
+        const date = new Date(updated);
+        if (!Number.isNaN(date.valueOf())) {
+          return { updatedAt: date.toISOString(), ...(title === undefined ? {} : { title }) };
+        }
+      }
+      return { updatedAt: fallbackMtime.toISOString(), ...(title === undefined ? {} : { title }) };
+    }
+  } catch {
+    // missing or unreadable summary → history mtime
+  }
+  return { updatedAt: fallbackMtime.toISOString() };
 }
 
 async function listDiscovered(

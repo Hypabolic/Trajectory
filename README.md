@@ -24,7 +24,7 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
 
 ## What you get
 
-- **Multi-source ingest** — Pi, Claude Code, Codex, OpenClaw, and Hermes
+- **Multi-source ingest** — Pi, Claude Code, Codex, OpenClaw, Hermes, and Grok Build
 - **Deterministic normalization** — stable IDs, ordering, hashes, content-safe
   diagnostics
 - **Multiple outputs** from one decode: Hypabolic trajectory, canonical
@@ -166,6 +166,7 @@ with matching `normalize_*` helpers.
 | Codex | Rollout JSONL | `~/.codex/sessions` |
 | OpenClaw | Session JSONL | `~/.openclaw` or legacy `~/.clawdbot` |
 | Hermes | Message array or `{ session, messages }` JSON | Export file; core listing is SQLite-free |
+| Grok Build | `chat_history.jsonl` (alias `grok`) | `$GROK_HOME/sessions` or `~/.grok/sessions` |
 
 Override listing roots with `--root` / `TRAJECTORY_<SOURCE>_ROOT` in the sample
 CLIs, or pass an explicit root to listing APIs.
@@ -198,7 +199,7 @@ Shared flags:
 
 | Flag | Meaning |
 | --- | --- |
-| `--source <name>` | `pi`, `claude-code`, `codex`, `openclaw`, `hermes` |
+| `--source <name>` | `pi`, `claude-code`, `codex`, `openclaw`, `hermes`, `grok-build` (alias `grok`) |
 | `--root <path>` | Override store root |
 | `--limit <n>` | Listing page size (default 50) |
 | `--format <f>` | `both` (default), `messages`, or `hypabolic` |

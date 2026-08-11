@@ -30,6 +30,9 @@ Stable diagnostic codes currently are:
 - `tool_result_truncated`
 - `timestamps_synthesized`
 - `timestamps_interpolated`
+- `image_content_dropped`
+- `backend_tool_result_synthesized`
+- `encrypted_reasoning_included`
 
 Codes are additive and are never repurposed. Diagnostic ordering is source
 decode order followed by normalization order. Counts and indexes are decimal
