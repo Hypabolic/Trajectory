@@ -1,6 +1,6 @@
 {
   "name": "@hypabolic/trajectory-otel",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Optional deterministic OpenTelemetry GenAI projection for Trajectory",
   "license": "MIT",
   "repository": {
@@ -32,7 +32,7 @@
     "dist"
   ],
   "dependencies": {
-    "@hypabolic/trajectory": "0.1.1"
+    "@hypabolic/trajectory": "0.1.2"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

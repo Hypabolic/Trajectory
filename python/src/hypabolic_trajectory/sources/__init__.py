@@ -22,6 +22,7 @@ from hypabolic_trajectory.sources.protocol import (
 from hypabolic_trajectory.sources import ahp as _ahp  # noqa: E402, F401
 from hypabolic_trajectory.sources import claude_code as _claude_code  # noqa: E402, F401
 from hypabolic_trajectory.sources import codex as _codex  # noqa: E402, F401
+from hypabolic_trajectory.sources import grok_build as _grok_build  # noqa: E402, F401
 from hypabolic_trajectory.sources import hermes as _hermes  # noqa: E402, F401
 from hypabolic_trajectory.sources import openclaw as _openclaw  # noqa: E402, F401
 from hypabolic_trajectory.sources import pi as _pi  # noqa: E402, F401

@@ -2,7 +2,15 @@
   "runtime": "rust",
   "slice": "ML13",
   "normalizer_contract_version": "0.2.0",
-  "sources": ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"],
+  "sources": [
+    "pi",
+    "claude-code",
+    "codex",
+    "openclaw",
+    "hermes",
+    "ahp",
+    "grok-build"
+  ],
   "outputs": [
     "letta-trajectory-v1",
     "letta-canonical-v1",

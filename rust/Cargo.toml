@@ -8,7 +8,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
@@ -20,7 +20,7 @@ chrono = { version = "=0.4.39", default-features = false, features = ["std"] }
 serde = { version = "=1.0.217", features = ["derive"] }
 serde_json = { version = "=1.0.138", features = ["preserve_order"] }
 sha2 = "=0.10.8"
-hypabolic-trajectory = { version = "=0.1.1", path = "crates/hypabolic-trajectory" }
+hypabolic-trajectory = { version = "=0.1.2", path = "crates/hypabolic-trajectory" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

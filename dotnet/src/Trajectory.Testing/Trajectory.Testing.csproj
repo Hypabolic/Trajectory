@@ -4,7 +4,7 @@
     <AssemblyName>Hypabolic.Trajectory.Testing</AssemblyName>
     <RootNamespace>Hypabolic.Trajectory.Testing</RootNamespace>
     <PackageId>Hypabolic.Trajectory.Testing</PackageId>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Description>Contract test helpers for Hypabolic.Trajectory adapters.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/Hypabolic/Trajectory</RepositoryUrl>

@@ -1,0 +1,49 @@
+{
+  "records": [
+    {
+      "role": "meta",
+      "source": "grok-build",
+      "model": "grok-4.5"
+    },
+    {
+      "role": "user",
+      "content": "Search for Trajectory listing docs.",
+      "timestamp": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "ws_backend_1",
+          "name": "web_search",
+          "args": "{\"action\":{\"type\":\"search\",\"query\":\"Trajectory listing contract\",\"sources\":[{\"type\":\"url\",\"url\":\"https://example.com/listing\"}]}}"
+        }
+      ],
+      "timestamp": "2026-01-01T00:00:15.000Z"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "ws_backend_1",
+      "content": "[backend web_search] search: Trajectory listing contract",
+      "timestamp": "2026-01-01T00:00:30.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Listing uses explicit roots.",
+      "timestamp": "2026-01-01T00:00:45.000Z"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "backend_tool_result_synthesized",
+      "message": "Synthesized a tool result for a backend tool call.",
+      "inputLine": 2
+    },
+    {
+      "code": "timestamps_synthesized",
+      "message": "Synthesized timestamps for 4 normalized records.",
+      "count": 4
+    }
+  ]
+}

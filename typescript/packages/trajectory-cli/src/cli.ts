@@ -11,9 +11,9 @@ import { readFile, access } from "node:fs/promises";
 import { constants as fsConstants, existsSync } from "node:fs";
 
 import {
-  normalizeToHypabolic,
   normalizeToIR,
-  normalizeToLetta as normalizeToMessages,
+  projectHypabolic,
+  projectLetta,
   TrajectoryNormalizationError,
   type TrajectoryIR,
   type TrajectorySource,
@@ -22,6 +22,7 @@ import {
   listAhpTrajectories,
   listClaudeCodeTrajectories,
   listCodexTrajectories,
+  listGrokBuildTrajectories,
   listHermesTrajectories,
   listOpenClawTrajectories,
   listPiTrajectories,
@@ -29,7 +30,7 @@ import {
   type TrajectoryListingPage,
 } from "@hypabolic/trajectory-node";
 
-const SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"] as const;
+const SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"] as const;
 type SourceName = (typeof SOURCES)[number];
 
 const DIM = "\u001b[2m";
@@ -137,9 +138,10 @@ function parseSource(value: string): SourceName {
   const normalized = value.trim().toLowerCase();
   if ((SOURCES as readonly string[]).includes(normalized)) return normalized as SourceName;
   if (normalized === "claude" || normalized === "claudecode") return "claude-code";
+  if (normalized === "grok") return "grok-build";
   throw new TrajectoryNormalizationError(
     "unknown_source",
-    `Unknown source '${value}'. Expected one of: ${SOURCES.join(", ")}.`,
+    `Unknown source '${value}'. Expected one of: ${SOURCES.join(", ")} (alias: grok).`,
   );
 }
 
@@ -157,6 +159,7 @@ function defaultRoot(source: SourceName): string {
     openclaw: "TRAJECTORY_OPENCLAW_ROOT",
     hermes: "TRAJECTORY_HERMES_ROOT",
     ahp: "TRAJECTORY_AHP_ROOT",
+    "grok-build": "TRAJECTORY_GROK_BUILD_ROOT",
   };
   const fromTrajectory = process.env[envMap[source]]?.trim();
   if (fromTrajectory) return expandHome(fromTrajectory);
@@ -181,6 +184,11 @@ function defaultRoot(source: SourceName): string {
       return join(home, ".hermes");
     case "ahp":
       return home;
+    case "grok-build": {
+      const grokHome = process.env.GROK_HOME?.trim();
+      if (grokHome) return join(expandHome(grokHome), "sessions");
+      return join(home, ".grok", "sessions");
+    }
   }
 }
 
@@ -198,6 +206,8 @@ function describeDefault(source: SourceName): string {
       return "~/.hermes/state.db";
     case "ahp":
       return "explicit export root only (no home default)";
+    case "grok-build":
+      return "$GROK_HOME/sessions or ~/.grok/sessions (or TRAJECTORY_GROK_BUILD_ROOT)";
   }
 }
 
@@ -220,6 +230,8 @@ async function listForSource(
       return listHermesTrajectories(options);
     case "ahp":
       return listAhpTrajectories(options);
+    case "grok-build":
+      return listGrokBuildTrajectories(options);
   }
 }
 
@@ -242,9 +254,9 @@ async function runList(args: CliArgs): Promise<number> {
 async function runShow(args: CliArgs): Promise<number> {
   const source = args.source ?? "pi";
   const root = args.root ?? defaultRoot(source);
-  const path = await resolvePath(source, root, args.path, args.id, args.limit);
-  if (!path) return 2;
-  return printSummary(source, path, args.showContent, args.format);
+  const resolved = await resolvePath(source, root, args.path, args.id, args.limit);
+  if (!resolved) return 2;
+  return printSummary(source, resolved.path, args.showContent, args.format, resolved.groupId);
 }
 
 async function runBrowse(args: CliArgs): Promise<number> {
@@ -275,7 +287,7 @@ async function runBrowse(args: CliArgs): Promise<number> {
   const selected = await promptSession(page.items);
   if (!selected) return 0;
   console.log();
-  return printSummary(source, selected.path, args.showContent, args.format);
+  return printSummary(source, selected.path, args.showContent, args.format, selected.id);
 }
 
 async function resolvePath(
@@ -284,8 +296,8 @@ async function resolvePath(
   path: string | undefined,
   id: string | undefined,
   limit: number,
-): Promise<string | undefined> {
-  if (path) return path;
+): Promise<{ path: string; groupId?: string } | undefined> {
+  if (path) return { path, ...(id ? { groupId: id } : {}) };
   if (!id) {
     console.error(`${RED}Provide --path or --id.${RESET}`);
     return undefined;
@@ -296,7 +308,7 @@ async function resolvePath(
     console.error(`${RED}Session id '${id}' not found under ${root}.${RESET}`);
     return undefined;
   }
-  return match.path;
+  return { path: match.path, groupId: match.id };
 }
 
 async function printSummary(
@@ -304,6 +316,7 @@ async function printSummary(
   path: string,
   showContent: boolean,
   format: CliArgs["format"],
+  groupId?: string,
 ): Promise<number> {
   try {
     await access(path, fsConstants.R_OK);
@@ -322,7 +335,11 @@ async function printSummary(
 
   let ir: TrajectoryIR;
   try {
-    ir = normalizeToIR({ source: source as TrajectorySource, transcript });
+    ir = normalizeToIR({
+      source: source as TrajectorySource,
+      transcript,
+      ...(groupId === undefined ? {} : { sourceContext: { groupId } }),
+    });
   } catch (error) {
     return handleError(error);
   }
@@ -365,10 +382,8 @@ async function printSummary(
 
   if (format === "both" || format === "hypabolic") {
     try {
-      const hypabolic = normalizeToHypabolic({ source: source as TrajectorySource, transcript }) as Record<
-        string,
-        unknown
-      >;
+      // Project the already-normalized IR so sourceContext.groupId is preserved.
+      const hypabolic = projectHypabolic(ir) as Record<string, unknown>;
       const trajectoryId =
         (hypabolic.trajectory_id as string | undefined) ??
         (hypabolic.trajectoryId as string | undefined) ??
@@ -392,7 +407,8 @@ async function printSummary(
 
   if (format === "both" || format === "messages") {
     try {
-      const messages = normalizeToMessages({ source: source as TrajectorySource, transcript }) as {
+      // Project the already-normalized IR so sourceContext.groupId is preserved.
+      const messages = projectLetta(ir) as {
         records?: unknown[];
         diagnostics?: unknown[];
       };
@@ -470,11 +486,6 @@ function printEmpty(source: SourceName): void {
       `${DIM}Hermes core listing is SQLite-free and returns empty pages. Export message JSON and use show --path.${RESET}`,
     );
   }
-  if (source === "ahp") {
-    console.log(
-      `${DIM}AHP listing is Phase 3; use show --path with a Shape A snapshot export.${RESET}`,
-    );
-  }
 }
 
 async function promptSource(): Promise<SourceName> {
@@ -483,7 +494,7 @@ async function promptSource(): Promise<SourceName> {
   const rl = createInterface({ input, output });
   try {
     while (true) {
-      const answer = (await rl.question(`Select source [1-${SOURCES.length} or name]: `)).trim().toLowerCase();
+      const answer = (await rl.question("Select source [1-5 or name]: ")).trim().toLowerCase();
       const asNumber = Number(answer);
       if (Number.isInteger(asNumber) && asNumber >= 1 && asNumber <= SOURCES.length) {
         return SOURCES[asNumber - 1]!;
@@ -553,9 +564,11 @@ Default roots:
   openclaw     ~/.openclaw if present, else ~/.clawdbot
   hermes       ~/.hermes
   ahp          explicit export root only (use show --path)
+  grok-build   $GROK_HOME/sessions or ~/.grok/sessions (alias: grok)
 
 Root overrides: --root or TRAJECTORY_<SOURCE>_ROOT (e.g. TRAJECTORY_PI_ROOT).
 OpenClaw also honors OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR.
+Grok Build also honors GROK_HOME (sessions under GROK_HOME/sessions).
 Privacy: content is omitted unless --show-content (prints a warning).
 `);
 }

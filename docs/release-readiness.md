@@ -17,19 +17,19 @@ Distinguish **published registry packages** from **this repository tip**.
 | Normalizer contract | `0.2.0` |
 | Conformance protocol | `1` |
 | Diagnostics contract | `1` |
-| Implemented sources | `pi`, `claude-code`, `codex`, `openclaw`, `hermes` (**no** `ahp`) |
+| Implemented sources (published 0.1.0) | `pi`, `claude-code`, `codex`, `openclaw`, `hermes` |
 | Outputs | Hypabolic, canonical identity, message trajectory, OpenAI chat, minimal JSONL, OTEL GenAI spans |
 
 ### Repository tip (`main`, not yet re-tagged)
 
 | Item | Value |
 | --- | --- |
-| Checked-in `VERSION` | `0.1.0` until the next intentional cut (do **not** retag `v0.1.0`) |
+| Checked-in `VERSION` | `0.1.2` on the release tip |
 | Capability slice | `ML13` (historical slice id; AHP is a post-`0.1.0` source addition) |
 | Normalizer contract | `0.2.0` |
-| Implemented sources (tip) | Published set **plus** `ahp` (Shape A offline ChatState snapshot only) |
+| Implemented sources (tip) | Published set **plus** `ahp` and `grok-build` |
 | AHP scope | Phase 0–1 shipped in-tree on `main`; listing, Shape B action log, and live host are **not** shipped |
-| Next registry publish | Requires a **new** tag (`v0.1.1` / `v0.2.0` / …); skip-duplicate will not replace `0.1.0` contents |
+| Next registry publish | Tag `v0.1.2` after merge to main when CI is green |
 
 AHP phase truth: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
 [ahp-source-spec.md](ahp-source-spec.md).

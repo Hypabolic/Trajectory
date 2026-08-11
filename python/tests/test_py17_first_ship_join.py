@@ -53,7 +53,7 @@ RUNNER_ENV = {
     ),
 }
 
-TIP_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"]
+TIP_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"]
 TIP_OUTPUTS = [
     "letta-trajectory-v1",
     "letta-canonical-v1",

@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -25,10 +26,13 @@ pub struct ListingOptions<'a> {
 pub struct TrajectoryListing {
     /// File stem.
     pub id: String,
-    /// Native filesystem locator.
+    /// Native filesystem locator (absolute when the store root is absolute or
+    /// can be resolved against the process working directory).
     pub path: PathBuf,
     /// UTC millisecond modification time.
     pub updated_at: String,
+    /// Optional human title when the store provides one.
+    pub title: Option<String>,
     /// File byte length.
     pub size_bytes: u64,
 }
@@ -46,14 +50,19 @@ pub struct TrajectoryListingPage {
 pub fn list_pi_trajectories(
     options: &ListingOptions<'_>,
 ) -> Result<TrajectoryListingPage, TrajectoryError> {
-    list_project_store(options, &options.root.join("sessions"), "Pi")
+    list_project_store(
+        options,
+        &options.root.join("sessions"),
+        "Pi",
+        TitleSource::GenericUser,
+    )
 }
 
 /// Lists Claude Code JSONL transcripts below the explicit projects root.
 pub fn list_claude_code_trajectories(
     options: &ListingOptions<'_>,
 ) -> Result<TrajectoryListingPage, TrajectoryError> {
-    list_project_store(options, options.root, "Claude Code")
+    list_project_store(options, options.root, "Claude Code", TitleSource::Claude)
 }
 
 /// Lists Codex rollout JSONL transcripts recursively to four directory levels.
@@ -104,6 +113,171 @@ fn resolve_hermes_store_path(root: &Path) -> PathBuf {
     } else {
         root.join("state.db")
     }
+}
+
+/// Lists Grok Build `chat_history.jsonl` transcripts under `<root>/*/*/chat_history.jsonl`.
+///
+/// Discovery walks one CWD-directory level then one session-directory level. Item IDs are
+/// session directory names. Prefer `summary.json` `last_active_at` then `updated_at` for
+/// `updated_at`; otherwise use the history file mtime.
+pub fn list_grok_build_trajectories(
+    options: &ListingOptions<'_>,
+) -> Result<TrajectoryListingPage, TrajectoryError> {
+    validate_limit(options.limit)?;
+    let root = absolute_path(options.root);
+    let mut items = Vec::new();
+    let cwd_dirs = match fs::read_dir(&root) {
+        Ok(value) => value,
+        Err(error) if missing_or_denied(&error) => {
+            return Ok(TrajectoryListingPage {
+                items: Vec::new(),
+                next_cursor: None,
+            });
+        }
+        Err(error) => {
+            return Err(io_error(
+                "Could not enumerate the Grok Build sessions root.",
+                &error,
+            ));
+        }
+    };
+    for cwd_entry in cwd_dirs {
+        let cwd_entry = cwd_entry.map_err(|error| {
+            io_error("Could not enumerate the Grok Build sessions root.", &error)
+        })?;
+        let cwd_type = match cwd_entry.file_type() {
+            Ok(value) => value,
+            Err(error) if missing_or_denied(&error) => continue,
+            Err(error) => {
+                return Err(io_error(
+                    "Could not inspect a Grok Build store entry.",
+                    &error,
+                ));
+            }
+        };
+        if !cwd_type.is_dir() {
+            continue;
+        }
+        let sessions = match fs::read_dir(cwd_entry.path()) {
+            Ok(value) => value,
+            Err(error) if missing_or_denied(&error) => continue,
+            Err(error) => {
+                return Err(io_error(
+                    "Could not enumerate a Grok Build CWD directory.",
+                    &error,
+                ));
+            }
+        };
+        for session_entry in sessions {
+            let session_entry = session_entry.map_err(|error| {
+                io_error("Could not enumerate a Grok Build CWD directory.", &error)
+            })?;
+            let session_type = match session_entry.file_type() {
+                Ok(value) => value,
+                Err(error) if missing_or_denied(&error) => continue,
+                Err(error) => {
+                    return Err(io_error(
+                        "Could not inspect a Grok Build session entry.",
+                        &error,
+                    ));
+                }
+            };
+            if !session_type.is_dir() {
+                continue;
+            }
+            let history = session_entry.path().join("chat_history.jsonl");
+            let metadata = match fs::metadata(&history) {
+                Ok(value) if value.is_file() => value,
+                Ok(_) => continue,
+                Err(error) if missing_or_denied(&error) => continue,
+                Err(error) => {
+                    return Err(io_error(
+                        "Could not inspect a Grok Build chat history.",
+                        &error,
+                    ));
+                }
+            };
+            let id = session_entry
+                .file_name()
+                .to_str()
+                .ok_or_else(|| {
+                    TrajectoryError::new(
+                        "invalid_input",
+                        "A Grok Build session directory name is not valid Unicode.",
+                    )
+                })?
+                .to_owned();
+            let (updated_at, title) = grok_build_summary_meta(&session_entry.path(), &metadata)?;
+            items.push(TrajectoryListing {
+                id,
+                path: history,
+                updated_at,
+                title,
+                size_bytes: metadata.len(),
+            });
+        }
+    }
+    paginate(options, items)
+}
+
+fn absolute_path(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(path)
+    }
+}
+
+fn grok_build_summary_meta(
+    session_dir: &Path,
+    history_metadata: &fs::Metadata,
+) -> Result<(String, Option<String>), TrajectoryError> {
+    let summary_path = session_dir.join("summary.json");
+    let mut title = None;
+    if let Ok(text) = fs::read_to_string(&summary_path) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(object) = value.as_object() {
+                title = object
+                    .get("generated_title")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+                    .or_else(|| {
+                        object
+                            .get("session_summary")
+                            .and_then(serde_json::Value::as_str)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_owned)
+                    });
+                for key in ["last_active_at", "updated_at"] {
+                    if let Some(timestamp) = object.get(key).and_then(serde_json::Value::as_str) {
+                        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(timestamp) {
+                            return Ok((format_ms(parsed.timestamp_millis())?, title));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let modified = history_metadata
+        .modified()
+        .map_err(|error| io_error("Could not read a Grok Build transcript timestamp.", &error))?
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| {
+            TrajectoryError::new(
+                "invalid_input",
+                "A Grok Build transcript timestamp precedes the Unix epoch.",
+            )
+        })?;
+    let milliseconds = i64::try_from(modified.as_millis()).map_err(|_| {
+        TrajectoryError::new(
+            "invalid_input",
+            "A Grok Build transcript timestamp is out of range.",
+        )
+    })?;
+    Ok((format_ms(milliseconds)?, title))
 }
 
 /// Lists `OpenClaw` JSONL transcripts below `<root>/agents/*/sessions`.
@@ -174,16 +348,29 @@ pub fn list_openclaw_trajectories(
                     ));
                 }
             };
-            items.push(listing_from_file(path, &metadata, "OpenClaw")?);
+            items.push(listing_from_file(
+                path,
+                &metadata,
+                "OpenClaw",
+                TitleSource::GenericUser,
+            )?);
         }
     }
     paginate(options, items)
+}
+
+#[derive(Clone, Copy)]
+enum TitleSource {
+    Codex,
+    Claude,
+    GenericUser,
 }
 
 fn list_project_store(
     options: &ListingOptions<'_>,
     projects_root: &Path,
     source_name: &str,
+    title_source: TitleSource,
 ) -> Result<TrajectoryListingPage, TrajectoryError> {
     validate_limit(options.limit)?;
 
@@ -256,7 +443,12 @@ fn list_project_store(
                     ));
                 }
             };
-            items.push(listing_from_file(path, &metadata, source_name)?);
+            items.push(listing_from_file(
+                path,
+                &metadata,
+                source_name,
+                title_source,
+            )?);
         }
     }
 
@@ -298,15 +490,46 @@ fn collect_codex(
             Err(error) if missing_or_denied(&error) => continue,
             Err(error) => return Err(io_error("Could not inspect a Codex transcript.", &error)),
         };
-        items.push(listing_from_file(path, &metadata, "Codex")?);
+        items.push(listing_from_file(
+            path,
+            &metadata,
+            "Codex",
+            TitleSource::Codex,
+        )?);
     }
     Ok(())
 }
+
+const TITLE_SCAN_MAX_BYTES: usize = 64 * 1024;
+const TITLE_SCAN_MAX_LINES: usize = 200;
+const TITLE_MAX_SCALARS: usize = 120;
+const LISTING_NOISE_MARKERS: &[&str] = &[
+    "# agents.md",
+    "<instructions>",
+    "</instructions>",
+    "<environment_context>",
+    "<skills_instructions>",
+    "<skills>",
+    "<permissions instructions>",
+    "<user_instructions>",
+    "<turn_context>",
+    "<collaboration",
+    "filesystem sandboxing",
+    "<cwd>",
+    "you are a coding agent",
+    "you are chatgpt",
+    "# claude.md",
+    "agenthub instructions",
+    "<command-name>",
+    "<local-command-caveat>",
+    "<task-notification",
+];
 
 fn listing_from_file(
     path: PathBuf,
     metadata: &fs::Metadata,
     source_name: &str,
+    title_source: TitleSource,
 ) -> Result<TrajectoryListing, TrajectoryError> {
     let id = path
         .file_stem()
@@ -339,12 +562,304 @@ fn listing_from_file(
             format!("A {source_name} transcript timestamp is out of range."),
         )
     })?;
+    let title = match title_source {
+        TitleSource::Codex => derive_codex_title(&path),
+        TitleSource::Claude => derive_claude_title(&path),
+        TitleSource::GenericUser => derive_generic_user_title(&path),
+    };
     Ok(TrajectoryListing {
         id,
         path,
         updated_at: format_ms(milliseconds)?,
+        title,
         size_bytes: metadata.len(),
     })
+}
+
+fn derive_codex_title(path: &Path) -> Option<String> {
+    let mut session_id = None;
+    for value in scan_json_lines(path) {
+        let record_type = value.get("type").and_then(serde_json::Value::as_str);
+        let payload = value.get("payload").and_then(serde_json::Value::as_object);
+        if record_type == Some("session_meta") {
+            if let Some(id) = payload
+                .and_then(|object| object.get("id"))
+                .and_then(serde_json::Value::as_str)
+                .filter(|id| !id.is_empty())
+            {
+                session_id = Some(id.to_owned());
+            }
+            continue;
+        }
+        if record_type == Some("response_item") {
+            let role = payload
+                .and_then(|object| object.get("role"))
+                .and_then(serde_json::Value::as_str);
+            if matches!(role, Some("developer" | "system")) {
+                continue;
+            }
+            if role == Some("user") {
+                let text = blocks_to_text(payload.and_then(|object| object.get("content")))
+                    .unwrap_or_default();
+                if let Some(title) = title_from_user_text(&text) {
+                    return Some(title);
+                }
+            }
+            continue;
+        }
+        if record_type == Some("event_msg") {
+            let event_type = payload
+                .and_then(|object| object.get("type"))
+                .and_then(serde_json::Value::as_str);
+            if matches!(event_type, Some("user_message" | "user_prompt" | "message")) {
+                let text = blocks_to_text(payload.and_then(|object| object.get("message")))
+                    .or_else(|| blocks_to_text(payload.and_then(|object| object.get("content"))))
+                    .or_else(|| {
+                        payload
+                            .and_then(|object| object.get("text"))
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_owned)
+                    })
+                    .unwrap_or_default();
+                if let Some(title) = title_from_user_text(text.as_str()) {
+                    return Some(title);
+                }
+            }
+        }
+    }
+    session_id.and_then(|id| format_title(&short_session_id(&id)))
+}
+
+fn derive_claude_title(path: &Path) -> Option<String> {
+    let mut custom_title = None;
+    let mut ai_title = None;
+    let mut summary = None;
+    let mut first_user = None;
+    for value in scan_json_lines(path) {
+        let record_type = value.get("type").and_then(serde_json::Value::as_str);
+        match record_type {
+            Some("custom-title") => {
+                if custom_title.is_none() {
+                    custom_title = value
+                        .get("customTitle")
+                        .or_else(|| value.get("title"))
+                        .and_then(serde_json::Value::as_str)
+                        .and_then(format_title);
+                }
+            }
+            Some("ai-title") => {
+                if ai_title.is_none() {
+                    ai_title = value
+                        .get("aiTitle")
+                        .or_else(|| value.get("title"))
+                        .and_then(serde_json::Value::as_str)
+                        .and_then(format_title);
+                }
+            }
+            Some("summary") => {
+                if summary.is_none() {
+                    summary = value
+                        .get("summary")
+                        .or_else(|| value.get("title"))
+                        .and_then(serde_json::Value::as_str)
+                        .and_then(format_title);
+                }
+            }
+            Some("user") if first_user.is_none() => {
+                if value
+                    .get("isMeta")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false)
+                    || value
+                        .get("isSidechain")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(false)
+                {
+                    continue;
+                }
+                let message = value.get("message");
+                let text = blocks_to_text(message.and_then(|row| row.get("content")))
+                    .or_else(|| blocks_to_text(value.get("content")))
+                    .unwrap_or_default();
+                if text.contains("tool_use_id") {
+                    continue;
+                }
+                first_user = title_from_user_text(&text);
+            }
+            _ => {}
+        }
+    }
+    custom_title.or(ai_title).or(summary).or(first_user)
+}
+
+fn derive_generic_user_title(path: &Path) -> Option<String> {
+    for value in scan_json_lines(path) {
+        let message = value.get("message");
+        let role = message
+            .and_then(|row| row.get("role"))
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| value.get("role").and_then(serde_json::Value::as_str));
+        if role != Some("user") {
+            continue;
+        }
+        let text = blocks_to_text(message.and_then(|row| row.get("content")))
+            .or_else(|| blocks_to_text(value.get("content")))
+            .unwrap_or_default();
+        if let Some(title) = title_from_user_text(&text) {
+            return Some(title);
+        }
+    }
+    None
+}
+
+fn scan_json_lines(path: &Path) -> Vec<serde_json::Value> {
+    let Ok(file) = fs::File::open(path) else {
+        return Vec::new();
+    };
+    let mut reader = BufReader::new(file.take(TITLE_SCAN_MAX_BYTES as u64));
+    let mut values = Vec::new();
+    let mut line_buffer = String::new();
+    let mut lines = 0_usize;
+    loop {
+        line_buffer.clear();
+        match reader.read_line(&mut line_buffer) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+        lines += 1;
+        let trimmed = line_buffer.trim();
+        if !trimmed.is_empty() {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                values.push(value);
+            }
+        }
+        if lines >= TITLE_SCAN_MAX_LINES {
+            break;
+        }
+    }
+    values
+}
+
+fn title_from_user_text(text: &str) -> Option<String> {
+    if is_listing_noise(text) {
+        None
+    } else {
+        format_title(text)
+    }
+}
+
+fn format_title(text: &str) -> Option<String> {
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return None;
+    }
+    let truncated = collapsed
+        .chars()
+        .take(TITLE_MAX_SCALARS)
+        .collect::<String>();
+    Some(truncated)
+}
+
+fn short_session_id(id: &str) -> String {
+    if let Some((head, _)) = id.split_once('-') {
+        if head.len() >= 8 {
+            return head.chars().take(8).collect();
+        }
+    }
+    id.chars().take(8).collect()
+}
+
+fn is_listing_noise(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if LISTING_NOISE_MARKERS
+        .iter()
+        .any(|marker| lower.contains(marker))
+    {
+        return true;
+    }
+    // Dense XML-ish injection: several tags in a long wall of text.
+    let xml_tags = count_xmlish_tags(trimmed);
+    xml_tags >= 3 && trimmed.len() > 80
+}
+
+fn count_xmlish_tags(text: &str) -> usize {
+    let bytes = text.as_bytes();
+    let mut count = 0_usize;
+    let mut index = 0_usize;
+    while index < bytes.len() {
+        if bytes[index] == b'<' {
+            let start = index + 1;
+            if start < bytes.len()
+                && (bytes[start].is_ascii_alphabetic()
+                    || bytes[start] == b'/'
+                    || bytes[start] == b'_'
+                    || bytes[start] == b'-')
+            {
+                if let Some(end) = bytes[start..].iter().position(|value| *value == b'>') {
+                    let name = &bytes[start..start + end];
+                    if name.iter().all(|value| {
+                        value.is_ascii_alphanumeric() || matches!(*value, b'/' | b'_' | b'-')
+                    }) {
+                        count += 1;
+                        index = start + end + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        index += 1;
+    }
+    count
+}
+
+fn blocks_to_text(value: Option<&serde_json::Value>) -> Option<String> {
+    let value = value?;
+    match value {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Array(items) => {
+            let mut parts = Vec::new();
+            for item in items {
+                match item {
+                    serde_json::Value::String(text) => parts.push(text.clone()),
+                    serde_json::Value::Object(object) => {
+                        if let Some(text) = object.get("text").and_then(serde_json::Value::as_str) {
+                            parts.push(text.to_owned());
+                        } else if let Some(text) =
+                            object.get("input_text").and_then(serde_json::Value::as_str)
+                        {
+                            parts.push(text.to_owned());
+                        } else if object.get("type").and_then(serde_json::Value::as_str)
+                            == Some("input_text")
+                        {
+                            if let Some(text) =
+                                object.get("text").and_then(serde_json::Value::as_str)
+                            {
+                                parts.push(text.to_owned());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join("\n"))
+            }
+        }
+        serde_json::Value::Object(object) => {
+            if let Some(text) = object.get("text").and_then(serde_json::Value::as_str) {
+                Some(text.to_owned())
+            } else {
+                blocks_to_text(object.get("content"))
+            }
+        }
+        _ => None,
+    }
 }
 
 fn validate_limit(limit: usize) -> Result<(), TrajectoryError> {

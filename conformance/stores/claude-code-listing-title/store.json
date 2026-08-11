@@ -1,0 +1,10 @@
+{
+  "store_version": 1,
+  "files": [
+    {
+      "path": "store/project-a/session.jsonl",
+      "content": "{\"type\":\"user\",\"uuid\":\"u0\",\"isMeta\":true,\"message\":{\"role\":\"user\",\"content\":\"<command-name>/clear</command-name>\"}}\n{\"type\":\"user\",\"uuid\":\"u1\",\"message\":{\"role\":\"user\",\"content\":\"Fix the flaky retry test\"}}\n{\"type\":\"ai-title\",\"aiTitle\":\"Fix flaky retry\",\"sessionId\":\"s1\"}\n",
+      "updated_at": "2026-04-02T00:00:00.000Z"
+    }
+  ]
+}

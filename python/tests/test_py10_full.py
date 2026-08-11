@@ -67,6 +67,7 @@ _TIP_SOURCES: tuple[str, ...] = (
     "openclaw",
     "hermes",
     "ahp",
+    "grok-build",
 )
 
 
@@ -189,9 +190,9 @@ def test_filtered_verify_full_protocol_v1_tip_surface_green() -> None:
     )
     summary = json.loads(completed.stdout)
     assert summary["status"] == "success"
-    # Current tip case inventory: 27 cases / 47 operations (all declared pairs).
-    assert summary["cases"] == 27
-    assert summary["operations"] == 47
+    # Current tip case inventory: 39 cases / 66 operations (all declared pairs).
+    assert summary["cases"] == 39
+    assert summary["operations"] == 66
 
 
 def test_progressive_capabilities_cover_tip_ops_surface() -> None:

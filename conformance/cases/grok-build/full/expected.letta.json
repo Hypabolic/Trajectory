@@ -1,0 +1,59 @@
+{
+  "records": [
+    {
+      "role": "meta",
+      "source": "grok-build",
+      "model": "grok-4.5-build"
+    },
+    {
+      "role": "meta",
+      "content": "You are Grok Build.",
+      "timestamp": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "role": "user",
+      "content": "List files in src.",
+      "timestamp": "2026-01-01T00:00:15.000Z"
+    },
+    {
+      "role": "reasoning",
+      "content": "I should list the directory.",
+      "timestamp": "2026-01-01T00:00:30.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "I'll list src.",
+      "timestamp": "2026-01-01T00:00:45.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_list_1",
+          "name": "run_terminal_command",
+          "args": "{\"command\":\"ls src\"}"
+        }
+      ],
+      "timestamp": "2026-01-01T00:01:00.000Z"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_list_1",
+      "content": "main.rs\nlib.rs\n",
+      "timestamp": "2026-01-01T00:01:15.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "src has main.rs and lib.rs.",
+      "timestamp": "2026-01-01T00:01:30.000Z"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "timestamps_synthesized",
+      "message": "Synthesized timestamps for 7 normalized records.",
+      "count": 7
+    }
+  ]
+}

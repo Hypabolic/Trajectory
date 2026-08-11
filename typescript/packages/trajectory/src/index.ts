@@ -3,12 +3,14 @@
  * adapters derive byte anchors from this UTF-8 encoding, never UTF-16 indices.
  */
 export type TranscriptInput = Uint8Array | string;
-export type TrajectorySource = "pi" | "claude-code" | "codex" | "openclaw" | "hermes" | "ahp";
+export type TrajectorySource = "pi" | "claude-code" | "codex" | "openclaw" | "hermes" | "ahp" | "grok-build";
 
 export interface SourceContext {
   readonly groupId?: string;
   readonly baseByteOffset?: bigint;
   readonly partial?: boolean;
+  /** When true, project Grok Build encrypted_content into reasoning text. */
+  readonly includeEncryptedReasoning?: boolean;
 }
 
 export interface NormalizeRequest {
@@ -39,7 +41,7 @@ export interface TrajectoryDiagnostic {
 }
 
 export const NORMALIZER_CONTRACT_VERSION = "0.2.0";
-export const ImplementedSources = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp"] as const;
+export const ImplementedSources = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"] as const;
 export const OutputSchemaIds = {
   lettaTrajectoryV1: "letta-trajectory-v1",
   lettaCanonicalV1: "letta-canonical-v1",
@@ -59,6 +61,7 @@ import {
   normalizeAhp,
   normalizeClaudeCode,
   normalizeCodex,
+  normalizeGrokBuild,
   normalizeHermes,
   normalizeOpenClaw,
   normalizePi,
@@ -98,6 +101,7 @@ export function normalizeToIR(request: NormalizeRequest): TrajectoryIR {
   if (request.source === "openclaw") return normalizeOpenClaw(normalized);
   if (request.source === "hermes") return normalizeHermes(normalized);
   if (request.source === "ahp") return normalizeAhp(normalized);
+  if (request.source === "grok-build") return normalizeGrokBuild(normalized);
   throw new TrajectoryNormalizationError("unknown_source", `No source adapter is registered for '${String(request.source)}'.`);
 }
 

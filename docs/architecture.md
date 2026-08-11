@@ -84,12 +84,11 @@ AHP Shape A). Package docs: [`python/README.md`](../python/README.md). Spec:
 
 ## Source adapters
 
-Built-in sources for published **v1 / package `0.1.0`**: **Pi**, **Claude Code**,
-**Codex**, **OpenClaw**, **Hermes**.
+Built-in sources: **Pi**, **Claude Code**, **Codex**, **OpenClaw**,
+**Hermes**, **AHP** (Shape A offline ChatState snapshot; listing deferred),
+and **Grok Build** (`grok-build`).
 
-**Post-`0.1.0` (in-tree on `main` / next package version):** **AHP** (wire name
-`ahp`) — Shape A offline ChatState snapshot decode on .NET, TypeScript, and
-Rust. Export-directory listing, Shape B action-log reduce, multi-chat unpack,
+AHP export-directory listing, Shape B action-log reduce, multi-chat unpack,
 and live host clients are deferred. See
 [ahp-ingest-status.md](ahp-ingest-status.md) and
 [`contracts/spec/sources/ahp.md`](../contracts/spec/sources/ahp.md).

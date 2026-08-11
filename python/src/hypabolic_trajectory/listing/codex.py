@@ -26,6 +26,7 @@ from hypabolic_trajectory.dto import TrajectoryListing, TrajectoryListingPage
 from hypabolic_trajectory.errors import FATAL_INVALID_INPUT, TrajectoryError
 from hypabolic_trajectory.listing.common import paginate
 from hypabolic_trajectory.listing.protocol import register_lister
+from hypabolic_trajectory.listing.title import derive_codex_title
 from hypabolic_trajectory.timestamps import format_ms
 
 _SOURCE_LABEL: Final[str] = "Codex"
@@ -135,7 +136,7 @@ def _listing_from_path(path: Path) -> TrajectoryListing:
         id=stem,
         path=str(path),
         updated_at=updated_at,
-        title=None,
+        title=derive_codex_title(path),
         size_bytes=size_bytes,
     )
 

@@ -41,6 +41,11 @@ DIAG_AHP_REASONING_OMITTED: Final[str] = "ahp_reasoning_omitted"
 DIAG_AHP_SYSTEM_AS_ASSISTANT: Final[str] = "ahp_system_as_assistant"
 DIAG_AHP_UNRESOLVED_CONTENT_REF: Final[str] = "ahp_unresolved_content_ref"
 
+# Grok Build source diagnostics (docs/grok-build-source-spec.md).
+DIAG_IMAGE_CONTENT_DROPPED: Final[str] = "image_content_dropped"
+DIAG_BACKEND_TOOL_RESULT_SYNTHESIZED: Final[str] = "backend_tool_result_synthesized"
+DIAG_ENCRYPTED_REASONING_INCLUDED: Final[str] = "encrypted_reasoning_included"
+
 # OTEL projection diagnostic (exact fixture message in §4).
 DIAG_MODEL_SPAN_OMITTED: Final[str] = "model_span_omitted"
 MSG_MODEL_SPAN_OMITTED: Final[str] = (
@@ -73,6 +78,9 @@ DIAGNOSTIC_CODES: Final[frozenset[str]] = frozenset(
         DIAG_AHP_REASONING_OMITTED,
         DIAG_AHP_SYSTEM_AS_ASSISTANT,
         DIAG_AHP_UNRESOLVED_CONTENT_REF,
+        DIAG_IMAGE_CONTENT_DROPPED,
+        DIAG_BACKEND_TOOL_RESULT_SYNTHESIZED,
+        DIAG_ENCRYPTED_REASONING_INCLUDED,
         DIAG_MODEL_SPAN_OMITTED,
     }
 )

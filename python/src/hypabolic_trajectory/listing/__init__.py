@@ -31,6 +31,7 @@ from hypabolic_trajectory.listing.protocol import (
 from hypabolic_trajectory.listing import ahp as _ahp  # noqa: E402, F401
 from hypabolic_trajectory.listing import claude_code as _claude_code  # noqa: E402, F401
 from hypabolic_trajectory.listing import codex as _codex  # noqa: E402, F401
+from hypabolic_trajectory.listing import grok_build as _grok_build  # noqa: E402, F401
 from hypabolic_trajectory.listing import hermes as _hermes  # noqa: E402, F401
 from hypabolic_trajectory.listing import openclaw as _openclaw  # noqa: E402, F401
 from hypabolic_trajectory.listing import pi as _pi  # noqa: E402, F401

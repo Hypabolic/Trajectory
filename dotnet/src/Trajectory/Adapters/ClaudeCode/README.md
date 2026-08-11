@@ -25,4 +25,6 @@ the originating producer version on each record's provenance. Compact message-tr
 omit this additional metadata.
 
 Listing scans only top-level `*.jsonl` session files under each project
-directory, newest first. Nested subagent files are excluded.
+directory, newest first. Nested subagent files are excluded. Optional `title`
+prefers `custom-title` / `ai-title` / `summary` records, else the first non-meta
+user text (bounded peek; see `contracts/spec/listing.md`).

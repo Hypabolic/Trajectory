@@ -140,7 +140,8 @@
               "codex",
               "openclaw",
               "hermes",
-              "ahp"
+              "ahp",
+              "grok-build"
             ]
           },
           "uniqueItems": true

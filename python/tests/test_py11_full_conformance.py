@@ -67,6 +67,7 @@ TIP_SOURCES: list[str] = [
     "openclaw",
     "hermes",
     "ahp",
+    "grok-build",
 ]
 TIP_OUTPUTS: list[str] = [
     "letta-trajectory-v1",
@@ -206,5 +207,5 @@ def test_identity_baseline_goldens_unchanged() -> None:
 
     assert not failures, "identity baseline mismatches:\n" + "\n".join(failures)
     assert checked >= 1, "identity baseline checked zero files"
-    # Tip identity set currently pins 21 identity-bearing goldens.
-    assert checked == 21, f"expected 21 identity goldens, checked {checked}"
+    # Tip identity set currently pins 37 identity-bearing goldens.
+    assert checked == 37, f"expected 37 identity goldens, checked {checked}"

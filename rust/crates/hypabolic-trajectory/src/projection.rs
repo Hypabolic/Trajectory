@@ -1214,7 +1214,8 @@ pub(crate) fn record_type(record: &IrRecord) -> &'static str {
         RecordKind::Message => match record.role {
             Role::User => "user",
             Role::Reasoning => "reasoning",
-            _ => "assistant",
+            Role::Meta => "meta",
+            Role::Assistant | Role::Tool => "assistant",
         },
     }
 }

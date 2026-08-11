@@ -387,6 +387,8 @@ def _record_type(record: IrRecord) -> str:
     if record.kind == RecordKind.TOOL_RESULT:
         return "tool"
     # MESSAGE
+    if record.role == TrajectoryRole.META:
+        return "meta"
     if record.role == TrajectoryRole.USER:
         return "user"
     if record.role == TrajectoryRole.REASONING:

@@ -85,7 +85,7 @@ _KNOWN_OPS: Final[frozenset[str]] = PROTOCOL_V1_OPERATIONS
 # ``{temp_root}/store`` (goldens show ``$ROOT/store/...``). All other sources
 # (pi, openclaw, hermes/ahp stubs) list at the temp root itself.
 _LISTING_STORE_PREFIX_SOURCES: Final[frozenset[str]] = frozenset(
-    {"claude-code", "codex"}
+    {"claude-code", "codex", "grok-build"}
 )
 
 
@@ -198,10 +198,16 @@ def map_source_context(raw: Mapping[str, Any]) -> SourceContext:
     partial = raw.get("partial", False)
     if type(partial) is not bool:
         raise ProtocolError("source_context.partial must be a boolean.")
+    include_encrypted = raw.get("include_encrypted_reasoning", False)
+    if type(include_encrypted) is not bool:
+        raise ProtocolError(
+            "source_context.include_encrypted_reasoning must be a boolean."
+        )
     return SourceContext(
         group_id=group_id,
         base_byte_offset=base,
         partial=partial,
+        include_encrypted_reasoning=include_encrypted,
     )
 
 

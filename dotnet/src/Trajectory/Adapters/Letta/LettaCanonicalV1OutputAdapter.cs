@@ -230,6 +230,7 @@ public sealed class LettaCanonicalV1OutputAdapter : OutputSchemaAdapter<LettaCan
         TrajectorySource.Hermes => "hermes",
         TrajectorySource.DeepAgents => "deepagents",
         TrajectorySource.Ahp => "ahp",
+        TrajectorySource.GrokBuild => "grok-build",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 }

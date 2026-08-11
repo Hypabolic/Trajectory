@@ -1,0 +1,3 @@
+{"type":"user","content":[{"type":"text","text":"Think carefully."}]}
+{"type":"reasoning","id":"rs_enc_1","summary":[{"type":"summary_text","text":"Visible summary."}],"encrypted_content":"enc_payload_abc","status":"completed"}
+{"type":"assistant","content":"Done thinking.","model_id":"grok-4.5"}

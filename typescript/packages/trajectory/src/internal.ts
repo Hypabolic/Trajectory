@@ -199,6 +199,10 @@ export function normalizeAhp(request: NormalizeRequest & { transcriptBytes: Uint
   return normalizeDecoded(request, decodeAhp(request.transcriptBytes, partial));
 }
 
+export function normalizeGrokBuild(request: NormalizeRequest & { transcriptBytes: Uint8Array }): TrajectoryIR {
+  return normalizeDecoded(request, decodeGrokBuild(request.transcriptBytes, request.sourceContext));
+}
+
 function normalizeDecoded(
   request: NormalizeRequest & { transcriptBytes: Uint8Array },
   decoded: DecodedSession,
@@ -1582,6 +1586,294 @@ function firstString(...values: Array<string | undefined>): string | undefined {
   return undefined;
 }
 
+function decodeGrokBuild(
+  bytes: Uint8Array,
+  sourceContext?: NormalizeRequest["sourceContext"],
+): DecodedSession {
+  const diagnostics: TrajectoryDiagnostic[] = [];
+  const events: DecodedEvent[] = [];
+  const modelInvocations: DecodedModelInvocation[] = [];
+  let model: string | undefined;
+  const includeEncrypted = sourceContext?.includeEncryptedReasoning === true;
+  let encryptedIncluded = 0;
+
+  type ParsedLine = {
+    row: JsonObject;
+    inputLine: number;
+    sourceOffset: bigint;
+  };
+  const lines: ParsedLine[] = [];
+  /** tool_call_id → input lines of matching tool_result rows (for later-result checks). */
+  const toolResultLines = new Map<string, number[]>();
+
+  forEachJsonLine(bytes, diagnostics, (row, inputLine, sourceOffset) => {
+    lines.push({ row, inputLine, sourceOffset });
+    if (stringValue(row.type) === "tool_result") {
+      const id = stringValue(row.tool_call_id);
+      if (id) {
+        const existing = toolResultLines.get(id);
+        if (existing) existing.push(inputLine);
+        else toolResultLines.set(id, [inputLine]);
+      }
+    }
+  });
+
+  for (const { row, inputLine, sourceOffset } of lines) {
+    const type = stringValue(row.type);
+    let componentIndex = 0;
+    const emit = (
+      kind: EventKind,
+      role: Role,
+      values: DecodedEventValues,
+    ): void => {
+      const defined = Object.fromEntries(
+        Object.entries(values).filter((entry) => entry[1] !== undefined),
+      ) as Partial<DecodedEvent>;
+      events.push({
+        kind,
+        role,
+        sourceSequence: 0,
+        sourceOffset,
+        inputLine,
+        componentIndex: componentIndex++,
+        ...defined,
+      });
+    };
+
+    if (type === "system") {
+      const content = typeof row.content === "string" ? row.content : "";
+      if (content.trim()) emit("message", "meta", { content });
+      continue;
+    }
+
+    if (type === "user") {
+      const synthetic = stringValue(row.synthetic_reason);
+      const text = grokBuildContentText(row.content, diagnostics, inputLine);
+      if (!text.trim()) continue;
+      emit("message", synthetic !== undefined ? "meta" : "user", { content: text });
+      continue;
+    }
+
+    if (type === "assistant") {
+      const modelId = nonEmpty(stringValue(row.model_id));
+      if (modelId) {
+        model ??= modelId;
+        // model_fingerprint is not a response ID — do not invent responseId.
+        // Only source-backed response_model is retained (parity with .NET/Rust).
+        modelInvocations.push({
+          sourceOffset,
+          responseModel: modelId,
+        });
+      }
+      const content = typeof row.content === "string"
+        ? row.content
+        : Array.isArray(row.content)
+          ? readBlocksText(row.content)
+          : "";
+      if (content.trim()) {
+        emit("message", "assistant", {
+          content,
+          ...(modelId === undefined ? {} : { model: modelId }),
+        });
+      }
+      if (Array.isArray(row.tool_calls)) {
+        for (const value of row.tool_calls) {
+          if (!isObject(value)) continue;
+          const callId = stringValue(value.id);
+          const name = stringValue(value.name);
+          const args = typeof value.arguments === "string"
+            ? value.arguments
+            : value.arguments === undefined
+              ? "{}"
+              : compactJson(value.arguments as JsonValue);
+          emit("tool-call", "assistant", {
+            toolCallId: callId,
+            toolName: name,
+            argumentsJson: args,
+            ...(modelId === undefined ? {} : { model: modelId }),
+          });
+        }
+      }
+      continue;
+    }
+
+    if (type === "tool_result") {
+      const toolCallId = stringValue(row.tool_call_id);
+      const content = typeof row.content === "string"
+        ? row.content
+        : Array.isArray(row.content)
+          ? readBlocksText(row.content)
+          : row.content === undefined || row.content === null
+            ? ""
+            : compactJson(row.content as JsonValue);
+      if (Array.isArray(row.images) && row.images.length > 0) {
+        diagnostics.push({
+          code: "image_content_dropped",
+          message: `Dropped image content on line ${inputLine}.`,
+          inputLine,
+        });
+      }
+      emit("tool-result", "tool", {
+        toolCallId,
+        content,
+      });
+      continue;
+    }
+
+    if (type === "reasoning") {
+      const summaryText = grokBuildReasoningSummary(row);
+      const encrypted = stringValue(row.encrypted_content);
+      let content = summaryText;
+      if (includeEncrypted && encrypted) {
+        content = content
+          ? `${content}\n\n<encrypted_content>\n${encrypted}\n</encrypted_content>`
+          : `<encrypted_content>\n${encrypted}\n</encrypted_content>`;
+        encryptedIncluded++;
+      }
+      if (!content.trim()) continue;
+      const nativeId = nonEmpty(stringValue(row.id));
+      emit("reasoning", "reasoning", {
+        content,
+        ...(nativeId === undefined ? {} : { nativeId }),
+      });
+      continue;
+    }
+
+    if (type === "backend_tool_call") {
+      const kind = isObject(row.kind) ? row.kind : undefined;
+      const toolType = kind ? stringValue(kind.tool_type) : undefined;
+      const callId = kind ? stringValue(kind.id) : undefined;
+      const status = kind ? stringValue(kind.status) : undefined;
+      const action = kind && "action" in kind ? kind.action : undefined;
+      // Spec + .NET/Rust: when action is absent, compact query/input/code on kind.
+      let args: string;
+      if (action !== undefined && action !== null) {
+        args = compactJson({ action: action as JsonValue });
+      } else if (kind) {
+        const fallback: JsonObject = {};
+        for (const key of ["query", "input", "code"] as const) {
+          if (key in kind && kind[key] !== undefined && kind[key] !== null) {
+            fallback[key] = kind[key] as JsonValue;
+          }
+        }
+        args = Object.keys(fallback).length === 0 ? "{}" : compactJson(fallback);
+      } else {
+        args = "{}";
+      }
+      emit("tool-call", "assistant", {
+        toolCallId: callId,
+        toolName: toolType,
+        argumentsJson: args,
+      });
+      const completed = status === undefined || status === "completed";
+      const laterLines = callId ? toolResultLines.get(callId) : undefined;
+      const hasLater = laterLines !== undefined && laterLines.some((line) => line > inputLine);
+      if (completed && callId && !hasLater) {
+        const summary = backendToolResultSummary(toolType ?? "unknown_tool", action as JsonValue | undefined);
+        emit("tool-result", "tool", {
+          toolCallId: callId,
+          content: summary,
+        });
+        diagnostics.push({
+          code: "backend_tool_result_synthesized",
+          // Content-safe: no source-native tool-call IDs.
+          message: "Synthesized a tool result for a backend tool call.",
+          inputLine,
+        });
+      }
+      continue;
+    }
+
+    if (type) {
+      diagnostics.push({
+        code: "unknown_semantic_record",
+        message: `Skipped an unknown Grok Build semantic record on line ${inputLine}.`,
+        inputLine,
+      });
+    }
+  }
+
+  if (encryptedIncluded > 0) {
+    diagnostics.push({
+      code: "encrypted_reasoning_included",
+      message: `Included encrypted reasoning content for ${encryptedIncluded} item(s).`,
+      count: encryptedIncluded,
+    });
+  }
+
+  return {
+    source: "grok-build",
+    sourceName: "grok-build",
+    groupResolved: false,
+    events,
+    modelInvocations,
+    diagnostics,
+    ...(model === undefined ? {} : { model }),
+  };
+}
+
+function grokBuildContentText(
+  content: JsonValue | undefined,
+  diagnostics: TrajectoryDiagnostic[],
+  inputLine: number,
+): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  let droppedImage = false;
+  for (const item of content) {
+    if (!isObject(item)) continue;
+    const partType = stringValue(item.type);
+    if (partType === "text" || partType === undefined) {
+      const text = stringValue(item.text);
+      if (text) parts.push(text);
+    } else if (partType === "image") {
+      droppedImage = true;
+    }
+  }
+  if (droppedImage) {
+    diagnostics.push({
+      code: "image_content_dropped",
+      message: `Dropped image content on line ${inputLine}.`,
+      inputLine,
+    });
+  }
+  return parts.join("\n");
+}
+
+function grokBuildReasoningSummary(row: JsonObject): string {
+  const parts: string[] = [];
+  if (Array.isArray(row.summary)) {
+    for (const item of row.summary) {
+      if (!isObject(item)) continue;
+      const partType = stringValue(item.type);
+      if (partType === "summary_text" || partType === "text" || partType === undefined) {
+        const text = stringValue(item.text);
+        if (text) parts.push(text);
+      }
+    }
+  }
+  if (typeof row.content === "string" && row.content.trim()) {
+    parts.push(row.content);
+  }
+  return parts.join("\n");
+}
+
+function backendToolResultSummary(
+  toolType: string,
+  action: JsonValue | undefined,
+): string {
+  if (isObject(action)) {
+    const actionType = stringValue(action.type) ?? "action";
+    const detail = stringValue(action.query)
+      ?? stringValue(action.input)
+      ?? stringValue(action.code);
+    if (detail) return `[backend ${toolType}] ${actionType}: ${detail}`;
+    return `[backend ${toolType}] ${actionType}`;
+  }
+  return `[backend ${toolType}] completed`;
+}
+
 function forEachJsonLine(
   bytes: Uint8Array,
   diagnostics: TrajectoryDiagnostic[],
@@ -2180,7 +2472,10 @@ function recordTypeName(record: IRRecord): string {
   if (record.kind === "meta") return "meta";
   if (record.kind === "assistant_tool_calls") return "assistant-tool-call";
   if (record.kind === "tool_result") return "tool";
-  return record.role === "user" ? "user" : record.role === "reasoning" ? "reasoning" : "assistant";
+  if (record.role === "user") return "user";
+  if (record.role === "reasoning") return "reasoning";
+  if (record.role === "meta") return "meta";
+  return "assistant";
 }
 
 function diag(code: string, message: string, event: DecodedEvent, recordIndex: number): TrajectoryDiagnostic {

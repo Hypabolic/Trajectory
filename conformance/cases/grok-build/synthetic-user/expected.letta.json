@@ -1,0 +1,36 @@
+{
+  "records": [
+    {
+      "role": "meta",
+      "source": "grok-build",
+      "model": "grok-4.5"
+    },
+    {
+      "role": "meta",
+      "content": "Project instructions.",
+      "timestamp": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "role": "user",
+      "content": "Real user question.",
+      "timestamp": "2026-01-01T00:00:15.000Z"
+    },
+    {
+      "role": "meta",
+      "content": "Continue after compaction.",
+      "timestamp": "2026-01-01T00:00:30.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Answering the real question.",
+      "timestamp": "2026-01-01T00:00:45.000Z"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "timestamps_synthesized",
+      "message": "Synthesized timestamps for 4 normalized records.",
+      "count": 4
+    }
+  ]
+}
