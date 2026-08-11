@@ -1,0 +1,14 @@
+[
+  {
+    "items": [
+      {
+        "id": "session",
+        "path": "$ROOT/store/2026/04/02/session.jsonl",
+        "updated_at": "2026-04-02T00:00:00.000Z",
+        "size_bytes": 619,
+        "title": "Inspect the repository."
+      }
+    ],
+    "next_cursor": null
+  }
+]

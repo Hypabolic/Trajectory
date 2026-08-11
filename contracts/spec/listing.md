@@ -47,6 +47,30 @@ additional items remain.
   (`last_active_at` then `updated_at`); otherwise use the history file mtime.
   Ignore non-session files (locks, `events.jsonl`, `updates.jsonl`, etc.).
 
+## Optional title derivation
+
+Title is optional. When a lister can derive one cheaply it should populate
+`title`; otherwise omit it. Derivation is a **bounded peek** (at most the first
+64 KiB or 200 lines of a transcript, whichever comes first) and must not run a
+full normalize. Titles are single-line, whitespace-collapsed, and truncated to
+at most 120 Unicode scalars. They may contain user text (local picker metadata);
+do not put secrets into diagnostics.
+
+Per-source rules:
+
+- **Grok Build:** `summary.json` `generated_title`, else `session_summary`
+  (unchanged; no transcript scan).
+- **Codex:** scan early rollout records. Prefer the first `response_item` with
+  `payload.role === "user"` whose extracted text is not harness injection.
+  Noise includes markers such as `# AGENTS.md`, `<INSTRUCTIONS>`,
+  `<environment_context>`, `<skills_instructions>`, dense XML tag blocks, and
+  developer/system roles. Fallback: short `session_meta.payload.id` when present.
+- **Claude Code:** prefer the first non-empty of `custom-title` (`customTitle`),
+  `ai-title` (`aiTitle`), or `summary` (`summary`) within the bound; otherwise
+  the first non-meta, non-sidechain `user` message text that is not harness noise.
+- **Pi / OpenClaw (optional):** first non-noise user message text within the
+  bound when cheaply available.
+
 Missing stores return an empty page. Inaccessible or concurrently removed
 subtrees are skipped. A source without an installed lister fails with
 `listing_unavailable`.

@@ -1,0 +1,14 @@
+[
+  {
+    "items": [
+      {
+        "id": "session",
+        "path": "$ROOT/store/project-a/session.jsonl",
+        "updated_at": "2026-04-02T00:00:00.000Z",
+        "size_bytes": 272,
+        "title": "Fix flaky retry"
+      }
+    ],
+    "next_cursor": null
+  }
+]

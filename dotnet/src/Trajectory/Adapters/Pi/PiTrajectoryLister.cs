@@ -49,6 +49,7 @@ internal sealed class PiTrajectoryLister : ITrajectoryLister
                         Id = Path.GetFileNameWithoutExtension(path),
                         Path = path,
                         UpdatedAt = info.LastWriteTimeUtc,
+                        Title = ListingTitle.DeriveGenericUserTitle(path),
                         SizeBytes = info.Length,
                     });
                 }

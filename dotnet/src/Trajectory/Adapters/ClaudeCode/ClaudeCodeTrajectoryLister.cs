@@ -32,6 +32,7 @@ internal sealed class ClaudeCodeTrajectoryLister : ITrajectoryLister
                         Id = Path.GetFileNameWithoutExtension(path),
                         Path = path,
                         UpdatedAt = info.LastWriteTimeUtc,
+                        Title = ListingTitle.DeriveClaudeTitle(path),
                         SizeBytes = info.Length,
                     });
                 }
