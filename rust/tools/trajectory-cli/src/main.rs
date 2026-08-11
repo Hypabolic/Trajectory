@@ -156,13 +156,7 @@ fn run_show(
     let source = cli.source.unwrap_or(SourceArg::Pi);
     let root = resolve_root(source, cli.root.as_deref());
     let (path, group_id) = resolve_path(source, &root, path, id, cli.limit)?;
-    print_summary(
-        source,
-        &path,
-        group_id.as_deref(),
-        cli.show_content,
-        format,
-    )
+    print_summary(source, &path, group_id.as_deref(), cli.show_content, format)
 }
 
 fn run_browse(cli: &Cli) -> Result<ExitCode, TrajectoryError> {
@@ -557,7 +551,9 @@ fn describe_default(source: SourceArg) -> &'static str {
             "~/.openclaw if present, else ~/.clawdbot (or OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR)"
         }
         SourceArg::Hermes => "~/.hermes/state.db",
-        SourceArg::GrokBuild => "~/.grok/sessions (or $GROK_HOME/sessions / TRAJECTORY_GROK_BUILD_ROOT)",
+        SourceArg::GrokBuild => {
+            "~/.grok/sessions (or $GROK_HOME/sessions / TRAJECTORY_GROK_BUILD_ROOT)"
+        }
     }
 }
 

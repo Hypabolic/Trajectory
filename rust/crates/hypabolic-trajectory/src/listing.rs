@@ -125,10 +125,7 @@ pub fn list_grok_build_trajectories(
     };
     for cwd_entry in cwd_dirs {
         let cwd_entry = cwd_entry.map_err(|error| {
-            io_error(
-                "Could not enumerate the Grok Build sessions root.",
-                &error,
-            )
+            io_error("Could not enumerate the Grok Build sessions root.", &error)
         })?;
         let cwd_type = match cwd_entry.file_type() {
             Ok(value) => value,
@@ -155,10 +152,7 @@ pub fn list_grok_build_trajectories(
         };
         for session_entry in sessions {
             let session_entry = session_entry.map_err(|error| {
-                io_error(
-                    "Could not enumerate a Grok Build CWD directory.",
-                    &error,
-                )
+                io_error("Could not enumerate a Grok Build CWD directory.", &error)
             })?;
             let session_type = match session_entry.file_type() {
                 Ok(value) => value,
@@ -195,8 +189,7 @@ pub fn list_grok_build_trajectories(
                     )
                 })?
                 .to_owned();
-            let (updated_at, title) =
-                grok_build_summary_meta(&session_entry.path(), &metadata)?;
+            let (updated_at, title) = grok_build_summary_meta(&session_entry.path(), &metadata)?;
             items.push(TrajectoryListing {
                 id,
                 path: history,
@@ -252,12 +245,7 @@ fn grok_build_summary_meta(
     }
     let modified = history_metadata
         .modified()
-        .map_err(|error| {
-            io_error(
-                "Could not read a Grok Build transcript timestamp.",
-                &error,
-            )
-        })?
+        .map_err(|error| io_error("Could not read a Grok Build transcript timestamp.", &error))?
         .duration_since(UNIX_EPOCH)
         .map_err(|_| {
             TrajectoryError::new(

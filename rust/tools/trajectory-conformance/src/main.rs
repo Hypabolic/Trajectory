@@ -313,12 +313,14 @@ fn execute_listing(repository_root: &Path, manifest: &Manifest) -> Result<String
         let mut pages = Vec::new();
         let mut cursor = None;
         loop {
-            let listing_root =
-                if matches!(manifest.source.as_str(), "claude-code" | "codex" | "grok-build") {
-                    root.join("store")
-                } else {
-                    root.clone()
-                };
+            let listing_root = if matches!(
+                manifest.source.as_str(),
+                "claude-code" | "codex" | "grok-build"
+            ) {
+                root.join("store")
+            } else {
+                root.clone()
+            };
             let options = ListingOptions {
                 root: &listing_root,
                 cursor: cursor.as_deref(),

@@ -262,8 +262,8 @@ fn decode_grok_build(
                 if let Ok(text) = std::str::from_utf8(slice) {
                     if let Ok(Value::Object(row)) = serde_json::from_str::<Value>(text) {
                         if string_value(row.get("type")) == Some("tool_result") {
-                            if let Some(id) =
-                                string_value(row.get("tool_call_id")).filter(|value| !value.is_empty())
+                            if let Some(id) = string_value(row.get("tool_call_id"))
+                                .filter(|value| !value.is_empty())
                             {
                                 tool_result_lines
                                     .entry(id.to_owned())
@@ -308,35 +308,36 @@ fn decode_grok_build(
                 Some(Value::Object(row)) => {
                     let row_type = string_value(row.get("type")).unwrap_or("");
                     let mut component_index = 0_usize;
-                    let mut emit = |kind: EventKind,
-                                    role: Role,
-                                    content: Option<String>,
-                                    tool_call_id: Option<String>,
-                                    tool_name: Option<String>,
-                                    arguments_json: Option<String>,
-                                    is_error: Option<bool>,
-                                    native_id: Option<String>,
-                                    event_model: Option<String>| {
-                        events.push(DecodedEvent {
-                            kind,
-                            role,
-                            content,
-                            tool_call_id,
-                            tool_name,
-                            arguments_json,
-                            is_error,
-                            native_id,
-                            producer_version: None,
-                            source_sequence: None,
-                            source_offset,
-                            input_line: Some(line),
-                            timestamp_ms: None,
-                            timestamp_precise: None,
-                            component_index,
-                            model: event_model,
-                        });
-                        component_index += 1;
-                    };
+                    let mut emit =
+                        |kind: EventKind,
+                         role: Role,
+                         content: Option<String>,
+                         tool_call_id: Option<String>,
+                         tool_name: Option<String>,
+                         arguments_json: Option<String>,
+                         is_error: Option<bool>,
+                         native_id: Option<String>,
+                         event_model: Option<String>| {
+                            events.push(DecodedEvent {
+                                kind,
+                                role,
+                                content,
+                                tool_call_id,
+                                tool_name,
+                                arguments_json,
+                                is_error,
+                                native_id,
+                                producer_version: None,
+                                source_sequence: None,
+                                source_offset,
+                                input_line: Some(line),
+                                timestamp_ms: None,
+                                timestamp_precise: None,
+                                component_index,
+                                model: event_model,
+                            });
+                            component_index += 1;
+                        };
 
                     match row_type {
                         "system" => {
@@ -356,8 +357,7 @@ fn decode_grok_build(
                             }
                         }
                         "user" => {
-                            let (text, dropped_image) =
-                                grok_join_content_parts(row.get("content"));
+                            let (text, dropped_image) = grok_join_content_parts(row.get("content"));
                             if dropped_image {
                                 diagnostics.push(Diagnostic {
                                     code: "image_content_dropped".into(),
@@ -371,17 +371,10 @@ fn decode_grok_build(
                             }
                             if !text.trim().is_empty() {
                                 let synthetic = row.get("synthetic_reason").is_some()
-                                    && !matches!(
-                                        row.get("synthetic_reason"),
-                                        Some(Value::Null)
-                                    );
+                                    && !matches!(row.get("synthetic_reason"), Some(Value::Null));
                                 emit(
                                     EventKind::Message,
-                                    if synthetic {
-                                        Role::Meta
-                                    } else {
-                                        Role::User
-                                    },
+                                    if synthetic { Role::Meta } else { Role::User },
                                     Some(text),
                                     None,
                                     None,
@@ -393,8 +386,7 @@ fn decode_grok_build(
                             }
                         }
                         "assistant" => {
-                            let model_id =
-                                non_empty(string_value(row.get("model_id")));
+                            let model_id = non_empty(string_value(row.get("model_id")));
                             if model.is_none() {
                                 if let Some(value) = model_id.as_ref() {
                                     model = Some(value.clone());
@@ -445,15 +437,11 @@ fn decode_grok_build(
                                     let Value::Object(call) = call else {
                                         continue;
                                     };
-                                    let id =
-                                        string_value(call.get("id")).map(str::to_owned);
-                                    let name =
-                                        string_value(call.get("name")).map(str::to_owned);
+                                    let id = string_value(call.get("id")).map(str::to_owned);
+                                    let name = string_value(call.get("name")).map(str::to_owned);
                                     let arguments = match call.get("arguments") {
                                         Some(Value::String(value)) => value.clone(),
-                                        Some(value) if !value.is_null() => {
-                                            relaxed_json(value)?
-                                        }
+                                        Some(value) if !value.is_null() => relaxed_json(value)?,
                                         _ => "{}".into(),
                                     };
                                     emit(
@@ -471,8 +459,7 @@ fn decode_grok_build(
                             }
                         }
                         "tool_result" => {
-                            let (text, dropped_image) =
-                                grok_join_content_parts(row.get("content"));
+                            let (text, dropped_image) = grok_join_content_parts(row.get("content"));
                             let mut dropped_image = dropped_image;
                             if let Some(Value::Array(images)) = row.get("images") {
                                 if !images.is_empty() {
@@ -551,8 +538,7 @@ fn decode_grok_build(
                                 }
                             }
                             if !body.trim().is_empty() {
-                                let native_id =
-                                    non_empty(string_value(row.get("id")));
+                                let native_id = non_empty(string_value(row.get("id")));
                                 emit(
                                     EventKind::Reasoning,
                                     Role::Reasoning,
@@ -625,7 +611,9 @@ fn decode_grok_build(
                                         diagnostics.push(Diagnostic {
                                             code: "backend_tool_result_synthesized".into(),
                                             // Content-safe: no source-native tool-call IDs.
-                                            message: "Synthesized a tool result for a backend tool call.".into(),
+                                            message:
+                                                "Synthesized a tool result for a backend tool call."
+                                                    .into(),
                                             input_line: Some(line),
                                             record_index: None,
                                             count: None,
