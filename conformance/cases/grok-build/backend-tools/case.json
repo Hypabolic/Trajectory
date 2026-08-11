@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1,
+  "id": "grok-build/backend-tools",
+  "operation": {
+    "normalize-letta": {
+      "expected": "expected.letta.json",
+      "comparison": "json-exact"
+    },
+    "normalize-canonical": {
+      "expected": "expected.canonical.json",
+      "comparison": "json-exact"
+    }
+  },
+  "source": "grok-build",
+  "transcript": "input.jsonl",
+  "native_container": "grok-build-chat-history-jsonl",
+  "source_context": {
+    "group_id": "019f0000-0000-7000-8000-0000000000cc"
+  },
+  "bounds": {},
+  "filters": {},
+  "projection_options": {},
+  "mode": "whole",
+  "required_capabilities": ["normalize", "typed-diagnostics", "deterministic-rerun"],
+  "expected": {
+    "result": "diagnostics",
+    "diagnostic_codes": [
+      "backend_tool_result_synthesized",
+      "timestamps_synthesized"
+    ]
+  },
+  "comparison": "json-exact"
+}

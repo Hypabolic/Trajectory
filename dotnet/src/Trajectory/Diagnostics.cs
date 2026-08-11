@@ -21,6 +21,9 @@ public static class DiagnosticCodes
     public const string ToolResultTruncated = "tool_result_truncated";
     public const string TimestampsSynthesized = "timestamps_synthesized";
     public const string TimestampsInterpolated = "timestamps_interpolated";
+    public const string ImageContentDropped = "image_content_dropped";
+    public const string BackendToolResultSynthesized = "backend_tool_result_synthesized";
+    public const string EncryptedReasoningIncluded = "encrypted_reasoning_included";
 }
 
 public sealed record TrajectoryDiagnostic

@@ -27,7 +27,7 @@ OUTPUTS = [
     "jsonl-minimal",
     "otel-genai-spans-v1",
 ]
-EXPECTED_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes"]
+EXPECTED_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "grok-build"]
 
 
 def load_json(path: Path) -> dict:

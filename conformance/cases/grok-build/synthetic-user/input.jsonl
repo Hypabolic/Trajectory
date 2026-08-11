@@ -1,0 +1,4 @@
+{"type":"user","content":[{"type":"text","text":"Project instructions."}],"synthetic_reason":"project_instructions"}
+{"type":"user","content":[{"type":"text","text":"Real user question."}],"prompt_index":0}
+{"type":"user","content":[{"type":"text","text":"Continue after compaction."}],"synthetic_reason":"auto_continue"}
+{"type":"assistant","content":"Answering the real question.","model_id":"grok-4.5"}

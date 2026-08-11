@@ -10,6 +10,7 @@ public enum TrajectorySource
     OpenHands,
     Hermes,
     DeepAgents,
+    GrokBuild,
 }
 
 public enum TrajectoryRole

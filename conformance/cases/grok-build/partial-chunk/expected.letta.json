@@ -1,0 +1,26 @@
+{
+  "records": [
+    {
+      "role": "meta",
+      "source": "grok-build",
+      "model": "grok-4.5"
+    },
+    {
+      "role": "user",
+      "content": "chunk user",
+      "timestamp": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "chunk assistant",
+      "timestamp": "2026-01-01T00:00:15.000Z"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "timestamps_synthesized",
+      "message": "Synthesized timestamps for 2 normalized records.",
+      "count": 2
+    }
+  ]
+}

@@ -25,10 +25,13 @@ pub struct ListingOptions<'a> {
 pub struct TrajectoryListing {
     /// File stem.
     pub id: String,
-    /// Native filesystem locator.
+    /// Native filesystem locator (absolute when the store root is absolute or
+    /// can be resolved against the process working directory).
     pub path: PathBuf,
     /// UTC millisecond modification time.
     pub updated_at: String,
+    /// Optional human title when the store provides one.
+    pub title: Option<String>,
     /// File byte length.
     pub size_bytes: u64,
 }
@@ -92,6 +95,171 @@ fn resolve_hermes_store_path(root: &Path) -> PathBuf {
     } else {
         root.join("state.db")
     }
+}
+
+/// Lists Grok Build `chat_history.jsonl` transcripts under `<root>/*/*/chat_history.jsonl`.
+///
+/// Discovery walks one CWD-directory level then one session-directory level. Item IDs are
+/// session directory names. Prefer `summary.json` `last_active_at` then `updated_at` for
+/// `updated_at`; otherwise use the history file mtime.
+pub fn list_grok_build_trajectories(
+    options: &ListingOptions<'_>,
+) -> Result<TrajectoryListingPage, TrajectoryError> {
+    validate_limit(options.limit)?;
+    let root = absolute_path(options.root);
+    let mut items = Vec::new();
+    let cwd_dirs = match fs::read_dir(&root) {
+        Ok(value) => value,
+        Err(error) if missing_or_denied(&error) => {
+            return Ok(TrajectoryListingPage {
+                items: Vec::new(),
+                next_cursor: None,
+            });
+        }
+        Err(error) => {
+            return Err(io_error(
+                "Could not enumerate the Grok Build sessions root.",
+                &error,
+            ));
+        }
+    };
+    for cwd_entry in cwd_dirs {
+        let cwd_entry = cwd_entry.map_err(|error| {
+            io_error("Could not enumerate the Grok Build sessions root.", &error)
+        })?;
+        let cwd_type = match cwd_entry.file_type() {
+            Ok(value) => value,
+            Err(error) if missing_or_denied(&error) => continue,
+            Err(error) => {
+                return Err(io_error(
+                    "Could not inspect a Grok Build store entry.",
+                    &error,
+                ));
+            }
+        };
+        if !cwd_type.is_dir() {
+            continue;
+        }
+        let sessions = match fs::read_dir(cwd_entry.path()) {
+            Ok(value) => value,
+            Err(error) if missing_or_denied(&error) => continue,
+            Err(error) => {
+                return Err(io_error(
+                    "Could not enumerate a Grok Build CWD directory.",
+                    &error,
+                ));
+            }
+        };
+        for session_entry in sessions {
+            let session_entry = session_entry.map_err(|error| {
+                io_error("Could not enumerate a Grok Build CWD directory.", &error)
+            })?;
+            let session_type = match session_entry.file_type() {
+                Ok(value) => value,
+                Err(error) if missing_or_denied(&error) => continue,
+                Err(error) => {
+                    return Err(io_error(
+                        "Could not inspect a Grok Build session entry.",
+                        &error,
+                    ));
+                }
+            };
+            if !session_type.is_dir() {
+                continue;
+            }
+            let history = session_entry.path().join("chat_history.jsonl");
+            let metadata = match fs::metadata(&history) {
+                Ok(value) if value.is_file() => value,
+                Ok(_) => continue,
+                Err(error) if missing_or_denied(&error) => continue,
+                Err(error) => {
+                    return Err(io_error(
+                        "Could not inspect a Grok Build chat history.",
+                        &error,
+                    ));
+                }
+            };
+            let id = session_entry
+                .file_name()
+                .to_str()
+                .ok_or_else(|| {
+                    TrajectoryError::new(
+                        "invalid_input",
+                        "A Grok Build session directory name is not valid Unicode.",
+                    )
+                })?
+                .to_owned();
+            let (updated_at, title) = grok_build_summary_meta(&session_entry.path(), &metadata)?;
+            items.push(TrajectoryListing {
+                id,
+                path: history,
+                updated_at,
+                title,
+                size_bytes: metadata.len(),
+            });
+        }
+    }
+    paginate(options, items)
+}
+
+fn absolute_path(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(path)
+    }
+}
+
+fn grok_build_summary_meta(
+    session_dir: &Path,
+    history_metadata: &fs::Metadata,
+) -> Result<(String, Option<String>), TrajectoryError> {
+    let summary_path = session_dir.join("summary.json");
+    let mut title = None;
+    if let Ok(text) = fs::read_to_string(&summary_path) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(object) = value.as_object() {
+                title = object
+                    .get("generated_title")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+                    .or_else(|| {
+                        object
+                            .get("session_summary")
+                            .and_then(serde_json::Value::as_str)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_owned)
+                    });
+                for key in ["last_active_at", "updated_at"] {
+                    if let Some(timestamp) = object.get(key).and_then(serde_json::Value::as_str) {
+                        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(timestamp) {
+                            return Ok((format_ms(parsed.timestamp_millis())?, title));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let modified = history_metadata
+        .modified()
+        .map_err(|error| io_error("Could not read a Grok Build transcript timestamp.", &error))?
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| {
+            TrajectoryError::new(
+                "invalid_input",
+                "A Grok Build transcript timestamp precedes the Unix epoch.",
+            )
+        })?;
+    let milliseconds = i64::try_from(modified.as_millis()).map_err(|_| {
+        TrajectoryError::new(
+            "invalid_input",
+            "A Grok Build transcript timestamp is out of range.",
+        )
+    })?;
+    Ok((format_ms(milliseconds)?, title))
 }
 
 /// Lists `OpenClaw` JSONL transcripts below `<root>/agents/*/sessions`.
@@ -331,6 +499,7 @@ fn listing_from_file(
         id,
         path,
         updated_at: format_ms(milliseconds)?,
+        title: None,
         size_bytes: metadata.len(),
     })
 }

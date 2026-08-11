@@ -64,7 +64,7 @@ public sealed class TrajectoryEngine
 
         var utf8 = Encoding.UTF8.GetBytes(input.Transcript);
         var config = AppliedNormalizationConfig.Resolve(input.Options, input.SourceContext);
-        var decoded = sourceAdapter.Decode(utf8);
+        var decoded = sourceAdapter.Decode(utf8, config.SourceContext);
         return _normalizer.Normalize(decoded, config);
     }
 

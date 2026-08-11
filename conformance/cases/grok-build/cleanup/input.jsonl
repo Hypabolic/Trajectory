@@ -1,0 +1,5 @@
+not-json
+{"type":"user","content":[{"type":"text","text":"hello"}]}
+["array-not-object"]
+{"type":"future_widget","payload":true}
+{"type":"assistant","content":"ok","model_id":"grok-4.5"}

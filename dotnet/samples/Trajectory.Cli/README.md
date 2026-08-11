@@ -5,7 +5,7 @@ Local sample TUI for browsing agent sessions with [`Hypabolic.Trajectory`](../..
 
 ## What it does
 
-- Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes)
+- Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes, Grok Build)
 - Interactively pick a session and normalize it
 - Prints privacy-safe summaries (record counts, roles, tool calls, diagnostics)
 - Optional `--show-content` (prints a clear privacy warning)
@@ -19,6 +19,7 @@ Default store roots (override with `--root` or env):
 | `codex` | `~/.codex/sessions` | `TRAJECTORY_CODEX_ROOT` |
 | `openclaw` | `~/.openclaw` if present, else `~/.clawdbot` | `TRAJECTORY_OPENCLAW_ROOT`, `OPENCLAW_STATE_DIR`, or `CLAWDBOT_STATE_DIR` |
 | `hermes` | `~/.hermes` | `TRAJECTORY_HERMES_ROOT` |
+| `grok-build` (alias `grok`) | `$GROK_HOME/sessions` or `~/.grok/sessions` | `TRAJECTORY_GROK_BUILD_ROOT` or `GROK_HOME` |
 
 Hermes core listing is SQLite-free and returns empty pages. Export message JSON from Hermes and use `show --path`.
 

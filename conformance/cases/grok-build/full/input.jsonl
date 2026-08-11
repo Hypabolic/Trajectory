@@ -1,0 +1,6 @@
+{"type":"system","content":"You are Grok Build."}
+{"type":"user","content":[{"type":"text","text":"List files in src."}],"prompt_index":0}
+{"type":"reasoning","id":"rs_full_1","summary":[{"type":"summary_text","text":"I should list the directory."}],"encrypted_content":"enc_secret_should_drop","status":"completed"}
+{"type":"assistant","content":"I'll list src.","tool_calls":[{"id":"call_list_1","name":"run_terminal_command","arguments":"{\"command\":\"ls src\"}"}],"model_id":"grok-4.5-build","model_fingerprint":"fp_test","reasoning_effort":"high"}
+{"type":"tool_result","tool_call_id":"call_list_1","content":"main.rs\nlib.rs\n"}
+{"type":"assistant","content":"src has main.rs and lib.rs.","model_id":"grok-4.5-build","model_fingerprint":"fp_test","reasoning_effort":"high"}

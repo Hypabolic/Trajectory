@@ -51,6 +51,8 @@ pub struct SourceContext<'a> {
     pub base_byte_offset: i64,
     /// Whether whole-transcript validation is relaxed.
     pub partial: bool,
+    /// When true, project encrypted reasoning payloads (Grok Build).
+    pub include_encrypted_reasoning: bool,
 }
 
 /// User-configurable normalization policy.
@@ -149,6 +151,8 @@ pub enum TrajectorySource {
     OpenClaw,
     /// Hermes message-row array or session envelope.
     Hermes,
+    /// Grok Build `chat_history.jsonl`.
+    GrokBuild,
 }
 
 impl TrajectorySource {
@@ -159,6 +163,7 @@ impl TrajectorySource {
             Self::Codex => "codex",
             Self::OpenClaw => "openclaw",
             Self::Hermes => "hermes",
+            Self::GrokBuild => "grok-build",
         }
     }
 }

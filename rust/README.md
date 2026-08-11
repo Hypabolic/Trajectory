@@ -3,8 +3,8 @@
 `hypabolic-trajectory` is the independent native Rust implementation of the
 Trajectory contracts. ML13 advertises the complete v1 source/output paths:
 
-- byte-oriented Pi, Claude Code, Codex, OpenClaw, and Hermes decoding and
-  normalization;
+- byte-oriented Pi, Claude Code, Codex, OpenClaw, Hermes, and Grok Build
+  decoding and normalization;
 - Claude Code producer/context and model-invocation metadata retention;
 - Hermes array/envelope decode with SQLite-free empty-page listing when no
   store is present;
@@ -43,7 +43,7 @@ python3 conformance/verify.py --repository-root . -- \
   rust/target/release/trajectory-conformance
 ```
 
-`runtime-capabilities.json` is the machine-readable declaration of the five
+`runtime-capabilities.json` is the machine-readable declaration of the six
 implemented sources and six implemented outputs (slice `ML13`). `write_schema`
 and `write_minimal_jsonl` provide `std::io::Write` surfaces; the latter emits
 one record at a time without materializing the full JSONL document. Packages

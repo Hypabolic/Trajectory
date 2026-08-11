@@ -139,7 +139,8 @@
               "claude-code",
               "codex",
               "openclaw",
-              "hermes"
+              "hermes",
+              "grok-build"
             ]
           },
           "uniqueItems": true

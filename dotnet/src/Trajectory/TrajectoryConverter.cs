@@ -196,4 +196,16 @@ public static class TrajectoryConverter
             cursor,
             limit,
             cancellationToken);
+
+    public static ValueTask<TrajectoryListingPage> ListGrokBuildTrajectoriesAsync(
+        string? root = null,
+        string? cursor = null,
+        int limit = 50,
+        CancellationToken cancellationToken = default) =>
+        ListTrajectoriesAsync(
+            TrajectorySource.GrokBuild,
+            root,
+            cursor,
+            limit,
+            cancellationToken);
 }

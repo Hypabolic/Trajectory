@@ -25,6 +25,7 @@ import {
 import {
   listClaudeCodeTrajectories,
   listCodexTrajectories,
+  listGrokBuildTrajectories,
   listHermesTrajectories,
   listOpenClawTrajectories,
   listPiTrajectories,
@@ -49,6 +50,7 @@ interface Manifest {
     group_id?: string;
     base_byte_offset?: number;
     partial?: boolean;
+    include_encrypted_reasoning?: boolean | string;
   };
   bounds: {
     tool_arguments?: { max_characters?: number | null };
@@ -106,7 +108,7 @@ async function execute(request: Request): Promise<unknown> {
   if (!(request.operation in manifest.operation)) {
     throw new Error(`Case '${request.case}' does not declare operation '${request.operation}'.`);
   }
-  if (!["pi", "claude-code", "codex", "openclaw", "hermes"].includes(manifest.source)) {
+  if (!["pi", "claude-code", "codex", "openclaw", "hermes", "grok-build"].includes(manifest.source)) {
     throw new Error(`TypeScript does not support source '${manifest.source}'.`);
   }
   try {
@@ -116,6 +118,8 @@ async function execute(request: Request): Promise<unknown> {
       outputText = await executeListing(repositoryRoot, manifest);
     } else {
       const transcript = await readFile(safeResolve(caseDirectory, manifest.transcript));
+      const includeEncrypted = manifest.source_context.include_encrypted_reasoning === true
+        || manifest.source_context.include_encrypted_reasoning === "true";
       const trajectory = normalizeToIR({
         source: manifest.source as TrajectorySource,
         transcriptBytes: transcript,
@@ -123,6 +127,7 @@ async function execute(request: Request): Promise<unknown> {
           ...(manifest.source_context.group_id === undefined ? {} : { groupId: manifest.source_context.group_id }),
           ...(manifest.source_context.base_byte_offset === undefined ? {} : { baseByteOffset: BigInt(manifest.source_context.base_byte_offset) }),
           partial: manifest.source_context.partial ?? false,
+          ...(includeEncrypted ? { includeEncryptedReasoning: true } : {}),
         },
         options: {
           bounds: {
@@ -226,7 +231,9 @@ async function executeListing(repositoryRoot: string, manifest: Manifest): Promi
             ? listOpenClawTrajectories
             : manifest.source === "hermes"
               ? listHermesTrajectories
-              : listPiTrajectories;
+              : manifest.source === "grok-build"
+                ? listGrokBuildTrajectories
+                : listPiTrajectories;
       const page = await list({
         root: listingRoot,
         limit: manifest.listing?.limit ?? 50,
@@ -237,6 +244,7 @@ async function executeListing(repositoryRoot: string, manifest: Manifest): Promi
           id: item.id,
           path: item.path.replace(root, "$ROOT").replaceAll("\\", "/"),
           updated_at: item.updatedAt,
+          ...(item.title === undefined ? {} : { title: item.title }),
           size_bytes: item.sizeBytes,
         })),
         next_cursor: page.nextCursor,
