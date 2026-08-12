@@ -224,6 +224,159 @@ pub struct StreamDiagnostic {
     pub count: Option<i64>,
 }
 
+/// Content-safe fixed message for a stream diagnostic code (H2).
+///
+/// Safe structural fields (line/count) may appear; source IDs and content never do.
+#[must_use]
+pub fn stream_diagnostic_message(code: &str, input_line: Option<i64>, count: Option<i64>) -> String {
+    match (code, input_line, count) {
+        ("invalid_json_line", Some(line), _) => format!("Skipped invalid JSON on line {line}."),
+        ("non_object_json_line", Some(line), _) => {
+            format!("Skipped non-object JSON on line {line}.")
+        }
+        ("sidechain_record_dropped", Some(line), _) => {
+            format!("Dropped a sidechain record on line {line}.")
+        }
+        ("timestamps_synthesized", _, Some(n)) => {
+            format!("Synthesized timestamps for {n} normalized records.")
+        }
+        ("timestamps_interpolated", _, Some(n)) => {
+            format!("Interpolated timestamps for {n} normalized records.")
+        }
+        _ => stream_diagnostic_catalog(code).to_string(),
+    }
+}
+
+fn stream_diagnostic_catalog(code: &str) -> &'static str {
+    match code {
+        "invalid_json_line" => "Skipped invalid JSON line.",
+        "non_object_json_line" => "Skipped non-object JSON line.",
+        "injected_context_dropped" => "Dropped injected context content.",
+        "noise_record_dropped" => "Dropped a noise record.",
+        "sidechain_record_dropped" => "Dropped a sidechain record.",
+        "unknown_semantic_record" => "Dropped an unknown semantic record.",
+        "unknown_content_block" => "Dropped an unknown content block.",
+        "tool_call_id_synthesized" => "Synthesized a tool-call ID.",
+        "duplicate_tool_call_id" => "Renamed a duplicate tool-call ID.",
+        "orphan_tool_result" => "Dropped a tool result without a preceding call.",
+        "duplicate_tool_result" => "Dropped a duplicate tool result.",
+        "unknown_tool_name" => "Substituted a default name for a missing tool name.",
+        "tool_arguments_reshaped" => "Reshaped tool-call arguments into a JSON object.",
+        "tool_arguments_truncated" => "Truncated tool-call arguments.",
+        "tool_result_truncated" => "Truncated a tool result.",
+        "timestamps_synthesized" => "Synthesized timestamps for normalized records.",
+        "timestamps_interpolated" => "Interpolated timestamps for normalized records.",
+        "ahp_version_missing" => "Snapshot lacks ahpProtocolVersion; assumed pinned 0.7.x.",
+        "ahp_active_turn_omitted" => {
+            "Omitted incomplete activeTurn (snapshot whole-mode policy)."
+        }
+        "ahp_unknown_message_origin" => "Dropped a message with an unknown origin kind.",
+        "ahp_input_request_skipped" => "Skipped an inputRequest response part.",
+        "ahp_reasoning_omitted" => "Omitted reasoning content.",
+        "ahp_system_as_assistant" => "Mapped a system message origin to assistant.",
+        "ahp_unresolved_content_ref" => {
+            "Dropped a resource response part without fetching content-by-reference."
+        }
+        "ahp_unknown_action" => "Ignored an unknown AHP action type.",
+        "ahp_foreign_channel" => "Ignored an AHP action for a non-target channel.",
+        "image_content_dropped" => "Dropped image content.",
+        "backend_tool_result_synthesized" => {
+            "Synthesized a tool result for a backend tool call."
+        }
+        "encrypted_reasoning_included" => "Included encrypted reasoning content.",
+        "model_span_omitted" => {
+            "Model span omitted because source-native timing or provider/model metadata is incomplete."
+        }
+        "stream_buffer_limit" => "Stream buffer limit exceeded.",
+        "stream_cursor_conflict" => "Supplied stream cursor does not match stream state.",
+        "stream_source_reset" => "Source material changed relative to the active stream.",
+        "stream_resync_required" => "Stream requires resync.",
+        "stream_sequence_gap" => "AHP action-log serverSeq gap requires snapshot resync.",
+        _ => "Stream diagnostic.",
+    }
+}
+
+/// Content-safe fixed message for StreamUpdate.error.
+#[must_use]
+pub fn stream_error_message(code: &str, candidate: Option<&str>) -> String {
+    if let Some(msg) = candidate {
+        if is_allowed_fixed_error_message(msg) {
+            return msg.to_string();
+        }
+    }
+    match code {
+        "invalid_input" => "Invalid stream input.".into(),
+        "unknown_source" => "Unknown or invalid stream source.".into(),
+        "unknown_output_schema" => "Unknown output schema.".into(),
+        "missing_user_records" => "Normalized transcript is missing user records.".into(),
+        "missing_assistant_records" => {
+            "Normalized transcript is missing assistant records.".into()
+        }
+        "invalid_normalized_transcript" => "Normalized transcript is invalid.".into(),
+        "listing_unavailable" => "Listing is unavailable.".into(),
+        "source_group_conflict" => "Source group changed relative to the active stream.".into(),
+        "source_group_required" => "Source group is required.".into(),
+        "stream_buffer_limit" => "Stream buffer limit exceeded.".into(),
+        "stream_cursor_conflict" => {
+            "Supplied stream cursor does not match stream state.".into()
+        }
+        "stream_source_reset" => {
+            "Source material changed relative to the active stream.".into()
+        }
+        "stream_resync_required" => "Stream requires resync.".into(),
+        "stream_sequence_gap" => {
+            "AHP action-log serverSeq gap requires snapshot resync.".into()
+        }
+        _ => "Stream error.".into(),
+    }
+}
+
+fn is_allowed_fixed_error_message(msg: &str) -> bool {
+    matches!(
+        msg,
+        "Stream buffer limit exceeded."
+            | "Stream buffer limits must be non-negative int64 values."
+            | "Supplied stream cursor does not match stream state."
+            | "Source group changed relative to the active stream."
+            | "Source material is shorter than the committed cursor."
+            | "Source material was compacted relative to the committed cursor."
+            | "Source material was replaced relative to the committed cursor."
+            | "Committed prefix hash does not match supplied material."
+            | "Stream input kind is not supported for this source."
+            | "AHP stream apply requires source ahp."
+            | "Hermes export stream apply requires source hermes."
+            | "Hermes export material is not valid session-export JSON."
+            | "Stream is already finished."
+            | "Unknown or invalid stream source."
+            | "AHP action-log serverSeq gap requires snapshot resync."
+            | "AHP action batch could not be parsed."
+            | "AHP snapshot material is not valid Shape A JSON."
+            | "AHP action batch serverSeq order must be strictly increasing."
+            | "AHP action batch must not mix sequenced and unsequenced envelopes."
+            | "AHP action batch must be JSONL envelopes or a JSON array."
+            | "AHP action envelope is missing a valid serverSeq."
+            | "Stream material length exceeds non-negative int64 domain."
+            | "Stream cursor serverSeq positions must be non-negative int64 values."
+    )
+}
+
+/// Project an IR diagnostic into a content-safe [`StreamDiagnostic`] (catalog message only).
+#[must_use]
+pub fn project_stream_diagnostic(
+    code: &str,
+    input_line: Option<i64>,
+    record_index: Option<i64>,
+    count: Option<i64>,
+) -> StreamDiagnostic {
+    StreamDiagnostic {
+        code: code.to_string(),
+        message: stream_diagnostic_message(code, input_line, count),
+        input_line,
+        record_index,
+        count,
+    }
+}
+
 /// Stream record wrapper.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StreamRecord {
@@ -1109,6 +1262,7 @@ fn error_update(state: &StreamState, code: &str, message: &str) -> StreamUpdate 
         },
         |s| s.revision.clone(),
     );
+    let safe_message = stream_error_message(code, Some(message));
     StreamUpdate {
         kind: "error".into(),
         revision,
@@ -1119,7 +1273,7 @@ fn error_update(state: &StreamState, code: &str, message: &str) -> StreamUpdate 
         provisional: empty_provisional(state),
         consumed: empty_consumed(),
         reset: None,
-        error: Some((code.into(), message.into())),
+        error: Some((code.into(), safe_message)),
     }
 }
 
@@ -1485,12 +1639,13 @@ pub fn apply_snapshot(
         let diagnostics: Vec<StreamDiagnostic> = trajectory
             .diagnostics
             .iter()
-            .map(|d| StreamDiagnostic {
-                code: d.code.clone(),
-                message: d.message.clone(),
-                input_line: d.input_line.map(|n| n as i64),
-                record_index: d.record_index.map(|n| n as i64),
-                count: d.count.map(|n| n as i64),
+            .map(|d| {
+                project_stream_diagnostic(
+                    &d.code,
+                    d.input_line.map(|n| n as i64),
+                    d.record_index.map(|n| n as i64),
+                    d.count.map(|n| n as i64),
+                )
             })
             .collect();
         (records, diagnostics, trajectory.group_id)
@@ -2173,24 +2328,34 @@ pub fn apply_ahp_actions(
     // Merge reducer diagnostics (unknown action / foreign channel).
     // Sort by diagnostic_key so snapshot order matches key-sorted
     // diagnostic_add ops under the delta-apply law (streaming.md §7).
+    // Project through the content-safe catalog (H2).
     let mut seen = std::collections::BTreeSet::new();
     let mut diagnostics: Vec<StreamDiagnostic> = Vec::new();
     for d in &update.diagnostics {
-        let key = (d.code.clone(), d.message.clone());
+        let projected = project_stream_diagnostic(
+            &d.code,
+            d.input_line,
+            d.record_index,
+            d.count,
+        );
+        let key = diagnostic_key(
+            &projected.code,
+            projected.input_line,
+            projected.record_index,
+        );
         if seen.insert(key) {
-            diagnostics.push(d.clone());
+            diagnostics.push(projected);
         }
     }
-    for (code, message) in &reduced.diagnostics {
-        let key = (code.clone(), message.clone());
+    for (code, _message) in &reduced.diagnostics {
+        let projected = project_stream_diagnostic(code, None, None, None);
+        let key = diagnostic_key(
+            &projected.code,
+            projected.input_line,
+            projected.record_index,
+        );
         if seen.insert(key) {
-            diagnostics.push(StreamDiagnostic {
-                code: code.clone(),
-                message: message.clone(),
-                input_line: None,
-                record_index: None,
-                count: None,
-            });
+            diagnostics.push(projected);
         }
     }
     diagnostics.sort_by(|a, b| {
@@ -2397,12 +2562,13 @@ fn build_ahp_records(
         .diagnostics
         .iter()
         .filter(|d| d.code != "ahp_active_turn_omitted")
-        .map(|d| StreamDiagnostic {
-            code: d.code.clone(),
-            message: d.message.clone(),
-            input_line: d.input_line.map(|n| n as i64),
-            record_index: d.record_index.map(|n| n as i64),
-            count: d.count.map(|n| n as i64),
+        .map(|d| {
+            project_stream_diagnostic(
+                &d.code,
+                d.input_line.map(|n| n as i64),
+                d.record_index.map(|n| n as i64),
+                d.count.map(|n| n as i64),
+            )
         })
         .collect();
     Ok(AhpBuilt {
@@ -3043,12 +3209,13 @@ pub fn apply_hermes_export(
         let diagnostics: Vec<StreamDiagnostic> = trajectory
             .diagnostics
             .iter()
-            .map(|d| StreamDiagnostic {
-                code: d.code.clone(),
-                message: d.message.clone(),
-                input_line: d.input_line.map(|n| n as i64),
-                record_index: d.record_index.map(|n| n as i64),
-                count: d.count.map(|n| n as i64),
+            .map(|d| {
+                project_stream_diagnostic(
+                    &d.code,
+                    d.input_line.map(|n| n as i64),
+                    d.record_index.map(|n| n as i64),
+                    d.count.map(|n| n as i64),
+                )
             })
             .collect();
         (records, diagnostics, trajectory.group_id)
@@ -3943,5 +4110,98 @@ mod tests {
             .iter()
             .all(|r| r.status == "stable"));
         let _ = state;
+    }
+
+    #[test]
+    fn stream_diagnostics_content_safe_sentinels() {
+        let secret_tool = "SECRET_TOOL_ID_xyzzy_do_not_leak";
+        let secret_path = "/Users/SECRET_PATH_xyzzy/private.jsonl";
+        let secret_ahp = "SECRET_AHP_BODY_xyzzy_do_not_leak";
+
+        let session = br#"{"type":"session","version":3,"id":"g","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/workspace/demo"}
+"#;
+        let user = br#"{"type":"message","id":"m1","timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"hi"}],"timestamp":"2026-01-01T00:00:01.000Z"}}
+"#;
+        let tool_call = |mid: &str, tid: &str| {
+            format!(
+                r#"{{"type":"message","id":"{mid}","timestamp":"2026-01-01T00:00:02.000Z","message":{{"role":"assistant","content":[{{"type":"toolCall","id":"{tid}","name":"read","arguments":{{"path":"/tmp/x"}}}}],"timestamp":"2026-01-01T00:00:02.000Z"}}}}
+"#
+            )
+            .into_bytes()
+        };
+
+        let assert_diag_safe = |update: &StreamUpdate, sentinels: &[&str]| {
+            for d in &update.diagnostics {
+                for s in sentinels {
+                    assert!(!d.message.contains(s), "diag {}", d.message);
+                }
+            }
+            if let Some(snap) = &update.snapshot {
+                for d in &snap.diagnostics {
+                    for s in sentinels {
+                        assert!(!d.message.contains(s), "snap diag {}", d.message);
+                    }
+                }
+            }
+            if let Some(delta) = &update.delta {
+                for op in &delta.operations {
+                    if let Some(Value::Object(diag)) = op.payload.get("diagnostic") {
+                        let msg = diag
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
+                        for s in sentinels {
+                            assert!(!msg.contains(s), "delta diag {msg}");
+                        }
+                    }
+                }
+            }
+            if let Some((_, msg)) = &update.error {
+                for s in sentinels {
+                    assert!(!msg.contains(s), "error {msg}");
+                }
+            }
+        };
+
+        let mut material = session.to_vec();
+        material.extend_from_slice(user);
+        material.extend_from_slice(&tool_call("a1", secret_tool));
+        material.extend_from_slice(&tool_call("a2", secret_tool));
+        let opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("g");
+        let state = create_stream(opts);
+        let (_, u1) = apply_snapshot(&state, &material, "gen-0", None).unwrap();
+        assert_eq!(u1.kind, "updated");
+        assert!(u1
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "duplicate_tool_call_id"));
+        assert_diag_safe(&u1, &[secret_tool]);
+
+        let mut bad = session.to_vec();
+        bad.extend_from_slice(user);
+        bad.extend_from_slice(
+            format!("{{not-json contains {secret_path} and {secret_tool}}}\n").as_bytes(),
+        );
+        let opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("g");
+        let state = create_stream(opts);
+        let (_, u2) = apply_snapshot(&state, &bad, "gen-0", None).unwrap();
+        assert_eq!(u2.kind, "updated");
+        assert!(u2
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "invalid_json_line"));
+        for d in &u2.snapshot.as_ref().unwrap().diagnostics {
+            assert!(!d.message.contains(secret_path));
+            assert!(!d.message.contains(secret_tool));
+        }
+        assert_diag_safe(&u2, &[secret_tool, secret_path]);
+
+        let opts = StreamOptions::new(TrajectorySource::Ahp).with_group_id("g");
+        let state = create_stream(opts);
+        let body = format!(r#"{{"not-valid":"{secret_ahp}"}}"#);
+        let (_, u3) = apply_ahp_snapshot(&state, body.as_bytes(), "gen-0", None).unwrap();
+        assert_eq!(u3.kind, "error");
+        let err_msg = u3.error.as_ref().map(|(_, m)| m.as_str()).unwrap_or("");
+        assert!(!err_msg.contains(secret_ahp));
     }
 }

@@ -28,6 +28,10 @@ from hypabolic_trajectory.streaming.ahp_reducer import (
 )
 from hypabolic_trajectory.streaming.delta import diagnostic_key, diff_snapshots
 from hypabolic_trajectory.streaming.framing import append_framed, split_complete_lines
+from hypabolic_trajectory.streaming.safe_diagnostics import (
+    project_stream_diagnostic,
+    stream_error_message,
+)
 from hypabolic_trajectory.streaming.types import (
     STREAM_SCHEMA_ID,
     AhpServerSeqPosition,
@@ -649,7 +653,8 @@ def apply_ahp_actions(
 
     # Merge reducer diagnostics (unknown action / foreign channel).
     extra = tuple(
-        StreamDiagnostic(code=d["code"], message=d["message"]) for d in reduce_diags
+        project_stream_diagnostic(code=d["code"], message=d.get("message"))
+        for d in reduce_diags
     )
     # Deduplicate by code+message for stable envelopes.
     # Sort by diagnostic_key so snapshot order matches key-sorted
@@ -1711,7 +1716,11 @@ def _build_ahp_records(
                 reason="group-changed",
                 diagnostic_code=_STREAM_SOURCE_RESET,
             )
-        return _error_update(state, code=err.code, message=err.message)
+        return _error_update(
+            state,
+            code=err.code,
+            message=stream_error_message(err.code, err.message),
+        )
 
     hyp = project_hypabolic(ir_full)
     raw_records = hyp.get("records") or []
@@ -1739,7 +1748,7 @@ def _build_ahp_records(
         )
     records = tuple(built)
     diagnostics = tuple(
-        StreamDiagnostic(
+        project_stream_diagnostic(
             code=d.code,
             message=d.message,
             input_line=d.input_line,
@@ -1934,7 +1943,11 @@ def _build_records_from_prefix(
                 reason="group-changed",
                 diagnostic_code=_STREAM_SOURCE_RESET,
             )
-        return _error_update(state, code=err.code, message=err.message)
+        return _error_update(
+            state,
+            code=err.code,
+            message=stream_error_message(err.code, err.message),
+        )
 
     hyp = project_hypabolic(ir)
     raw_records = hyp.get("records") or []
@@ -1963,7 +1976,7 @@ def _build_records_from_prefix(
         )
     records = tuple(built_records)
     diagnostics = tuple(
-        StreamDiagnostic(
+        project_stream_diagnostic(
             code=d.code,
             message=d.message,
             input_line=d.input_line,

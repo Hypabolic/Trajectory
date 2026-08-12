@@ -141,6 +141,144 @@ export interface StreamDiagnostic {
   readonly count?: number;
 }
 
+/**
+ * Content-safe stream diagnostic projection (H2).
+ * IR/batch normalizer messages may embed source-native IDs; stream wire
+ * diagnostics keep code + safe structural fields and a fixed catalog message.
+ */
+const STREAM_DIAG_MESSAGES: Readonly<Record<string, string>> = {
+  invalid_json_line: "Skipped invalid JSON line.",
+  non_object_json_line: "Skipped non-object JSON line.",
+  injected_context_dropped: "Dropped injected context content.",
+  noise_record_dropped: "Dropped a noise record.",
+  sidechain_record_dropped: "Dropped a sidechain record.",
+  unknown_semantic_record: "Dropped an unknown semantic record.",
+  unknown_content_block: "Dropped an unknown content block.",
+  tool_call_id_synthesized: "Synthesized a tool-call ID.",
+  duplicate_tool_call_id: "Renamed a duplicate tool-call ID.",
+  orphan_tool_result: "Dropped a tool result without a preceding call.",
+  duplicate_tool_result: "Dropped a duplicate tool result.",
+  unknown_tool_name: "Substituted a default name for a missing tool name.",
+  tool_arguments_reshaped: "Reshaped tool-call arguments into a JSON object.",
+  tool_arguments_truncated: "Truncated tool-call arguments.",
+  tool_result_truncated: "Truncated a tool result.",
+  timestamps_synthesized: "Synthesized timestamps for normalized records.",
+  timestamps_interpolated: "Interpolated timestamps for normalized records.",
+  ahp_version_missing: "Snapshot lacks ahpProtocolVersion; assumed pinned 0.7.x.",
+  ahp_active_turn_omitted: "Omitted incomplete activeTurn (snapshot whole-mode policy).",
+  ahp_unknown_message_origin: "Dropped a message with an unknown origin kind.",
+  ahp_input_request_skipped: "Skipped an inputRequest response part.",
+  ahp_reasoning_omitted: "Omitted reasoning content.",
+  ahp_system_as_assistant: "Mapped a system message origin to assistant.",
+  ahp_unresolved_content_ref:
+    "Dropped a resource response part without fetching content-by-reference.",
+  ahp_unknown_action: "Ignored an unknown AHP action type.",
+  ahp_foreign_channel: "Ignored an AHP action for a non-target channel.",
+  image_content_dropped: "Dropped image content.",
+  backend_tool_result_synthesized: "Synthesized a tool result for a backend tool call.",
+  encrypted_reasoning_included: "Included encrypted reasoning content.",
+  model_span_omitted:
+    "Model span omitted because source-native timing or provider/model metadata is incomplete.",
+  stream_buffer_limit: "Stream buffer limit exceeded.",
+  stream_cursor_conflict: "Supplied stream cursor does not match stream state.",
+  stream_source_reset: "Source material changed relative to the active stream.",
+  stream_resync_required: "Stream requires resync.",
+  stream_sequence_gap: "AHP action-log serverSeq gap requires snapshot resync.",
+};
+
+const STREAM_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  invalid_input: "Invalid stream input.",
+  unknown_source: "Unknown or invalid stream source.",
+  unknown_output_schema: "Unknown output schema.",
+  missing_user_records: "Normalized transcript is missing user records.",
+  missing_assistant_records: "Normalized transcript is missing assistant records.",
+  invalid_normalized_transcript: "Normalized transcript is invalid.",
+  listing_unavailable: "Listing is unavailable.",
+  source_group_conflict: "Source group changed relative to the active stream.",
+  source_group_required: "Source group is required.",
+  stream_buffer_limit: "Stream buffer limit exceeded.",
+  stream_cursor_conflict: "Supplied stream cursor does not match stream state.",
+  stream_source_reset: "Source material changed relative to the active stream.",
+  stream_resync_required: "Stream requires resync.",
+  stream_sequence_gap: "AHP action-log serverSeq gap requires snapshot resync.",
+};
+
+const ALLOWED_FIXED_ERROR_MESSAGES = new Set<string>([
+  "Stream buffer limit exceeded.",
+  "Stream buffer limits must be non-negative int64 values.",
+  "Supplied stream cursor does not match stream state.",
+  "Source group changed relative to the active stream.",
+  "Source material is shorter than the committed cursor.",
+  "Source material was compacted relative to the committed cursor.",
+  "Source material was replaced relative to the committed cursor.",
+  "Committed prefix hash does not match supplied material.",
+  "Stream input kind is not supported for this source.",
+  "AHP stream apply requires source ahp.",
+  "Hermes export stream apply requires source hermes.",
+  "Hermes export material is not valid session-export JSON.",
+  "Stream is already finished.",
+  "Unknown or invalid stream source.",
+  "AHP action-log serverSeq gap requires snapshot resync.",
+  "AHP action batch could not be parsed.",
+  "AHP snapshot material is not valid Shape A JSON.",
+  "AHP action batch serverSeq order must be strictly increasing.",
+  "AHP action batch must not mix sequenced and unsequenced envelopes.",
+  "AHP action batch must be JSONL envelopes or a JSON array.",
+  "AHP action envelope is missing a valid serverSeq.",
+  "Stream material length exceeds non-negative int64 domain.",
+  "Stream cursor serverSeq positions must be non-negative int64 values.",
+]);
+
+export function streamDiagnosticMessage(
+  code: string,
+  opts?: { inputLine?: number; count?: number },
+): string {
+  const inputLine = opts?.inputLine;
+  const count = opts?.count;
+  if (code === "invalid_json_line" && inputLine !== undefined) {
+    return `Skipped invalid JSON on line ${inputLine}.`;
+  }
+  if (code === "non_object_json_line" && inputLine !== undefined) {
+    return `Skipped non-object JSON on line ${inputLine}.`;
+  }
+  if (code === "sidechain_record_dropped" && inputLine !== undefined) {
+    return `Dropped a sidechain record on line ${inputLine}.`;
+  }
+  if (code === "timestamps_synthesized" && count !== undefined) {
+    return `Synthesized timestamps for ${count} normalized records.`;
+  }
+  if (code === "timestamps_interpolated" && count !== undefined) {
+    return `Interpolated timestamps for ${count} normalized records.`;
+  }
+  return STREAM_DIAG_MESSAGES[code] ?? "Stream diagnostic.";
+}
+
+export function streamErrorMessage(code: string, candidate?: string): string {
+  if (candidate !== undefined && ALLOWED_FIXED_ERROR_MESSAGES.has(candidate)) {
+    return candidate;
+  }
+  return STREAM_ERROR_MESSAGES[code] ?? "Stream error.";
+}
+
+export function projectStreamDiagnostic(d: {
+  code: string;
+  message?: string;
+  inputLine?: number;
+  recordIndex?: number;
+  count?: number;
+}): StreamDiagnostic {
+  const opts: { inputLine?: number; count?: number } = {};
+  if (d.inputLine !== undefined) opts.inputLine = d.inputLine;
+  if (d.count !== undefined) opts.count = d.count;
+  return {
+    code: d.code,
+    message: streamDiagnosticMessage(d.code, opts),
+    ...(d.inputLine === undefined ? {} : { inputLine: d.inputLine }),
+    ...(d.recordIndex === undefined ? {} : { recordIndex: d.recordIndex }),
+    ...(d.count === undefined ? {} : { count: d.count }),
+  };
+}
+
 export interface StreamRecord {
   readonly status: StreamRecordStatus;
   readonly record: JsonObject;
@@ -715,7 +853,7 @@ function errorUpdate(state: StreamState, code: string, message: string): StreamU
     diagnostics: [],
     provisional: { include: state.options.includeProvisional !== false, provisionalIds: [], finalizedIds: [] },
     consumed: { completeRecords: 0n, bytes: 0n },
-    error: { code, message },
+    error: { code, message: streamErrorMessage(code, message) },
   };
 }
 
@@ -840,13 +978,9 @@ function buildRecords(
         record: r,
       };
     });
-    const diagnostics: StreamDiagnostic[] = ir.diagnostics.map((d) => ({
-      code: d.code,
-      message: d.message,
-      ...(d.inputLine === undefined ? {} : { inputLine: d.inputLine }),
-      ...(d.recordIndex === undefined ? {} : { recordIndex: d.recordIndex }),
-      ...(d.count === undefined ? {} : { count: d.count }),
-    }));
+    const diagnostics: StreamDiagnostic[] = ir.diagnostics.map((d) =>
+      projectStreamDiagnostic(d),
+    );
     return { records, diagnostics, groupId: ir.groupId };
   } catch (err) {
     if (err instanceof TrajectoryNormalizationError) {
@@ -1467,13 +1601,7 @@ function buildAhpRecords(
     }
     const diagnostics: StreamDiagnostic[] = ir.diagnostics
       .filter((d) => d.code !== "ahp_active_turn_omitted")
-      .map((d) => ({
-        code: d.code,
-        message: d.message,
-        ...(d.inputLine === undefined ? {} : { inputLine: d.inputLine }),
-        ...(d.recordIndex === undefined ? {} : { recordIndex: d.recordIndex }),
-        ...(d.count === undefined ? {} : { count: d.count }),
-      }));
+      .map((d) => projectStreamDiagnostic(d));
     return {
       records,
       diagnostics,
@@ -1728,11 +1856,11 @@ export function applyAhpActions(
     return { state, update };
   }
 
-  const extra = reduced.diagnostics.map((d) => ({ code: d.code, message: d.message }));
+  const extra = reduced.diagnostics.map((d) => projectStreamDiagnostic(d));
   const seen = new Set<string>();
   const diagnostics: StreamDiagnostic[] = [];
   for (const d of [...update.diagnostics, ...extra]) {
-    const key = `${d.code}|${d.message}`;
+    const key = diagnosticKey(d);
     if (seen.has(key)) continue;
     seen.add(key);
     diagnostics.push(d);

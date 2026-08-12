@@ -40,8 +40,9 @@ pub use streaming::{
     StreamRecord, StreamReset, StreamResetRequest, StreamRevision, StreamSnapshot, StreamState,
     StreamUpdate, TrajectoryStream, apply_ahp_actions, apply_ahp_snapshot, apply_append,
     apply_delta_to_snapshot, apply_hermes_export, apply_snapshot, apply_stream, create_stream,
-    delta_to_value, diagnostic_key, diff_snapshots, finish_stream, match_key_value, reset_stream,
-    snapshot_to_value, split_complete_lines, update_to_value,
+    delta_to_value, diagnostic_key, diff_snapshots, finish_stream, match_key_value,
+    project_stream_diagnostic, reset_stream, snapshot_to_value, split_complete_lines,
+    stream_diagnostic_message, stream_error_message, update_to_value,
 };
 
 /// Language-neutral normalizer contract version.

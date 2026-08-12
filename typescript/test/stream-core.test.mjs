@@ -796,3 +796,86 @@ test("ahp activeTurn provisional ids stay stable across multi-part growth", asyn
   assert.ok(r.update.provisional.finalizedIds.includes("prov-active:part-md-multi-1"));
   assert.ok(r.update.provisional.finalizedIds.includes("prov-active:tool-call-multi-1"));
 });
+
+test("stream diagnostics content-safe sentinels (H2)", () => {
+  const secretTool = "SECRET_TOOL_ID_xyzzy_do_not_leak";
+  const secretPath = "/Users/SECRET_PATH_xyzzy/private.jsonl";
+  const secretAhp = "SECRET_AHP_BODY_xyzzy_do_not_leak";
+  const enc = new TextEncoder();
+
+  const session = enc.encode(
+    '{"type":"session","version":3,"id":"g","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/workspace/demo"}\n',
+  );
+  const user = enc.encode(
+    '{"type":"message","id":"m1","timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"hi"}],"timestamp":"2026-01-01T00:00:01.000Z"}}\n',
+  );
+  const toolCall = (mid, tid) =>
+    enc.encode(
+      `{"type":"message","id":"${mid}","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"${tid}","name":"read","arguments":{"path":"/tmp/x"}}],"timestamp":"2026-01-01T00:00:02.000Z"}}\n`,
+    );
+
+  const assertDiagSafe = (update, ...sentinels) => {
+    for (const d of update.diagnostics ?? []) {
+      for (const s of sentinels) assert.ok(!d.message.includes(s), d.message);
+    }
+    for (const d of update.snapshot?.diagnostics ?? []) {
+      for (const s of sentinels) assert.ok(!d.message.includes(s), d.message);
+    }
+    for (const op of update.delta?.operations ?? []) {
+      if (op.diagnostic) {
+        const msg = op.diagnostic.message ?? "";
+        for (const s of sentinels) assert.ok(!msg.includes(s), msg);
+      }
+    }
+    if (update.error) {
+      for (const s of sentinels) assert.ok(!update.error.message.includes(s));
+    }
+  };
+
+  let r = applySnapshot(
+    createStream({ source: "pi", groupId: "g" }),
+    concatBytes(session, user, toolCall("a1", secretTool), toolCall("a2", secretTool)),
+    "gen-0",
+  );
+  assert.equal(r.update.kind, "updated");
+  assert.ok(r.update.diagnostics.some((d) => d.code === "duplicate_tool_call_id"));
+  assertDiagSafe(r.update, secretTool);
+  for (const d of r.update.diagnostics) {
+    assert.equal(d.message.includes(secretTool), false);
+  }
+
+  const badLine = enc.encode(`{not-json contains ${secretPath} and ${secretTool}}\n`);
+  r = applySnapshot(
+    createStream({ source: "pi", groupId: "g" }),
+    concatBytes(session, user, badLine),
+    "gen-0",
+  );
+  assert.equal(r.update.kind, "updated");
+  assert.ok(r.update.diagnostics.some((d) => d.code === "invalid_json_line"));
+  const wire = JSON.stringify(snapshotToDict(r.update.snapshot));
+  assert.ok(!wire.includes(secretPath));
+  assert.ok(!wire.includes(secretTool));
+  assertDiagSafe(r.update, secretTool, secretPath);
+
+  r = applyAhpSnapshot(
+    createStream({ source: "ahp", groupId: "g" }),
+    enc.encode(`{"not-valid":"${secretAhp}"}`),
+    "gen-0",
+  );
+  assert.equal(r.update.kind, "error");
+  assert.ok(r.update.error);
+  assert.ok(!r.update.error.message.includes(secretAhp));
+  assert.ok(!JSON.stringify(r.update.error).includes(secretAhp));
+});
+
+function concatBytes(...parts) {
+  let n = 0;
+  for (const p of parts) n += p.length;
+  const out = new Uint8Array(n);
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
+  return out;
+}

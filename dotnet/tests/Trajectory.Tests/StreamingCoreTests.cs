@@ -489,4 +489,101 @@ public sealed class StreamingCoreTests
         Assert.Single(tool);
         Assert.Equal("real later result", tool[0].Record["content"]?.ToString());
     }
+
+    [Fact]
+    public void StreamDiagnostics_ContentSafeSentinels()
+    {
+        const string secretTool = "SECRET_TOOL_ID_xyzzy_do_not_leak";
+        const string secretPath = "/Users/SECRET_PATH_xyzzy/private.jsonl";
+        const string secretAhp = "SECRET_AHP_BODY_xyzzy_do_not_leak";
+
+        var session = System.Text.Encoding.UTF8.GetBytes(
+            """{"type":"session","version":3,"id":"g","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/workspace/demo"}""" + "\n");
+        var user = System.Text.Encoding.UTF8.GetBytes(
+            """{"type":"message","id":"m1","timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"hi"}],"timestamp":"2026-01-01T00:00:01.000Z"}}""" + "\n");
+
+        byte[] ToolCall(string mid, string tid) =>
+            System.Text.Encoding.UTF8.GetBytes(
+                "{\"type\":\"message\",\"id\":\"" + mid +
+                "\",\"timestamp\":\"2026-01-01T00:00:02.000Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"" +
+                tid +
+                "\",\"name\":\"read\",\"arguments\":{\"path\":\"/tmp/x\"}}],\"timestamp\":\"2026-01-01T00:00:02.000Z\"}}\n");
+
+        static void AssertDiagSafe(StreamUpdate update, params string[] sentinels)
+        {
+            foreach (var d in update.Diagnostics)
+            {
+                foreach (var s in sentinels)
+                {
+                    Assert.DoesNotContain(s, d.Message);
+                }
+            }
+
+            if (update.Snapshot is not null)
+            {
+                foreach (var d in update.Snapshot.Diagnostics)
+                {
+                    foreach (var s in sentinels)
+                    {
+                        Assert.DoesNotContain(s, d.Message);
+                    }
+                }
+            }
+
+            if (update.Delta is not null)
+            {
+                foreach (var op in update.Delta.Operations)
+                {
+                    if (!op.Payload.TryGetValue("diagnostic", out var diagObj) || diagObj is null)
+                    {
+                        continue;
+                    }
+
+                    var msg = diagObj.ToString() ?? "";
+                    foreach (var s in sentinels)
+                    {
+                        Assert.DoesNotContain(s, msg);
+                    }
+                }
+            }
+
+            if (update.Error is { } err)
+            {
+                foreach (var s in sentinels)
+                {
+                    Assert.DoesNotContain(s, err.Message);
+                }
+            }
+        }
+
+        var material = session.Concat(user).Concat(ToolCall("a1", secretTool)).Concat(ToolCall("a2", secretTool)).ToArray();
+        var (_, u1) = TrajectoryStream.ApplySnapshot(
+            TrajectoryStream.Create(new StreamOptions { Source = TrajectorySource.Pi, GroupId = "g" }),
+            material,
+            "gen-0");
+        Assert.Equal("updated", u1.Kind);
+        Assert.Contains(u1.Diagnostics, d => d.Code == "duplicate_tool_call_id");
+        AssertDiagSafe(u1, secretTool);
+
+        var badLine = System.Text.Encoding.UTF8.GetBytes(
+            "{not-json contains " + secretPath + " and " + secretTool + "}\n");
+        var (_, u2) = TrajectoryStream.ApplySnapshot(
+            TrajectoryStream.Create(new StreamOptions { Source = TrajectorySource.Pi, GroupId = "g" }),
+            session.Concat(user).Concat(badLine).ToArray(),
+            "gen-0");
+        Assert.Equal("updated", u2.Kind);
+        Assert.Contains(u2.Diagnostics, d => d.Code == "invalid_json_line");
+        var wire = System.Text.Json.JsonSerializer.Serialize(u2.Snapshot!.Diagnostics);
+        Assert.DoesNotContain(secretPath, wire);
+        Assert.DoesNotContain(secretTool, wire);
+        AssertDiagSafe(u2, secretTool, secretPath);
+
+        var (_, u3) = TrajectoryStream.ApplyAhpSnapshot(
+            TrajectoryStream.Create(new StreamOptions { Source = TrajectorySource.Ahp, GroupId = "g" }),
+            System.Text.Encoding.UTF8.GetBytes("{\"not-valid\":\"" + secretAhp + "\"}"),
+            "gen-0");
+        Assert.Equal("error", u3.Kind);
+        Assert.NotNull(u3.Error);
+        Assert.DoesNotContain(secretAhp, u3.Error!.Value.Message);
+    }
 }

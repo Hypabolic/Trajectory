@@ -536,3 +536,145 @@ def test_append_empty_segment_unchanged() -> None:
     state = create_stream(StreamOptions(source="pi", group_id="g"))
     state, u = apply_append(state, b"", source_revision="gen-0")
     assert u.kind == "unchanged"
+
+
+def test_stream_diagnostics_content_safe_sentinels() -> None:
+    """H2: secret tool ID / path / AHP body never appear in stream diagnostic wire."""
+    import json
+
+    from hypabolic_trajectory.streaming import apply_ahp_snapshot
+    from hypabolic_trajectory.streaming.safe_diagnostics import project_stream_diagnostic
+
+    secret_tool = "SECRET_TOOL_ID_xyzzy_do_not_leak"
+    secret_path = "/Users/SECRET_PATH_xyzzy/private.jsonl"
+    secret_ahp = "SECRET_AHP_BODY_xyzzy_do_not_leak"
+
+    # Catalog projection never forwards raw normalizer text.
+    leaked = project_stream_diagnostic(
+        code="orphan_tool_result",
+        message=f'Dropped a tool result without a preceding call for "{secret_tool}".',
+    )
+    assert secret_tool not in leaked.message
+    assert leaked.message == "Dropped a tool result without a preceding call."
+
+    session = (
+        b'{"type":"session","version":3,"id":"g","timestamp":"2026-01-01T00:00:00.000Z",'
+        b'"cwd":"/workspace/demo"}\n'
+    )
+    user = (
+        b'{"type":"message","id":"m1","timestamp":"2026-01-01T00:00:01.000Z",'
+        b'"message":{"role":"user","content":[{"type":"text","text":"hi"}],'
+        b'"timestamp":"2026-01-01T00:00:01.000Z"}}\n'
+    )
+
+    def _tool_call(mid: str, tid: str) -> bytes:
+        return (
+            b'{"type":"message","id":"'
+            + mid.encode()
+            + b'","timestamp":"2026-01-01T00:00:02.000Z",'
+            b'"message":{"role":"assistant","content":[{"type":"toolCall","id":"'
+            + tid.encode()
+            + b'","name":"read","arguments":{"path":"/tmp/x"}}],'
+            b'"timestamp":"2026-01-01T00:00:02.000Z"}}\n'
+        )
+
+    def _assert_diag_safe(update: object, *sentinels: str) -> None:
+        wire = update.to_dict()  # type: ignore[attr-defined]
+        blob = json.dumps(wire, default=str)
+
+        def walk_diags(obj: object) -> list[dict]:
+            found: list[dict] = []
+            if isinstance(obj, dict):
+                if "code" in obj and "message" in obj and (
+                    "input_line" in obj
+                    or "record_index" in obj
+                    or "count" in obj
+                    or obj.get("code", "").endswith("_tool_call_id")
+                    or obj.get("code", "").endswith("_tool_result")
+                    or obj.get("code", "").startswith("invalid_")
+                    or obj.get("code", "").startswith("ahp_")
+                    or obj.get("code", "").startswith("stream_")
+                    or obj.get("code") in {
+                        "duplicate_tool_call_id",
+                        "orphan_tool_result",
+                        "invalid_json_line",
+                    }
+                ):
+                    # Only treat objects that look like diagnostics (not records).
+                    if set(obj.keys()) <= {
+                        "code",
+                        "message",
+                        "input_line",
+                        "record_index",
+                        "count",
+                    }:
+                        found.append(obj)
+                for v in obj.values():
+                    found.extend(walk_diags(v))
+            elif isinstance(obj, list):
+                for v in obj:
+                    found.extend(walk_diags(v))
+            return found
+
+        for d in walk_diags(wire):
+            for s in sentinels:
+                assert s not in d.get("message", ""), d
+        if isinstance(wire.get("error"), dict):
+            for s in sentinels:
+                assert s not in (wire["error"].get("message") or "")
+        # Top-level diagnostics / snapshot diagnostics / delta diagnostic ops.
+        for s in sentinels:
+            for d in wire.get("diagnostics") or []:
+                assert s not in (d.get("message") or "")
+            snap = wire.get("snapshot") or {}
+            for d in snap.get("diagnostics") or []:
+                assert s not in (d.get("message") or "")
+            delta = wire.get("delta") or {}
+            for op in delta.get("operations") or []:
+                diag = op.get("diagnostic")
+                if isinstance(diag, dict):
+                    assert s not in (diag.get("message") or "")
+                    assert s not in json.dumps(diag)
+        # Exception representation of update must not embed sentinels in diagnostics.
+        assert secret_tool not in str(
+            [(d.code, d.message) for d in update.diagnostics]  # type: ignore[attr-defined]
+        )
+        del blob  # records may still carry durable tool ids; H2 is diagnostic channel
+
+    # Duplicate tool-call ID → IR message embeds secret; stream catalog does not.
+    state = create_stream(StreamOptions(source="pi", group_id="g"))
+    _, u = apply_snapshot(
+        state,
+        session + user + _tool_call("a1", secret_tool) + _tool_call("a2", secret_tool),
+        source_revision="gen-0",
+    )
+    assert u.kind == "updated"
+    assert any(d.code == "duplicate_tool_call_id" for d in u.diagnostics)
+    _assert_diag_safe(u, secret_tool)
+
+    # Malformed JSON line containing path + secret (must not echo into diagnostics).
+    bad_line = (
+        b"{not-json contains " + secret_path.encode() + b" and " + secret_tool.encode() + b"}\n"
+    )
+    state = create_stream(StreamOptions(source="pi", group_id="g"))
+    _, u2 = apply_snapshot(state, session + user + bad_line, source_revision="gen-0")
+    assert u2.kind == "updated"
+    assert any(d.code == "invalid_json_line" for d in u2.diagnostics)
+    wire2 = json.dumps(u2.to_dict(), default=str)
+    assert secret_path not in wire2
+    assert secret_tool not in wire2
+    _assert_diag_safe(u2, secret_tool, secret_path)
+
+    # Malformed AHP body: fixed error, no body echo.
+    state = create_stream(StreamOptions(source="ahp", group_id="g"))
+    _, u3 = apply_ahp_snapshot(
+        state,
+        b'{"not-valid":"' + secret_ahp.encode() + b'"}',
+        source_revision="gen-0",
+    )
+    assert u3.kind == "error"
+    assert u3.error is not None
+    wire3 = json.dumps(u3.to_dict(), default=str)
+    assert secret_ahp not in wire3
+    assert secret_ahp not in u3.error.message
+    assert secret_ahp not in str(u3.error)

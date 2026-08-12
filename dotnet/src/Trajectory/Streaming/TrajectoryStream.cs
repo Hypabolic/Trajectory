@@ -1292,20 +1292,23 @@ public static class TrajectoryStream
         // Merge reducer diagnostics (unknown action / foreign channel).
         // Sort by diagnostic_key so snapshot order matches key-sorted
         // diagnostic_add ops under the delta-apply law (streaming.md §7).
+        // Project through the content-safe catalog (H2).
         var extra = reduced.Diagnostics
-            .Select(d => new StreamDiagnostic { Code = d.Code, Message = d.Message })
+            .Select(d => StreamSafeDiagnostics.Project(d.Code, d.Message))
             .ToList();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var mergedDiags = new List<StreamDiagnostic>();
         foreach (var d in update.Diagnostics.Concat(extra))
         {
-            var key = $"{d.Code}|{d.Message}";
+            var projected = StreamSafeDiagnostics.Project(
+                d.Code, d.Message, d.InputLine, d.RecordIndex, d.Count);
+            var key = DiagnosticKey(projected);
             if (!seen.Add(key))
             {
                 continue;
             }
 
-            mergedDiags.Add(d);
+            mergedDiags.Add(projected);
         }
 
         mergedDiags = mergedDiags
@@ -1714,14 +1717,12 @@ public static class TrajectoryStream
                     Record = dict,
                 };
             }).ToList();
-            var diagnostics = ir.Diagnostics.Select(d => new StreamDiagnostic
-            {
-                Code = d.Code,
-                Message = d.Message,
-                InputLine = d.InputLine,
-                RecordIndex = d.RecordIndex,
-                Count = d.Count,
-            }).ToList();
+            var diagnostics = ir.Diagnostics.Select(d => StreamSafeDiagnostics.Project(
+                d.Code,
+                d.Message,
+                d.InputLine,
+                d.RecordIndex,
+                d.Count)).ToList();
             return (records, diagnostics, ir.GroupId, null);
         }
         catch (TrajectoryNormalizationException ex) when (ex.Code == NormalizationErrorCode.SourceGroupConflict)
@@ -1744,7 +1745,7 @@ public static class TrajectoryStream
                 NormalizationErrorCode.SourceGroupRequired => "source_group_required",
                 _ => "invalid_input",
             };
-            return (null, null, null, ErrorUpdate(state, wire, ex.Message));
+            return (null, null, null, ErrorUpdate(state, wire, StreamSafeDiagnostics.ErrorMessage(wire, ex.Message)));
         }
     }
 
@@ -1851,14 +1852,12 @@ public static class TrajectoryStream
 
             var diagnostics = ir.Diagnostics
                 .Where(d => d.Code != DiagnosticCodes.AhpActiveTurnOmitted)
-                .Select(d => new StreamDiagnostic
-                {
-                    Code = d.Code,
-                    Message = d.Message,
-                    InputLine = d.InputLine,
-                    RecordIndex = d.RecordIndex,
-                    Count = d.Count,
-                })
+                .Select(d => StreamSafeDiagnostics.Project(
+                    d.Code,
+                    d.Message,
+                    d.InputLine,
+                    d.RecordIndex,
+                    d.Count))
                 .ToList();
 
             return new AhpBuildResult(
@@ -2393,7 +2392,7 @@ public static class TrajectoryStream
             Cursor = state.Cursor,
             Provisional = EmptyProvisional(state),
             Consumed = EmptyConsumed(),
-            Error = (code, message),
+            Error = (code, StreamSafeDiagnostics.ErrorMessage(code, message)),
         };
 
     private static StreamUpdate? CursorConflict(StreamState state, StreamCursor cursor)
