@@ -1,6 +1,6 @@
 # Live session streaming — product and technical specification
 
-Status: **locked design**; wire contracts landed (LS-01); core stream state + snapshot + append (LS-03–LS-05) landed; AHP snapshot + action-log (LS-06–LS-07) in-tree on tip; **LS-07h Hermes optional provider** in-tree (core `apply_hermes_export` + optional SQLite/provider packages ×4; no capability advertising yet); **LS-08 full stream matrix gate green** (shared goldens + oracle on all four runtimes); **LS-09 optional file I/O packages** and **LS-10 optional AHP clients** in-tree; sample CLIs and capability advertising remain LS-11–LS-12  
+Status: **locked design**; wire contracts landed (LS-01); core stream state + snapshot + append (LS-03–LS-05) landed; AHP snapshot + action-log (LS-06–LS-07) in-tree on tip; **LS-07h Hermes optional provider** in-tree (core `apply_hermes_export` + optional SQLite/provider packages ×4; no capability advertising yet); **LS-08 full stream matrix gate green** (shared goldens + oracle on all four runtimes); **LS-09 optional file I/O packages**, **LS-10 optional AHP clients**, and **LS-11 sample CLI `stream` / `ahp-stream`** in-tree on tip (privacy defaults; `fake://` FakeAhpHost demos; not a daemon); capability advertising remains **LS-12**  
 
 Contract family: `trajectory-stream-v1` under `contracts/`  
 Scope: full feature across all four runtimes — not an MVP cut  

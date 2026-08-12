@@ -23,6 +23,7 @@
   ],
   "dependencies": {
     "@hypabolic/trajectory": "0.1.2",
+    "@hypabolic/trajectory-ahp": "0.1.2",
     "@hypabolic/trajectory-node": "0.1.2"
   },
   "scripts": {

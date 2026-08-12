@@ -13,6 +13,10 @@ Local sample CLI/TUI for browsing agent sessions with
 - Interactive browse: pick source → pick session → privacy-safe summary
 - Summary includes record counts, roles, tool calls, diagnostics, and message/Hypabolic projections
 - Optional `--show-content` with an explicit privacy warning
+- **`stream`**: follow a JSONL session file (optional file I/O → core stream apply)
+- **`ahp-stream`**: demo optional AHP client with in-memory `fake://` FakeAhpHost
+
+This sample is a **consumer process**, not a Trajectory daemon.
 
 | Source | Default root | Env override |
 | --- | --- | --- |
@@ -51,6 +55,19 @@ node packages/trajectory-cli/dist/cli.js show \
   --source ahp \
   --path ../conformance/cases/ahp/tool-calls/input.json
 node packages/trajectory-cli/dist/cli.js browse
+
+# File stream (one-shot poll; default emit snapshot+delta)
+node packages/trajectory-cli/dist/cli.js stream \
+  --source pi \
+  --path ../conformance/cases/pi/tool-calls/input.jsonl \
+  --max-updates 1
+
+# AHP stream demo (FakeAhpHost only in this sample)
+node packages/trajectory-cli/dist/cli.js ahp-stream \
+  --url fake://demo \
+  --chat 'ahp-chat:/00000000-0000-4000-8000-0000000000c1' \
+  --actions-path ../conformance/cases/streaming/ahp-action-turn-flow/step-actions.jsonl \
+  --max-updates 1
 ```
 
 Or via the package script after build:
@@ -75,18 +92,32 @@ node packages/trajectory-cli/dist/cli.js show \
 | `browse` (default) | Interactive source → session → summary |
 | `list` | Print discovered sessions |
 | `show` | Normalize one path/id |
+| `stream` | Follow a JSONL file via optional file I/O + core stream |
+| `ahp-stream` | Optional AHP client demo (`fake://` FakeAhpHost) |
 
 Shared flags: `--source`, `--root`, `--limit`, `--show-content`, `--format`.
+
+Stream flags: `--emit snapshot+delta|snapshot|delta` (default `snapshot+delta`),
+`--follow`, `--interval`, `--max-updates`, `--path` / `--id` (+ explicit `--root`
+for listing). File stream sources: `pi`, `claude-code`, `codex`, `openclaw`,
+`grok-build`.
+
+AHP stream flags: `--url` (sample: `fake://…`), `--chat`, `--from-seq`,
+`--token` / `TRAJECTORY_AHP_TOKEN`, `--snapshot-path`, `--actions-path`.
 
 ## Dependencies
 
 Kept light on purpose: Node built-ins (`readline`, `fs`, ANSI escapes) plus the
-workspace Trajectory packages. No ink/ink-heavy UI stack.
+workspace Trajectory packages (`trajectory`, `trajectory-node`, `trajectory-ahp`).
+No ink/ink-heavy UI stack.
 
 ## Notes
 
 - Empty stores exit 0 with a clear message.
 - Typed `TrajectoryNormalizationError` codes are printed without stack dumps by default.
+- Stream follow is **not** a background daemon; process exit stops it.
+- Sample `ahp-stream` uses in-memory FakeAhpHost only. Live WebSocket hosts:
+  inject `AhpTransport` in your app (`docs/ahp-client.md`).
 - Not part of the published npm surface for v1.
 
 ## Related

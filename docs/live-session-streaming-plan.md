@@ -342,6 +342,10 @@ omit `stream-*` until LS-12).
 
 **Goal:** Demonstrate consumer ownership of process lifetime.
 
+**Status: done on tip** (`stream` / `ahp-stream` on all four sample CLIs;
+privacy defaults; temp-store + FakeAhpHost tests; docs state consumer process
+not daemon). Capability advertising still LS-12.
+
 | Command | Purpose |
 | --- | --- |
 | `stream --source … --path … --emit snapshot+delta --follow` | File follow |
@@ -463,7 +467,7 @@ JSONL append, AHP Shape A/B, and the full stream matrix gate (34 cases /
 68 step goldens; `stream_unsupported_skips: 0` on all four runtimes; no
 `stream-*` capability claims until LS-12).
 
-**LS-09** optional file I/O packages and **LS-10** optional AHP client
-packages are delivered on tip (see `docs/streaming-file-io.md` and
-`docs/ahp-client.md`). Next engineering slice: **LS-11** — sample CLIs that
-compose file I/O and AHP clients across all four runtimes.
+**LS-09** optional file I/O packages, **LS-10** optional AHP client packages,
+and **LS-11** sample CLI `stream` / `ahp-stream` commands are delivered on tip
+(see `docs/streaming-file-io.md`, `docs/ahp-client.md`, and sample CLI READMEs).
+Next engineering slice: **LS-12** — capability claims and release gate.

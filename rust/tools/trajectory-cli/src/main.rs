@@ -1,25 +1,37 @@
 //! Local sample CLI for browsing agent sessions with Trajectory.
 //! Not published — depends on the workspace `hypabolic-trajectory` crate.
+//! Consumer process only — not a Trajectory daemon.
 
 #![forbid(unsafe_code)]
 
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::rc::Rc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use dialoguer::{Confirm, Select, theme::ColorfulTheme};
 use hypabolic_trajectory::{
-    ListingOptions, NormalizeOptions, NormalizeRequest, RecordKind, SourceContext, Trajectory,
-    TrajectoryError, TrajectoryListing, list_ahp_trajectories, list_claude_code_trajectories,
-    list_codex_trajectories, list_grok_build_trajectories, list_hermes_trajectories,
-    list_openclaw_trajectories, list_pi_trajectories, normalize_ahp, normalize_claude_code,
-    normalize_codex, normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi,
-    project_hypabolic, project_letta,
+    ListingOptions, NormalizeOptions, NormalizeRequest, RecordKind, SourceContext, StreamDelivery,
+    StreamOptions, StreamUpdate, Trajectory, TrajectoryError, TrajectoryListing, TrajectorySource,
+    list_ahp_trajectories, list_claude_code_trajectories, list_codex_trajectories,
+    list_grok_build_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
+    list_pi_trajectories, normalize_ahp, normalize_claude_code, normalize_codex,
+    normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi, project_hypabolic,
+    project_letta,
 };
+use hypabolic_trajectory_ahp::{
+    AhpClientEvent, AhpClientEventKind, AhpClientOptions, AhpStreamClient, FakeAhpHost,
+    FakeAhpHostScript, InMemoryAhpTransportPair,
+};
+use hypabolic_trajectory_io::{FileStreamOptions, FileTrajectoryStream, HostError};
+use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum SourceArg {
@@ -65,11 +77,37 @@ enum FormatArg {
     Hypabolic,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum EmitArg {
+    #[value(name = "snapshot+delta", alias = "both")]
+    SnapshotDelta,
+    Snapshot,
+    Delta,
+}
+
+impl EmitArg {
+    fn delivery(self) -> StreamDelivery {
+        match self {
+            Self::SnapshotDelta => StreamDelivery::Both,
+            Self::Snapshot => StreamDelivery::Snapshot,
+            Self::Delta => StreamDelivery::Delta,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::SnapshotDelta => "snapshot+delta",
+            Self::Snapshot => "snapshot",
+            Self::Delta => "delta",
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "trajectory",
     about = "Local sample TUI for Hypabolic Trajectory (unpublished)",
-    long_about = "Browse local agent session stores, normalize a selected transcript, and print privacy-safe summaries.\n\nContent is omitted unless --show-content is passed (with an explicit privacy warning)."
+    long_about = "Browse local agent session stores, normalize a selected transcript, follow a live JSONL file, or demo an AHP stream client.\n\nNot a daemon — the calling process owns lifetime.\nContent is omitted unless --show-content is passed (with an explicit privacy warning)."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -110,6 +148,55 @@ enum Commands {
         #[arg(long, value_enum, default_value_t = FormatArg::Both)]
         format: FormatArg,
     },
+    /// Follow a JSONL session file (optional file I/O + core stream; not a daemon).
+    Stream {
+        /// Path to a JSONL session file.
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+        /// Session id from listing; requires --root.
+        #[arg(long)]
+        id: Option<String>,
+        /// Delivery: snapshot+delta (default), snapshot, or delta.
+        #[arg(long, value_enum, default_value_t = EmitArg::SnapshotDelta)]
+        emit: EmitArg,
+        /// Keep polling until Ctrl-C or --max-updates.
+        #[arg(long, default_value_t = false)]
+        follow: bool,
+        /// Poll interval seconds when --follow.
+        #[arg(long, default_value_t = 0.05)]
+        interval: f64,
+        /// Stop after N stream updates (tests/demos).
+        #[arg(long)]
+        max_updates: Option<usize>,
+    },
+    /// Demo optional AHP client with fake:// FakeAhpHost (not a daemon).
+    #[command(name = "ahp-stream")]
+    AhpStream {
+        /// Host URL. Sample supports fake:// only.
+        #[arg(long, default_value = "fake://demo")]
+        url: String,
+        /// AHP chat channel URI (ahp-chat:/…).
+        #[arg(long)]
+        chat: String,
+        /// Optional subscribe fromSeq.
+        #[arg(long)]
+        from_seq: Option<i64>,
+        /// Auth token for callback (never stored on stream state).
+        #[arg(long)]
+        token: Option<String>,
+        /// fake://: Shape A snapshot JSON for FakeAhpHost.
+        #[arg(long)]
+        snapshot_path: Option<PathBuf>,
+        /// fake://: ActionEnvelope JSONL for FakeAhpHost.
+        #[arg(long)]
+        actions_path: Option<PathBuf>,
+        /// Delivery: snapshot+delta (default), snapshot, or delta.
+        #[arg(long, value_enum, default_value_t = EmitArg::SnapshotDelta)]
+        emit: EmitArg,
+        /// Stop after N stream updates (tests/demos).
+        #[arg(long)]
+        max_updates: Option<usize>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -119,6 +206,34 @@ fn main() -> ExitCode {
         Commands::Browse => run_browse(&cli),
         Commands::List => run_list(&cli),
         Commands::Show { path, id, format } => run_show(&cli, path, id, format),
+        Commands::Stream {
+            path,
+            id,
+            emit,
+            follow,
+            interval,
+            max_updates,
+        } => run_stream(&cli, path, id, emit, follow, interval, max_updates),
+        Commands::AhpStream {
+            url,
+            chat,
+            from_seq,
+            token,
+            snapshot_path,
+            actions_path,
+            emit,
+            max_updates,
+        } => run_ahp_stream(
+            &cli,
+            &url,
+            &chat,
+            from_seq,
+            token,
+            snapshot_path,
+            actions_path,
+            emit,
+            max_updates,
+        ),
     };
     match result {
         Ok(code) => code,
@@ -127,6 +242,392 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+fn host_to_trajectory(error: HostError) -> TrajectoryError {
+    TrajectoryError::new(error.code, error.message)
+}
+
+fn source_to_trajectory(source: SourceArg) -> TrajectorySource {
+    match source {
+        SourceArg::Pi => TrajectorySource::Pi,
+        SourceArg::ClaudeCode => TrajectorySource::ClaudeCode,
+        SourceArg::Codex => TrajectorySource::Codex,
+        SourceArg::Openclaw => TrajectorySource::OpenClaw,
+        SourceArg::Hermes => TrajectorySource::Hermes,
+        SourceArg::Ahp => TrajectorySource::Ahp,
+        SourceArg::GrokBuild => TrajectorySource::GrokBuild,
+    }
+}
+
+fn is_stream_file_source(source: SourceArg) -> bool {
+    matches!(
+        source,
+        SourceArg::Pi
+            | SourceArg::ClaudeCode
+            | SourceArg::Codex
+            | SourceArg::Openclaw
+            | SourceArg::GrokBuild
+    )
+}
+
+fn run_stream(
+    cli: &Cli,
+    path: Option<PathBuf>,
+    id: Option<String>,
+    emit: EmitArg,
+    follow: bool,
+    interval: f64,
+    max_updates: Option<usize>,
+) -> Result<ExitCode, TrajectoryError> {
+    let source = cli.source.unwrap_or(SourceArg::Pi);
+    if !is_stream_file_source(source) {
+        return Err(TrajectoryError::new(
+            "invalid_input",
+            "stream supports file JSONL sources only: pi, claude-code, codex, openclaw, grok-build. Use ahp-stream for AHP.",
+        ));
+    }
+    let (root, path, group_id) = resolve_stream_target(source, cli, path, id)?;
+    let delivery = emit.delivery();
+    let mut stream_opts = StreamOptions::new(source_to_trajectory(source));
+    stream_opts.delivery = delivery;
+    if let Some(ref g) = group_id {
+        stream_opts = stream_opts.with_group_id(g.clone());
+    }
+
+    println!("Trajectory stream  sample file follow (not a daemon)");
+    println!("source   {}", source.wire_name());
+    println!("root     {}", root.display());
+    println!("path     {}", path.display());
+    println!("emit     {} (delivery={delivery:?})", emit.label());
+    println!("follow   {follow}");
+    if !cli.show_content {
+        println!("Privacy: content hidden unless --show-content.");
+    }
+    println!();
+
+    let mut fs = FileTrajectoryStream::open(FileStreamOptions {
+        root: root.clone(),
+        path: path.clone(),
+        source: source_to_trajectory(source),
+        group_id,
+        stream: Some(stream_opts),
+        poll_interval: Duration::from_secs_f64(interval.max(0.0)),
+        reconcile_every: 0,
+        source_revision: "file-0".into(),
+    })
+    .map_err(host_to_trajectory)?;
+
+    let mut seen = 0usize;
+    loop {
+        let update = fs.poll().map_err(host_to_trajectory)?;
+        if let Some(update) = update {
+            if update.kind != "unchanged" {
+                seen += 1;
+                print_stream_update(&update, cli.show_content, emit, seen);
+                if max_updates.is_some_and(|m| seen >= m) {
+                    break;
+                }
+            }
+        }
+        if !follow {
+            break;
+        }
+        if max_updates.is_some_and(|m| seen >= m) {
+            break;
+        }
+        if interval > 0.0 {
+            thread::sleep(Duration::from_secs_f64(interval));
+        }
+    }
+
+    if seen == 0 {
+        println!("No stream updates (empty or unchanged prefix).");
+    } else {
+        println!("Emitted {seen} update(s). Process exit ends follow (not a daemon).");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn resolve_stream_target(
+    source: SourceArg,
+    cli: &Cli,
+    path: Option<PathBuf>,
+    id: Option<String>,
+) -> Result<(PathBuf, PathBuf, Option<String>), TrajectoryError> {
+    if let Some(path) = path {
+        let path = expand_home_path(&path);
+        let root = match cli.root.as_ref() {
+            Some(r) => expand_home_path(r),
+            None => path
+                .parent()
+                .map(Path::to_path_buf)
+                .ok_or_else(|| TrajectoryError::new("invalid_input", "Could not derive root from path."))?,
+        };
+        return Ok((root, path, id));
+    }
+    let Some(id) = id else {
+        return Err(TrajectoryError::new(
+            "invalid_input",
+            "stream requires --path or --id (with --root for listing resolution).",
+        ));
+    };
+    let Some(root) = cli.root.as_ref() else {
+        return Err(TrajectoryError::new(
+            "invalid_input",
+            "stream --id requires an explicit --root (no implicit home multi-session watch).",
+        ));
+    };
+    let root = expand_home_path(root);
+    let (path, _) = resolve_path(source, &root, None, Some(id.clone()), cli.limit)?;
+    Ok((root, path, Some(id)))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_ahp_stream(
+    cli: &Cli,
+    url: &str,
+    chat: &str,
+    from_seq: Option<i64>,
+    token: Option<String>,
+    snapshot_path: Option<PathBuf>,
+    actions_path: Option<PathBuf>,
+    emit: EmitArg,
+    max_updates: Option<usize>,
+) -> Result<ExitCode, TrajectoryError> {
+    let chat = chat.trim();
+    if chat.is_empty() {
+        return Err(TrajectoryError::new(
+            "invalid_input",
+            "ahp-stream requires --chat <ahp-chat:/…>.",
+        ));
+    }
+    let delivery = emit.delivery();
+    println!("Trajectory ahp-stream  sample client demo (not a daemon)");
+    println!("url      {url}");
+    println!("chat     {chat}");
+    println!("emit     {}", emit.label());
+    if let Some(seq) = from_seq {
+        println!("from-seq {seq}");
+    }
+    if !cli.show_content {
+        println!("Privacy: content hidden unless --show-content.");
+    }
+    println!();
+
+    let scheme = url
+        .split_once(':')
+        .map(|(s, _)| s.to_ascii_lowercase())
+        .unwrap_or_else(|| url.to_ascii_lowercase());
+    if scheme != "fake" && scheme != "memory" && scheme != "test" {
+        return Err(TrajectoryError::new(
+            "invalid_input",
+            "Sample ahp-stream supports url scheme fake:// (in-memory FakeAhpHost) only. \
+             Wire AhpStreamClient with your WebSocket AhpTransport for live hosts \
+             (see docs/ahp-client.md). Example: --url fake://demo",
+        ));
+    }
+
+    let pair = InMemoryAhpTransportPair::new();
+    let mut script = FakeAhpHostScript::new();
+    if let Some(path) = snapshot_path {
+        let text = fs::read_to_string(&path).map_err(|e| {
+            TrajectoryError::new("invalid_input", format!("Could not read snapshot: {e}"))
+        })?;
+        script.initial_snapshot = Some(
+            serde_json::from_str(&text)
+                .map_err(|e| TrajectoryError::new("invalid_input", format!("Invalid snapshot JSON: {e}")))?,
+        );
+    }
+    if let Some(path) = actions_path {
+        let text = fs::read_to_string(&path).map_err(|e| {
+            TrajectoryError::new("invalid_input", format!("Could not read actions: {e}"))
+        })?;
+        for line in text.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let env: Value = serde_json::from_str(line).map_err(|e| {
+                TrajectoryError::new("invalid_input", format!("Invalid action JSONL: {e}"))
+            })?;
+            script.initial_actions.push(env);
+        }
+    }
+    if script.initial_snapshot.is_none() && script.initial_actions.is_empty() {
+        script.initial_snapshot = Some(serde_json::json!({
+            "ahpProtocolVersion": "0.7.0",
+            "chat": { "id": chat, "turns": [], "activeTurn": null }
+        }));
+    }
+    let token = token.or_else(|| env::var("TRAJECTORY_AHP_TOKEN").ok());
+    if let Some(ref t) = token {
+        script.require_auth = true;
+        script.accept_token = Some(t.clone());
+    }
+
+    let _host = FakeAhpHost::new(pair.host, script, chat);
+    let updates = Rc::new(RefCell::new(0usize));
+    let ready = Rc::new(Cell::new(false));
+    let show_content = cli.show_content;
+    let mut options = AhpClientOptions::new(chat);
+    options.from_server_seq = from_seq;
+    let mut stream_opts = StreamOptions::new(TrajectorySource::Ahp).with_group_id(chat);
+    stream_opts.delivery = delivery;
+    options.stream_options = Some(stream_opts);
+    if let Some(t) = token.clone() {
+        options.auth = Some(Box::new(move |_challenge: Option<&Map<String, Value>>| {
+            Some(hypabolic_trajectory_ahp::AhpAuthCredentials { token: t.clone() })
+        }));
+    }
+
+    let updates_h = Rc::clone(&updates);
+    let ready_h = Rc::clone(&ready);
+    let client = AhpStreamClient::new(
+        Box::new(pair.client),
+        options,
+        move |event: AhpClientEvent| match event.kind {
+            AhpClientEventKind::StreamUpdate => {
+                if let Some(update) = event.update {
+                    let mut n = updates_h.borrow_mut();
+                    *n += 1;
+                    let index = *n;
+                    drop(n);
+                    print_stream_update(&update, show_content, emit, index);
+                }
+            }
+            AhpClientEventKind::Ready => {
+                ready_h.set(true);
+                println!("AHP client ready (subscribe complete).");
+            }
+            AhpClientEventKind::AuthRequired
+            | AhpClientEventKind::AuthFailed
+            | AhpClientEventKind::ResyncRequired
+            | AhpClientEventKind::Backpressure
+            | AhpClientEventKind::Error
+            | AhpClientEventKind::Disconnected => {
+                println!(
+                    "{}  {}",
+                    event.code.as_deref().unwrap_or("event"),
+                    event.message.as_deref().unwrap_or("")
+                );
+            }
+        },
+    );
+    client.start();
+
+    if let Some(max) = max_updates {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while *updates.borrow() < max && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+    } else {
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    let seen = *updates.borrow();
+    if seen == 0 && !ready.get() {
+        println!("No AHP ready/update events. Check --url / --chat / fixtures.");
+    } else {
+        println!(
+            "Emitted {seen} stream update(s). Cancel leaves last cursor valid; not a daemon."
+        );
+    }
+    client.cancel();
+    Ok(ExitCode::SUCCESS)
+}
+
+fn print_stream_update(update: &StreamUpdate, show_content: bool, emit: EmitArg, index: usize) {
+    println!("── stream update #{index} ──");
+    println!("kind       {}", update.kind);
+    println!(
+        "revision   {} id={} gen={}",
+        update.revision.revision, update.revision.revision_id, update.revision.generation
+    );
+    let pos_kind = match &update.cursor.position {
+        hypabolic_trajectory::StreamPosition::Byte(_) => "byte",
+        hypabolic_trajectory::StreamPosition::AhpServerSeq(_) => "ahp-server-seq",
+        hypabolic_trajectory::StreamPosition::SnapshotRevision(_) => "snapshot-revision",
+        hypabolic_trajectory::StreamPosition::HermesRow(_) => "hermes-row",
+    };
+    println!(
+        "cursor     source={} group={} gen={} pos={pos_kind}",
+        update.cursor.source,
+        truncate(&update.cursor.group_id, 40),
+        update.cursor.generation
+    );
+    if let Some(snapshot) = &update.snapshot {
+        println!(
+            "snapshot   records={} complete={}",
+            snapshot.records.len(),
+            snapshot.complete
+        );
+    } else if matches!(emit, EmitArg::SnapshotDelta | EmitArg::Snapshot) {
+        println!("snapshot   (omitted by delivery)");
+    }
+    if let Some(delta) = &update.delta {
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        for op in &delta.operations {
+            *counts.entry(op.op.as_str()).or_default() += 1;
+        }
+        let summary = counts
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        if summary.is_empty() {
+            println!("delta      ops={}", delta.operations.len());
+        } else {
+            println!("delta      ops={} ({summary})", delta.operations.len());
+        }
+    } else if matches!(emit, EmitArg::SnapshotDelta | EmitArg::Delta) {
+        println!("delta      (omitted by delivery)");
+    }
+    println!("diagnostics {}", update.diagnostics.len());
+    for diagnostic in update.diagnostics.iter().take(8) {
+        println!("  {}  {}", diagnostic.code, diagnostic.message);
+    }
+    if let Some(reset) = &update.reset {
+        println!("reset      reason={}", reset.reason);
+    }
+    if let Some((code, message)) = &update.error {
+        println!("error      {code}: {message}");
+    }
+    if show_content {
+        if let Some(snapshot) = &update.snapshot {
+            println!("\nWARNING: --show-content prints transcript-derived text. Treat as private.");
+            for (i, stream_rec) in snapshot.records.iter().enumerate().take(40) {
+                let role = stream_rec
+                    .record
+                    .get("role")
+                    .and_then(Value::as_str)
+                    .unwrap_or("?");
+                let kind = stream_rec
+                    .record
+                    .get("kind")
+                    .or_else(|| stream_rec.record.get("type"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("?");
+                let snip = stream_rec
+                    .record
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .map_or_else(
+                        || truncate(&stream_rec.record.to_string(), 80),
+                        |c| truncate(c, 80),
+                    );
+                println!(
+                    "  {:>3}  {:<12} {:<10} {:<20} {snip}",
+                    i + 1,
+                    stream_rec.status,
+                    role,
+                    kind
+                );
+            }
+        }
+    } else {
+        println!("Content omitted (privacy). Re-run with --show-content for snippets.");
+    }
+    println!();
 }
 
 fn run_list(cli: &Cli) -> Result<ExitCode, TrajectoryError> {

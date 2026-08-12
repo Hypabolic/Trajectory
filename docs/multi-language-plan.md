@@ -116,8 +116,8 @@ core, optional I/O/clients.
 | **LS-08** | **Full stream matrix gate** — shared `conformance/cases/streaming/**` green on all four runtimes; per-step goldens; append ≡ prefix oracle; batch still green; **no** `stream-*` capability claims | **In-tree on tip** |
 | LS-09 | Optional file I/O packages (×4) | Delivered on tip (`streaming-file-io.md`) |
 | LS-10 | Optional AHP client packages (×4) | Delivered on tip (`ahp-client.md`) |
-| LS-11 | Sample CLIs | Scheduled |
-| LS-12 | Capability advertising + release gate | Blocked on LS-11 |
+| LS-11 | Sample CLIs (`stream` / `ahp-stream` ×4) | **Done on tip** |
+| LS-12 | Capability advertising + release gate | Scheduled (blocked on honesty review) |
 
 ### LS-08 definition of done (core matrix)
 

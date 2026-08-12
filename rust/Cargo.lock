@@ -625,6 +625,8 @@ dependencies = [
  "clap",
  "dialoguer",
  "hypabolic-trajectory",
+ "hypabolic-trajectory-ahp",
+ "hypabolic-trajectory-io",
  "serde_json",
 ]
 

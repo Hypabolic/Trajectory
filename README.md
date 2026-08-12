@@ -256,6 +256,8 @@ diagnostics—no transcript body by default).
 | `browse` (default) | Interactive: pick source → session → print summary |
 | `list` | Table of sessions for one source |
 | `show` | Normalize one `--path` or listing `--id` |
+| `stream` | Follow a JSONL session file (optional file I/O + core stream) |
+| `ahp-stream` | Optional AHP client demo (`fake://` FakeAhpHost) |
 
 Shared flags:
 
@@ -266,7 +268,14 @@ Shared flags:
 | `--limit <n>` | Listing page size (default 50) |
 | `--format <f>` | `both` (default), `messages`, or `hypabolic` |
 | `--show-content` | Include text snippets (**private data**; prints a warning) |
-| `--path` / `--id` | `show` only: file path or listing id |
+| `--path` / `--id` | `show` / `stream`: file path or listing id |
+| `--emit` | `stream` / `ahp-stream`: `snapshot+delta` (default), `snapshot`, or `delta` |
+| `--follow` | `stream`: keep polling until process exit (not a daemon) |
+| `--url` / `--chat` | `ahp-stream`: host URL (`fake://` in samples) and chat URI |
+
+These CLIs are **consumer processes**, not Trajectory daemons. Stream follow ends
+when the process exits; sample `ahp-stream` uses in-memory FakeAhpHost only
+(wire your own WebSocket `AhpTransport` for live hosts).
 
 ### Run examples
 
@@ -302,6 +311,12 @@ PYTHONPATH=python/samples python -m trajectory_cli show \
   --source pi \
   --path conformance/cases/pi/tool-calls/input.jsonl
 PYTHONPATH=python/samples python -m trajectory_cli browse
+
+# Stream a fixture once (all four CLIs; default emit snapshot+delta)
+PYTHONPATH=python/samples python -m trajectory_cli stream \
+  --source pi \
+  --path conformance/cases/pi/tool-calls/input.jsonl \
+  --max-updates 1
 ```
 
 **Notes**
@@ -310,6 +325,8 @@ PYTHONPATH=python/samples python -m trajectory_cli browse
 - Hermes listing in core returns empty (no SQLite dependency); export JSON and
   `show --path`.
 - AHP listing is Phase 3; normalize Shape A snapshots with `show --path`.
+- Live streaming sample commands compose optional file I/O / AHP client packages;
+  core stays free of watchers, network, and SQLite. Not a background daemon.
 - These CLIs are **not** published NuGet/npm/crates packages.
 
 ## How it works

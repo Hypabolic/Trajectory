@@ -16,6 +16,8 @@ path = "src/main.rs"
 clap = { version = "4.5.28", features = ["derive", "env"] }
 dialoguer = { version = "0.11.0", default-features = true }
 hypabolic-trajectory = { path = "../../crates/hypabolic-trajectory" }
+hypabolic-trajectory-ahp = { path = "../../crates/hypabolic-trajectory-ahp" }
+hypabolic-trajectory-io = { path = "../../crates/hypabolic-trajectory-io" }
 serde_json.workspace = true
 
 [lints]

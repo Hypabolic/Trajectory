@@ -198,8 +198,8 @@ if let Some(update) = stream.poll()? { ... }
 
 ## Not in this slice
 
-- AHP network clients (LS-10)
-- Sample `stream` CLI commands (LS-11)
+- AHP network clients (LS-10 — delivered; see `docs/ahp-client.md`)
+- Sample `stream` CLI commands (LS-11 — delivered on sample CLIs)
 - Capability advertising (LS-12)
 - Hermes SQLite provider (LS-07h — see `docs/streaming-hermes-provider.md`)
 - Multi-file home-directory supervisor

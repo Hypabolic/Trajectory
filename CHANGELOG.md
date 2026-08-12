@@ -5,6 +5,15 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **LS-11 sample CLI stream commands (all four ecosystems):** unpublished
+  sample CLIs gain `stream` (JSONL file follow via optional file I/O + core
+  apply; default emit `snapshot+delta`; `--follow` is process-owned, not a
+  daemon) and `ahp-stream` (optional AHP client demo with in-memory
+  `fake://` FakeAhpHost + fixture paths; live WebSocket remains
+  consumer-injected `AhpTransport`). Privacy-safe defaults with
+  `--show-content` opt-in. Automated tests use temp stores and fake hosts
+  only. Capability advertising still deferred to LS-12.
+
 - **LS-10 optional AHP client packages (all four ecosystems):** transport-only
   live-host clients (`Hypabolic.Trajectory.Ahp`, `@hypabolic/trajectory-ahp`,
   `hypabolic-trajectory-ahp`, `hypabolic_trajectory.ahp_client`) with injected
