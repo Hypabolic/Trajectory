@@ -66,7 +66,10 @@ from hypabolic_trajectory.dto import TrajectoryListing, TrajectoryListingPage
 from hypabolic_trajectory.streaming.types import (
     BytePosition,
     StreamCursor,
+    StreamDiagnostic,
+    StreamRecord,
     StreamResetRequest,
+    StreamSnapshot,
     StreamState,
     StreamUpdate,
 )
@@ -857,6 +860,52 @@ def _stream_state_equivalent(a: StreamState, b: StreamState) -> bool:
     return True
 
 
+def _stream_record_parity_key(rec: StreamRecord) -> tuple[Any, ...]:
+    """Identity + status/finality fields for append-vs-prefix oracle parity."""
+    return (
+        rec.record.get("id", ""),
+        rec.status,
+        rec.provisional_id,
+        rec.replaces_provisional_id,
+        rec.finalizes_provisional_id,
+    )
+
+
+def _stream_diagnostic_parity_key(d: StreamDiagnostic) -> tuple[Any, ...]:
+    return (d.code, d.message, d.input_line, d.record_index, d.count)
+
+
+def _oracle_snapshots_match(
+    append_snap: StreamSnapshot | None,
+    oracle_snap: StreamSnapshot | None,
+    append_cursor: StreamCursor,
+    oracle_cursor: StreamCursor,
+) -> bool:
+    """Full snapshot/status/diagnostics/cursor parity for prefix-oracle equality."""
+    if append_snap is None or oracle_snap is None:
+        return append_snap is None and oracle_snap is None
+    append_keys = [_stream_record_parity_key(r) for r in append_snap.records]
+    oracle_keys = [_stream_record_parity_key(r) for r in oracle_snap.records]
+    if append_keys != oracle_keys:
+        return False
+    append_diags = [_stream_diagnostic_parity_key(d) for d in append_snap.diagnostics]
+    oracle_diags = [_stream_diagnostic_parity_key(d) for d in oracle_snap.diagnostics]
+    if append_diags != oracle_diags:
+        return False
+    if append_snap.complete != oracle_snap.complete:
+        return False
+    if isinstance(append_cursor.position, BytePosition) and isinstance(
+        oracle_cursor.position, BytePosition
+    ):
+        if (
+            append_cursor.position.next_byte_offset
+            != oracle_cursor.position.next_byte_offset
+            or append_cursor.prefix_sha256 != oracle_cursor.prefix_sha256
+        ):
+            return False
+    return True
+
+
 def _oracle_section(
     manifest: Mapping[str, Any],
     state: StreamState,
@@ -870,7 +919,8 @@ def _oracle_section(
     if not want_append and not want_prefix:
         return None
 
-    # Fresh snapshot of the final committed prefix must match append-path records.
+    # Fresh snapshot of the final committed prefix must match append-path records,
+    # status/provisional finality, diagnostics, and cursor fingerprint.
     opts = _stream_options_from_manifest(manifest)
     oracle_state = create_stream(opts)
     prefix = bytes(state.committed_prefix)
@@ -882,39 +932,66 @@ def _oracle_section(
             "prefix_re_normalize": False if want_prefix else None,
         }
 
-    append_ids: list[str] = []
-    if state.snapshot is not None:
-        append_ids = [r.record.get("id", "") for r in state.snapshot.records]
-    snap_ids: list[str] = []
-    if snap_update.snapshot is not None:
-        snap_ids = [r.record.get("id", "") for r in snap_update.snapshot.records]
-    # Also compare last updated step snapshot when present.
-    last_updated_ids: list[str] | None = None
-    for step in reversed(step_results):
-        update = step.get("update")
-        if type(update) is dict and update.get("kind") == "updated":
+    ok = _oracle_snapshots_match(
+        state.snapshot,
+        snap_update.snapshot,
+        state.cursor,
+        snap_update.cursor,
+    )
+    # Cross-check last updated step snapshot records when present (wire form).
+    if ok:
+        for step in reversed(step_results):
+            update = step.get("update")
+            if type(update) is not dict or update.get("kind") != "updated":
+                continue
             snap = update.get("snapshot")
-            if type(snap) is dict and type(snap.get("records")) is list:
-                last_updated_ids = [
-                    (rec.get("record") or {}).get("id", "")
-                    if type(rec) is dict
-                    else ""
-                    for rec in snap["records"]
-                ]
+            if type(snap) is not dict or type(snap.get("records")) is not list:
+                break
+            if snap_update.snapshot is None:
+                ok = False
+                break
+            wire_keys = []
+            for rec in snap["records"]:
+                if type(rec) is not dict:
+                    wire_keys.append(("", "", None, None, None))
+                    continue
+                body = rec.get("record") if type(rec.get("record")) is dict else {}
+                wire_keys.append(
+                    (
+                        body.get("id", "") if type(body) is dict else "",
+                        rec.get("status", ""),
+                        rec.get("provisional_id"),
+                        rec.get("replaces_provisional_id"),
+                        rec.get("finalizes_provisional_id"),
+                    )
+                )
+            oracle_keys = [
+                _stream_record_parity_key(r) for r in snap_update.snapshot.records
+            ]
+            if wire_keys != oracle_keys:
+                ok = False
+            wire_diags = []
+            diags = snap.get("diagnostics")
+            if type(diags) is list:
+                for d in diags:
+                    if type(d) is not dict:
+                        continue
+                    wire_diags.append(
+                        (
+                            d.get("code", ""),
+                            d.get("message", ""),
+                            d.get("input_line"),
+                            d.get("record_index"),
+                            d.get("count"),
+                        )
+                    )
+            oracle_diags = [
+                _stream_diagnostic_parity_key(d)
+                for d in snap_update.snapshot.diagnostics
+            ]
+            if wire_diags != oracle_diags:
+                ok = False
             break
-    ids_match = append_ids == snap_ids
-    if last_updated_ids is not None:
-        ids_match = ids_match and last_updated_ids == snap_ids
-    offset_match = True
-    if isinstance(state.cursor.position, BytePosition) and isinstance(
-        snap_update.cursor.position, BytePosition
-    ):
-        offset_match = (
-            state.cursor.position.next_byte_offset
-            == snap_update.cursor.position.next_byte_offset
-            and state.cursor.prefix_sha256 == snap_update.cursor.prefix_sha256
-        )
-    ok = ids_match and offset_match
     out: dict[str, Any] = {}
     if want_append:
         out["append_equals_prefix"] = ok
@@ -958,10 +1035,33 @@ def execute_stream_sequence(
         if type(double) is not bool:
             double = True
 
+        pre_cursor = state.cursor
         state, update = _apply_step(state, case_directory, step_input)
         idempotent = True
         if double:
-            state_after, update2 = _apply_step(state, case_directory, step_input)
+            # Append true-replay: re-supply with the cursor that governed the first
+            # apply (step cursor when present, else pre-apply state cursor). Content
+            # equality alone must not short-circuit legitimate identical growth.
+            kind = step_input.get("kind")
+            if (
+                kind == "append-bytes"
+                and update.kind in {"updated", "unchanged"}
+            ):
+                replay_cursor = _parse_stream_cursor(step_input.get("cursor"))
+                if replay_cursor is None:
+                    replay_cursor = pre_cursor
+                data = _load_step_bytes(case_directory, step_input)
+                source_revision = step_input.get("source_revision")
+                if source_revision is not None and type(source_revision) is not str:
+                    source_revision = None
+                state_after, update2 = apply_append(
+                    state,
+                    data,
+                    cursor=replay_cursor,
+                    source_revision=source_revision,
+                )
+            else:
+                state_after, update2 = _apply_step(state, case_directory, step_input)
             if update.kind in {"updated", "unchanged"}:
                 # Prefer pure replay → unchanged; accept deterministic re-install
                 # (e.g. reset with same generation/material) when state matches.

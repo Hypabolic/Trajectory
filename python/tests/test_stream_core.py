@@ -295,13 +295,29 @@ def test_duplicate_append_input_is_idempotent() -> None:
     state = create_stream(
         StreamOptions(source="pi", group_id="stream-duplicate-input-idempotent")
     )
+    pre_cursor = state.cursor
     state, u1 = apply_append(state, line, source_revision="gen-0")
     assert u1.kind == "updated"
     prior_offset = state.cursor.position.next_byte_offset  # type: ignore[union-attr]
-    state2, u2 = apply_append(state, line, source_revision="gen-0")
+    # True replay requires the pre-apply cursor; content alone is not enough.
+    state2, u2 = apply_append(state, line, cursor=pre_cursor, source_revision="gen-0")
     assert u2.kind == "unchanged"
     assert state2.cursor.position.next_byte_offset == prior_offset  # type: ignore[union-attr]
     assert bytes(state2.committed_prefix) == bytes(state.committed_prefix)
+
+
+def test_identical_successive_appends_both_commit() -> None:
+    """Two successive identical growth segments must both commit."""
+    line = _read("identical-successive-appends", "step-line.jsonl")
+    state = create_stream(
+        StreamOptions(source="pi", group_id="stream-identical-successive-appends")
+    )
+    state, u1 = apply_append(state, line, source_revision="gen-0")
+    assert u1.kind == "updated"
+    state2, u2 = apply_append(state, line, source_revision="gen-0")
+    assert u2.kind == "updated"
+    assert bytes(state2.committed_prefix) == line + line
+    assert state2.cursor.position.next_byte_offset == len(line) * 2  # type: ignore[union-attr]
 
 
 def test_apply_append_failure_preserves_pending() -> None:

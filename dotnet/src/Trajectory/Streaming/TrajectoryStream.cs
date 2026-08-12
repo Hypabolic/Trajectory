@@ -270,6 +270,7 @@ public static class TrajectoryStream
         newState.NextRevision = revisionNum + 1;
         // Snapshot replaces committed material; clear append-replay fingerprint.
         newState.LastAppendSegment = null;
+        newState.LastAppendPreOffset = null;
         return (newState, update);
     }
 
@@ -293,15 +294,6 @@ public static class TrajectoryStream
             return (state, ErrorUpdate(state, "invalid_input", "Stream is already finished."));
         }
 
-        if (cursor is not null)
-        {
-            var conflict = CursorConflict(state, cursor);
-            if (conflict is not null)
-            {
-                return (state, conflict);
-            }
-        }
-
         if (state.Options.MaxPendingBytes is long maxPending && maxPending < 0)
         {
             return (state, ErrorUpdate(
@@ -323,12 +315,30 @@ public static class TrajectoryStream
             return (state, UnchangedUpdate(state));
         }
 
-        // Replay of already-accepted append input is idempotent (unchanged).
+        // True append replay: same segment re-supplied with the pre-apply cursor.
+        // Content equality alone is not enough — successive identical growth segments
+        // must both commit after the cursor advances.
+        var preOffset = state.Cursor.Position.NextByteOffset;
         if (state.LastAppendSegment is not null &&
+            state.LastAppendPreOffset is long lastPre &&
             segment.Length == state.LastAppendSegment.Length &&
-            segment.Span.SequenceEqual(state.LastAppendSegment))
+            segment.Span.SequenceEqual(state.LastAppendSegment) &&
+            cursor is not null &&
+            cursor.Position.NextByteOffset == lastPre &&
+            cursor.Source == state.Cursor.Source &&
+            cursor.Generation == state.Cursor.Generation &&
+            cursor.GroupId == state.Cursor.GroupId)
         {
             return (state, UnchangedUpdate(state));
+        }
+
+        if (cursor is not null)
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
         }
 
         var combined = new byte[state.PendingBytes.Length + segment.Length];
@@ -359,6 +369,7 @@ public static class TrajectoryStream
             var pendingOnly = Clone(state);
             pendingOnly.PendingBytes = newPending;
             pendingOnly.LastAppendSegment = segment.ToArray();
+            pendingOnly.LastAppendPreOffset = preOffset;
             pendingOnly.Cursor = pendingOnly.Cursor with
             {
                 Position = pendingOnly.Cursor.Position with
@@ -385,6 +396,7 @@ public static class TrajectoryStream
 
         newState.PendingBytes = newPending;
         newState.LastAppendSegment = segment.ToArray();
+        newState.LastAppendPreOffset = preOffset;
         newState.Cursor = newState.Cursor with
         {
             Position = newState.Cursor.Position with
@@ -571,6 +583,7 @@ public static class TrajectoryStream
         newState.Snapshot = null;
         newState.GroupLocked = false;
         newState.LastAppendSegment = null;
+        newState.LastAppendPreOffset = null;
         newState.Cursor = new StreamCursor
         {
             Source = state.Cursor.Source,
@@ -1277,6 +1290,7 @@ public static class TrajectoryStream
             LastAppendSegment = state.LastAppendSegment is null
                 ? null
                 : state.LastAppendSegment.ToArray(),
+            LastAppendPreOffset = state.LastAppendPreOffset,
         };
 
     private static (StreamSnapshot? Snapshot, StreamDelta? Delta) ApplyDelivery(

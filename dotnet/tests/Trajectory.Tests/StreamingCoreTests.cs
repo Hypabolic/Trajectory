@@ -383,12 +383,31 @@ public sealed class StreamingCoreTests
             Source = TrajectorySource.Pi,
             GroupId = "stream-duplicate-input-idempotent",
         });
+        var preCursor = state.Cursor;
         var (state1, u1) = TrajectoryStream.ApplyAppend(state, line, sourceRevision: "gen-0");
         Assert.Equal("updated", u1.Kind);
         var prior = state1.Cursor.Position.NextByteOffset;
-        var (state2, u2) = TrajectoryStream.ApplyAppend(state1, line, sourceRevision: "gen-0");
+        // True replay requires the pre-apply cursor; content alone is not enough.
+        var (state2, u2) = TrajectoryStream.ApplyAppend(state1, line, preCursor, sourceRevision: "gen-0");
         Assert.Equal("unchanged", u2.Kind);
         Assert.Equal(prior, state2.Cursor.Position.NextByteOffset);
+    }
+
+    [Fact]
+    public void IdenticalSuccessiveAppends_BothCommit()
+    {
+        var line = ReadFixture("identical-successive-appends", "step-line.jsonl");
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-identical-successive-appends",
+        });
+        var (state1, u1) = TrajectoryStream.ApplyAppend(state, line, sourceRevision: "gen-0");
+        Assert.Equal("updated", u1.Kind);
+        var (state2, u2) = TrajectoryStream.ApplyAppend(state1, line, sourceRevision: "gen-0");
+        Assert.Equal("updated", u2.Kind);
+        Assert.Equal(line.Length * 2, state2.CommittedPrefix.Length);
+        Assert.Equal(line.LongLength * 2, state2.Cursor.Position.NextByteOffset);
     }
 
     [Theory]

@@ -339,12 +339,32 @@ internal static class ConformanceProgram
             var stepInput = step.GetProperty("input");
             var doubleInvoke = !step.TryGetProperty("double_invoke", out var di) ||
                 di.ValueKind != JsonValueKind.False;
+            var preCursor = state.Cursor;
             var (next, update) = await ApplyStreamStepAsync(state, caseDirectory, stepInput);
             state = next;
             var idempotent = true;
             if (doubleInvoke)
             {
-                var (after, update2) = await ApplyStreamStepAsync(state, caseDirectory, stepInput);
+                StreamState after;
+                StreamUpdate update2;
+                // Append true-replay: re-supply with the cursor that governed the first apply.
+                if (RequiredString(stepInput, "kind") == "append-bytes" &&
+                    update.Kind is "updated" or "unchanged")
+                {
+                    var replayCursor = ParseStreamCursor(stepInput) ?? preCursor;
+                    var data = await LoadStepBytesAsync(caseDirectory, stepInput);
+                    var sourceRevision = OptionalString(stepInput, "source_revision");
+                    (after, update2) = TrajectoryStream.ApplyAppend(
+                        state,
+                        data,
+                        replayCursor,
+                        sourceRevision);
+                }
+                else
+                {
+                    (after, update2) = await ApplyStreamStepAsync(state, caseDirectory, stepInput);
+                }
+
                 if (update.Kind is "updated" or "unchanged")
                 {
                     idempotent = update2.Kind == "unchanged" ||
@@ -385,16 +405,12 @@ internal static class ConformanceProgram
                     oracleState,
                     state.CommittedPrefix,
                     rev);
-                var appendIds = state.Snapshot?.Records
-                    .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
-                    .ToArray() ?? Array.Empty<string>();
-                var snapIds = snap.Snapshot?.Records
-                    .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
-                    .ToArray() ?? Array.Empty<string>();
                 var ok = snap.Kind is "updated" or "unchanged" &&
-                    appendIds.SequenceEqual(snapIds) &&
-                    state.Cursor.Position.NextByteOffset == snap.Cursor.Position.NextByteOffset &&
-                    state.Cursor.PrefixSha256 == snap.Cursor.PrefixSha256;
+                    OracleSnapshotsMatch(
+                        state.Snapshot,
+                        snap.Snapshot,
+                        state.Cursor,
+                        snap.Cursor);
                 var section = new Dictionary<string, object?>(StringComparer.Ordinal);
                 if (wantAppend)
                 {
@@ -411,6 +427,66 @@ internal static class ConformanceProgram
         }
 
         return SerializeWireObject(payload);
+    }
+
+    private static bool OracleSnapshotsMatch(
+        StreamSnapshot? appendSnap,
+        StreamSnapshot? oracleSnap,
+        StreamCursor appendCursor,
+        StreamCursor oracleCursor)
+    {
+        if (appendSnap is null || oracleSnap is null)
+        {
+            return appendSnap is null && oracleSnap is null;
+        }
+
+        if (appendSnap.Records.Count != oracleSnap.Records.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < appendSnap.Records.Count; i++)
+        {
+            var a = appendSnap.Records[i];
+            var o = oracleSnap.Records[i];
+            var aId = a.Record.TryGetValue("id", out var aid) ? aid?.ToString() ?? "" : "";
+            var oId = o.Record.TryGetValue("id", out var oid) ? oid?.ToString() ?? "" : "";
+            if (aId != oId ||
+                a.Status != o.Status ||
+                a.ProvisionalId != o.ProvisionalId ||
+                a.ReplacesProvisionalId != o.ReplacesProvisionalId ||
+                a.FinalizesProvisionalId != o.FinalizesProvisionalId)
+            {
+                return false;
+            }
+        }
+
+        if (appendSnap.Diagnostics.Count != oracleSnap.Diagnostics.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < appendSnap.Diagnostics.Count; i++)
+        {
+            var a = appendSnap.Diagnostics[i];
+            var o = oracleSnap.Diagnostics[i];
+            if (a.Code != o.Code ||
+                a.Message != o.Message ||
+                a.InputLine != o.InputLine ||
+                a.RecordIndex != o.RecordIndex ||
+                a.Count != o.Count)
+            {
+                return false;
+            }
+        }
+
+        if (appendSnap.Complete != oracleSnap.Complete)
+        {
+            return false;
+        }
+
+        return appendCursor.Position.NextByteOffset == oracleCursor.Position.NextByteOffset &&
+            appendCursor.PrefixSha256 == oracleCursor.PrefixSha256;
     }
 
     private static string SerializeWireObject(object? value)

@@ -9,7 +9,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use chrono::DateTime;
 use hypabolic_trajectory::{
     BytePosition, ListingOptions, NormalizeOptions, NormalizeRequest, SourceContext, StreamCursor,
-    StreamDelivery, StreamOptions, StreamResetRequest, StreamState, StreamUpdate, TrajectoryError,
+    StreamDelivery, StreamOptions, StreamResetRequest, StreamSnapshot, StreamState, StreamUpdate,
+    TrajectoryError,
     TrajectorySource, TruncationStrategy, apply_append, apply_snapshot, create_stream,
     finish_stream, list_ahp_trajectories, list_claude_code_trajectories, list_codex_trajectories,
     list_grok_build_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
@@ -548,11 +549,25 @@ fn execute_stream_sequence(
             .get("double_invoke")
             .and_then(Value::as_bool)
             .unwrap_or(true);
+        let pre_cursor = state.cursor.clone();
         let (next_state, update) = apply_stream_step(&state, case_directory, step_input)?;
         state = next_state;
         let mut idempotent = true;
         if double {
-            let (state2, update2) = apply_stream_step(&state, case_directory, step_input)?;
+            let kind = step_input.get("kind").and_then(Value::as_str).unwrap_or("");
+            let (state2, update2) = if kind == "append-bytes"
+                && (update.kind == "updated" || update.kind == "unchanged")
+            {
+                // True append replay: re-supply with the cursor that governed the first apply.
+                let replay_cursor = parse_stream_cursor(step_input.get("cursor"))?
+                    .unwrap_or(pre_cursor);
+                let data = load_step_bytes(case_directory, step_input)?;
+                let source_revision = step_input.get("source_revision").and_then(Value::as_str);
+                apply_append(&state, &data, Some(&replay_cursor), source_revision)
+                    .map_err(StreamEngineError::Fatal)?
+            } else {
+                apply_stream_step(&state, case_directory, step_input)?
+            };
             if update.kind == "updated" || update.kind == "unchanged" {
                 idempotent = update2.kind == "unchanged"
                     || (update2.kind == "updated" && stream_state_equivalent(&state, &state2));
@@ -588,30 +603,13 @@ fn execute_stream_sequence(
                 .unwrap_or_else(|| "oracle".into());
             let (_, snap) = apply_snapshot(&oracle_state, &state.committed_prefix, &rev, None)
                 .map_err(StreamEngineError::Fatal)?;
-            let append_ids: Vec<String> = state
-                .snapshot
-                .as_ref()
-                .map(|s| {
-                    s.records
-                        .iter()
-                        .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let snap_ids: Vec<String> = snap
-                .snapshot
-                .as_ref()
-                .map(|s| {
-                    s.records
-                        .iter()
-                        .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
             let ok = (snap.kind == "updated" || snap.kind == "unchanged")
-                && append_ids == snap_ids
-                && state.cursor.position.next_byte_offset == snap.cursor.position.next_byte_offset
-                && state.cursor.prefix_sha256 == snap.cursor.prefix_sha256;
+                && oracle_snapshots_match(
+                    state.snapshot.as_ref(),
+                    snap.snapshot.as_ref(),
+                    &state.cursor,
+                    &snap.cursor,
+                );
             let mut section = Map::new();
             if want_append {
                 section.insert("append_equals_prefix".into(), Value::Bool(ok));
@@ -628,6 +626,53 @@ fn execute_stream_sequence(
     serde_json::to_string(&payload).map_err(|e| {
         StreamEngineError::Protocol(format!("Failed to serialize stream sequence: {e}"))
     })
+}
+
+fn oracle_snapshots_match(
+    append_snap: Option<&StreamSnapshot>,
+    oracle_snap: Option<&StreamSnapshot>,
+    append_cursor: &StreamCursor,
+    oracle_cursor: &StreamCursor,
+) -> bool {
+    match (append_snap, oracle_snap) {
+        (None, None) => true,
+        (Some(a), Some(o)) => {
+            if a.records.len() != o.records.len() {
+                return false;
+            }
+            for (ar, or) in a.records.iter().zip(o.records.iter()) {
+                let aid = ar.record.get("id").and_then(Value::as_str).unwrap_or("");
+                let oid = or.record.get("id").and_then(Value::as_str).unwrap_or("");
+                if aid != oid
+                    || ar.status != or.status
+                    || ar.provisional_id != or.provisional_id
+                    || ar.replaces_provisional_id != or.replaces_provisional_id
+                    || ar.finalizes_provisional_id != or.finalizes_provisional_id
+                {
+                    return false;
+                }
+            }
+            if a.diagnostics.len() != o.diagnostics.len() {
+                return false;
+            }
+            for (ad, od) in a.diagnostics.iter().zip(o.diagnostics.iter()) {
+                if ad.code != od.code
+                    || ad.message != od.message
+                    || ad.input_line != od.input_line
+                    || ad.record_index != od.record_index
+                    || ad.count != od.count
+                {
+                    return false;
+                }
+            }
+            if a.complete != o.complete {
+                return false;
+            }
+            append_cursor.position.next_byte_offset == oracle_cursor.position.next_byte_offset
+                && append_cursor.prefix_sha256 == oracle_cursor.prefix_sha256
+        }
+        _ => false,
+    }
 }
 
 fn execute(

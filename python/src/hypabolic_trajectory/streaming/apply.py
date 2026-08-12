@@ -278,6 +278,7 @@ def apply_snapshot(
     new_state.next_revision = revision_num + 1
     # Snapshot replaces committed material; clear append-replay fingerprint.
     new_state.last_append_segment = None
+    new_state.last_append_pre_offset = None
     return new_state, update
 
 
@@ -301,10 +302,6 @@ def apply_append(
     if state.finished:
         return state, _error_update(state, code="invalid_input", message=_MSG_FINISHED)
 
-    conflict = _cursor_conflict(state, cursor)
-    if conflict is not None:
-        return state, conflict
-
     opts = state.options
     limit_err = _validate_buffer_limits(opts)
     if limit_err is not None:
@@ -314,12 +311,28 @@ def apply_append(
     if not segment and not state.pending_bytes:
         return state, _unchanged_update(state)
 
-    # Replay of already-accepted append input is idempotent (unchanged).
+    # True append replay: same segment re-supplied with the pre-apply cursor.
+    # Content equality alone is not enough — successive identical growth segments
+    # (e.g. two identical JSONL lines) must both commit after the cursor advances.
+    pre_offset: int | None = None
+    if isinstance(state.cursor.position, BytePosition):
+        pre_offset = state.cursor.position.next_byte_offset
     if (
         state.last_append_segment is not None
+        and state.last_append_pre_offset is not None
         and segment == state.last_append_segment
+        and cursor is not None
+        and isinstance(cursor.position, BytePosition)
+        and cursor.position.next_byte_offset == state.last_append_pre_offset
+        and cursor.source == state.cursor.source
+        and cursor.generation == state.cursor.generation
+        and cursor.group_id == state.cursor.group_id
     ):
         return state, _unchanged_update(state)
+
+    conflict = _cursor_conflict(state, cursor)
+    if conflict is not None:
+        return state, conflict
 
     try:
         complete, pending = append_framed(
@@ -341,6 +354,7 @@ def apply_append(
         new_state = _clone_state(state)
         new_state.pending_bytes = bytearray(pending)
         new_state.last_append_segment = segment
+        new_state.last_append_pre_offset = pre_offset
         pos = new_state.cursor.position
         if isinstance(pos, BytePosition):
             new_state.cursor = StreamCursor(
@@ -391,6 +405,7 @@ def apply_append(
         )
     new_state.pending_bytes = bytearray(pending)
     new_state.last_append_segment = segment
+    new_state.last_append_pre_offset = pre_offset
     # Consumed bytes for append = newly framed complete segment only.
     consumed = StreamConsumed(
         complete_records=update.consumed.complete_records,
@@ -575,6 +590,7 @@ def reset_stream(
     new_state.snapshot = None
     new_state.group_locked = False
     new_state.last_append_segment = None
+    new_state.last_append_pre_offset = None
     group_id = state.options.group_id or state.cursor.group_id
     new_state.cursor = StreamCursor(
         source=state.cursor.source,
@@ -764,6 +780,7 @@ def _clone_state(state: StreamState) -> StreamState:
         finished=state.finished,
         group_locked=state.group_locked,
         last_append_segment=state.last_append_segment,
+        last_append_pre_offset=state.last_append_pre_offset,
     )
 
 

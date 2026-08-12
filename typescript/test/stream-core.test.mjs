@@ -479,12 +479,28 @@ test("duplicate append input is idempotent", async () => {
     source: "pi",
     groupId: "stream-duplicate-input-idempotent",
   });
+  const preCursor = state.cursor;
   let result = applyAppend(state, line, undefined, "gen-0");
   assert.equal(result.update.kind, "updated");
   const prior = result.state.cursor.position.nextByteOffset;
-  result = applyAppend(result.state, line, undefined, "gen-0");
+  // True replay requires the pre-apply cursor; content alone is not enough.
+  result = applyAppend(result.state, line, preCursor, "gen-0");
   assert.equal(result.update.kind, "unchanged");
   assert.equal(result.state.cursor.position.nextByteOffset, prior);
+});
+
+test("identical successive appends both commit", async () => {
+  const line = await readCase("identical-successive-appends", "step-line.jsonl");
+  let state = createStream({
+    source: "pi",
+    groupId: "stream-identical-successive-appends",
+  });
+  let result = applyAppend(state, line, undefined, "gen-0");
+  assert.equal(result.update.kind, "updated");
+  result = applyAppend(result.state, line, undefined, "gen-0");
+  assert.equal(result.update.kind, "updated");
+  assert.equal(result.state.committedPrefix.length, line.length * 2);
+  assert.equal(result.state.cursor.position.nextByteOffset, BigInt(line.length * 2));
 });
 
 test("per-source append oracle parity", async () => {

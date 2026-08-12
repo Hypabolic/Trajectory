@@ -1,15 +1,17 @@
 {
   "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
   "case_version": 1,
-  "id": "streaming/duplicate-input-idempotent",
-  "description": "Replaying the same committed append with the pre-apply cursor is idempotent (second apply → unchanged). Content equality alone does not short-circuit.",
+  "id": "streaming/identical-successive-appends",
+  "description": "Two successive appends with identical segment bytes must both commit (content equality alone is not idempotence).",
   "source": "pi",
-  "group_id": "stream-duplicate-input-idempotent",
+  "group_id": "stream-identical-successive-appends",
   "required_capabilities": [
     "stream-core",
     "stream-apply-append",
-    "stream-deterministic-replay",
     "stream-jsonl-framing",
+    "stream-full-snapshot",
+    "stream-record-delta",
+    "stream-deterministic-replay",
     "stream-cursor-v1",
     "stream-file-jsonl"
   ],
@@ -23,7 +25,7 @@
   },
   "steps": [
     {
-      "id": "append-line",
+      "id": "append-first",
       "input": {
         "kind": "append-bytes",
         "material": "step-line.jsonl",
@@ -36,27 +38,14 @@
       "double_invoke": true
     },
     {
-      "id": "append-line-replay",
+      "id": "append-second-identical",
       "input": {
         "kind": "append-bytes",
         "material": "step-line.jsonl",
-        "source_revision": "gen-0",
-        "cursor": {
-          "cursor_version": 1,
-          "source": "pi",
-          "group_id": "stream-duplicate-input-idempotent",
-          "generation": 0,
-          "position": {
-            "kind": "byte",
-            "next_byte_offset": 0,
-            "pending_byte_length": 0
-          },
-          "source_revision": "gen-0",
-          "prefix_sha256": null
-        }
+        "source_revision": "gen-0"
       },
       "expected": {
-        "update_kind": "unchanged",
+        "update_kind": "updated",
         "complete": false
       },
       "double_invoke": true
@@ -64,9 +53,14 @@
   ],
   "comparison": [
     "stream-json-exact",
+    "stream-delta-apply",
     "stream-idempotence",
-    "stream-cursor-exact"
+    "stream-oracle-parity"
   ],
+  "oracle": {
+    "prefix_re_normalize": true,
+    "append_equals_prefix": true
+  },
   "privacy": {
     "forbidden_substrings": [
       "SECRET_TOKEN_xyz",

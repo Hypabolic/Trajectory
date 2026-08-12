@@ -181,8 +181,12 @@ export interface StreamState {
   nextRevision: bigint;
   finished: boolean;
   groupLocked: boolean;
-  /** Last accepted append-bytes segment (raw input). Re-supply is idempotent. */
+  /**
+   * Last accepted append-bytes segment + pre-apply next_byte_offset.
+   * True replay requires re-supply with that pre-apply cursor (not content alone).
+   */
   lastAppendSegment: Uint8Array | null;
+  lastAppendPreOffset: bigint | null;
 }
 
 export type StreamInputKind =
@@ -550,6 +554,7 @@ function cloneState(state: StreamState): StreamState {
     lastAppendSegment: state.lastAppendSegment === null
       ? null
       : state.lastAppendSegment.slice(),
+    lastAppendPreOffset: state.lastAppendPreOffset,
   };
 }
 
@@ -657,6 +662,7 @@ export function createStream(options: StreamOptions): StreamState {
     finished: false,
     groupLocked: false,
     lastAppendSegment: null,
+    lastAppendPreOffset: null,
   };
 }
 
@@ -932,6 +938,7 @@ export function applySnapshot(
   newState.nextRevision = revisionNum + 1n;
   // Snapshot replaces committed material; clear append-replay fingerprint.
   newState.lastAppendSegment = null;
+  newState.lastAppendPreOffset = null;
   return { state: newState, update };
 }
 
@@ -953,10 +960,6 @@ export function applyAppend(
   if (state.finished) {
     return { state, update: errorUpdate(state, "invalid_input", "Stream is already finished.") };
   }
-  const conflict = cursorConflict(state, cursor);
-  if (conflict) {
-    return { state, update: conflict };
-  }
 
   if (state.options.maxPendingBytes !== undefined && !isNonNegativeInt64(state.options.maxPendingBytes)) {
     return {
@@ -975,9 +978,26 @@ export function applyAppend(
     return { state, update: unchangedUpdate(state) };
   }
 
-  // Replay of already-accepted append input is idempotent (unchanged).
-  if (state.lastAppendSegment !== null && equalBytes(segment, state.lastAppendSegment)) {
+  // True append replay: same segment re-supplied with the pre-apply cursor.
+  // Content equality alone is not enough — successive identical growth segments
+  // must both commit after the cursor advances.
+  const preOffset = state.cursor.position.nextByteOffset;
+  if (
+    state.lastAppendSegment !== null &&
+    state.lastAppendPreOffset !== null &&
+    equalBytes(segment, state.lastAppendSegment) &&
+    cursor !== undefined &&
+    cursor.position.nextByteOffset === state.lastAppendPreOffset &&
+    cursor.source === state.cursor.source &&
+    cursor.generation === state.cursor.generation &&
+    cursor.groupId === state.cursor.groupId
+  ) {
     return { state, update: unchangedUpdate(state) };
+  }
+
+  const conflict = cursorConflict(state, cursor);
+  if (conflict) {
+    return { state, update: conflict };
   }
 
   const pending = state.pendingBytes;
@@ -1026,6 +1046,7 @@ export function applyAppend(
     const newState = cloneState(state);
     newState.pendingBytes = newPending.slice();
     newState.lastAppendSegment = segment.slice();
+    newState.lastAppendPreOffset = preOffset;
     newState.cursor = {
       ...newState.cursor,
       position: {
@@ -1055,6 +1076,7 @@ export function applyAppend(
 
   result.state.pendingBytes = newPending.slice();
   result.state.lastAppendSegment = segment.slice();
+  result.state.lastAppendPreOffset = preOffset;
   result.state.cursor = {
     ...result.state.cursor,
     position: {
@@ -1302,6 +1324,7 @@ export function resetStream(
   newState.snapshot = null;
   newState.groupLocked = false;
   newState.lastAppendSegment = null;
+  newState.lastAppendPreOffset = null;
   newState.cursor = {
     cursorVersion: 1,
     source: state.cursor.source,

@@ -378,5 +378,7 @@ class StreamState:
     next_revision: int = 0
     finished: bool = False
     group_locked: bool = False
-    # Last accepted append-bytes segment (raw input). Re-supply is idempotent.
+    # Last accepted append-bytes segment + pre-apply next_byte_offset.
+    # True replay requires re-supply with that pre-apply cursor (not content alone).
     last_append_segment: bytes | None = None
+    last_append_pre_offset: int | None = None

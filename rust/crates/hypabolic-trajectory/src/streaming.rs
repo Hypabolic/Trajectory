@@ -321,8 +321,11 @@ pub struct StreamState {
     pub finished: bool,
     /// Whether group is locked from material.
     pub group_locked: bool,
-    /// Last accepted append-bytes segment (raw input). Re-supply is idempotent.
+    /// Last accepted append-bytes segment + pre-apply next_byte_offset.
+    /// True replay requires re-supply with that pre-apply cursor (not content alone).
     pub last_append_segment: Option<Vec<u8>>,
+    /// `next_byte_offset` observed before the last accepted append.
+    pub last_append_pre_offset: Option<i64>,
 }
 
 /// Split complete LF-terminated lines from a pending tail.
@@ -829,6 +832,7 @@ pub fn create_stream(options: StreamOptions) -> StreamState {
         finished: false,
         group_locked: false,
         last_append_segment: None,
+        last_append_pre_offset: None,
     }
 }
 
@@ -1381,6 +1385,7 @@ pub fn apply_snapshot(
     new_state.next_revision = revision_num + 1;
     // Snapshot replaces committed material; clear append-replay fingerprint.
     new_state.last_append_segment = None;
+    new_state.last_append_pre_offset = None;
     Ok((new_state, update))
 }
 
@@ -1402,9 +1407,6 @@ pub fn apply_append(
             state.clone(),
             error_update(state, "invalid_input", "Stream is already finished."),
         ));
-    }
-    if let Some(conflict) = cursor_conflict(state, cursor) {
-        return Ok((state.clone(), conflict));
     }
     if let Some(max) = state.options.max_pending_bytes {
         if max < 0 {
@@ -1435,13 +1437,28 @@ pub fn apply_append(
         return Ok((state.clone(), unchanged(state)));
     }
 
-    // Replay of already-accepted append input is idempotent (unchanged).
-    if state
-        .last_append_segment
-        .as_ref()
-        .is_some_and(|last| last.as_slice() == segment)
-    {
-        return Ok((state.clone(), unchanged(state)));
+    // True append replay: same segment re-supplied with the pre-apply cursor.
+    // Content equality alone is not enough — successive identical growth segments
+    // must both commit after the cursor advances.
+    let pre_offset = state.cursor.position.next_byte_offset;
+    if let (Some(last), Some(last_pre)) = (
+        state.last_append_segment.as_ref(),
+        state.last_append_pre_offset,
+    ) {
+        if last.as_slice() == segment
+            && cursor.is_some_and(|c| {
+                c.position.next_byte_offset == last_pre
+                    && c.source == state.cursor.source
+                    && c.generation == state.cursor.generation
+                    && c.group_id == state.cursor.group_id
+            })
+        {
+            return Ok((state.clone(), unchanged(state)));
+        }
+    }
+
+    if let Some(conflict) = cursor_conflict(state, cursor) {
+        return Ok((state.clone(), conflict));
     }
 
     let mut combined = state.pending_bytes.clone();
@@ -1492,6 +1509,7 @@ pub fn apply_append(
         let mut new_state = state.clone();
         new_state.pending_bytes = new_pending;
         new_state.last_append_segment = Some(segment.to_vec());
+        new_state.last_append_pre_offset = Some(pre_offset);
         new_state.cursor.position.pending_byte_length = pending_len;
         let update = unchanged(&new_state);
         return Ok((new_state, update));
@@ -1513,6 +1531,7 @@ pub fn apply_append(
 
     new_state.pending_bytes = new_pending;
     new_state.last_append_segment = Some(segment.to_vec());
+    new_state.last_append_pre_offset = Some(pre_offset);
     new_state.cursor.position.pending_byte_length = pending_len;
     // Always copy patched cursor onto StreamUpdate (updated and unchanged).
     update.cursor = new_state.cursor.clone();
@@ -1735,6 +1754,7 @@ pub fn reset_stream(
     new_state.snapshot = None;
     new_state.group_locked = false;
     new_state.last_append_segment = None;
+    new_state.last_append_pre_offset = None;
     new_state.cursor = StreamCursor {
         cursor_version: 1,
         source: state.cursor.source.clone(),
@@ -2286,12 +2306,32 @@ mod tests {
         let opts = StreamOptions::new(TrajectorySource::Pi)
             .with_group_id("stream-duplicate-input-idempotent");
         let state = create_stream(opts);
+        let pre_cursor = state.cursor.clone();
         let (state, u1) = apply_append(&state, &line, None, Some("gen-0")).unwrap();
         assert_eq!(u1.kind, "updated");
         let prior = state.cursor.position.next_byte_offset;
-        let (state2, u2) = apply_append(&state, &line, None, Some("gen-0")).unwrap();
+        // True replay requires the pre-apply cursor; content alone is not enough.
+        let (state2, u2) =
+            apply_append(&state, &line, Some(&pre_cursor), Some("gen-0")).unwrap();
         assert_eq!(u2.kind, "unchanged");
         assert_eq!(state2.cursor.position.next_byte_offset, prior);
+    }
+
+    #[test]
+    fn identical_successive_appends_both_commit() {
+        let line = read_case("identical-successive-appends", "step-line.jsonl");
+        let opts = StreamOptions::new(TrajectorySource::Pi)
+            .with_group_id("stream-identical-successive-appends");
+        let state = create_stream(opts);
+        let (state, u1) = apply_append(&state, &line, None, Some("gen-0")).unwrap();
+        assert_eq!(u1.kind, "updated");
+        let (state2, u2) = apply_append(&state, &line, None, Some("gen-0")).unwrap();
+        assert_eq!(u2.kind, "updated");
+        assert_eq!(state2.committed_prefix.len(), line.len() * 2);
+        assert_eq!(
+            state2.cursor.position.next_byte_offset,
+            (line.len() * 2) as i64
+        );
     }
 
     #[test]

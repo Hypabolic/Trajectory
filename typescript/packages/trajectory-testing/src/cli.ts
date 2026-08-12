@@ -29,6 +29,7 @@ import {
   type StreamCursor,
   type StreamOptions,
   type StreamResetRequest,
+  type StreamSnapshot,
   type StreamState,
   type StreamUpdate,
   type TrajectorySource,
@@ -465,12 +466,29 @@ async function executeStreamSequence(
   for (const step of steps) {
     const stepId = typeof step.id === "string" ? step.id : "step";
     const double = step.double_invoke !== false;
+    const preCursor = state.cursor;
     let result = await applyStreamStep(state, caseDirectory, step.input);
     let update = result.update;
     state = result.state;
     let idempotent = true;
     if (double) {
-      const second = await applyStreamStep(state, caseDirectory, step.input);
+      let second: { state: StreamState; update: StreamUpdate };
+      // Append true-replay: re-supply with the cursor that governed the first apply.
+      if (
+        step.input.kind === "append-bytes" &&
+        (update.kind === "updated" || update.kind === "unchanged")
+      ) {
+        const replayCursor = parseStreamCursor(step.input.cursor) ?? preCursor;
+        const data = await loadStepBytes(caseDirectory, step.input);
+        second = applyAppend(
+          state,
+          data,
+          replayCursor,
+          step.input.source_revision ?? undefined,
+        );
+      } else {
+        second = await applyStreamStep(state, caseDirectory, step.input);
+      }
       if (update.kind === "updated" || update.kind === "unchanged") {
         idempotent =
           second.update.kind === "unchanged" ||
@@ -494,13 +512,14 @@ async function executeStreamSequence(
     const oracleState = createStream(streamOptionsFromManifest(manifest));
     const rev = state.cursor.sourceRevision ?? "oracle";
     const snap = applySnapshot(oracleState, state.committedPrefix, rev);
-    const appendIds = (state.snapshot?.records ?? []).map((r) => r.record.id);
-    const snapIds = (snap.update.snapshot?.records ?? []).map((r) => r.record.id);
     const ok =
       snap.update.kind === "updated" || snap.update.kind === "unchanged"
-        ? JSON.stringify(appendIds) === JSON.stringify(snapIds) &&
-          state.cursor.position.nextByteOffset === snap.state.cursor.position.nextByteOffset &&
-          state.cursor.prefixSha256 === snap.state.cursor.prefixSha256
+        ? oracleSnapshotsMatch(
+            state.snapshot,
+            snap.update.snapshot,
+            state.cursor,
+            snap.update.cursor,
+          )
         : false;
     const section: Record<string, boolean> = {};
     if (oracle.append_equals_prefix) section.append_equals_prefix = ok;
@@ -508,6 +527,58 @@ async function executeStreamSequence(
     payload.oracle = section;
   }
   return JSON.stringify(payload);
+}
+
+function recordParityKey(r: {
+  status: string;
+  record: { id?: string };
+  provisionalId?: string | null;
+  replacesProvisionalId?: string | null;
+  finalizesProvisionalId?: string | null;
+}): string {
+  return JSON.stringify([
+    r.record.id ?? "",
+    r.status,
+    r.provisionalId ?? null,
+    r.replacesProvisionalId ?? null,
+    r.finalizesProvisionalId ?? null,
+  ]);
+}
+
+function diagnosticParityKey(d: {
+  code: string;
+  message: string;
+  inputLine?: number | null;
+  recordIndex?: number | null;
+  count?: number | null;
+}): string {
+  return JSON.stringify([
+    d.code,
+    d.message,
+    d.inputLine ?? null,
+    d.recordIndex ?? null,
+    d.count ?? null,
+  ]);
+}
+
+function oracleSnapshotsMatch(
+  appendSnap: StreamSnapshot | null | undefined,
+  oracleSnap: StreamSnapshot | null | undefined,
+  appendCursor: StreamCursor,
+  oracleCursor: StreamCursor,
+): boolean {
+  if (!appendSnap || !oracleSnap) return !appendSnap && !oracleSnap;
+  const aKeys = appendSnap.records.map(recordParityKey);
+  const oKeys = oracleSnap.records.map(recordParityKey);
+  if (JSON.stringify(aKeys) !== JSON.stringify(oKeys)) return false;
+  const aDiags = appendSnap.diagnostics.map(diagnosticParityKey);
+  const oDiags = oracleSnap.diagnostics.map(diagnosticParityKey);
+  if (JSON.stringify(aDiags) !== JSON.stringify(oDiags)) return false;
+  if (appendSnap.complete !== oracleSnap.complete) return false;
+  return (
+    appendCursor.position.nextByteOffset === oracleCursor.position.nextByteOffset &&
+    appendCursor.prefixSha256 === oracleCursor.prefixSha256
+  );
 }
 
 async function executeListing(repositoryRoot: string, manifest: Manifest): Promise<string> {
