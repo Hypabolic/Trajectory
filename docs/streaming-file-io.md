@@ -201,5 +201,5 @@ if let Some(update) = stream.poll()? { ... }
 - AHP network clients (LS-10)
 - Sample `stream` CLI commands (LS-11)
 - Capability advertising (LS-12)
-- Hermes SQLite provider
+- Hermes SQLite provider (LS-07h — see `docs/streaming-hermes-provider.md`)
 - Multi-file home-directory supervisor

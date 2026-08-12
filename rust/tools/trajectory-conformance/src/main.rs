@@ -12,7 +12,7 @@ use hypabolic_trajectory::{
     SnapshotRevisionPosition, SourceContext, StreamCursor, StreamDelivery, StreamOptions,
     StreamPosition, StreamResetRequest, StreamSnapshot, StreamState, StreamUpdate, TrajectoryError,
     TrajectorySource, TruncationStrategy, apply_ahp_actions, apply_ahp_snapshot, apply_append,
-    apply_snapshot, create_stream, finish_stream, list_ahp_trajectories,
+    apply_hermes_export, apply_snapshot, create_stream, finish_stream, list_ahp_trajectories,
     list_claude_code_trajectories, list_codex_trajectories, list_grok_build_trajectories,
     list_hermes_trajectories, list_openclaw_trajectories, list_pi_trajectories, normalize_ahp,
     normalize_claude_code, normalize_codex, normalize_grok_build, normalize_hermes,
@@ -511,12 +511,17 @@ fn apply_stream_step(
             } else {
                 None
             };
+            let change_token = reset
+                .get("change_token")
+                .and_then(Value::as_str)
+                .map(str::to_string);
             let request = StreamResetRequest {
                 reason,
                 generation,
                 source_revision: rev,
                 prior_cursor: None,
                 material,
+                change_token,
             };
             reset_stream(state, &request).map_err(StreamEngineError::Fatal)
         }
@@ -534,9 +539,25 @@ fn apply_stream_step(
             let data = load_step_bytes(case_directory, step_input)?;
             apply_ahp_actions(state, &data, cursor.as_ref()).map_err(StreamEngineError::Fatal)
         }
-        "hermes-export" => Err(StreamEngineError::Unsupported(
-            "Stream input kind 'hermes-export' is not implemented in this slice.".into(),
-        )),
+        "hermes-export" => {
+            let data = load_step_bytes(case_directory, step_input)?;
+            let change_token = step_input
+                .get("change_token")
+                .and_then(Value::as_str);
+            let database_generation = step_input
+                .get("database_generation")
+                .and_then(Value::as_str)
+                .or(source_revision);
+            apply_hermes_export(
+                state,
+                &data,
+                change_token,
+                database_generation,
+                source_revision,
+                cursor.as_ref(),
+            )
+            .map_err(StreamEngineError::Fatal)
+        }
         other => Err(StreamEngineError::Protocol(format!(
             "Unsupported stream input kind '{other}'."
         ))),
@@ -567,20 +588,6 @@ fn execute_stream_sequence(
         .steps
         .as_ref()
         .ok_or_else(|| StreamEngineError::Protocol("steps required.".into()))?;
-    for step in steps {
-        if let Some(kind) = step
-            .get("input")
-            .and_then(|i| i.get("kind"))
-            .and_then(Value::as_str)
-        {
-            if kind == "hermes-export" {
-                return Err(StreamEngineError::Unsupported(format!(
-                    "Stream input kind '{kind}' is not implemented in this slice."
-                )));
-            }
-        }
-    }
-
     let mut state = create_stream(stream_options_from_manifest(manifest)?);
     let mut step_results = Vec::new();
     for step in steps {

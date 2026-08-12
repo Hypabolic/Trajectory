@@ -839,6 +839,7 @@ impl ClientCore {
                 .map(str::to_owned),
             prior_cursor: Some(prior),
             material: None,
+            change_token: None,
         };
         if let Ok((state, _)) = reset_stream(&self.state, &request) {
             self.state = state;

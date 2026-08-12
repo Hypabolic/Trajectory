@@ -24,6 +24,8 @@ otel = [
 io = []
 # LS-10 AHP client uses stdlib only (`hypabolic_trajectory.ahp_client`).
 ahp = []
+# LS-07h Hermes provider uses stdlib sqlite3 (`hypabolic_trajectory.hermes_provider`).
+hermes = []
 dev = [
   "pytest>=8.0",
   "jsonschema>=4.0",

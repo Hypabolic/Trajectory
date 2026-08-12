@@ -29,6 +29,7 @@ from hypabolic_trajectory.streaming.types import (
     STREAM_SCHEMA_ID,
     AhpServerSeqPosition,
     BytePosition,
+    HermesRowPosition,
     SnapshotRevisionPosition,
     StreamConsumed,
     StreamCursor,
@@ -57,7 +58,8 @@ _MSG_SOURCE_REPLACED = "Source material was replaced relative to the committed c
 _MSG_PREFIX_MISMATCH = "Committed prefix hash does not match supplied material."
 _MSG_UNSUPPORTED_INPUT = "Stream input kind is not supported for this source."
 _MSG_AHP_SOURCE_REQUIRED = "AHP stream apply requires source ahp."
-_MSG_HERMES_UNSUPPORTED = "Hermes export stream apply requires an optional provider."
+_MSG_HERMES_SOURCE_REQUIRED = "Hermes export stream apply requires source hermes."
+_MSG_INVALID_HERMES_EXPORT = "Hermes export material is not valid session-export JSON."
 _MSG_FINISHED = "Stream is already finished."
 _MSG_INVALID_SOURCE = "Unknown or invalid stream source."
 _MSG_SEQUENCE_GAP = "AHP action-log serverSeq gap requires snapshot resync."
@@ -79,6 +81,12 @@ def create_stream(options: StreamOptions) -> StreamState:
     group_id = options.group_id if options.group_id else "default"
     if source == TrajectorySource.AHP:
         position: Any = SnapshotRevisionPosition(revision="", content_sha256=None)
+    elif source == TrajectorySource.HERMES:
+        position = HermesRowPosition(
+            database_generation="",
+            last_row_id=None,
+            change_token=None,
+        )
     else:
         position = BytePosition(next_byte_offset=0, pending_byte_length=0)
     cursor = StreamCursor(
@@ -128,8 +136,13 @@ def apply_stream(state: StreamState, input: StreamInput) -> tuple[StreamState, S
     if input.kind == "ahp-actions":
         return apply_ahp_actions(state, input.data, cursor=input.cursor)
     if input.kind == "hermes-export":
-        return state, _error_update(
-            state, code=_STREAM_RESYNC_REQUIRED, message=_MSG_HERMES_UNSUPPORTED
+        return apply_hermes_export(
+            state,
+            input.data,
+            change_token=input.change_token,
+            database_generation=input.database_generation,
+            source_revision=input.source_revision,
+            cursor=input.cursor,
         )
     return state, _error_update(
         state, code="invalid_input", message=_MSG_UNSUPPORTED_INPUT
@@ -715,6 +728,180 @@ def apply_ahp_actions(
     return new_state, update
 
 
+def apply_hermes_export(
+    state: StreamState,
+    material: bytes,
+    *,
+    change_token: str | None = None,
+    database_generation: str | None = None,
+    source_revision: str | None = None,
+    cursor: StreamCursor | None = None,
+) -> tuple[StreamState, StreamUpdate]:
+    """Apply a Hermes session export (array or {session, messages}) — LS-07h.
+
+    Cursor family: ``hermes-row``. Core stays SQLite-free: callers (optional
+    provider packages) supply export JSON + change token. Prior-row mutation
+    (soft-delete / rewrite) requires reset when ordered active-row fingerprints
+    are not a pure prefix of the new export.
+    """
+    if type(material) is not bytes:
+        raise TypeError("material must be bytes")
+    if state.finished:
+        return state, _error_update(state, code="invalid_input", message=_MSG_FINISHED)
+
+    source = resolve_source(state.options.source)
+    if source != TrajectorySource.HERMES:
+        return state, _error_update(
+            state, code="invalid_input", message=_MSG_HERMES_SOURCE_REQUIRED
+        )
+
+    conflict = _cursor_conflict(state, cursor)
+    if conflict is not None:
+        return state, conflict
+
+    content_sha = sha256_hex(material)
+    meta = _hermes_export_meta(material)
+    if meta is None:
+        return state, _error_update(
+            state, code="invalid_input", message=_MSG_INVALID_HERMES_EXPORT
+        )
+    row_fps, last_row_id = meta
+    gen = (
+        database_generation
+        if database_generation is not None and database_generation != ""
+        else (
+            source_revision
+            if source_revision is not None and source_revision != ""
+            else "0"
+        )
+    )
+    token = change_token if change_token is not None and change_token != "" else content_sha
+
+    # Idempotent duplicate: same generation + token + content fingerprint.
+    if (
+        state.snapshot is not None
+        and state.hermes_last_export_sha == content_sha
+        and isinstance(state.cursor.position, HermesRowPosition)
+        and state.cursor.position.database_generation == gen
+        and state.cursor.position.change_token == token
+    ):
+        return state, _unchanged_update(state)
+
+    # Database generation change → full resync.
+    if (
+        state.snapshot is not None
+        and isinstance(state.cursor.position, HermesRowPosition)
+        and state.cursor.position.database_generation
+        and state.cursor.position.database_generation != gen
+    ):
+        return state, _reset_required(
+            state,
+            reason="source-replaced",
+            diagnostic_code=_STREAM_SOURCE_RESET,
+        )
+
+    # Prior-row mutation / soft-delete: committed fingerprints must be a pure
+    # ordered prefix of the new active-row fingerprint sequence.
+    prior_fps = state.hermes_row_fingerprints
+    if state.snapshot is not None and prior_fps is not None:
+        n = len(prior_fps)
+        if len(row_fps) < n or row_fps[:n] != prior_fps:
+            return state, _reset_required(
+                state,
+                reason="source-replaced",
+                diagnostic_code=_STREAM_SOURCE_RESET,
+            )
+
+    built = _build_records_from_prefix(state, material)
+    if isinstance(built, StreamUpdate):
+        return state, built
+    records, diagnostics, group_id = built
+
+    if not state.options.include_provisional:
+        records = tuple(r for r in records if r.status != "provisional")
+
+    new_state = _clone_state(state)
+    new_state.group_locked = True
+    generation = new_state.generation
+    parent_revision_id = (
+        new_state.snapshot.revision.revision_id
+        if new_state.snapshot is not None
+        else None
+    )
+    revision_num = new_state.next_revision
+    revision_id = _revision_id(
+        generation=generation,
+        revision=revision_num,
+        source=new_state.cursor.source,
+        group_id=group_id,
+        prefix_sha=content_sha,
+        record_ids=tuple(r.record["id"] for r in records),
+    )
+    revision = StreamRevision(
+        revision=revision_num,
+        revision_id=revision_id,
+        parent_revision_id=parent_revision_id,
+        complete=False,
+        generation=generation,
+    )
+    snapshot = StreamSnapshot(
+        source=new_state.cursor.source,
+        group_id=group_id,
+        revision=revision,
+        records=records,
+        diagnostics=diagnostics,
+        complete=False,
+    )
+    delta = diff_snapshots(new_state.snapshot, snapshot, revision=revision)
+    out_snapshot, out_delta = _apply_delivery(snapshot, delta, state.options.delivery)
+
+    cursor_out = StreamCursor(
+        source=new_state.cursor.source,
+        group_id=group_id,
+        generation=generation,
+        position=HermesRowPosition(
+            database_generation=gen,
+            last_row_id=last_row_id,
+            change_token=token,
+        ),
+        source_revision=source_revision if source_revision is not None else gen,
+        prefix_sha256=content_sha,
+    )
+    provisional_ids = tuple(
+        r.provisional_id for r in records if r.provisional_id is not None
+    )
+    update = StreamUpdate(
+        kind="updated",
+        revision=revision,
+        cursor=cursor_out,
+        snapshot=out_snapshot,
+        delta=out_delta,
+        diagnostics=diagnostics,
+        provisional=StreamProvisionalInfo(
+            include=state.options.include_provisional,
+            provisional_ids=provisional_ids,
+            finalized_ids=(),
+        ),
+        consumed=StreamConsumed(
+            complete_records=len(records),
+            bytes=len(material),
+            first_source_position=0 if material else None,
+            last_source_position=(len(material) - 1) if material else None,
+        ),
+    )
+
+    new_state.cursor = cursor_out
+    new_state.snapshot = snapshot
+    new_state.next_revision = revision_num + 1
+    new_state.committed_prefix = bytearray()
+    new_state.pending_bytes = bytearray()
+    new_state.last_append_segment = None
+    new_state.last_append_pre_offset = None
+    new_state.hermes_row_fingerprints = row_fps
+    new_state.hermes_last_export_sha = content_sha
+    return new_state, update
+
+
 def apply_append(
     state: StreamState,
     segment: bytes,
@@ -1033,10 +1220,18 @@ def reset_stream(
     new_state.ahp_last_content_sha256 = None
     new_state.last_ahp_actions_sha256 = None
     new_state.last_ahp_actions_pre_seq = None
+    new_state.hermes_row_fingerprints = None
+    new_state.hermes_last_export_sha = None
     group_id = state.options.group_id or state.cursor.group_id
     source = resolve_source(state.options.source)
     if source == TrajectorySource.AHP:
         pos: Any = SnapshotRevisionPosition(revision=request.source_revision or "", content_sha256=None)
+    elif source == TrajectorySource.HERMES:
+        pos = HermesRowPosition(
+            database_generation=request.source_revision or "",
+            last_row_id=None,
+            change_token=request.change_token,
+        )
     else:
         pos = BytePosition(next_byte_offset=0, pending_byte_length=0)
     new_state.cursor = StreamCursor(
@@ -1057,12 +1252,22 @@ def reset_stream(
         dropped_record_ids=dropped,
     )
     if request.material is not None:
-        new_state, update = apply_snapshot(
-            new_state,
-            request.material,
-            source_revision=request.source_revision or "",
-            cursor=None,
-        )
+        if source == TrajectorySource.HERMES:
+            new_state, update = apply_hermes_export(
+                new_state,
+                request.material,
+                change_token=request.change_token,
+                database_generation=request.source_revision,
+                source_revision=request.source_revision,
+                cursor=None,
+            )
+        else:
+            new_state, update = apply_snapshot(
+                new_state,
+                request.material,
+                source_revision=request.source_revision or "",
+                cursor=None,
+            )
         if update.kind not in {"updated", "unchanged"}:
             return new_state, update
         # Merge reset envelope onto successful post-reset snapshot update.
@@ -1137,7 +1342,7 @@ def reset_stream(
         source=new_state.cursor.source,
         group_id=group_id,
         generation=generation,
-        position=BytePosition(next_byte_offset=0, pending_byte_length=0),
+        position=pos,
         source_revision=request.source_revision,
         prefix_sha256=sha256_hex(b""),
     )
@@ -1218,6 +1423,25 @@ class TrajectoryStream:
         self._state, update = apply_ahp_actions(self._state, data, cursor=cursor)
         return update
 
+    def apply_hermes_export(
+        self,
+        data: bytes,
+        *,
+        change_token: str | None = None,
+        database_generation: str | None = None,
+        source_revision: str | None = None,
+        cursor: StreamCursor | None = None,
+    ) -> StreamUpdate:
+        self._state, update = apply_hermes_export(
+            self._state,
+            data,
+            change_token=change_token,
+            database_generation=database_generation,
+            source_revision=source_revision,
+            cursor=cursor,
+        )
+        return update
+
     def finish(self) -> StreamUpdate:
         self._state, update = finish_stream(self._state)
         return update
@@ -1260,6 +1484,8 @@ def _clone_state(state: StreamState) -> StreamState:
         ahp_last_content_sha256=state.ahp_last_content_sha256,
         last_ahp_actions_sha256=state.last_ahp_actions_sha256,
         last_ahp_actions_pre_seq=state.last_ahp_actions_pre_seq,
+        hermes_row_fingerprints=state.hermes_row_fingerprints,
+        hermes_last_export_sha=state.hermes_last_export_sha,
     )
 
 
@@ -1336,6 +1562,20 @@ def _cursor_conflict(
         if (
             cursor.position.last_server_seq != current.position.last_server_seq
             or cursor.position.next_server_seq != current.position.next_server_seq
+        ):
+            return _reset_required(
+                state,
+                reason="cursor-mismatch",
+                diagnostic_code=_STREAM_CURSOR_CONFLICT,
+            )
+    # Hermes-row cursor
+    if isinstance(cursor.position, HermesRowPosition) and isinstance(
+        current.position, HermesRowPosition
+    ):
+        if (
+            cursor.position.database_generation != current.position.database_generation
+            or cursor.position.last_row_id != current.position.last_row_id
+            or cursor.position.change_token != current.position.change_token
         ):
             return _reset_required(
                 state,
@@ -1522,6 +1762,85 @@ def _record_from_active_turn(record: dict[str, Any], active_ids: set[str]) -> bo
         if isinstance(val, str) and val in active_ids:
             return True
     return False
+
+
+def _hermes_export_meta(
+    material: bytes,
+) -> tuple[tuple[str, ...], int | None] | None:
+    """Parse Hermes export → ordered active-row fingerprints + last numeric row id.
+
+    Soft-deleted (active=0/false) rows are excluded, matching the decode path.
+    Returns None when the payload is not a valid export shape.
+    """
+    import json
+
+    try:
+        parsed = json.loads(material.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError):
+        return None
+
+    if isinstance(parsed, list):
+        messages = parsed
+    elif isinstance(parsed, dict) and isinstance(parsed.get("messages"), list):
+        messages = parsed["messages"]
+    else:
+        return None
+
+    if not all(isinstance(m, dict) for m in messages):
+        return None
+
+    active: list[dict[str, Any]] = []
+    for row in messages:
+        active_flag = row.get("active", 1)
+        if active_flag in (0, False, "0"):
+            continue
+        active.append(row)
+
+    # Order by numeric id when every active row has a numeric id (decode peer).
+    if active and all(_hermes_is_number_id(r.get("id")) for r in active):
+        indexed = list(enumerate(active))
+        indexed.sort(key=lambda item: (int(item[1]["id"]), item[0]))
+        active = [r for _, r in indexed]
+        last_row_id: int | None = int(active[-1]["id"]) if active else None
+    else:
+        last_row_id = None
+
+    fps: list[str] = []
+    for row in active:
+        # Content-safe fingerprint: no raw prose in stream state beyond hashes.
+        fps.append(sha256_hex(_hermes_row_fingerprint_bytes(row)))
+    return tuple(fps), last_row_id
+
+
+def _hermes_is_number_id(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    if isinstance(value, float):
+        return value.is_integer()
+    return False
+
+
+def _hermes_row_fingerprint_bytes(row: dict[str, Any]) -> bytes:
+    """Stable bytes for one Hermes message row (id + active-relevant fields)."""
+    import json
+
+    # Compact deterministic subset — identity + payload fields the decoder uses.
+    subset = {
+        "id": row.get("id"),
+        "role": row.get("role"),
+        "content": row.get("content"),
+        "tool_call_id": row.get("tool_call_id"),
+        "tool_name": row.get("tool_name"),
+        "tool_calls": row.get("tool_calls"),
+        "finish_reason": row.get("finish_reason"),
+        "timestamp": row.get("timestamp"),
+        "active": row.get("active", 1),
+    }
+    return json.dumps(subset, separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode(
+        "utf-8"
+    )
 
 
 def _build_records_from_prefix(

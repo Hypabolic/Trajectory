@@ -86,7 +86,18 @@ export interface SnapshotRevisionPosition {
   readonly contentSha256?: string | null;
 }
 
-export type StreamPosition = BytePosition | AhpServerSeqPosition | SnapshotRevisionPosition;
+export interface HermesRowPosition {
+  readonly kind: "hermes-row";
+  readonly databaseGeneration: string;
+  readonly lastRowId?: number | null;
+  readonly changeToken?: string | null;
+}
+
+export type StreamPosition =
+  | BytePosition
+  | AhpServerSeqPosition
+  | SnapshotRevisionPosition
+  | HermesRowPosition;
 
 export interface StreamCursor {
   readonly cursorVersion: 1;
@@ -166,14 +177,6 @@ export interface StreamReset {
   readonly droppedRecordIds: readonly string[];
 }
 
-export interface StreamResetRequest {
-  readonly reason: StreamResetReason;
-  readonly generation?: bigint;
-  readonly sourceRevision?: string | null;
-  readonly priorCursor?: StreamCursor | null;
-  readonly material?: Uint8Array;
-}
-
 export interface StreamUpdate {
   readonly kind: StreamUpdateKind;
   readonly revision: StreamRevision;
@@ -222,6 +225,9 @@ export interface StreamState {
   ahpLastContentSha256: string | null;
   lastAhpActionsSha256: string | null;
   lastAhpActionsPreSeq: number | null;
+  /** Hermes export stream state (LS-07h). */
+  hermesRowFingerprints: string[] | null;
+  hermesLastExportSha: string | null;
 }
 
 export type StreamInputKind =
@@ -239,6 +245,17 @@ export interface StreamInput {
   readonly sourceRevision?: string;
   readonly cursor?: StreamCursor;
   readonly reset?: StreamResetRequest;
+  readonly changeToken?: string;
+  readonly databaseGeneration?: string;
+}
+
+export interface StreamResetRequest {
+  readonly reason: StreamResetReason;
+  readonly generation?: bigint;
+  readonly sourceRevision?: string | null;
+  readonly priorCursor?: StreamCursor | null;
+  readonly material?: Uint8Array;
+  readonly changeToken?: string | null;
 }
 
 const LF = 0x0a;
@@ -248,7 +265,8 @@ const MSG_BUFFER_LIMIT_DOMAIN = "Stream buffer limits must be non-negative int64
 const MSG_CURSOR_DOMAIN = "Stream cursor byte positions must be non-negative int64 values.";
 const MSG_MATERIAL_DOMAIN = "Stream material length exceeds non-negative int64 domain.";
 const MSG_AHP_SOURCE_REQUIRED = "AHP stream apply requires source ahp.";
-const MSG_HERMES_UNSUPPORTED = "Hermes export stream apply requires an optional provider.";
+const MSG_HERMES_SOURCE_REQUIRED = "Hermes export stream apply requires source hermes.";
+const MSG_INVALID_HERMES_EXPORT = "Hermes export material is not valid session-export JSON.";
 const MSG_UNSUPPORTED_INPUT = "Stream input kind is not supported for this source.";
 const MSG_SEQUENCE_GAP = "AHP action-log serverSeq gap requires snapshot resync.";
 const MSG_INVALID_AHP_ACTIONS = "AHP action batch could not be parsed.";
@@ -407,6 +425,17 @@ export function cursorToDict(c: StreamCursor): JsonObject {
     };
     if (c.position.nextByteOffset !== undefined) {
       position.next_byte_offset = int64ToJson(c.position.nextByteOffset);
+    }
+  } else if (c.position.kind === "hermes-row") {
+    position = {
+      kind: "hermes-row",
+      database_generation: c.position.databaseGeneration,
+    };
+    if (c.position.lastRowId != null) {
+      position.last_row_id = c.position.lastRowId;
+    }
+    if (c.position.changeToken != null) {
+      position.change_token = c.position.changeToken;
     }
   } else {
     position = {
@@ -627,6 +656,8 @@ function cloneState(state: StreamState): StreamState {
     ahpLastContentSha256: state.ahpLastContentSha256,
     lastAhpActionsSha256: state.lastAhpActionsSha256,
     lastAhpActionsPreSeq: state.lastAhpActionsPreSeq,
+    hermesRowFingerprints: state.hermesRowFingerprints,
+    hermesLastExportSha: state.hermesLastExportSha,
   };
 }
 
@@ -715,10 +746,14 @@ function resetRequired(
 
 export function createStream(options: StreamOptions): StreamState {
   const groupId = options.groupId ?? "default";
-  const position: StreamPosition =
-    options.source === "ahp"
-      ? { kind: "snapshot-revision", revision: "", contentSha256: null }
-      : { kind: "byte", nextByteOffset: 0n, pendingByteLength: 0n };
+  let position: StreamPosition;
+  if (options.source === "ahp") {
+    position = { kind: "snapshot-revision", revision: "", contentSha256: null };
+  } else if (options.source === "hermes") {
+    position = { kind: "hermes-row", databaseGeneration: "", lastRowId: null, changeToken: null };
+  } else {
+    position = { kind: "byte", nextByteOffset: 0n, pendingByteLength: 0n };
+  }
   return {
     options,
     cursor: {
@@ -748,6 +783,8 @@ export function createStream(options: StreamOptions): StreamState {
     ahpLastContentSha256: null,
     lastAhpActionsSha256: null,
     lastAhpActionsPreSeq: null,
+    hermesRowFingerprints: null,
+    hermesLastExportSha: null,
   };
 }
 
@@ -895,6 +932,23 @@ function cursorConflict(state: StreamState, cursor: StreamCursor | undefined): S
       "stream_cursor_conflict",
       "Supplied stream cursor does not match stream state.",
     );
+  }
+  if (
+    cursor.position.kind === "hermes-row" &&
+    state.cursor.position.kind === "hermes-row"
+  ) {
+    if (
+      cursor.position.databaseGeneration !== state.cursor.position.databaseGeneration ||
+      cursor.position.lastRowId !== state.cursor.position.lastRowId ||
+      cursor.position.changeToken !== state.cursor.position.changeToken
+    ) {
+      return resetRequired(
+        state,
+        "cursor-mismatch",
+        "stream_cursor_conflict",
+        "Supplied stream cursor does not match stream state.",
+      );
+    }
   }
   return null;
 }
@@ -1736,10 +1790,248 @@ export function applyStream(
     return applyAhpActions(state, input.data ?? new Uint8Array(0), input.cursor);
   }
   if (input.kind === "hermes-export") {
-    return { state, update: errorUpdate(state, "stream_resync_required", MSG_HERMES_UNSUPPORTED) };
+    return applyHermesExport(
+      state,
+      input.data ?? new Uint8Array(0),
+      input.changeToken,
+      input.databaseGeneration,
+      input.sourceRevision,
+      input.cursor,
+    );
   }
   return { state, update: errorUpdate(state, "invalid_input", MSG_UNSUPPORTED_INPUT) };
 }
+
+/** LS-07h: apply Hermes session export (array or {session, messages}). */
+export function applyHermesExport(
+  state: StreamState,
+  material: Uint8Array,
+  changeToken?: string | null,
+  databaseGeneration?: string | null,
+  sourceRevision?: string | null,
+  cursor?: StreamCursor,
+): { state: StreamState; update: StreamUpdate } {
+  if (state.finished) {
+    return { state, update: errorUpdate(state, "invalid_input", "Stream is already finished.") };
+  }
+  if (state.options.source !== "hermes") {
+    return { state, update: errorUpdate(state, "invalid_input", MSG_HERMES_SOURCE_REQUIRED) };
+  }
+  const conflict = cursorConflict(state, cursor);
+  if (conflict) return { state, update: conflict };
+
+  const contentSha = sha256Hex(material);
+  const meta = hermesExportMeta(material);
+  if (!meta) {
+    return { state, update: errorUpdate(state, "invalid_input", MSG_INVALID_HERMES_EXPORT) };
+  }
+  const { rowFingerprints, lastRowId } = meta;
+  const gen =
+    databaseGeneration && databaseGeneration.length > 0
+      ? databaseGeneration
+      : sourceRevision && sourceRevision.length > 0
+        ? sourceRevision
+        : "0";
+  const token =
+    changeToken && changeToken.length > 0 ? changeToken : contentSha;
+
+  if (
+    state.snapshot !== null &&
+    state.hermesLastExportSha === contentSha &&
+    state.cursor.position.kind === "hermes-row" &&
+    state.cursor.position.databaseGeneration === gen &&
+    state.cursor.position.changeToken === token
+  ) {
+    return { state, update: unchangedUpdate(state) };
+  }
+
+  if (
+    state.snapshot !== null &&
+    state.cursor.position.kind === "hermes-row" &&
+    state.cursor.position.databaseGeneration &&
+    state.cursor.position.databaseGeneration !== gen
+  ) {
+    return {
+      state,
+      update: resetRequired(
+        state,
+        "source-replaced",
+        "stream_source_reset",
+        "Source material was replaced relative to the committed cursor.",
+      ),
+    };
+  }
+
+  const priorFps = state.hermesRowFingerprints;
+  if (state.snapshot !== null && priorFps !== null) {
+    const n = priorFps.length;
+    if (
+      rowFingerprints.length < n ||
+      !priorFps.every((fp, i) => fp === rowFingerprints[i])
+    ) {
+      return {
+        state,
+        update: resetRequired(
+          state,
+          "source-replaced",
+          "stream_source_reset",
+          "Source material was replaced relative to the committed cursor.",
+        ),
+      };
+    }
+  }
+
+  const built = buildRecords(state, material);
+  if ("kind" in built) return { state, update: built };
+  let { records, diagnostics, groupId } = built;
+  if (state.options.includeProvisional === false) {
+    records = records.filter((r) => r.status !== "provisional");
+  }
+
+  const newState = cloneState(state);
+  newState.groupLocked = true;
+  const generation = newState.generation;
+  const parentRevisionId = newState.snapshot?.revision.revisionId ?? null;
+  const revisionNum = newState.nextRevision;
+  const revId = revisionId(
+    generation,
+    revisionNum,
+    newState.cursor.source,
+    groupId,
+    contentSha,
+    records.map((r) => String(r.record.id ?? "")),
+  );
+  const revision: StreamRevision = {
+    revision: revisionNum,
+    revisionId: revId,
+    parentRevisionId,
+    complete: false,
+    generation,
+  };
+  const snapshot: StreamSnapshot = {
+    schemaId: STREAM_SCHEMA_ID,
+    source: newState.cursor.source,
+    groupId,
+    revision,
+    records,
+    diagnostics,
+    complete: false,
+  };
+  const delta = diffSnapshots(newState.snapshot, snapshot, revision);
+  const delivery = state.options.delivery ?? "both";
+  const delivered = applyDelivery(snapshot, delta, delivery);
+  const cursorOut: StreamCursor = {
+    cursorVersion: 1,
+    source: newState.cursor.source,
+    groupId,
+    generation,
+    position: {
+      kind: "hermes-row",
+      databaseGeneration: gen,
+      lastRowId,
+      changeToken: token,
+    },
+    sourceRevision: sourceRevision ?? gen,
+    prefixSha256: contentSha,
+  };
+  const provisionalIds = records
+    .map((r) => r.provisionalId)
+    .filter((id): id is string => typeof id === "string");
+  const update: StreamUpdate = {
+    kind: "updated",
+    revision,
+    cursor: cursorOut,
+    snapshot: delivered.snapshot,
+    delta: delivered.delta,
+    diagnostics,
+    provisional: {
+      include: state.options.includeProvisional !== false,
+      provisionalIds,
+      finalizedIds: [],
+    },
+    consumed: {
+      completeRecords: BigInt(records.length),
+      bytes: BigInt(material.length),
+      ...(material.length > 0
+        ? {
+            firstSourcePosition: 0n,
+            lastSourcePosition: BigInt(material.length - 1),
+          }
+        : {}),
+    },
+  };
+  newState.cursor = cursorOut;
+  newState.snapshot = snapshot;
+  newState.nextRevision = revisionNum + 1n;
+  newState.committedPrefix = new Uint8Array(0);
+  newState.pendingBytes = new Uint8Array(0);
+  newState.lastAppendSegment = null;
+  newState.lastAppendPreOffset = null;
+  newState.hermesRowFingerprints = rowFingerprints;
+  newState.hermesLastExportSha = contentSha;
+  return { state: newState, update };
+}
+
+function hermesExportMeta(
+  material: Uint8Array,
+): { rowFingerprints: string[]; lastRowId: number | null } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(material));
+  } catch {
+    return null;
+  }
+  let messages: unknown[];
+  if (Array.isArray(parsed)) {
+    messages = parsed;
+  } else if (
+    parsed &&
+    typeof parsed === "object" &&
+    Array.isArray((parsed as { messages?: unknown }).messages)
+  ) {
+    messages = (parsed as { messages: unknown[] }).messages;
+  } else {
+    return null;
+  }
+  if (!messages.every((m) => m && typeof m === "object" && !Array.isArray(m))) {
+    return null;
+  }
+  let active = (messages as JsonObject[]).filter((row) => {
+    const a = row.active ?? 1;
+    return a !== 0 && a !== false && a !== "0";
+  });
+  let lastRowId: number | null = null;
+  if (active.length > 0 && active.every((r) => hermesIsNumberId(r.id))) {
+    active = [...active].sort((a, b) => Number(a.id) - Number(b.id));
+    lastRowId = Number(active[active.length - 1]!.id);
+  }
+  const rowFingerprints = active.map((row) =>
+    sha256Hex(
+      new TextEncoder().encode(
+        JSON.stringify({
+          id: row.id,
+          role: row.role,
+          content: row.content,
+          tool_call_id: row.tool_call_id,
+          tool_name: row.tool_name,
+          tool_calls: row.tool_calls,
+          finish_reason: row.finish_reason,
+          timestamp: row.timestamp,
+          active: row.active ?? 1,
+        }),
+      ),
+    ),
+  );
+  return { rowFingerprints, lastRowId };
+}
+
+function hermesIsNumberId(value: unknown): boolean {
+  if (typeof value === "boolean") return false;
+  if (typeof value === "number") return Number.isInteger(value);
+  return false;
+}
+
+
 
 /** End-of-stream: optionally commit final unterminated line; finalize records. */
 export function finishStream(state: StreamState): { state: StreamState; update: StreamUpdate } {
@@ -1899,14 +2191,25 @@ export function resetStream(
   newState.ahpLastContentSha256 = null;
   newState.lastAhpActionsSha256 = null;
   newState.lastAhpActionsPreSeq = null;
-  const resetPosition: StreamPosition =
-    state.options.source === "ahp"
-      ? {
-          kind: "snapshot-revision",
-          revision: request.sourceRevision ?? "",
-          contentSha256: null,
-        }
-      : { kind: "byte", nextByteOffset: 0n, pendingByteLength: 0n };
+  newState.hermesRowFingerprints = null;
+  newState.hermesLastExportSha = null;
+  let resetPosition: StreamPosition;
+  if (state.options.source === "ahp") {
+    resetPosition = {
+      kind: "snapshot-revision",
+      revision: request.sourceRevision ?? "",
+      contentSha256: null,
+    };
+  } else if (state.options.source === "hermes") {
+    resetPosition = {
+      kind: "hermes-row",
+      databaseGeneration: request.sourceRevision ?? "",
+      lastRowId: null,
+      changeToken: request.changeToken ?? null,
+    };
+  } else {
+    resetPosition = { kind: "byte", nextByteOffset: 0n, pendingByteLength: 0n };
+  }
   newState.cursor = {
     cursorVersion: 1,
     source: state.cursor.source,
@@ -1924,7 +2227,17 @@ export function resetStream(
     droppedRecordIds: dropped,
   };
   if (request.material) {
-    const result = applySnapshot(
+    const result =
+      state.options.source === "hermes"
+        ? applyHermesExport(
+            newState,
+            request.material,
+            request.changeToken,
+            request.sourceRevision,
+            request.sourceRevision,
+            undefined,
+          )
+        : applySnapshot(
       newState,
       request.material,
       request.sourceRevision ?? "",
@@ -1998,7 +2311,7 @@ export function resetStream(
     source: newState.cursor.source,
     groupId,
     generation,
-    position: { kind: "byte", nextByteOffset: 0n, pendingByteLength: 0n },
+    position: resetPosition,
     sourceRevision: request.sourceRevision ?? null,
     prefixSha256: emptySha,
   };
@@ -2062,6 +2375,27 @@ export class TrajectoryStream {
 
   applyAppend(data: Uint8Array, cursor?: StreamCursor, sourceRevision?: string): StreamUpdate {
     const result = applyAppend(this.#state, data, cursor, sourceRevision);
+    this.#state = result.state;
+    return result.update;
+  }
+
+  applyHermesExport(
+    data: Uint8Array,
+    opts?: {
+      changeToken?: string | null;
+      databaseGeneration?: string | null;
+      sourceRevision?: string | null;
+      cursor?: StreamCursor;
+    },
+  ): StreamUpdate {
+    const result = applyHermesExport(
+      this.#state,
+      data,
+      opts?.changeToken,
+      opts?.databaseGeneration,
+      opts?.sourceRevision,
+      opts?.cursor,
+    );
     this.#state = result.state;
     return result.update;
   }

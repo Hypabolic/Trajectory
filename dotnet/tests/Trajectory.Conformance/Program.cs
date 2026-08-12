@@ -313,22 +313,6 @@ internal static class ConformanceProgram
             throw new ProtocolException("Stream sequence requires steps[].");
         }
 
-        foreach (var step in stepsEl.EnumerateArray())
-        {
-            if (!step.TryGetProperty("input", out var input) ||
-                !input.TryGetProperty("kind", out var kindEl))
-            {
-                continue;
-            }
-
-            var kind = kindEl.GetString();
-            if (kind is "hermes-export")
-            {
-                throw new StreamEngineUnsupportedException(
-                    $"Stream input kind '{kind}' is not implemented in this slice.");
-            }
-        }
-
         var state = TrajectoryStream.Create(StreamOptionsFromManifest(manifest));
         var stepResults = new List<object?>();
         foreach (var step in stepsEl.EnumerateArray())
@@ -790,6 +774,15 @@ internal static class ConformanceProgram
                 Revision = OptionalString(position, "revision") ?? "",
                 ContentSha256 = OptionalString(position, "content_sha256"),
             },
+            "hermes-row" => new HermesRowPosition
+            {
+                DatabaseGeneration = OptionalString(position, "database_generation") ?? "",
+                LastRowId = position.TryGetProperty("last_row_id", out var lri) &&
+                    lri.ValueKind == JsonValueKind.Number
+                    ? lri.GetInt64()
+                    : null,
+                ChangeToken = OptionalString(position, "change_token"),
+            },
             _ => throw new ProtocolException($"Unsupported stream cursor position kind '{kind}'."),
         };
 
@@ -837,9 +830,13 @@ internal static class ConformanceProgram
                 cursor),
             "finish" => TrajectoryStream.Finish(state),
             "reset" => await ApplyResetStepAsync(state, caseDirectory, stepInput),
-            "hermes-export" =>
-                throw new StreamEngineUnsupportedException(
-                    $"Stream input kind '{kind}' is not implemented in this slice."),
+            "hermes-export" => TrajectoryStream.ApplyHermesExport(
+                state,
+                await LoadStepBytesAsync(caseDirectory, stepInput),
+                OptionalString(stepInput, "change_token"),
+                OptionalString(stepInput, "database_generation") ?? sourceRevision,
+                sourceRevision,
+                cursor),
             _ => throw new ProtocolException($"Unsupported stream input kind '{kind}'."),
         };
     }
@@ -901,6 +898,10 @@ internal static class ConformanceProgram
             (SnapshotRevisionPosition sa, SnapshotRevisionPosition sb) =>
                 sa.Revision == sb.Revision &&
                 sa.ContentSha256 == sb.ContentSha256,
+            (HermesRowPosition ha, HermesRowPosition hb) =>
+                ha.DatabaseGeneration == hb.DatabaseGeneration &&
+                ha.LastRowId == hb.LastRowId &&
+                ha.ChangeToken == hb.ChangeToken,
             _ => false,
         };
 

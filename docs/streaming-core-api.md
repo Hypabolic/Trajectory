@@ -1,8 +1,8 @@
-# Streaming core API (LS-03 / LS-04 / LS-05 / LS-06 / LS-07)
+# Streaming core API (LS-03 / LS-04 / LS-05 / LS-06 / LS-07 / LS-07h)
 
 Pure library surface for live session streaming. Callers own I/O and scheduling;
 core owns framing, state, snapshot + append apply, AHP snapshot/action-log
-apply, stable-id diff, and cursors.
+apply, Hermes export apply, stable-id diff, and cursors.
 
 Normative contracts: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md),
 product design: [`live-session-streaming.md`](live-session-streaming.md).
@@ -27,12 +27,21 @@ apply_snapshot(state, material, source_revision, cursor?) → (state, StreamUpda
 apply_append(state, segment, cursor?, source_revision?) → (state, StreamUpdate)
 apply_ahp_snapshot(state, shape_a_bytes, source_revision, cursor?) → (state, StreamUpdate)
 apply_ahp_actions(state, action_batch, cursor?) → (state, StreamUpdate)
+apply_hermes_export(state, export_json, change_token?, database_generation?, cursor?) → (state, StreamUpdate)
 ```
 
 - **`StreamCursor`** — public, serializable committed position (version 1).
 - **`StreamState`** — runtime-local algorithm state (pending buffer, last snapshot,
   generation, locked group). Not a cross-language wire format.
 - Portable resume is **cursor + re-apply source material**, not serialized IR.
+
+## `apply_hermes_export` (LS-07h)
+
+Hermes is **not** JSONL file-tail. Callers (optional provider packages) supply
+session-export JSON + change token. Cursor family is `hermes-row`. Soft-delete
+or prior-row mutation that breaks the ordered active-row fingerprint prefix
+returns `reset-required` / `source-replaced`. See
+[`streaming-hermes-provider.md`](streaming-hermes-provider.md).
 
 ## Create
 

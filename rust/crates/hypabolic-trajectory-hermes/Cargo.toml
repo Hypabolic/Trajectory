@@ -1,0 +1,25 @@
+[package]
+name = "hypabolic-trajectory-hermes"
+description = "Optional Hermes SQLite/provider streaming for Hypabolic Trajectory (query rows; never byte-tail state.db)"
+readme = "README.md"
+keywords = ["agents", "transcripts", "streaming", "hermes"]
+categories = ["development-tools", "database"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+hypabolic-trajectory.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+
+[features]
+default = ["sqlite"]
+sqlite = ["dep:rusqlite"]
+
+[lints]
+workspace = true

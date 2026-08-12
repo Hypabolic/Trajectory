@@ -38,8 +38,10 @@ Protocol:
   (`stream-apply-append`, …) remain in the protocol enum for dedicated harnesses.
 - Response status may be `success`, `fatal-error`, `protocol-error`, or
   `unsupported`. `unsupported` is skipped (not failed) by `verify.py` for
-  optional paths (e.g. Hermes export until a provider lands). Core file JSONL
-  + AHP cases must return `success` on all four runners (LS-08).
+  optional paths still in flight. Core file JSONL + AHP cases must return
+  `success` on all four runners (LS-08). Hermes export (`hermes-export`) is
+  implemented in core engines (LS-07h); optional SQLite provider packages are
+  separate and not required for `stream-sequence` success.
 - Runners double-invoke each step when `double_invoke` is true (default) and
   report `idempotent: true` in the step result.
 

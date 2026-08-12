@@ -15,6 +15,7 @@ import {
   applyAhpActions,
   applyAhpSnapshot,
   applyAppend,
+  applyHermesExport,
   applySnapshot,
   createStream,
   finishStream,
@@ -101,12 +102,15 @@ interface StreamStep {
     inline_utf8?: string;
     source_revision?: string | null;
     cursor?: Record<string, unknown>;
+    change_token?: string;
+    database_generation?: string;
     reset?: {
       reason: string;
       generation?: number;
       source_revision?: string | null;
       material?: string;
       inline_utf8?: string;
+      change_token?: string;
     };
   };
   expected?: Record<string, unknown>;
@@ -398,9 +402,21 @@ function parseStreamCursor(raw: Record<string, unknown> | undefined): StreamCurs
       contentSha256:
         typeof position.content_sha256 === "string" ? position.content_sha256 : null,
     };
+  } else if (position.kind === "hermes-row") {
+    if (typeof position.database_generation !== "string") {
+      throw new Error("hermes-row.database_generation must be a string.");
+    }
+    pos = {
+      kind: "hermes-row",
+      databaseGeneration: position.database_generation,
+      lastRowId:
+        typeof position.last_row_id === "number" ? position.last_row_id : null,
+      changeToken:
+        typeof position.change_token === "string" ? position.change_token : null,
+    };
   } else {
     throw new Error(
-      "Stream cursor position.kind must be byte, ahp-server-seq, or snapshot-revision.",
+      "Stream cursor position.kind must be byte, ahp-server-seq, snapshot-revision, or hermes-row.",
     );
   }
   return {
@@ -460,8 +476,20 @@ async function applyStreamStep(
     return applyAhpActions(state, data, cursor);
   }
   if (kind === "hermes-export") {
-    throw new StreamEngineUnsupported(
-      `Stream input kind '${kind}' is not implemented in this slice.`,
+    const data = await loadStepBytes(caseDirectory, stepInput);
+    const changeToken =
+      typeof stepInput.change_token === "string" ? stepInput.change_token : undefined;
+    const databaseGeneration =
+      typeof stepInput.database_generation === "string"
+        ? stepInput.database_generation
+        : sourceRevision ?? undefined;
+    return applyHermesExport(
+      state,
+      data,
+      changeToken,
+      databaseGeneration,
+      sourceRevision ?? undefined,
+      cursor,
     );
   }
   throw new Error(`Unsupported stream input kind '${kind}'.`);
@@ -507,6 +535,13 @@ function streamStateEquivalent(a: StreamState, b: StreamState): boolean {
       ca.position.contentSha256 === cb.position.contentSha256
     );
   }
+  if (ca.position.kind === "hermes-row" && cb.position.kind === "hermes-row") {
+    return (
+      ca.position.databaseGeneration === cb.position.databaseGeneration &&
+      ca.position.lastRowId === cb.position.lastRowId &&
+      ca.position.changeToken === cb.position.changeToken
+    );
+  }
   return false;
 }
 
@@ -515,15 +550,6 @@ async function executeStreamSequence(
   manifest: Manifest,
 ): Promise<string> {
   const steps = manifest.steps ?? [];
-  for (const step of steps) {
-    const kind = step.input?.kind;
-    if (kind === "hermes-export") {
-      throw new StreamEngineUnsupported(
-        `Stream input kind '${kind}' is not implemented in this slice.`,
-      );
-    }
-  }
-
   let state = createStream(streamOptionsFromManifest(manifest));
   const stepResults: { id: string; update: ReturnType<typeof updateToDict>; idempotent: boolean }[] = [];
 

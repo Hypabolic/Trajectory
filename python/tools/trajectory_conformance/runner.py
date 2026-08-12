@@ -49,6 +49,7 @@ from hypabolic_trajectory import (
     apply_ahp_actions,
     apply_ahp_snapshot,
     apply_append,
+    apply_hermes_export,
     apply_snapshot,
     create_stream,
     finish_stream,
@@ -68,6 +69,7 @@ from hypabolic_trajectory.dto import TrajectoryListing, TrajectoryListingPage
 from hypabolic_trajectory.streaming.types import (
     AhpServerSeqPosition,
     BytePosition,
+    HermesRowPosition,
     SnapshotRevisionPosition,
     StreamCursor,
     StreamDiagnostic,
@@ -725,9 +727,27 @@ def _parse_stream_cursor(raw: Mapping[str, Any] | None) -> StreamCursor | None:
         if csha is not None and type(csha) is not str:
             raise ProtocolError("content_sha256 must be a string or null.")
         position = SnapshotRevisionPosition(revision=rev, content_sha256=csha)
+    elif kind == "hermes-row":
+        gen = pos_raw.get("database_generation")
+        if type(gen) is not str:
+            raise ProtocolError("hermes-row.database_generation must be a string.")
+        last_row = pos_raw.get("last_row_id")
+        if last_row is not None and (
+            type(last_row) is not int or isinstance(last_row, bool)
+        ):
+            raise ProtocolError("hermes-row.last_row_id must be an integer or null.")
+        ctok = pos_raw.get("change_token")
+        if ctok is not None and type(ctok) is not str:
+            raise ProtocolError("hermes-row.change_token must be a string or null.")
+        position = HermesRowPosition(
+            database_generation=gen,
+            last_row_id=last_row,
+            change_token=ctok,
+        )
     else:
         raise ProtocolError(
-            "Stream cursor position.kind must be byte, ahp-server-seq, or snapshot-revision."
+            "Stream cursor position.kind must be byte, ahp-server-seq, "
+            "snapshot-revision, or hermes-row."
         )
     return StreamCursor(
         source=source,
@@ -868,9 +888,22 @@ def _apply_step(
         data = _load_step_bytes(case_directory, step_input)
         return apply_ahp_actions(state, data, cursor=cursor)
     if kind == "hermes-export":
-        # Optional provider — not in LS-06/07 core.
-        raise _StreamEngineUnsupported(
-            f"Stream input kind '{kind}' is not implemented in this slice."
+        data = _load_step_bytes(case_directory, step_input)
+        change_token = step_input.get("change_token")
+        if change_token is not None and type(change_token) is not str:
+            change_token = None
+        database_generation = step_input.get("database_generation")
+        if database_generation is not None and type(database_generation) is not str:
+            database_generation = None
+        if database_generation is None:
+            database_generation = source_revision
+        return apply_hermes_export(
+            state,
+            data,
+            change_token=change_token,
+            database_generation=database_generation,
+            source_revision=source_revision,
+            cursor=cursor,
         )
     raise ProtocolError(f"Unsupported stream input kind '{kind}'.")
 
@@ -916,6 +949,12 @@ def _stream_state_equivalent(a: StreamState, b: StreamState) -> bool:
     ):
         return (
             pa.revision == pb.revision and pa.content_sha256 == pb.content_sha256
+        )
+    if isinstance(pa, HermesRowPosition) and isinstance(pb, HermesRowPosition):
+        return (
+            pa.database_generation == pb.database_generation
+            and pa.last_row_id == pb.last_row_id
+            and pa.change_token == pb.change_token
         )
     return False
 
@@ -1142,19 +1181,6 @@ def execute_stream_sequence(
     steps = manifest.get("steps")
     if type(steps) is not list or len(steps) == 0:
         raise ProtocolError("Stream sequence requires non-empty steps[].")
-
-    # Hermes provider streaming remains optional (not LS-06/07 core).
-    for step in steps:
-        if type(step) is not dict:
-            raise ProtocolError("Each step must be an object.")
-        step_input = step.get("input")
-        if type(step_input) is not dict:
-            raise ProtocolError("Each step requires an input object.")
-        kind = step_input.get("kind")
-        if kind == "hermes-export":
-            raise _StreamEngineUnsupported(
-                f"Stream input kind '{kind}' is not implemented in this slice."
-            )
 
     state = create_stream(_stream_options_from_manifest(manifest))
     step_results: list[dict[str, Any]] = []

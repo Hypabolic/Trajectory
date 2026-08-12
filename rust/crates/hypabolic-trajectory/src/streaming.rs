@@ -20,8 +20,9 @@ const MSG_AHP_SOURCE_REQUIRED: &str = "AHP stream apply requires source ahp.";
 const MSG_SEQUENCE_GAP: &str = "AHP action-log serverSeq gap requires snapshot resync.";
 const MSG_INVALID_AHP_ACTIONS: &str = "AHP action batch could not be parsed.";
 const MSG_INVALID_AHP_SNAPSHOT: &str = "AHP snapshot material is not valid Shape A JSON.";
-const MSG_HERMES_UNSUPPORTED: &str =
-    "Hermes export stream apply requires an optional provider.";
+const MSG_HERMES_SOURCE_REQUIRED: &str = "Hermes export stream apply requires source hermes.";
+const MSG_INVALID_HERMES_EXPORT: &str =
+    "Hermes export material is not valid session-export JSON.";
 
 /// Wire schema id for stream snapshots and deltas.
 pub const STREAM_SCHEMA_ID: &str = "trajectory-stream-v1";
@@ -118,6 +119,17 @@ pub struct SnapshotRevisionPosition {
     pub content_sha256: Option<String>,
 }
 
+/// Hermes provider row cursor (LS-07h).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HermesRowPosition {
+    /// Opaque database generation / open-token.
+    pub database_generation: String,
+    /// Last active numeric row id when all ids are numeric.
+    pub last_row_id: Option<i64>,
+    /// Opaque change token for the committed active export.
+    pub change_token: Option<String>,
+}
+
 /// Cursor position family (streaming-cursor-v1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamPosition {
@@ -127,6 +139,8 @@ pub enum StreamPosition {
     AhpServerSeq(AhpServerSeqPosition),
     /// AHP Shape A snapshot-revision cursor.
     SnapshotRevision(SnapshotRevisionPosition),
+    /// Hermes provider row cursor.
+    HermesRow(HermesRowPosition),
 }
 
 impl StreamPosition {
@@ -291,6 +305,8 @@ pub struct StreamResetRequest {
     pub prior_cursor: Option<StreamCursor>,
     /// Optional material to install immediately after reset.
     pub material: Option<Vec<u8>>,
+    /// Hermes provider change token when installing export material.
+    pub change_token: Option<String>,
 }
 
 /// Stream input kind for pure `apply(state, input)`.
@@ -306,9 +322,9 @@ pub enum StreamInputKind {
     Reset,
     /// AHP action batch (stub until LS-05+).
     AhpActions,
-    /// AHP Shape A snapshot (stub until LS-05+).
+    /// AHP Shape A snapshot.
     AhpSnapshot,
-    /// Hermes export (requires optional provider).
+    /// Hermes session export (LS-07h).
     HermesExport,
 }
 
@@ -325,6 +341,10 @@ pub struct StreamInput {
     pub cursor: Option<StreamCursor>,
     /// Reset request when kind is Reset.
     pub reset: Option<StreamResetRequest>,
+    /// Hermes change token for `HermesExport`.
+    pub change_token: Option<String>,
+    /// Hermes database generation for `HermesExport`.
+    pub database_generation: Option<String>,
 }
 
 /// Provisional lifecycle summary on a stream update envelope.
@@ -420,6 +440,10 @@ pub struct StreamState {
     pub last_ahp_actions_sha256: Option<String>,
     /// `ahp_last_server_seq` before the last accepted action batch.
     pub last_ahp_actions_pre_seq: Option<i64>,
+    /// Ordered active-row fingerprints of last Hermes export (LS-07h).
+    pub hermes_row_fingerprints: Option<Vec<String>>,
+    /// SHA-256 of last accepted Hermes export material.
+    pub hermes_last_export_sha: Option<String>,
 }
 
 /// Split complete LF-terminated lines from a pending tail.
@@ -904,16 +928,20 @@ pub fn create_stream(options: StreamOptions) -> StreamState {
         .clone()
         .unwrap_or_else(|| "default".into());
     let source = options.source.wire_name().to_string();
-    let position = if options.source == TrajectorySource::Ahp {
-        StreamPosition::SnapshotRevision(SnapshotRevisionPosition {
+    let position = match options.source {
+        TrajectorySource::Ahp => StreamPosition::SnapshotRevision(SnapshotRevisionPosition {
             revision: String::new(),
             content_sha256: None,
-        })
-    } else {
-        StreamPosition::Byte(BytePosition {
+        }),
+        TrajectorySource::Hermes => StreamPosition::HermesRow(HermesRowPosition {
+            database_generation: String::new(),
+            last_row_id: None,
+            change_token: None,
+        }),
+        _ => StreamPosition::Byte(BytePosition {
             next_byte_offset: 0,
             pending_byte_length: 0,
-        })
+        }),
     };
     StreamState {
         cursor: StreamCursor {
@@ -944,6 +972,8 @@ pub fn create_stream(options: StreamOptions) -> StreamState {
         ahp_last_content_sha256: None,
         last_ahp_actions_sha256: None,
         last_ahp_actions_pre_seq: None,
+        hermes_row_fingerprints: None,
+        hermes_last_export_sha: None,
     }
 }
 
@@ -1173,6 +1203,21 @@ fn cursor_to_value(c: &StreamCursor) -> Value {
             }
             pos
         }
+        StreamPosition::HermesRow(p) => {
+            let mut pos = Map::new();
+            pos.insert("kind".into(), Value::String("hermes-row".into()));
+            pos.insert(
+                "database_generation".into(),
+                Value::String(p.database_generation.clone()),
+            );
+            if let Some(id) = p.last_row_id {
+                pos.insert("last_row_id".into(), Value::from(id));
+            }
+            if let Some(tok) = &p.change_token {
+                pos.insert("change_token".into(), Value::String(tok.clone()));
+            }
+            pos
+        }
     };
     let mut map = Map::new();
     map.insert("cursor_version".into(), Value::from(c.cursor_version));
@@ -1244,6 +1289,19 @@ fn cursor_conflict(state: &StreamState, cursor: Option<&StreamCursor>) -> Option
             }
             if cpos.last_server_seq != spos.last_server_seq
                 || cpos.next_server_seq != spos.next_server_seq
+            {
+                return Some(reset_required(
+                    state,
+                    "cursor-mismatch",
+                    "stream_cursor_conflict",
+                    "Supplied stream cursor does not match stream state.",
+                ));
+            }
+        }
+        (StreamPosition::HermesRow(cpos), StreamPosition::HermesRow(spos)) => {
+            if cpos.database_generation != spos.database_generation
+                || cpos.last_row_id != spos.last_row_id
+                || cpos.change_token != spos.change_token
             {
                 return Some(reset_required(
                     state,
@@ -2573,16 +2631,22 @@ pub fn reset_stream(
     new_state.ahp_last_content_sha256 = None;
     new_state.last_ahp_actions_sha256 = None;
     new_state.last_ahp_actions_pre_seq = None;
-    let position = if state.options.source == TrajectorySource::Ahp {
-        StreamPosition::SnapshotRevision(SnapshotRevisionPosition {
+    new_state.hermes_row_fingerprints = None;
+    new_state.hermes_last_export_sha = None;
+    let position = match state.options.source {
+        TrajectorySource::Ahp => StreamPosition::SnapshotRevision(SnapshotRevisionPosition {
             revision: request.source_revision.clone().unwrap_or_default(),
             content_sha256: None,
-        })
-    } else {
-        StreamPosition::Byte(BytePosition {
+        }),
+        TrajectorySource::Hermes => StreamPosition::HermesRow(HermesRowPosition {
+            database_generation: request.source_revision.clone().unwrap_or_default(),
+            last_row_id: None,
+            change_token: request.change_token.clone(),
+        }),
+        _ => StreamPosition::Byte(BytePosition {
             next_byte_offset: 0,
             pending_byte_length: 0,
-        })
+        }),
     };
     new_state.cursor = StreamCursor {
         cursor_version: 1,
@@ -2616,7 +2680,18 @@ pub fn reset_stream(
 
     if let Some(material) = &request.material {
         let rev = request.source_revision.clone().unwrap_or_default();
-        let (applied, mut update) = apply_snapshot(&new_state, material, &rev, None)?;
+        let (applied, mut update) = if state.options.source == TrajectorySource::Hermes {
+            apply_hermes_export(
+                &new_state,
+                material,
+                request.change_token.as_deref(),
+                request.source_revision.as_deref(),
+                request.source_revision.as_deref(),
+                None,
+            )?
+        } else {
+            apply_snapshot(&new_state, material, &rev, None)?
+        };
         if update.kind != "updated" && update.kind != "unchanged" {
             return Ok((applied, update));
         }
@@ -2755,11 +2830,329 @@ pub fn apply_stream(
             input.data.as_deref().unwrap_or(&[]),
             input.cursor.as_ref(),
         ),
-        StreamInputKind::HermesExport => Ok((
-            state.clone(),
-            error_update(state, "stream_resync_required", MSG_HERMES_UNSUPPORTED),
-        )),
+        StreamInputKind::HermesExport => apply_hermes_export(
+            state,
+            input.data.as_deref().unwrap_or(&[]),
+            input.change_token.as_deref(),
+            input.database_generation.as_deref(),
+            input.source_revision.as_deref(),
+            input.cursor.as_ref(),
+        ),
     }
+}
+
+/// Apply a Hermes session export (array or `{session, messages}`) — LS-07h.
+///
+/// # Errors
+/// Returns domain errors only via the update envelope; this function always
+/// returns `Ok` with an update (parity with other apply paths).
+pub fn apply_hermes_export(
+    state: &StreamState,
+    material: &[u8],
+    change_token: Option<&str>,
+    database_generation: Option<&str>,
+    source_revision: Option<&str>,
+    cursor: Option<&StreamCursor>,
+) -> Result<(StreamState, StreamUpdate), TrajectoryError> {
+    if state.finished {
+        return Ok((
+            state.clone(),
+            error_update(state, "invalid_input", "Stream is already finished."),
+        ));
+    }
+    if state.options.source != TrajectorySource::Hermes {
+        return Ok((
+            state.clone(),
+            error_update(state, "invalid_input", MSG_HERMES_SOURCE_REQUIRED),
+        ));
+    }
+    if let Some(conflict) = cursor_conflict(state, cursor) {
+        return Ok((state.clone(), conflict));
+    }
+
+    let content_sha = sha256_bytes(material);
+    let Some((row_fps, last_row_id)) = hermes_export_meta(material) else {
+        return Ok((
+            state.clone(),
+            error_update(state, "invalid_input", MSG_INVALID_HERMES_EXPORT),
+        ));
+    };
+    let db_gen = database_generation
+        .filter(|s| !s.is_empty())
+        .or_else(|| source_revision.filter(|s| !s.is_empty()))
+        .unwrap_or("0")
+        .to_string();
+    let token = change_token
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| content_sha.clone());
+
+    if state.snapshot.is_some()
+        && state.hermes_last_export_sha.as_deref() == Some(content_sha.as_str())
+        && matches!(
+            &state.cursor.position,
+            StreamPosition::HermesRow(p)
+                if p.database_generation == db_gen
+                    && p.change_token.as_deref() == Some(token.as_str())
+        )
+    {
+        return Ok((state.clone(), unchanged(state)));
+    }
+
+    if let StreamPosition::HermesRow(p) = &state.cursor.position {
+        if state.snapshot.is_some()
+            && !p.database_generation.is_empty()
+            && p.database_generation != db_gen
+        {
+            return Ok((
+                state.clone(),
+                reset_required(
+                    state,
+                    "source-replaced",
+                    "stream_source_reset",
+                    "Source material was replaced relative to the committed cursor.",
+                ),
+            ));
+        }
+    }
+
+    if let Some(prior) = &state.hermes_row_fingerprints {
+        if state.snapshot.is_some() {
+            let n = prior.len();
+            if row_fps.len() < n || row_fps[..n] != prior[..] {
+                return Ok((
+                    state.clone(),
+                    reset_required(
+                        state,
+                        "source-replaced",
+                        "stream_source_reset",
+                        "Source material was replaced relative to the committed cursor.",
+                    ),
+                ));
+            }
+        }
+    }
+
+    let group_hint = if state.group_locked {
+        Some(state.cursor.group_id.clone())
+    } else {
+        state.options.group_id.clone()
+    };
+    let (mut records, diagnostics, group_id) = if material.is_empty() {
+        (
+            Vec::new(),
+            Vec::new(),
+            group_hint.unwrap_or_else(|| state.cursor.group_id.clone()),
+        )
+    } else {
+        let group_ref = group_hint.as_deref();
+        let request = NormalizeRequest {
+            transcript: material,
+            source_context: SourceContext {
+                group_id: group_ref,
+                base_byte_offset: 0,
+                partial: true,
+                include_encrypted_reasoning: false,
+            },
+            options: state.options.normalize,
+        };
+        let trajectory = match normalize_source(state.options.source, request) {
+            Ok(t) => t,
+            Err(err) if err.code == "source_group_conflict" => {
+                return Ok((
+                    state.clone(),
+                    reset_required(
+                        state,
+                        "group-changed",
+                        "stream_source_reset",
+                        "Source group changed relative to the active stream.",
+                    ),
+                ));
+            }
+            Err(err) => {
+                return Ok((state.clone(), error_update(state, &err.code, &err.message)));
+            }
+        };
+        let hyp = hypabolic_value(&trajectory)?;
+        let raw_records = hyp
+            .get("records")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let records: Vec<StreamRecord> = raw_records
+            .into_iter()
+            .map(|record| StreamRecord {
+                status: "stable".into(),
+                record,
+                provisional_id: None,
+                replaces_provisional_id: None,
+                finalizes_provisional_id: None,
+            })
+            .collect();
+        let diagnostics: Vec<StreamDiagnostic> = trajectory
+            .diagnostics
+            .iter()
+            .map(|d| StreamDiagnostic {
+                code: d.code.clone(),
+                message: d.message.clone(),
+                input_line: d.input_line.map(|n| n as i64),
+                record_index: d.record_index.map(|n| n as i64),
+                count: d.count.map(|n| n as i64),
+            })
+            .collect();
+        (records, diagnostics, trajectory.group_id)
+    };
+
+    if !state.options.include_provisional {
+        records.retain(|r| r.status != "provisional");
+    }
+
+    let mut new_state = state.clone();
+    new_state.group_locked = true;
+    let generation = new_state.generation;
+    let parent_revision_id = new_state
+        .snapshot
+        .as_ref()
+        .map(|s| s.revision.revision_id.clone());
+    let revision_num = new_state.next_revision;
+    let record_ids: Vec<String> = records
+        .iter()
+        .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    let rev_id = revision_id(
+        generation,
+        revision_num,
+        new_state.cursor.source.as_str(),
+        &group_id,
+        &content_sha,
+        &record_ids,
+    );
+    let revision = StreamRevision {
+        revision: revision_num,
+        revision_id: rev_id,
+        parent_revision_id,
+        complete: false,
+        generation,
+    };
+    let snapshot = StreamSnapshot {
+        schema_id: STREAM_SCHEMA_ID.into(),
+        source: new_state.cursor.source.clone(),
+        group_id: group_id.clone(),
+        revision: revision.clone(),
+        records: records.clone(),
+        diagnostics: diagnostics.clone(),
+        complete: false,
+    };
+    let delta = diff_snapshots(new_state.snapshot.as_ref(), &snapshot, &revision);
+    let (out_snap, out_delta) = match new_state.options.delivery {
+        StreamDelivery::Both => (Some(snapshot.clone()), Some(delta)),
+        StreamDelivery::Snapshot => (Some(snapshot.clone()), None),
+        StreamDelivery::Delta => (None, Some(delta)),
+    };
+    let cursor_out = StreamCursor {
+        cursor_version: 1,
+        source: new_state.cursor.source.clone(),
+        group_id: group_id.clone(),
+        generation,
+        position: StreamPosition::HermesRow(HermesRowPosition {
+            database_generation: db_gen.clone(),
+            last_row_id,
+            change_token: Some(token),
+        }),
+        source_revision: Some(source_revision.unwrap_or(db_gen.as_str()).to_string()),
+        prefix_sha256: Some(content_sha.clone()),
+    };
+    let provisional_ids: Vec<String> = records
+        .iter()
+        .filter_map(|r| r.provisional_id.clone())
+        .collect();
+    let update = StreamUpdate {
+        kind: "updated".into(),
+        revision,
+        cursor: cursor_out.clone(),
+        snapshot: out_snap,
+        delta: out_delta,
+        diagnostics,
+        provisional: StreamProvisionalInfo {
+            include: state.options.include_provisional,
+            provisional_ids,
+            finalized_ids: Vec::new(),
+        },
+        consumed: StreamConsumed {
+            complete_records: records.len() as u64,
+            bytes: material.len() as u64,
+            first_source_position: if material.is_empty() { None } else { Some(0) },
+            last_source_position: if material.is_empty() {
+                None
+            } else {
+                Some(material.len() as i64 - 1)
+            },
+        },
+        reset: None,
+        error: None,
+    };
+    new_state.cursor = cursor_out;
+    new_state.snapshot = Some(snapshot);
+    new_state.next_revision = revision_num + 1;
+    new_state.committed_prefix.clear();
+    new_state.pending_bytes.clear();
+    new_state.last_append_segment = None;
+    new_state.last_append_pre_offset = None;
+    new_state.hermes_row_fingerprints = Some(row_fps);
+    new_state.hermes_last_export_sha = Some(content_sha);
+    Ok((new_state, update))
+}
+
+fn hermes_export_meta(material: &[u8]) -> Option<(Vec<String>, Option<i64>)> {
+    let parsed: Value = serde_json::from_slice(material).ok()?;
+    let messages = match &parsed {
+        Value::Array(a) => a.clone(),
+        Value::Object(o) => o.get("messages")?.as_array()?.clone(),
+        _ => return None,
+    };
+    if !messages.iter().all(|m| m.is_object()) {
+        return None;
+    }
+    let mut active: Vec<Value> = messages
+        .into_iter()
+        .filter(|m| {
+            let a = m.get("active").cloned().unwrap_or(Value::from(1));
+            match a {
+                Value::Number(n) => n.as_i64() != Some(0),
+                Value::Bool(b) => b,
+                Value::String(s) => s != "0",
+                _ => true,
+            }
+        })
+        .collect();
+    let last_row_id = if !active.is_empty()
+        && active.iter().all(|m| m.get("id").and_then(Value::as_i64).is_some())
+    {
+        active.sort_by_key(|m| m.get("id").and_then(Value::as_i64).unwrap_or(0));
+        active
+            .last()
+            .and_then(|m| m.get("id").and_then(Value::as_i64))
+    } else {
+        None
+    };
+    let fps: Vec<String> = active
+        .iter()
+        .map(|row| {
+            let subset = serde_json::json!({
+                "id": row.get("id"),
+                "role": row.get("role"),
+                "content": row.get("content"),
+                "tool_call_id": row.get("tool_call_id"),
+                "tool_name": row.get("tool_name"),
+                "tool_calls": row.get("tool_calls"),
+                "finish_reason": row.get("finish_reason"),
+                "timestamp": row.get("timestamp"),
+                "active": row.get("active").cloned().unwrap_or(Value::from(1)),
+            });
+            sha256_bytes(subset.to_string().as_bytes())
+        })
+        .collect();
+    Some((fps, last_row_id))
 }
 
 /// Mutable façade over [`StreamState`] for API parity with other runtimes.
@@ -3013,6 +3406,7 @@ mod tests {
             source_revision: Some("gen-1".into()),
             prior_cursor: None,
             material: Some(short),
+            change_token: None,
         };
         let (state2, update) = reset_stream(&state, &request).unwrap();
         assert_eq!(update.kind, "updated");

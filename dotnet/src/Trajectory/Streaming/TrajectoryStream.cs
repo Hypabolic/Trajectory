@@ -16,6 +16,8 @@ public static class TrajectoryStream
     public const string SchemaId = "trajectory-stream-v1";
 
     private const string MsgAhpSourceRequired = "AHP stream apply requires source ahp.";
+    private const string MsgHermesSourceRequired = "Hermes export stream apply requires source hermes.";
+    private const string MsgInvalidHermesExport = "Hermes export material is not valid session-export JSON.";
     private const string MsgSequenceGap = "AHP action-log serverSeq gap requires snapshot resync.";
     private const string MsgInvalidAhpActions = "AHP action batch could not be parsed.";
     private const string MsgInvalidAhpSnapshot = "AHP snapshot material is not valid Shape A JSON.";
@@ -25,9 +27,12 @@ public static class TrajectoryStream
         ArgumentNullException.ThrowIfNull(options);
         var groupId = string.IsNullOrEmpty(options.GroupId) ? "default" : options.GroupId;
         var source = SourceWireName(options.Source);
-        StreamPosition position = options.Source == TrajectorySource.Ahp
-            ? new SnapshotRevisionPosition { Revision = "", ContentSha256 = null }
-            : new BytePosition { NextByteOffset = 0, PendingByteLength = 0 };
+        StreamPosition position = options.Source switch
+        {
+            TrajectorySource.Ahp => new SnapshotRevisionPosition { Revision = "", ContentSha256 = null },
+            TrajectorySource.Hermes => new HermesRowPosition { DatabaseGeneration = "", LastRowId = null, ChangeToken = null },
+            _ => new BytePosition { NextByteOffset = 0, PendingByteLength = 0 },
+        };
         return new StreamState
         {
             Options = options,
@@ -596,13 +601,21 @@ public static class TrajectoryStream
         newState.LastAppendSegment = null;
         newState.LastAppendPreOffset = null;
         ClearAhpState(newState);
-        StreamPosition resetPos = state.Options.Source == TrajectorySource.Ahp
-            ? new SnapshotRevisionPosition
+        StreamPosition resetPos = state.Options.Source switch
+        {
+            TrajectorySource.Ahp => new SnapshotRevisionPosition
             {
                 Revision = request.SourceRevision ?? "",
                 ContentSha256 = null,
-            }
-            : new BytePosition { NextByteOffset = 0, PendingByteLength = 0 };
+            },
+            TrajectorySource.Hermes => new HermesRowPosition
+            {
+                DatabaseGeneration = request.SourceRevision ?? "",
+                LastRowId = null,
+                ChangeToken = request.ChangeToken,
+            },
+            _ => new BytePosition { NextByteOffset = 0, PendingByteLength = 0 },
+        };
         newState.Cursor = new StreamCursor
         {
             Source = state.Cursor.Source,
@@ -627,7 +640,15 @@ public static class TrajectoryStream
 
         if (request.Material is { } material)
         {
-            var (applied, update) = ApplySnapshot(
+            var (applied, update) = state.Options.Source == TrajectorySource.Hermes
+                ? ApplyHermesExport(
+                    newState,
+                    material,
+                    request.ChangeToken,
+                    request.SourceRevision,
+                    request.SourceRevision,
+                    cursor: null)
+                : ApplySnapshot(
                 newState,
                 material,
                 request.SourceRevision ?? "",
@@ -749,14 +770,188 @@ public static class TrajectoryStream
                 state,
                 input.Data ?? ReadOnlyMemory<byte>.Empty,
                 input.Cursor),
-            "hermes-export" => (
+            "hermes-export" => ApplyHermesExport(
                 state,
-                ErrorUpdate(
-                    state,
-                    "stream_resync_required",
-                    "Hermes export stream apply requires an optional provider.")),
+                input.Data ?? ReadOnlyMemory<byte>.Empty,
+                input.ChangeToken,
+                input.DatabaseGeneration,
+                input.SourceRevision,
+                input.Cursor),
             _ => (state, ErrorUpdate(state, "invalid_input", "Stream input kind is not supported for this source.")),
         };
+    }
+
+    /// <summary>LS-07h: apply Hermes session export (array or {session, messages}).</summary>
+    public static (StreamState State, StreamUpdate Update) ApplyHermesExport(
+        StreamState state,
+        ReadOnlyMemory<byte> material,
+        string? changeToken = null,
+        string? databaseGeneration = null,
+        string? sourceRevision = null,
+        StreamCursor? cursor = null)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (state.Finished)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", "Stream is already finished."));
+        }
+
+        if (state.Options.Source != TrajectorySource.Hermes)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", MsgHermesSourceRequired));
+        }
+
+        if (cursor is not null)
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
+        }
+
+        var contentSha = Sha256Hex(material.Span);
+        if (!TryHermesExportMeta(material.Span, out var rowFps, out var lastRowId))
+        {
+            return (state, ErrorUpdate(state, "invalid_input", MsgInvalidHermesExport));
+        }
+
+        var gen = !string.IsNullOrEmpty(databaseGeneration)
+            ? databaseGeneration
+            : !string.IsNullOrEmpty(sourceRevision)
+                ? sourceRevision!
+                : "0";
+        var token = !string.IsNullOrEmpty(changeToken) ? changeToken! : contentSha;
+
+        if (state.Snapshot is not null &&
+            state.HermesLastExportSha == contentSha &&
+            state.Cursor.Position is HermesRowPosition priorPos &&
+            priorPos.DatabaseGeneration == gen &&
+            priorPos.ChangeToken == token)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        if (state.Snapshot is not null &&
+            state.Cursor.Position is HermesRowPosition genPos &&
+            !string.IsNullOrEmpty(genPos.DatabaseGeneration) &&
+            genPos.DatabaseGeneration != gen)
+        {
+            return (state, ResetRequired(state, "source-replaced", "stream_source_reset",
+                "Source material was replaced relative to the committed cursor."));
+        }
+
+        var priorFps = state.HermesRowFingerprints;
+        if (state.Snapshot is not null && priorFps is not null)
+        {
+            var n = priorFps.Count;
+            if (rowFps.Count < n || !priorFps.SequenceEqual(rowFps.Take(n)))
+            {
+                return (state, ResetRequired(state, "source-replaced", "stream_source_reset",
+                    "Source material was replaced relative to the committed cursor."));
+            }
+        }
+
+        var built = BuildRecords(state, material.ToArray());
+        if (built.Update is not null)
+        {
+            return (state, built.Update);
+        }
+
+        var records = built.Records!;
+        var diagnostics = built.Diagnostics!;
+        var groupId = built.GroupId!;
+        if (!state.Options.IncludeProvisional)
+        {
+            records = records.Where(r => r.Status != "provisional").ToList();
+        }
+
+        var newState = Clone(state);
+        newState.GroupLocked = true;
+        var generation = newState.Generation;
+        var parentRevisionId = newState.Snapshot?.Revision.RevisionId;
+        var revisionNum = newState.NextRevision;
+        var recordIds = records
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .Where(s => s.Length > 0)
+            .ToArray();
+        var revisionId = RevisionId(
+            generation,
+            revisionNum,
+            newState.Cursor.Source,
+            groupId,
+            contentSha,
+            recordIds);
+        var revision = new StreamRevision
+        {
+            Revision = revisionNum,
+            RevisionId = revisionId,
+            ParentRevisionId = parentRevisionId,
+            Complete = false,
+            Generation = generation,
+        };
+        var snapshot = new StreamSnapshot
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Revision = revision,
+            Records = records,
+            Diagnostics = diagnostics,
+            Complete = false,
+        };
+        var delta = DiffSnapshots(newState.Snapshot, snapshot, revision);
+        var (outSnap, outDelta) = ApplyDelivery(snapshot, delta, state.Options.Delivery);
+        var cursorOut = new StreamCursor
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Generation = generation,
+            Position = new HermesRowPosition
+            {
+                DatabaseGeneration = gen,
+                LastRowId = lastRowId,
+                ChangeToken = token,
+            },
+            SourceRevision = sourceRevision ?? gen,
+            PrefixSha256 = contentSha,
+        };
+        var provisionalIds = records
+            .Select(r => r.ProvisionalId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Cast<string>()
+            .ToList();
+        var update = new StreamUpdate
+        {
+            Kind = "updated",
+            Revision = revision,
+            Cursor = cursorOut,
+            Snapshot = outSnap,
+            Delta = outDelta,
+            Diagnostics = diagnostics,
+            Provisional = new StreamProvisionalInfo
+            {
+                Include = state.Options.IncludeProvisional,
+                ProvisionalIds = provisionalIds,
+            },
+            Consumed = new StreamConsumed
+            {
+                CompleteRecords = (ulong)records.Count,
+                Bytes = (ulong)material.Length,
+                FirstSourcePosition = material.Length > 0 ? 0 : null,
+                LastSourcePosition = material.Length > 0 ? material.Length - 1 : null,
+            },
+        };
+        newState.Cursor = cursorOut;
+        newState.Snapshot = snapshot;
+        newState.NextRevision = revisionNum + 1;
+        newState.CommittedPrefix = Array.Empty<byte>();
+        newState.PendingBytes = Array.Empty<byte>();
+        newState.LastAppendSegment = null;
+        newState.LastAppendPreOffset = null;
+        newState.HermesRowFingerprints = rowFps;
+        newState.HermesLastExportSha = contentSha;
+        return (newState, update);
     }
 
     /// <summary>LS-06: successive AHP Shape A snapshots with provisional activeTurn.</summary>
@@ -1952,6 +2147,8 @@ public static class TrajectoryStream
             AhpLastContentSha256 = state.AhpLastContentSha256,
             LastAhpActionsSha256 = state.LastAhpActionsSha256,
             LastAhpActionsPreSeq = state.LastAhpActionsPreSeq,
+            HermesRowFingerprints = state.HermesRowFingerprints,
+            HermesLastExportSha = state.HermesLastExportSha,
         };
 
     private static void ClearAhpState(StreamState state)
@@ -1965,6 +2162,103 @@ public static class TrajectoryStream
         state.AhpLastContentSha256 = null;
         state.LastAhpActionsSha256 = null;
         state.LastAhpActionsPreSeq = null;
+        state.HermesRowFingerprints = null;
+        state.HermesLastExportSha = null;
+    }
+
+    private static bool TryHermesExportMeta(
+        ReadOnlySpan<byte> material,
+        out List<string> rowFingerprints,
+        out long? lastRowId)
+    {
+        rowFingerprints = new List<string>();
+        lastRowId = null;
+        JsonNode? parsed;
+        try
+        {
+            parsed = JsonNode.Parse(Encoding.UTF8.GetString(material));
+        }
+        catch
+        {
+            return false;
+        }
+
+        JsonArray? messages = null;
+        if (parsed is JsonArray arr)
+        {
+            messages = arr;
+        }
+        else if (parsed is JsonObject obj && obj["messages"] is JsonArray msgs)
+        {
+            messages = msgs;
+        }
+        else
+        {
+            return false;
+        }
+
+        var active = new List<JsonObject>();
+        foreach (var item in messages)
+        {
+            if (item is not JsonObject row)
+            {
+                return false;
+            }
+
+            var activeFlag = row["active"];
+            if (activeFlag is JsonValue av)
+            {
+                if (av.TryGetValue<int>(out var ai) && ai == 0)
+                {
+                    continue;
+                }
+
+                if (av.TryGetValue<bool>(out var ab) && !ab)
+                {
+                    continue;
+                }
+
+                if (av.TryGetValue<string>(out var as_) && as_ == "0")
+                {
+                    continue;
+                }
+            }
+
+            active.Add(row);
+        }
+
+        if (active.Count > 0 && active.All(r => r["id"] is JsonValue jv && jv.TryGetValue<long>(out _)))
+        {
+            active = active
+                .Select((r, i) => (r, i, id: r["id"]!.GetValue<long>()))
+                .OrderBy(t => t.id)
+                .ThenBy(t => t.i)
+                .Select(t => t.r)
+                .ToList();
+            lastRowId = active[^1]["id"]!.GetValue<long>();
+        }
+
+        foreach (var row in active)
+        {
+            var subset = new JsonObject
+            {
+                ["id"] = row["id"]?.DeepClone(),
+                ["role"] = row["role"]?.DeepClone(),
+                ["content"] = row["content"]?.DeepClone(),
+                ["tool_call_id"] = row["tool_call_id"]?.DeepClone(),
+                ["tool_name"] = row["tool_name"]?.DeepClone(),
+                ["tool_calls"] = row["tool_calls"]?.DeepClone(),
+                ["finish_reason"] = row["finish_reason"]?.DeepClone(),
+                ["timestamp"] = row["timestamp"]?.DeepClone(),
+                ["active"] = row["active"]?.DeepClone() ?? 1,
+            };
+            rowFingerprints.Add(Sha256Hex(Encoding.UTF8.GetBytes(subset.ToJsonString(new JsonSerializerOptions
+            {
+                WriteIndented = false,
+            }))));
+        }
+
+        return true;
     }
 
     private static long ByteNextOffset(StreamPosition pos) =>
@@ -2125,6 +2419,21 @@ public static class TrajectoryStream
                 "Supplied stream cursor does not match stream state.");
         }
 
+        if (cursor.Position is HermesRowPosition hermesPos &&
+            state.Cursor.Position is HermesRowPosition stateHermes)
+        {
+            if (hermesPos.DatabaseGeneration != stateHermes.DatabaseGeneration ||
+                hermesPos.LastRowId != stateHermes.LastRowId ||
+                hermesPos.ChangeToken != stateHermes.ChangeToken)
+            {
+                return ResetRequired(
+                    state,
+                    "cursor-mismatch",
+                    "stream_cursor_conflict",
+                    "Supplied stream cursor does not match stream state.");
+            }
+        }
+
         return null;
     }
 
@@ -2162,6 +2471,7 @@ public static class TrajectoryStream
             },
             AhpServerSeqPosition a => BuildAhpSeqPositionDict(a),
             SnapshotRevisionPosition s => BuildSnapshotRevisionPositionDict(s),
+            HermesRowPosition h => BuildHermesRowPositionDict(h),
             _ => new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["kind"] = c.Position.Kind,
@@ -2206,6 +2516,26 @@ public static class TrajectoryStream
         if (s.ContentSha256 is not null)
         {
             position["content_sha256"] = s.ContentSha256;
+        }
+
+        return position;
+    }
+
+    private static Dictionary<string, object?> BuildHermesRowPositionDict(HermesRowPosition h)
+    {
+        var position = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["kind"] = "hermes-row",
+            ["database_generation"] = h.DatabaseGeneration,
+        };
+        if (h.LastRowId is not null)
+        {
+            position["last_row_id"] = h.LastRowId;
+        }
+
+        if (h.ChangeToken is not null)
+        {
+            position["change_token"] = h.ChangeToken;
         }
 
         return position;
@@ -2523,6 +2853,19 @@ public sealed class TrajectoryStreamSession
         string? sourceRevision = null)
     {
         var (state, update) = TrajectoryStream.ApplyAppend(_state, segment, cursor, sourceRevision);
+        _state = state;
+        return update;
+    }
+
+    public StreamUpdate ApplyHermesExport(
+        ReadOnlyMemory<byte> material,
+        string? changeToken = null,
+        string? databaseGeneration = null,
+        string? sourceRevision = null,
+        StreamCursor? cursor = null)
+    {
+        var (state, update) = TrajectoryStream.ApplyHermesExport(
+            _state, material, changeToken, databaseGeneration, sourceRevision, cursor);
         _state = state;
         return update;
     }

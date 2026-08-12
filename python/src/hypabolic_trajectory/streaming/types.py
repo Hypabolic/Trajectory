@@ -277,6 +277,7 @@ class StreamResetRequest:
     source_revision: str | None = None
     prior_cursor: StreamCursor | None = None
     material: bytes | None = None
+    change_token: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -363,6 +364,9 @@ class StreamInput:
     source_revision: str | None = None
     cursor: StreamCursor | None = None
     reset: StreamResetRequest | None = None
+    # Hermes provider: opaque change token for hermes-export apply.
+    change_token: str | None = None
+    database_generation: str | None = None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -393,3 +397,6 @@ class StreamState:
     # Last accepted action batch fingerprint for idempotent replay.
     last_ahp_actions_sha256: str | None = None
     last_ahp_actions_pre_seq: int | None = None
+    # Hermes export stream state (LS-07h). Ordered row fingerprints of last export.
+    hermes_row_fingerprints: tuple[str, ...] | None = None
+    hermes_last_export_sha: str | None = None

@@ -240,12 +240,15 @@ decode yet beyond framing buffers.
 
 **Goal:** Optional provider packages; not file-tail.
 
+**Status: done on tip** (core `apply_hermes_export` + optional provider packages
+×4; manifests still omit `stream-hermes-provider` until LS-12).
+
 | Area | Deliverable |
 | --- | --- |
 | Contract | Provider interface: list, query session, change token, invalidation |
 | Code | Optional packages/extras; feed `hermes-export` into core stream apply |
 | Tests | Provider fixtures: snapshot, insert delta, soft-delete reset, nonnumeric ids |
-| Docs | Hermes README + streaming matrix note |
+| Docs | Hermes README + streaming matrix note (`docs/streaming-hermes-provider.md`) |
 
 **Acceptance**
 

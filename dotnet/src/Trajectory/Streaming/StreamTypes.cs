@@ -57,6 +57,15 @@ public sealed record SnapshotRevisionPosition : StreamPosition
     public string? ContentSha256 { get; init; }
 }
 
+/// <summary>Hermes provider row cursor (LS-07h).</summary>
+public sealed record HermesRowPosition : StreamPosition
+{
+    public override string Kind => "hermes-row";
+    public required string DatabaseGeneration { get; init; }
+    public long? LastRowId { get; init; }
+    public string? ChangeToken { get; init; }
+}
+
 /// <summary>Public serializable stream position checkpoint.</summary>
 public sealed record StreamCursor
 {
@@ -144,6 +153,7 @@ public sealed record StreamResetRequest
     public string? SourceRevision { get; init; }
     public StreamCursor? PriorCursor { get; init; }
     public ReadOnlyMemory<byte>? Material { get; init; }
+    public string? ChangeToken { get; init; }
 }
 
 /// <summary>Discriminated stream input for pure apply(state, input).</summary>
@@ -158,6 +168,8 @@ public sealed record StreamInput
     public string? SourceRevision { get; init; }
     public StreamCursor? Cursor { get; init; }
     public StreamResetRequest? Reset { get; init; }
+    public string? ChangeToken { get; init; }
+    public string? DatabaseGeneration { get; init; }
 }
 
 /// <summary>Provisional lifecycle summary on a stream update envelope.</summary>
@@ -221,4 +233,8 @@ public sealed class StreamState
     public string? AhpLastContentSha256 { get; set; }
     public string? LastAhpActionsSha256 { get; set; }
     public long? LastAhpActionsPreSeq { get; set; }
+
+    // ---- Hermes export stream state (LS-07h) ----
+    public IReadOnlyList<string>? HermesRowFingerprints { get; set; }
+    public string? HermesLastExportSha { get; set; }
 }
