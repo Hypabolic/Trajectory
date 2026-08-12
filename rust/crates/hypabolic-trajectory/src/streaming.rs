@@ -1368,6 +1368,26 @@ pub fn apply_append(
         }
     }
 
+    let pending_len = match len_as_i64(new_pending.len()) {
+        Ok(n) => n,
+        Err(msg) => {
+            return Ok((state.clone(), error_update(state, "invalid_input", msg)));
+        }
+    };
+
+    // No complete lines: only pending advanced (incomplete line / mid-UTF-8).
+    // Visible records unchanged → kind=unchanged with patched pending cursor.
+    if complete.is_empty() {
+        if new_pending == state.pending_bytes {
+            return Ok((state.clone(), unchanged(state)));
+        }
+        let mut new_state = state.clone();
+        new_state.pending_bytes = new_pending;
+        new_state.cursor.position.pending_byte_length = pending_len;
+        let update = unchanged(&new_state);
+        return Ok((new_state, update));
+    }
+
     let mut new_prefix = state.committed_prefix.clone();
     new_prefix.extend_from_slice(&complete);
     let mut tmp = state.clone();
@@ -1378,17 +1398,10 @@ pub fn apply_append(
         .unwrap_or_default();
     let (mut new_state, mut update) = apply_snapshot(&tmp, &new_prefix, &rev, None)?;
     if update.kind == "updated" || update.kind == "unchanged" {
-        let pending_len = match len_as_i64(new_pending.len()) {
-            Ok(n) => n,
-            Err(msg) => {
-                return Ok((state.clone(), error_update(state, "invalid_input", msg)));
-            }
-        };
         new_state.pending_bytes = new_pending;
         new_state.cursor.position.pending_byte_length = pending_len;
-        if update.kind == "updated" {
-            update.cursor = new_state.cursor.clone();
-        }
+        // Always copy patched cursor onto StreamUpdate (updated and unchanged).
+        update.cursor = new_state.cursor.clone();
     }
     Ok((new_state, update))
 }
@@ -1999,5 +2012,53 @@ mod tests {
         assert_eq!(update.kind, "updated");
         assert!(state2.finished);
         assert!(update.revision.complete);
+    }
+
+    #[test]
+    fn apply_append_pending_only_advances_cursor() {
+        let incomplete = read_case("unterminated-line-held", "step-incomplete.txt");
+        let opts =
+            StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-unterminated-line-held");
+        let state = create_stream(opts);
+        let (state, update) = apply_append(&state, &incomplete, None, Some("gen-0")).unwrap();
+        assert_eq!(update.kind, "unchanged");
+        assert_eq!(
+            state.cursor.position.pending_byte_length,
+            incomplete.len() as i64
+        );
+        assert_eq!(
+            update.cursor.position.pending_byte_length,
+            incomplete.len() as i64
+        );
+        assert_eq!(state.pending_bytes, incomplete);
+
+        let partial = read_case("utf8-byte-boundary", "step-partial-utf8.bin");
+        let tail = read_case("utf8-byte-boundary", "step-utf8-tail.bin");
+        let opts =
+            StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-utf8-byte-boundary");
+        let state = create_stream(opts);
+        let (state, update) = apply_append(&state, &partial, None, Some("gen-0")).unwrap();
+        assert_eq!(update.kind, "unchanged");
+        assert_eq!(
+            update.cursor.position.pending_byte_length,
+            partial.len() as i64
+        );
+        let (state, update) = apply_append(&state, &tail, None, Some("gen-0")).unwrap();
+        assert_eq!(update.kind, "updated");
+        assert_eq!(update.cursor.position.pending_byte_length, 0);
+        assert_eq!(state.cursor.position.pending_byte_length, 0);
+    }
+
+    #[test]
+    fn apply_append_enforces_buffer_limits() {
+        let mut opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("g");
+        opts.max_pending_bytes = Some(5);
+        let state = create_stream(opts);
+        let (_, update) = apply_append(&state, b"{\"a\":1", None, Some("gen-0")).unwrap();
+        assert_eq!(update.kind, "error");
+        assert_eq!(
+            update.error.as_ref().map(|(c, _)| c.as_str()),
+            Some("stream_buffer_limit")
+        );
     }
 }

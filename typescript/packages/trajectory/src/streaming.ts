@@ -878,6 +878,123 @@ export function applySnapshot(
   return { state: newState, update };
 }
 
+/**
+ * Append complete-line segment; re-normalize full committed prefix (oracle path).
+ * First-class pure function matching Python/Rust/.NET apply_append / ApplyAppend.
+ */
+export function applyAppend(
+  state: StreamState,
+  segment: Uint8Array,
+  cursor?: StreamCursor,
+  sourceRevision?: string,
+): { state: StreamState; update: StreamUpdate } {
+  if (state.finished) {
+    return { state, update: errorUpdate(state, "invalid_input", "Stream is already finished.") };
+  }
+  const conflict = cursorConflict(state, cursor);
+  if (conflict) {
+    return { state, update: conflict };
+  }
+
+  if (state.options.maxPendingBytes !== undefined && !isNonNegativeInt64(state.options.maxPendingBytes)) {
+    return {
+      state,
+      update: errorUpdate(state, "invalid_input", MSG_BUFFER_LIMIT_DOMAIN),
+    };
+  }
+  if (state.options.maxLineBytes !== undefined && !isNonNegativeInt64(state.options.maxLineBytes)) {
+    return {
+      state,
+      update: errorUpdate(state, "invalid_input", MSG_BUFFER_LIMIT_DOMAIN),
+    };
+  }
+
+  const pending = state.pendingBytes;
+  if (
+    BigInt(pending.length) > INT64_MAX ||
+    BigInt(segment.length) > INT64_MAX ||
+    BigInt(pending.length) + BigInt(segment.length) > INT64_MAX
+  ) {
+    return {
+      state,
+      update: errorUpdate(state, "invalid_input", MSG_MATERIAL_DOMAIN),
+    };
+  }
+
+  const combined = new Uint8Array(pending.length + segment.length);
+  combined.set(pending, 0);
+  combined.set(segment, pending.length);
+  const { committed: complete, pending: newPending } = splitCompleteLines(combined);
+
+  if (state.options.maxPendingBytes !== undefined) {
+    if (BigInt(newPending.length) > state.options.maxPendingBytes) {
+      return {
+        state,
+        update: errorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
+      };
+    }
+  }
+  if (state.options.maxLineBytes !== undefined) {
+    if (
+      anyLineTooLong(complete, state.options.maxLineBytes) ||
+      BigInt(newPending.length) > state.options.maxLineBytes
+    ) {
+      return {
+        state,
+        update: errorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
+      };
+    }
+  }
+
+  // No complete lines: only pending advanced (incomplete line / mid-UTF-8).
+  // Visible records unchanged → kind=unchanged with patched pending cursor.
+  if (complete.length === 0) {
+    if (equalBytes(newPending, state.pendingBytes)) {
+      return { state, update: unchangedUpdate(state) };
+    }
+    const newState = cloneState(state);
+    newState.pendingBytes = newPending.slice();
+    newState.cursor = {
+      ...newState.cursor,
+      position: {
+        kind: "byte",
+        nextByteOffset: newState.cursor.position.nextByteOffset,
+        pendingByteLength: BigInt(newPending.length),
+      },
+    };
+    return { state: newState, update: unchangedUpdate(newState) };
+  }
+
+  const newPrefix = new Uint8Array(state.committedPrefix.length + complete.length);
+  newPrefix.set(state.committedPrefix, 0);
+  newPrefix.set(complete, state.committedPrefix.length);
+  const tmp = cloneState(state);
+  tmp.pendingBytes = new Uint8Array(0);
+  const result = applySnapshot(
+    tmp,
+    newPrefix,
+    sourceRevision ?? state.cursor.sourceRevision ?? "",
+    undefined,
+  );
+  if (result.update.kind === "updated" || result.update.kind === "unchanged") {
+    result.state.pendingBytes = newPending.slice();
+    result.state.cursor = {
+      ...result.state.cursor,
+      position: {
+        kind: "byte",
+        nextByteOffset: result.state.cursor.position.nextByteOffset,
+        pendingByteLength: BigInt(newPending.length),
+      },
+    };
+    // Always copy patched cursor onto StreamUpdate (updated and unchanged).
+    return {
+      state: result.state,
+      update: { ...result.update, cursor: result.state.cursor },
+    };
+  }
+  return result;
+}
+
 export function applyStream(
   state: StreamState,
   input: StreamInput,
@@ -886,44 +1003,7 @@ export function applyStream(
     return applySnapshot(state, input.data ?? new Uint8Array(0), input.sourceRevision ?? "", input.cursor);
   }
   if (input.kind === "append-bytes") {
-    // Validate cursor before framing/combining (parity with Python/Rust/.NET apply_append).
-    if (state.finished) {
-      return { state, update: errorUpdate(state, "invalid_input", "Stream is already finished.") };
-    }
-    const conflict = cursorConflict(state, input.cursor);
-    if (conflict) {
-      return { state, update: conflict };
-    }
-    // Oracle path: extend committed prefix + pending framing, re-normalize.
-    const pending = state.pendingBytes;
-    const segment = input.data ?? new Uint8Array(0);
-    const combined = new Uint8Array(pending.length + segment.length);
-    combined.set(pending, 0);
-    combined.set(segment, pending.length);
-    const { committed: complete, pending: newPending } = splitCompleteLines(combined);
-    const newPrefix = new Uint8Array(state.committedPrefix.length + complete.length);
-    newPrefix.set(state.committedPrefix, 0);
-    newPrefix.set(complete, state.committedPrefix.length);
-    const tmp = cloneState(state);
-    tmp.pendingBytes = new Uint8Array(0);
-    const result = applySnapshot(
-      tmp,
-      newPrefix,
-      input.sourceRevision ?? state.cursor.sourceRevision ?? "",
-      undefined,
-    );
-    if (result.update.kind === "updated" || result.update.kind === "unchanged") {
-      result.state.pendingBytes = newPending.slice();
-      result.state.cursor = {
-        ...result.state.cursor,
-        position: {
-          kind: "byte",
-          nextByteOffset: result.state.cursor.position.nextByteOffset,
-          pendingByteLength: BigInt(newPending.length),
-        },
-      };
-    }
-    return result;
+    return applyAppend(state, input.data ?? new Uint8Array(0), input.cursor, input.sourceRevision);
   }
   if (input.kind === "finish") {
     return finishStream(state);
@@ -1247,12 +1327,7 @@ export class TrajectoryStream {
   }
 
   applyAppend(data: Uint8Array, cursor?: StreamCursor, sourceRevision?: string): StreamUpdate {
-    const result = applyStream(this.#state, {
-      kind: "append-bytes",
-      data,
-      ...(cursor !== undefined ? { cursor } : {}),
-      ...(sourceRevision !== undefined ? { sourceRevision } : {}),
-    });
+    const result = applyAppend(this.#state, data, cursor, sourceRevision);
     this.#state = result.state;
     return result.update;
   }

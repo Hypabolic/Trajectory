@@ -135,6 +135,7 @@ export {
   STREAM_SCHEMA_ID,
   TrajectoryStream,
   anyLineTooLong,
+  applyAppend,
   applyDeltaToSnapshot,
   applySnapshot,
   applyStream,

@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import {
   TrajectoryStream,
   anyLineTooLong,
+  applyAppend,
   applyDeltaToSnapshot,
   applySnapshot,
   applyStream,
@@ -331,6 +332,43 @@ test("applyStream append-bytes validates cursor before framing", () => {
   assert.equal(result.update.kind, "reset-required");
   assert.equal(result.update.reset?.reason, "cursor-mismatch");
   assert.equal(result.state.cursor.position.nextByteOffset, state.cursor.position.nextByteOffset);
+});
+
+test("applyAppend pending-only advances cursor on state and update", async () => {
+  const incomplete = await readCase("unterminated-line-held", "step-incomplete.txt");
+  let state = createStream({
+    source: "pi",
+    groupId: "stream-unterminated-line-held",
+  });
+  let result = applyAppend(state, incomplete, undefined, "gen-0");
+  assert.equal(result.update.kind, "unchanged");
+  assert.equal(result.state.cursor.position.pendingByteLength, BigInt(incomplete.length));
+  assert.equal(result.update.cursor.position.pendingByteLength, BigInt(incomplete.length));
+  assert.equal(result.state.pendingBytes.length, incomplete.length);
+
+  const partial = await readCase("utf8-byte-boundary", "step-partial-utf8.bin");
+  const tail = await readCase("utf8-byte-boundary", "step-utf8-tail.bin");
+  state = createStream({ source: "pi", groupId: "stream-utf8-byte-boundary" });
+  result = applyAppend(state, partial, undefined, "gen-0");
+  assert.equal(result.update.kind, "unchanged");
+  assert.equal(result.update.cursor.position.pendingByteLength, BigInt(partial.length));
+  result = applyAppend(result.state, tail, undefined, "gen-0");
+  assert.equal(result.update.kind, "updated");
+  assert.equal(result.update.cursor.position.pendingByteLength, 0n);
+  assert.equal(result.state.cursor.position.pendingByteLength, 0n);
+});
+
+test("applyAppend enforces maxPendingBytes and maxLineBytes", () => {
+  let state = createStream({ source: "pi", groupId: "g", maxPendingBytes: 5n });
+  let result = applyAppend(state, new TextEncoder().encode('{"a":1'), undefined, "gen-0");
+  assert.equal(result.update.kind, "error");
+  assert.equal(result.update.error?.code, "stream_buffer_limit");
+  assert.equal(result.state.cursor.position.nextByteOffset, 0n);
+
+  state = createStream({ source: "pi", groupId: "g", maxLineBytes: 4n });
+  result = applyAppend(state, new TextEncoder().encode('{"a":1}\n'), undefined, "gen-0");
+  assert.equal(result.update.kind, "error");
+  assert.equal(result.update.error?.code, "stream_buffer_limit");
 });
 
 test("applyStream ahp/hermes kinds return stream_resync_required", () => {

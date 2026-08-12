@@ -233,6 +233,48 @@ def test_max_line_bytes_returns_buffer_limit() -> None:
     assert state2.cursor.position.next_byte_offset == 0  # type: ignore[union-attr]
 
 
+def test_apply_append_pending_only_advances_cursor() -> None:
+    """Incomplete / mid-UTF-8 append is unchanged with matching pending cursor."""
+    from hypabolic_trajectory.streaming import apply_append
+
+    incomplete = _read("unterminated-line-held", "step-incomplete.txt")
+    state = create_stream(
+        StreamOptions(source="pi", group_id="stream-unterminated-line-held")
+    )
+    state, update = apply_append(state, incomplete, source_revision="gen-0")
+    assert update.kind == "unchanged"
+    assert isinstance(state.cursor.position, BytePosition)
+    assert state.cursor.position.pending_byte_length == len(incomplete)
+    assert update.cursor.position.pending_byte_length == len(incomplete)  # type: ignore[union-attr]
+    assert bytes(state.pending_bytes) == incomplete
+
+    partial = _read("utf8-byte-boundary", "step-partial-utf8.bin")
+    tail = _read("utf8-byte-boundary", "step-utf8-tail.bin")
+    state = create_stream(
+        StreamOptions(source="pi", group_id="stream-utf8-byte-boundary")
+    )
+    state, update = apply_append(state, partial, source_revision="gen-0")
+    assert update.kind == "unchanged"
+    assert update.cursor.position.pending_byte_length == len(partial)  # type: ignore[union-attr]
+    state, update = apply_append(state, tail, source_revision="gen-0")
+    assert update.kind == "updated"
+    assert update.cursor.position.pending_byte_length == 0  # type: ignore[union-attr]
+    assert state.cursor.position.pending_byte_length == 0
+
+
+def test_apply_append_enforces_buffer_limits() -> None:
+    from hypabolic_trajectory.streaming import apply_append
+
+    state = create_stream(
+        StreamOptions(source="pi", group_id="g", max_pending_bytes=5)
+    )
+    state2, update = apply_append(state, b'{"a":1', source_revision="gen-0")
+    assert update.kind == "error"
+    assert update.error is not None
+    assert update.error.code == "stream_buffer_limit"
+    assert state2.cursor.position.next_byte_offset == 0  # type: ignore[union-attr]
+
+
 def test_no_io_imports_in_streaming_modules() -> None:
     """Core stream modules must not import filesystem/network/sqlite."""
     import hypabolic_trajectory.streaming.apply as apply_mod

@@ -324,6 +324,27 @@ public static class TrajectoryStream
             return (state, ErrorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."));
         }
 
+        // No complete lines: only pending advanced (incomplete line / mid-UTF-8).
+        // Visible records unchanged → kind=unchanged with patched pending cursor.
+        if (complete.Length == 0)
+        {
+            if (newPending.AsSpan().SequenceEqual(state.PendingBytes))
+            {
+                return (state, UnchangedUpdate(state));
+            }
+
+            var pendingOnly = Clone(state);
+            pendingOnly.PendingBytes = newPending;
+            pendingOnly.Cursor = pendingOnly.Cursor with
+            {
+                Position = pendingOnly.Cursor.Position with
+                {
+                    PendingByteLength = newPending.LongLength,
+                },
+            };
+            return (pendingOnly, UnchangedUpdate(pendingOnly));
+        }
+
         var newPrefix = new byte[state.CommittedPrefix.Length + complete.Length];
         Buffer.BlockCopy(state.CommittedPrefix, 0, newPrefix, 0, state.CommittedPrefix.Length);
         Buffer.BlockCopy(complete, 0, newPrefix, state.CommittedPrefix.Length, complete.Length);
@@ -342,10 +363,8 @@ public static class TrajectoryStream
                     PendingByteLength = newPending.LongLength,
                 },
             };
-            if (update.Kind == "updated")
-            {
-                update = update with { Cursor = newState.Cursor };
-            }
+            // Always copy patched cursor onto StreamUpdate (updated and unchanged).
+            update = update with { Cursor = newState.Cursor };
         }
 
         return (newState, update);
@@ -906,24 +925,10 @@ public static class TrajectoryStream
         try
         {
             var engine = TrajectoryEngine.CreateDefault();
-            // Byte-preserving UTF-8 decode: reject invalid sequences instead of
-            // introducing U+FFFD (would diverge prefix_sha256 from byte-native runtimes).
-            string transcript;
-            try
-            {
-                var utf8Strict = Encoding.GetEncoding(
-                    "utf-8",
-                    EncoderFallback.ExceptionFallback,
-                    DecoderFallback.ExceptionFallback);
-                transcript = utf8Strict.GetString(committed);
-            }
-            catch (DecoderFallbackException)
-            {
-                return (null, null, null, ErrorUpdate(
-                    state,
-                    "invalid_input",
-                    "Stream material contains invalid UTF-8 sequences."));
-            }
+            // Decode per LF-terminated line (strict UTF-8). Invalid complete lines
+            // become adapter invalid_json_line diagnostics rather than a whole-stream
+            // error, without U+FFFD substitution on valid wire bytes.
+            var transcript = DecodeCommittedLinesForNormalize(committed);
 
             var ir = engine.NormalizeToIR(new NormalizeInput
             {
@@ -976,6 +981,56 @@ public static class TrajectoryStream
             };
             return (null, null, null, ErrorUpdate(state, wire, ex.Message));
         }
+    }
+
+    /// <summary>
+    /// Strict UTF-8 decode of each LF-terminated complete line. Invalid lines are
+    /// replaced with a non-JSON placeholder so adapters emit <c>invalid_json_line</c>
+    /// rather than failing the whole apply. Valid lines round-trip without U+FFFD.
+    /// </summary>
+    private static string DecodeCommittedLinesForNormalize(byte[] committed)
+    {
+        var utf8Strict = Encoding.GetEncoding(
+            "utf-8",
+            EncoderFallback.ExceptionFallback,
+            DecoderFallback.ExceptionFallback);
+        var sb = new StringBuilder(committed.Length);
+        var start = 0;
+        for (var i = 0; i < committed.Length; i++)
+        {
+            if (committed[i] != (byte)'\n')
+            {
+                continue;
+            }
+
+            var lineLen = i - start + 1;
+            try
+            {
+                sb.Append(utf8Strict.GetString(committed, start, lineLen));
+            }
+            catch (DecoderFallbackException)
+            {
+                // Non-whitespace invalid JSON token + LF keeps line numbering aligned.
+                sb.Append("!\n");
+            }
+
+            start = i + 1;
+        }
+
+        if (start < committed.Length)
+        {
+            // Framed committed prefixes end on LF; handle a trailing remainder strictly.
+            try
+            {
+                sb.Append(utf8Strict.GetString(committed, start, committed.Length - start));
+            }
+            catch (DecoderFallbackException)
+            {
+                sb.Append('!');
+            }
+        }
+
+        return sb.ToString();
     }
 
     private static Dictionary<string, object?> HypabolicRecordToDict(HypabolicRecordV1 record)

@@ -250,4 +250,52 @@ public sealed class StreamingCoreTests
         Assert.Equal("updated", finish.Kind);
         Assert.True(session.State.Finished);
     }
+
+    [Fact]
+    public void ApplyAppend_PendingOnly_AdvancesCursorOnStateAndUpdate()
+    {
+        var incomplete = ReadFixture("unterminated-line-held", "step-incomplete.txt");
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-unterminated-line-held",
+        });
+        var (state1, update) = TrajectoryStream.ApplyAppend(state, incomplete, sourceRevision: "gen-0");
+        Assert.Equal("unchanged", update.Kind);
+        Assert.Equal(incomplete.LongLength, state1.Cursor.Position.PendingByteLength);
+        Assert.Equal(incomplete.LongLength, update.Cursor.Position.PendingByteLength);
+        Assert.Equal(incomplete.Length, state1.PendingBytes.Length);
+
+        var partial = ReadFixture("utf8-byte-boundary", "step-partial-utf8.bin");
+        var tail = ReadFixture("utf8-byte-boundary", "step-utf8-tail.bin");
+        state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-utf8-byte-boundary",
+        });
+        var (state2, u2) = TrajectoryStream.ApplyAppend(state, partial, sourceRevision: "gen-0");
+        Assert.Equal("unchanged", u2.Kind);
+        Assert.Equal(partial.LongLength, u2.Cursor.Position.PendingByteLength);
+        var (state3, u3) = TrajectoryStream.ApplyAppend(state2, tail, sourceRevision: "gen-0");
+        Assert.Equal("updated", u3.Kind);
+        Assert.Equal(0, u3.Cursor.Position.PendingByteLength);
+        Assert.Equal(0, state3.Cursor.Position.PendingByteLength);
+    }
+
+    [Fact]
+    public void ApplyAppend_EnforcesBufferLimits()
+    {
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "g",
+            MaxPendingBytes = 5,
+        });
+        var (_, update) = TrajectoryStream.ApplyAppend(
+            state,
+            Encoding.UTF8.GetBytes("{\"a\":1"),
+            sourceRevision: "gen-0");
+        Assert.Equal("error", update.Kind);
+        Assert.Equal("stream_buffer_limit", update.Error!.Value.Code);
+    }
 }
