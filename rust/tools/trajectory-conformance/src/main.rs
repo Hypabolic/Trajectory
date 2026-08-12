@@ -654,8 +654,16 @@ fn execute_stream_sequence(
                     .source_revision
                     .clone()
                     .unwrap_or_else(|| "oracle".into());
-                let (_, snap) = apply_snapshot(&oracle_state, &state.committed_prefix, &rev, None)
-                    .map_err(StreamEngineError::Fatal)?;
+                let (oracle_state, mut snap) =
+                    apply_snapshot(&oracle_state, &state.committed_prefix, &rev, None)
+                        .map_err(StreamEngineError::Fatal)?;
+                // When the append path finished (stable→final), mirror finish so
+                // oracle finality matches (LS-08 stable-to-final).
+                if (snap.kind == "updated" || snap.kind == "unchanged") && state.finished {
+                    let (_finished_state, finished_update) =
+                        finish_stream(&oracle_state).map_err(StreamEngineError::Fatal)?;
+                    snap = finished_update;
+                }
                 let ok = (snap.kind == "updated" || snap.kind == "unchanged")
                     && oracle_snapshots_match(
                         state.snapshot.as_ref(),

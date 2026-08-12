@@ -454,10 +454,11 @@ Optional packages (LS-09/10/07h) may trail core matrix but are required for
 
 ## Immediate next action
 
-**LS-00** (locked product design), **LS-01** (normative stream wire contracts,
-schemas, and vectors), and **LS-02** (shared conformance protocol, verify
-stream path, four-runner unsupported wiring, and `cases/streaming` corpus
-skeleton) are delivered on this branch.  
-Next engineering slice: **LS-03** — stream state and cursor primitives across
-all four cores (pure create/validate/advance; no source decode beyond framing
-buffers).
+**LS-00** … **LS-08** are delivered on tip: locked design, wire contracts,
+stream conformance protocol + shared corpus, state/cursor, snapshot/delta,
+JSONL append, AHP Shape A/B, and the full stream matrix gate (34 cases /
+68 step goldens; `stream_unsupported_skips: 0` on all four runtimes; no
+`stream-*` capability claims until LS-12).
+
+Next engineering slice: **LS-09** — optional file I/O packages (path
+poll/watch helpers that only call core apply APIs) across all four runtimes.

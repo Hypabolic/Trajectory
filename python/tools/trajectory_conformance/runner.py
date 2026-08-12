@@ -1028,10 +1028,16 @@ def _oracle_section(
     if want_append or want_prefix:
         # Fresh snapshot of the final committed prefix must match append-path records,
         # status/provisional finality, diagnostics, and cursor fingerprint.
+        # When the append path finished (stable→final), mirror finish so oracle
+        # finality matches (LS-08 stable-to-final).
         oracle_state = create_stream(opts)
         prefix = bytes(state.committed_prefix)
         rev = state.cursor.source_revision or "oracle"
-        _, snap_update = apply_snapshot(oracle_state, prefix, source_revision=rev)
+        oracle_state, snap_update = apply_snapshot(
+            oracle_state, prefix, source_revision=rev
+        )
+        if snap_update.kind in {"updated", "unchanged"} and state.finished:
+            oracle_state, snap_update = finish_stream(oracle_state)
         if snap_update.kind not in {"updated", "unchanged"}:
             if want_append:
                 out["append_equals_prefix"] = False

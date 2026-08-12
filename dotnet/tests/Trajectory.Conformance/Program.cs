@@ -409,10 +409,18 @@ internal static class ConformanceProgram
                 {
                     var oracleState = TrajectoryStream.Create(StreamOptionsFromManifest(manifest));
                     var rev = state.Cursor.SourceRevision ?? "oracle";
-                    var (_, snap) = TrajectoryStream.ApplySnapshot(
+                    StreamUpdate snap;
+                    (oracleState, snap) = TrajectoryStream.ApplySnapshot(
                         oracleState,
                         state.CommittedPrefix,
                         rev);
+                    // When the append path finished (stable→final), mirror finish so
+                    // oracle finality matches (LS-08 stable-to-final).
+                    if (snap.Kind is "updated" or "unchanged" && state.Finished)
+                    {
+                        (oracleState, snap) = TrajectoryStream.Finish(oracleState);
+                    }
+
                     var ok = snap.Kind is "updated" or "unchanged" &&
                         OracleSnapshotsMatch(
                             state.Snapshot,

@@ -23,7 +23,7 @@ from hypabolic_trajectory.streaming.ahp_reducer import (
     reduce_ahp_actions,
     shape_a_bytes,
 )
-from hypabolic_trajectory.streaming.delta import diff_snapshots
+from hypabolic_trajectory.streaming.delta import diagnostic_key, diff_snapshots
 from hypabolic_trajectory.streaming.framing import append_framed, split_complete_lines
 from hypabolic_trajectory.streaming.types import (
     STREAM_SCHEMA_ID,
@@ -619,6 +619,8 @@ def apply_ahp_actions(
         StreamDiagnostic(code=d["code"], message=d["message"]) for d in reduce_diags
     )
     # Deduplicate by code+message for stable envelopes.
+    # Sort by diagnostic_key so snapshot order matches key-sorted
+    # diagnostic_add ops under the delta-apply law (streaming.md §7).
     seen: set[tuple[str, str]] = set()
     merged_diags: list[StreamDiagnostic] = []
     for d in list(update.diagnostics) + list(extra):
@@ -627,7 +629,7 @@ def apply_ahp_actions(
             continue
         seen.add(key)
         merged_diags.append(d)
-    diagnostics = tuple(merged_diags)
+    diagnostics = tuple(sorted(merged_diags, key=diagnostic_key))
 
     last_seq = new_last_seq if new_last_seq is not None else -1
     seq_cursor = StreamCursor(

@@ -579,9 +579,19 @@ async function executeStreamSequence(
   ) {
     const section: Record<string, boolean> = {};
     if (oracle.append_equals_prefix || oracle.prefix_re_normalize) {
-      const oracleState = createStream(streamOptionsFromManifest(manifest));
+      let oracleState = createStream(streamOptionsFromManifest(manifest));
       const rev = state.cursor.sourceRevision ?? "oracle";
-      const snap = applySnapshot(oracleState, state.committedPrefix, rev);
+      let snap = applySnapshot(oracleState, state.committedPrefix, rev);
+      oracleState = snap.state;
+      // When the append path finished (stable→final), mirror finish so oracle
+      // finality matches (LS-08 stable-to-final).
+      if (
+        (snap.update.kind === "updated" || snap.update.kind === "unchanged") &&
+        state.finished
+      ) {
+        snap = finishStream(oracleState);
+        oracleState = snap.state;
+      }
       const ok =
         snap.update.kind === "updated" || snap.update.kind === "unchanged"
           ? oracleSnapshotsMatch(

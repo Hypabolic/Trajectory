@@ -29,7 +29,8 @@
       "expected": {
         "update_kind": "updated",
         "complete": false,
-        "result": "expected.baseline.json"
+        "result": "expected.baseline.json",
+        "diagnostic_codes": []
       },
       "double_invoke": true
     },
@@ -42,13 +43,18 @@
       "expected": {
         "update_kind": "updated",
         "complete": false,
-        "result": "expected.unknown-and-foreign.json"
+        "result": "expected.unknown-and-foreign.json",
+        "diagnostic_codes": [
+          "ahp_foreign_channel",
+          "ahp_unknown_action"
+        ]
       },
       "double_invoke": true
     }
   ],
   "comparison": [
     "stream-json-exact",
+    "stream-delta-apply",
     "stream-diagnostics-by-step",
     "stream-cursor-exact",
     "stream-idempotence"

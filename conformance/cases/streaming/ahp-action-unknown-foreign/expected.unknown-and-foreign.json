@@ -60,12 +60,12 @@
     ],
     "diagnostics": [
       {
-        "code": "ahp_unknown_action",
-        "message": "Ignored an unknown AHP action type."
-      },
-      {
         "code": "ahp_foreign_channel",
         "message": "Ignored an AHP action for a non-target channel."
+      },
+      {
+        "code": "ahp_unknown_action",
+        "message": "Ignored an unknown AHP action type."
       }
     ],
     "complete": false
@@ -99,12 +99,12 @@
   },
   "diagnostics": [
     {
-      "code": "ahp_unknown_action",
-      "message": "Ignored an unknown AHP action type."
-    },
-    {
       "code": "ahp_foreign_channel",
       "message": "Ignored an AHP action for a non-target channel."
+    },
+    {
+      "code": "ahp_unknown_action",
+      "message": "Ignored an unknown AHP action type."
     }
   ],
   "provisional": {

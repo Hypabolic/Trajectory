@@ -1085,6 +1085,8 @@ public static class TrajectoryStream
         }
 
         // Merge reducer diagnostics (unknown action / foreign channel).
+        // Sort by diagnostic_key so snapshot order matches key-sorted
+        // diagnostic_add ops under the delta-apply law (streaming.md §7).
         var extra = reduced.Diagnostics
             .Select(d => new StreamDiagnostic { Code = d.Code, Message = d.Message })
             .ToList();
@@ -1100,6 +1102,10 @@ public static class TrajectoryStream
 
             mergedDiags.Add(d);
         }
+
+        mergedDiags = mergedDiags
+            .OrderBy(DiagnosticKey, StringComparer.Ordinal)
+            .ToList();
 
         var lastSeq = reduced.LastServerSeq ?? -1;
         var seqCursor = new StreamCursor

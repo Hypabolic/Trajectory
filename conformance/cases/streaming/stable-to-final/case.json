@@ -53,8 +53,13 @@
   "comparison": [
     "stream-json-exact",
     "stream-delta-apply",
-    "stream-idempotence"
+    "stream-idempotence",
+    "stream-oracle-parity"
   ],
+  "oracle": {
+    "append_equals_prefix": true,
+    "prefix_re_normalize": true
+  },
   "privacy": {
     "forbidden_substrings": [
       "SECRET_TOKEN_xyz",

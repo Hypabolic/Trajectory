@@ -1635,6 +1635,13 @@ export function applyAhpActions(
     seen.add(key);
     diagnostics.push(d);
   }
+  // Sort by diagnostic_key so snapshot order matches key-sorted
+  // diagnostic_add ops under the delta-apply law (streaming.md §7).
+  diagnostics.sort((a, b) => {
+    const ka = diagnosticKey(a);
+    const kb = diagnosticKey(b);
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
 
   const lastSeq = reduced.lastServerSeq ?? -1;
   const seqCursor: StreamCursor = {

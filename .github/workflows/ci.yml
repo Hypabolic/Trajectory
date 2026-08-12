@@ -73,10 +73,12 @@ jobs:
           dotnet/tests/Trajectory.Conformance/Trajectory.Conformance.csproj
           -c Release --no-restore
       - name: Run every shared case twice
-        run: >-
-          python3 conformance/verify.py --repository-root . --
-          dotnet
-          dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll
+        run: |
+          summary=$(python3 conformance/verify.py --repository-root . -- \
+            dotnet \
+            dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll)
+          echo "$summary"
+          echo "$summary" | jq -e '.status == "success" and .stream_unsupported_skips == 0'
       - name: Upload unaccepted conformance candidates
         if: failure()
         uses: actions/upload-artifact@v4
@@ -207,9 +209,11 @@ jobs:
             ]
           ' typescript/packages/trajectory/runtime-capabilities.json > /dev/null
       - name: Run every advertised shared case twice
-        run: >-
-          python3 conformance/verify.py --repository-root . --
-          node typescript/packages/trajectory-testing/dist/cli.js
+        run: |
+          summary=$(python3 conformance/verify.py --repository-root . -- \
+            node typescript/packages/trajectory-testing/dist/cli.js)
+          echo "$summary"
+          echo "$summary" | jq -e '.status == "success" and .stream_unsupported_skips == 0'
       - name: Upload unaccepted conformance candidates
         if: failure()
         uses: actions/upload-artifact@v4
@@ -344,10 +348,12 @@ jobs:
           ' > /dev/null
       - name: Run every advertised shared case twice (unfiltered tip)
         # No --source/--operation: verify defaults to compatibility tip matrix.
-        run: >-
-          python conformance/verify.py --repository-root .
-          --
-          env PYTHONPATH=python/tools python -m trajectory_conformance
+        # LS-08: stream_unsupported_skips must be 0 (unsupported-as-skip must not green CI).
+        run: |
+          summary=$(python conformance/verify.py --repository-root . -- \
+            env PYTHONPATH=python/tools python -m trajectory_conformance)
+          echo "$summary"
+          echo "$summary" | jq -e '.status == "success" and .stream_unsupported_skips == 0'
       - name: Upload unaccepted conformance candidates
         if: failure()
         uses: actions/upload-artifact@v4
@@ -461,9 +467,11 @@ jobs:
             ]
           ' rust/crates/hypabolic-trajectory/runtime-capabilities.json > /dev/null
       - name: Run every advertised shared case and output twice
-        run: >-
-          python3 conformance/verify.py --repository-root . --
-          rust/target/release/trajectory-conformance
+        run: |
+          summary=$(python3 conformance/verify.py --repository-root . -- \
+            rust/target/release/trajectory-conformance)
+          echo "$summary"
+          echo "$summary" | jq -e '.status == "success" and .stream_unsupported_skips == 0'
       - name: Prove checked-in identity goldens are unchanged
         run: sha256sum --check conformance/identity-baseline.sha256
       - name: Reject fixture mutation

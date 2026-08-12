@@ -2099,6 +2099,8 @@ pub fn apply_ahp_actions(
     }
 
     // Merge reducer diagnostics (unknown action / foreign channel).
+    // Sort by diagnostic_key so snapshot order matches key-sorted
+    // diagnostic_add ops under the delta-apply law (streaming.md §7).
     let mut seen = std::collections::BTreeSet::new();
     let mut diagnostics: Vec<StreamDiagnostic> = Vec::new();
     for d in &update.diagnostics {
@@ -2119,6 +2121,10 @@ pub fn apply_ahp_actions(
             });
         }
     }
+    diagnostics.sort_by(|a, b| {
+        diagnostic_key(&a.code, a.input_line, a.record_index)
+            .cmp(&diagnostic_key(&b.code, b.input_line, b.record_index))
+    });
     let extra_count = reduced.diagnostics.len();
 
     let last_seq = reduced.last_server_seq.unwrap_or(-1);
