@@ -172,8 +172,8 @@ StreamUpdate = {
   kind: "updated" | "unchanged" | "reset-required" | "error",
   revision: StreamRevision,
   cursor: StreamCursor,
-  snapshot: StreamSnapshot | null,   # required when kind=updated (default delivery)
-  delta: StreamDelta | null,         # required when kind=updated (default delivery)
+  snapshot: StreamSnapshot | null,   # non-null for delivery=both|snapshot when kind=updated
+  delta: StreamDelta | null,         # non-null for delivery=both|delta when kind=updated
   diagnostics: StreamDiagnostic[],
   provisional: {
     include: boolean,
@@ -211,8 +211,16 @@ StreamRevision = {
 | `reset_policy` | `"return-reset-required"` | Do not auto-reset without caller opt-in |
 
 Callers may request `delivery: "snapshot"` or `"delta"` for bandwidth; the
-algorithm still computes both when needed for correctness. Conformance goldens
-use **both** and require **delta-apply equivalence**.
+algorithm still computes both when needed for correctness. On the wire,
+`kind=updated` must include at least one of `snapshot` or `delta` non-null:
+
+| delivery | snapshot | delta |
+| --- | --- | --- |
+| `"both"` (default) | non-null | non-null |
+| `"snapshot"` | non-null | `null` |
+| `"delta"` | `null` | non-null |
+
+Conformance goldens use **both** and require **delta-apply equivalence**.
 
 Wire schema: [`trajectory-stream-v1.schema.json`](../schemas/trajectory-stream-v1.schema.json).
 

@@ -1,0 +1,38 @@
+{
+  "schema": "streaming-delta-v1.schema.json",
+  "reason": "reset.prior_cursor.position must match streaming-cursor-v1 position oneOf (byte | ahp-server-seq | snapshot-revision | hermes-row); bare object / unknown kind / missing next_byte_offset is invalid.",
+  "instance": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "rev-0",
+    "revision": {
+      "revision": 1,
+      "revision_id": "rev-1",
+      "parent_revision_id": "rev-0",
+      "complete": false,
+      "generation": 1
+    },
+    "operations": [
+      {
+        "op": "reset",
+        "reset": {
+          "reason": "cursor-mismatch",
+          "prior_cursor": {
+            "cursor_version": 1,
+            "source": "pi",
+            "group_id": "g",
+            "generation": 0,
+            "position": {
+              "kind": "byte",
+              "next_byte_offset": -1,
+              "pending_byte_length": 0
+            },
+            "source_revision": null,
+            "prefix_sha256": null
+          },
+          "requires_snapshot": true,
+          "dropped_record_ids": []
+        }
+      }
+    ]
+  }
+}

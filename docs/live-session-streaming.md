@@ -270,14 +270,16 @@ StreamUpdate = {
     first_source_position?: int64,
     last_source_position?: int64
   },
-  reset?: StreamReset
+  reset?: StreamReset,
+  error?: { code: string, message: string }
 }
 ```
 
 Default delivery is **both** snapshot and delta. Options may omit one from the
-serialized response for bandwidth, but conformance goldens use both and require
-**delta-apply equivalence**: applying `delta` to prior snapshot yields new
-snapshot.
+serialized response for bandwidth (`delivery: "snapshot"` or `"delta"`); the
+wire schema accepts snapshot-only or delta-only `kind=updated` results. Conformance
+goldens use both and require **delta-apply equivalence**: applying `delta` to
+prior snapshot yields new snapshot.
 
 ### 4.6 `StreamSnapshot`
 

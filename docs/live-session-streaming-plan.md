@@ -451,7 +451,8 @@ Optional packages (LS-09/10/07h) may trail core matrix but are required for
 
 ## Immediate next action
 
-**LS-00 is satisfied by the locked docs in this PR/branch.**  
-Next engineering slice: **LS-01** — author `contracts/spec/streaming.md` and
-stream JSON schemas from [live-session-streaming.md](live-session-streaming.md)
-without implementing runtime stream engines yet.
+**LS-00** (locked product design) and **LS-01** (normative stream wire
+contracts, schemas, and vectors) are delivered on this branch.  
+Next engineering slice: **LS-02** — shared conformance protocol and fixture
+skeleton for multi-step stream cases (runners may `unsupported` until engines
+land in LS-04+).

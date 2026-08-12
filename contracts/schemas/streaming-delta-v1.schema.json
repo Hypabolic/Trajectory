@@ -36,6 +36,16 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
+    "int64": {
+      "type": "integer",
+      "minimum": -9223372036854775808,
+      "maximum": 9223372036854775807
+    },
+    "nonNegativeInt64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
@@ -43,6 +53,56 @@
     "recordStatus": {
       "type": "string",
       "enum": ["provisional", "stable", "final"]
+    },
+    "bytePosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "next_byte_offset", "pending_byte_length"],
+      "properties": {
+        "kind": { "const": "byte" },
+        "next_byte_offset": { "$ref": "#/$defs/nonNegativeInt64" },
+        "pending_byte_length": { "$ref": "#/$defs/nonNegativeInt64" }
+      }
+    },
+    "ahpServerSeqPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "next_server_seq", "last_server_seq"],
+      "properties": {
+        "kind": { "const": "ahp-server-seq" },
+        "next_server_seq": { "$ref": "#/$defs/int64" },
+        "last_server_seq": { "$ref": "#/$defs/int64" },
+        "next_byte_offset": { "$ref": "#/$defs/nonNegativeInt64" }
+      }
+    },
+    "snapshotRevisionPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "revision"],
+      "properties": {
+        "kind": { "const": "snapshot-revision" },
+        "revision": { "type": "string", "minLength": 1 },
+        "content_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "hermesRowPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "database_generation"],
+      "properties": {
+        "kind": { "const": "hermes-row" },
+        "database_generation": { "type": "string", "minLength": 1 },
+        "last_row_id": { "$ref": "#/$defs/int64" },
+        "change_token": { "type": "string", "minLength": 1 }
+      }
+    },
+    "position": {
+      "oneOf": [
+        { "$ref": "#/$defs/bytePosition" },
+        { "$ref": "#/$defs/ahpServerSeqPosition" },
+        { "$ref": "#/$defs/snapshotRevisionPosition" },
+        { "$ref": "#/$defs/hermesRowPosition" }
+      ]
     },
     "streamRevision": {
       "type": "object",
@@ -199,7 +259,34 @@
             "record_sha256": { "$ref": "#/$defs/sha256" }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "meta" } }, "required": ["kind"] },
+          "then": { "required": ["source_name"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "message" } }, "required": ["kind"] },
+          "then": { "required": ["content"] }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "assistant_tool_calls" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["content", "tool_calls"],
+            "properties": { "content": { "type": "null" } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "tool_result" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["tool_call_id", "content", "is_error"] }
+        }
+      ]
     },
     "streamRecord": {
       "type": "object",
@@ -240,7 +327,7 @@
         },
         "group_id": { "type": "string", "minLength": 1 },
         "generation": { "$ref": "#/$defs/uint64" },
-        "position": { "type": "object" },
+        "position": { "$ref": "#/$defs/position" },
         "source_revision": { "type": ["string", "null"] },
         "prefix_sha256": {
           "oneOf": [

@@ -119,11 +119,11 @@ Technical schema IDs are versioned under `contracts/`; see
 
 There is no shared native core, FFI bridge, or cross-language subprocess.
 
-## Live session streaming (planned)
+## Live session streaming (wire contracts landed; engines pending)
 
 One-shot normalize and listing remain the shipped batch path. A **library**
-streaming surface (not a Trajectory daemon) is specified for consumer apps that
-watch active sessions:
+streaming surface (not a Trajectory daemon) has **normative wire contracts**
+(`trajectory-stream-v1`, LS-01); stream engines land in later LS slices:
 
 - pure stream state machine in each core package (cursor, apply, snapshot +
   delta, provisional records, reset);
@@ -131,6 +131,7 @@ watch active sessions:
 - shared `trajectory-stream-v1` contracts and multi-runtime conformance.
 
 Normative design: [live-session-streaming.md](live-session-streaming.md).  
+Wire contract: [streaming.md](../contracts/spec/streaming.md).  
 Delivery slices: [live-session-streaming-plan.md](live-session-streaming-plan.md).
 
 ## Further reading

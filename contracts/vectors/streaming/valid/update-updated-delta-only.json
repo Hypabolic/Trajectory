@@ -1,0 +1,79 @@
+{
+  "schema": "trajectory-stream-v1.schema.json",
+  "instance": {
+    "kind": "updated",
+    "revision": {
+      "revision": 1,
+      "revision_id": "rev-1",
+      "parent_revision_id": "rev-0",
+      "complete": false,
+      "generation": 0
+    },
+    "cursor": {
+      "cursor_version": 1,
+      "source": "pi",
+      "group_id": "stream-case-group",
+      "generation": 0,
+      "position": {
+        "kind": "byte",
+        "next_byte_offset": 128,
+        "pending_byte_length": 0
+      },
+      "source_revision": "file-gen-1",
+      "prefix_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "snapshot": null,
+    "delta": {
+      "schema_id": "trajectory-stream-v1",
+      "base_revision_id": "rev-0",
+      "revision": {
+        "revision": 1,
+        "revision_id": "rev-1",
+        "parent_revision_id": "rev-0",
+        "complete": false,
+        "generation": 0
+      },
+      "operations": [
+        {
+          "op": "upsert",
+          "record": {
+            "status": "stable",
+            "record": {
+              "id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "kind": "meta",
+              "role": "meta",
+              "order": -1,
+              "source_timestamp": null,
+              "timestamp": null,
+              "source_name": "pi",
+              "provenance": {
+                "stable_source_record_id": "meta",
+                "source_identity_kind": "synthetic",
+                "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+                "component_key": "meta",
+                "component_index": 0,
+                "component_type_ordinal": 0
+              },
+              "hashes": {
+                "content_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "record_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "diagnostics": [],
+    "provisional": {
+      "include": true,
+      "provisional_ids": [],
+      "finalized_ids": []
+    },
+    "consumed": {
+      "complete_records": 1,
+      "bytes": 128,
+      "first_source_position": 0,
+      "last_source_position": 127
+    }
+  }
+}

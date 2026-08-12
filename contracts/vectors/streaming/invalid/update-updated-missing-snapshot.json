@@ -1,6 +1,6 @@
 {
   "schema": "trajectory-stream-v1.schema.json",
-  "reason": "kind=updated requires non-null snapshot and delta under default delivery schema constraints.",
+  "reason": "kind=updated requires at least one of snapshot or delta non-null; both null is invalid for all delivery modes.",
   "instance": {
     "kind": "updated",
     "revision": {

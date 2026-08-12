@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://hypabolic.dev/trajectory/contracts/trajectory-stream-v1.schema.json",
   "title": "Trajectory stream update / snapshot v1",
-  "description": "Normative StreamUpdate envelope and embedded StreamSnapshot for trajectory-stream-v1. Default delivery includes both snapshot and delta on kind=updated. Empty records arrays are valid. See contracts/spec/streaming.md.",
+  "description": "Normative StreamUpdate envelope and embedded StreamSnapshot for trajectory-stream-v1. kind=updated requires at least one of snapshot or delta non-null: default delivery=both includes both; bandwidth modes may omit one (snapshot-only or delta-only). Empty records arrays are valid. See contracts/spec/streaming.md.",
   "oneOf": [
     { "$ref": "#/$defs/streamUpdate" },
     { "$ref": "#/$defs/streamSnapshot" }
@@ -170,7 +170,34 @@
             "record_sha256": { "$ref": "#/$defs/sha256" }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "meta" } }, "required": ["kind"] },
+          "then": { "required": ["source_name"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "message" } }, "required": ["kind"] },
+          "then": { "required": ["content"] }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "assistant_tool_calls" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["content", "tool_calls"],
+            "properties": { "content": { "type": "null" } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "tool_result" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["tool_call_id", "content", "is_error"] }
+        }
+      ]
     },
     "streamRecord": {
       "type": "object",
@@ -545,10 +572,30 @@
             "required": ["kind"]
           },
           "then": {
-            "properties": {
-              "snapshot": { "$ref": "#/$defs/streamSnapshot" },
-              "delta": { "$ref": "#/$defs/streamDelta" }
-            }
+            "description": "kind=updated: at least one of snapshot or delta must be non-null (both for default delivery; snapshot-only or delta-only for bandwidth modes).",
+            "anyOf": [
+              {
+                "description": "delivery=both (default)",
+                "properties": {
+                  "snapshot": { "$ref": "#/$defs/streamSnapshot" },
+                  "delta": { "$ref": "#/$defs/streamDelta" }
+                }
+              },
+              {
+                "description": "delivery=snapshot",
+                "properties": {
+                  "snapshot": { "$ref": "#/$defs/streamSnapshot" },
+                  "delta": { "type": "null" }
+                }
+              },
+              {
+                "description": "delivery=delta",
+                "properties": {
+                  "snapshot": { "type": "null" },
+                  "delta": { "$ref": "#/$defs/streamDelta" }
+                }
+              }
+            ]
           }
         },
         {
