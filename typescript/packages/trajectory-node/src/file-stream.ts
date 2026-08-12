@@ -204,9 +204,11 @@ export class FileTrajectoryStream {
   }
 
   /**
-   * Finish the underlying core stream. Forwards any host-held incomplete line
-   * into core pending first so finish can commit a final unterminated line.
-   * Distinct from AbortSignal/follow cancellation and from `close()`.
+   * Finish the underlying core stream. Forwards host-held incomplete line into
+   * core pending first so finish can commit a final unterminated line.
+   * Host pending is retained until core apply succeeds; non-success returns
+   * without calling finish. Distinct from AbortSignal/follow cancellation and
+   * from `close()`.
    */
   finish(): StreamUpdate {
     if (this.#hostPending.length > 0) {
@@ -217,6 +219,9 @@ export class FileTrajectoryStream {
         this.#sourceRevision,
       );
       this.#state = result.state;
+      if (result.update.kind !== "updated" && result.update.kind !== "unchanged") {
+        return result.update;
+      }
       this.#hostPending = new Uint8Array(0);
     }
     const finished = finishStream(this.#state);

@@ -198,5 +198,45 @@ test("permission denied is host error", async (t) => {
   }
 });
 
+test("finish failed pending flush retains host buffer (H4)", async () => {
+  const root = await tempRoot();
+  const path = join(root, "session.jsonl");
+  await writeFile(path, "");
+
+  const stream = FileTrajectoryStream.open({
+    root,
+    path,
+    source: "pi",
+    groupId: "stream-file-io-ts",
+    stream: {
+      source: "pi",
+      groupId: "stream-file-io-ts",
+      maxPendingBytes: 16n,
+      maxLineBytes: 16n,
+    },
+  });
+  const u0 = await stream.poll();
+  assert.ok(u0);
+  assert.equal(u0.kind, "updated");
+  const cursorBefore = stream.state.cursor;
+  assert.equal(stream.state.finished, false);
+
+  const incomplete = '{"type":"message","id":"pending-too-long","x":"' + "y".repeat(80);
+  await writeFile(path, incomplete);
+  assert.equal(await stream.poll(), null);
+
+  const finished = stream.finish();
+  assert.equal(finished.kind, "error");
+  assert.equal(finished.error?.code, "stream_buffer_limit");
+  assert.equal(stream.state.finished, false);
+  assert.equal(stream.state.cursor.generation, cursorBefore.generation);
+  // Pending retained: a second finish still fails the same way.
+  const again = stream.finish();
+  assert.equal(again.kind, "error");
+  assert.equal(again.error?.code, "stream_buffer_limit");
+  assert.equal(stream.state.finished, false);
+  stream.close();
+});
+
 // Silence unused import when bundlers analyze (pathToFileURL available for debug).
 void pathToFileURL;

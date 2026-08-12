@@ -235,13 +235,17 @@ impl FileTrajectoryStream {
     /// Propagates core [`TrajectoryError`] from finish or the pending flush.
     pub fn finish(&mut self) -> Result<StreamUpdate, TrajectoryError> {
         if !self.host_pending.is_empty() {
-            let pending = std::mem::take(&mut self.host_pending);
-            // Incomplete host bytes become core pending (no complete lines).
-            let _ = self.stream.apply_append(
-                &pending,
+            // Retain host pending until core apply succeeds (H4). Incomplete
+            // host bytes become core pending (no complete lines).
+            let update = self.stream.apply_append(
+                &self.host_pending,
                 None,
                 Some(self.source_revision.as_str()),
             )?;
+            if update.kind != "updated" && update.kind != "unchanged" {
+                return Ok(update);
+            }
+            self.host_pending.clear();
         }
         self.stream.finish()
     }
@@ -593,6 +597,56 @@ mod tests {
             .records
             .iter()
             .any(|r| r.record.get("role").and_then(|v| v.as_str()) == Some("user")));
+    }
+
+    #[test]
+    fn finish_failed_pending_flush_retains_host_buffer() {
+        let root = temp_root();
+        let path = root.join("session.jsonl");
+        fs::write(&path, b"").unwrap();
+
+        let mut opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-file-io-rs");
+        opts.max_pending_bytes = Some(16);
+        opts.max_line_bytes = Some(16);
+
+        let mut stream = FileTrajectoryStream::open(FileStreamOptions {
+            root: root.clone(),
+            path: path.clone(),
+            source: TrajectorySource::Pi,
+            group_id: Some("stream-file-io-rs".into()),
+            stream: Some(opts),
+            ..Default::default()
+        })
+        .unwrap();
+
+        let u0 = stream.poll().unwrap().expect("empty");
+        assert_eq!(u0.kind, "updated");
+        let gen_before = stream.stream().state().cursor.generation;
+        assert!(!stream.stream().state().finished);
+
+        let incomplete = format!(
+            r#"{{"type":"message","id":"pending-too-long","x":"{}"}}"#,
+            "y".repeat(80)
+        );
+        fs::write(&path, incomplete.as_bytes()).unwrap();
+        assert!(stream.poll().unwrap().is_none());
+
+        let finished = stream.finish().expect("finish returns update");
+        assert_eq!(finished.kind, "error");
+        assert_eq!(
+            finished.error.as_ref().map(|(c, _)| c.as_str()),
+            Some("stream_buffer_limit")
+        );
+        assert!(!stream.stream().state().finished);
+        assert_eq!(stream.stream().state().cursor.generation, gen_before);
+
+        let again = stream.finish().expect("second finish");
+        assert_eq!(again.kind, "error");
+        assert_eq!(
+            again.error.as_ref().map(|(c, _)| c.as_str()),
+            Some("stream_buffer_limit")
+        );
+        assert!(!stream.stream().state().finished);
     }
 
     #[test]

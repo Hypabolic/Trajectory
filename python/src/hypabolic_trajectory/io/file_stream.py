@@ -179,11 +179,18 @@ class FileTrajectoryStream:
         Forwards any host-held incomplete line into core pending first so
         ``finish`` can commit a final unterminated line (core finish only sees
         core ``pending_bytes``).
+
+        Host pending is retained until core ``apply_append`` succeeds. On
+        non-success (error / reset-required / sequence-gap / resync-required),
+        the pending buffer is kept, the failed update is returned, and
+        ``finish`` is not applied.
         """
         if self._host_pending:
-            self._stream.apply_append(
+            update = self._stream.apply_append(
                 self._host_pending, source_revision=self._source_revision
             )
+            if update.kind not in ("updated", "unchanged"):
+                return update
             self._host_pending = b""
         return self._stream.finish()
 

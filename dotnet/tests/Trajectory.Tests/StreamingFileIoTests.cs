@@ -255,6 +255,52 @@ public sealed class StreamingFileIoTests
         Assert.Equal("def"u8.ToArray(), pending);
     }
 
+    [Fact]
+    public void Finish_FailedPendingFlush_RetainsHostBuffer()
+    {
+        var root = CreateTempRoot();
+        var path = Path.Combine(root, "session.jsonl");
+        File.WriteAllBytes(path, Array.Empty<byte>());
+
+        using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+        {
+            Root = root,
+            Path = path,
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-io-dotnet",
+            Stream = new StreamOptions
+            {
+                Source = TrajectorySource.Pi,
+                GroupId = "stream-file-io-dotnet",
+                MaxPendingBytes = 16,
+                MaxLineBytes = 16,
+            },
+        });
+
+        var u0 = stream.Poll();
+        Assert.NotNull(u0);
+        Assert.Equal("updated", u0!.Kind);
+        var cursorBefore = stream.Cursor;
+        Assert.False(stream.Session.State.Finished);
+
+        var incomplete = System.Text.Encoding.UTF8.GetBytes(
+            "{\"type\":\"message\",\"id\":\"pending-too-long\",\"x\":\"" + new string('y', 80));
+        File.WriteAllBytes(path, incomplete);
+        Assert.Null(stream.Poll());
+
+        var finished = stream.Finish();
+        Assert.Equal("error", finished.Kind);
+        Assert.NotNull(finished.Error);
+        Assert.Equal("stream_buffer_limit", finished.Error!.Value.Code);
+        Assert.False(stream.Session.State.Finished);
+        Assert.Equal(cursorBefore.Generation, stream.Cursor.Generation);
+
+        var again = stream.Finish();
+        Assert.Equal("error", again.Kind);
+        Assert.Equal("stream_buffer_limit", again.Error!.Value.Code);
+        Assert.False(stream.Session.State.Finished);
+    }
+
     private static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "traj-io-" + Guid.NewGuid().ToString("N"));

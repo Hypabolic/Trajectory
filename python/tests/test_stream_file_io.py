@@ -210,6 +210,52 @@ def test_finish_flushes_host_pending(tmp_path: Path) -> None:
     assert any(r.record.get("role") == "user" for r in finished.snapshot.records)
 
 
+def test_finish_failed_pending_flush_retains_host_buffer(tmp_path: Path) -> None:
+    """H4: finish must not drop host pending or finish after a failed flush."""
+    from hypabolic_trajectory.streaming.types import StreamOptions
+
+    root = tmp_path / "store"
+    root.mkdir()
+    path = root / "session.jsonl"
+    path.write_bytes(b"")
+
+    fs = FileTrajectoryStream.open(
+        FileStreamOptions(
+            root=root,
+            path=path,
+            source="pi",
+            group_id="stream-file-io-py",
+            stream=StreamOptions(
+                source="pi",
+                group_id="stream-file-io-py",
+                max_pending_bytes=16,
+                max_line_bytes=16,
+            ),
+        )
+    )
+    u0 = fs.poll()
+    assert u0 is not None
+    assert u0.kind == "updated"
+    cursor_before = fs.cursor
+    assert not fs.stream.state.finished
+
+    # Incomplete growth held only at the host edge (no complete lines to apply).
+    incomplete = b'{"type":"message","id":"pending-too-long","x":"' + (b"y" * 80)
+    path.write_bytes(incomplete)
+    assert fs.poll() is None
+    assert fs._host_pending == incomplete  # noqa: SLF001 — host buffer contract
+
+    finished = fs.finish()
+    assert finished.kind == "error"
+    assert finished.error is not None
+    assert finished.error.code == "stream_buffer_limit"
+    # Host pending retained; core not finished; cursor recoverable.
+    assert fs._host_pending == incomplete  # noqa: SLF001 — host buffer contract
+    assert fs.stream.state.finished is False
+    assert fs.cursor.generation == cursor_before.generation
+    assert fs.cursor.position == cursor_before.position
+
+
 def test_core_streaming_has_no_io_package_import() -> None:
     """Core stream modules must not import the optional io package."""
     import hypabolic_trajectory.streaming.apply as apply_mod

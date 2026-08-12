@@ -165,12 +165,19 @@ public sealed class FileTrajectoryStream : IAsyncDisposable, IDisposable
     /// Finish the underlying core stream. Forwards any host-held incomplete
     /// line into core pending first so finish can commit a final unterminated
     /// line (core finish only sees core pending bytes).
+    /// Host pending is retained until core apply succeeds; non-success returns
+    /// without calling finish (H4).
     /// </summary>
     public StreamUpdate Finish()
     {
         if (_hostPending.Length > 0)
         {
-            _session.ApplyAppend(_hostPending, sourceRevision: _sourceRevision);
+            var update = _session.ApplyAppend(_hostPending, sourceRevision: _sourceRevision);
+            if (update.Kind is not ("updated" or "unchanged"))
+            {
+                return update;
+            }
+
             _hostPending = Array.Empty<byte>();
         }
 
