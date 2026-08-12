@@ -171,8 +171,8 @@ def test_each_protocol_v1_batch_op_executes_successfully() -> None:
         assert response["output_text"] != ""
 
 
-def test_stream_sequence_returns_unsupported_until_engine() -> None:
-    """LS-02: stream-sequence is accepted and returns unsupported pre-engine."""
+def test_stream_sequence_runs_engine_for_jsonl_cases() -> None:
+    """LS-05: stream-sequence runs core apply and returns success for JSONL cases."""
     completed = _invoke(_request("streaming/empty-prefix", "stream-sequence"))
     assert completed.returncode == 0, (
         f"stream-sequence failed:\nstdout={completed.stdout}\nstderr={completed.stderr}"
@@ -181,9 +181,12 @@ def test_stream_sequence_returns_unsupported_until_engine() -> None:
     assert response["protocol_version"] == "1"
     assert response["case"] == "streaming/empty-prefix"
     assert response["operation"] == "stream-sequence"
-    assert response["status"] == "unsupported"
-    assert response["fatal_error"] is not None
-    assert response["fatal_error"]["code"] == "capability_unsupported"
+    assert response["status"] == "success", response
+    assert response["fatal_error"] is None
+    payload = json.loads(response["output_text"])
+    assert isinstance(payload.get("steps"), list)
+    assert len(payload["steps"]) == 1
+    assert payload["steps"][0]["update"]["kind"] == "updated"
 
 
 def test_unknown_operation_is_protocol_error() -> None:

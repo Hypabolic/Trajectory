@@ -12,14 +12,25 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import {
+  applyAppend,
+  applySnapshot,
+  createStream,
+  finishStream,
   normalizeToIR,
   projectCanonical,
   projectHypabolic,
   projectLetta,
   projectMinimalJsonl,
   projectOpenAI,
+  resetStream,
   serializeProjection,
   TrajectoryNormalizationError,
+  updateToDict,
+  type StreamCursor,
+  type StreamOptions,
+  type StreamResetRequest,
+  type StreamState,
+  type StreamUpdate,
   type TrajectorySource,
 } from "@hypabolic/trajectory";
 import {
@@ -43,9 +54,23 @@ interface Request {
 interface Manifest {
   id: string;
   source: string;
+  group_id?: string;
   transcript?: string;
   operation?: Record<string, unknown>;
-  steps?: unknown[];
+  steps?: StreamStep[];
+  options?: {
+    delivery?: "both" | "snapshot" | "delta";
+    include_provisional?: boolean;
+    require_complete_lines?: boolean;
+    finalize_on_close?: boolean;
+    reset_policy?: "return-reset-required" | "auto-reset";
+    max_pending_bytes?: number;
+    max_line_bytes?: number;
+  };
+  oracle?: {
+    prefix_re_normalize?: boolean;
+    append_equals_prefix?: boolean;
+  };
   store?: string;
   listing?: { limit?: number; all_pages?: boolean };
   source_context?: {
@@ -59,6 +84,33 @@ interface Manifest {
     tool_results?: { max_characters?: number | null; strategy?: "head" | "head-tail" };
   };
   filters?: { tool_results?: "include" | "omit" };
+}
+
+interface StreamStep {
+  id?: string;
+  input: {
+    kind: string;
+    material?: string;
+    inline_utf8?: string;
+    source_revision?: string | null;
+    cursor?: Record<string, unknown>;
+    reset?: {
+      reason: string;
+      generation?: number;
+      source_revision?: string | null;
+      material?: string;
+      inline_utf8?: string;
+    };
+  };
+  expected?: Record<string, unknown>;
+  double_invoke?: boolean;
+}
+
+class StreamEngineUnsupported extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StreamEngineUnsupported";
+  }
 }
 
 const STREAM_OPERATIONS = new Set([
@@ -122,12 +174,42 @@ async function execute(request: Request): Promise<unknown> {
     throw new Error(`TypeScript does not support source '${manifest.source}'.`);
   }
 
-  // LS-02: multi-step stream cases — engine lands LS-04+.
+  // LS-05: multi-step stream sequence via core apply_append / apply_snapshot.
   if (STREAM_OPERATIONS.has(request.operation)) {
     if (!Array.isArray(manifest.steps) || manifest.steps.length === 0) {
       throw new Error(
         `Stream operation '${request.operation}' requires a streaming case with steps[].`,
       );
+    }
+    if (request.operation === "stream-sequence" || request.operation === "stream-replay") {
+      try {
+        const outputText = await executeStreamSequence(caseDirectory, manifest);
+        return {
+          protocol_version: "1",
+          case: request.case,
+          operation: request.operation,
+          status: "success",
+          output_text: outputText,
+          diagnostics: [],
+          fatal_error: null,
+        };
+      } catch (error) {
+        if (error instanceof StreamEngineUnsupported) {
+          return {
+            protocol_version: "1",
+            case: request.case,
+            operation: request.operation,
+            status: "unsupported",
+            output_text: null,
+            diagnostics: [],
+            fatal_error: {
+              code: "capability_unsupported",
+              message: error.message,
+            },
+          };
+        }
+        throw error;
+      }
     }
     return {
       protocol_version: "1",
@@ -138,7 +220,7 @@ async function execute(request: Request): Promise<unknown> {
       diagnostics: [],
       fatal_error: {
         code: "capability_unsupported",
-        message: "Stream engine is not implemented yet.",
+        message: "Per-step stream apply ops are not implemented yet.",
       },
     };
   }
@@ -238,6 +320,195 @@ type TrajectoryIRDiagnostics = readonly {
   readonly recordIndex?: number;
   readonly count?: number;
 }[];
+
+function streamOptionsFromManifest(manifest: Manifest): StreamOptions {
+  const opts = manifest.options ?? {};
+  return {
+    source: manifest.source as TrajectorySource,
+    ...(manifest.group_id === undefined ? {} : { groupId: manifest.group_id }),
+    delivery: opts.delivery ?? "both",
+    includeProvisional: opts.include_provisional ?? true,
+    requireCompleteLines: opts.require_complete_lines ?? true,
+    finalizeOnClose: opts.finalize_on_close ?? true,
+    resetPolicy: opts.reset_policy ?? "return-reset-required",
+    ...(opts.max_pending_bytes === undefined
+      ? {}
+      : { maxPendingBytes: BigInt(opts.max_pending_bytes) }),
+    ...(opts.max_line_bytes === undefined
+      ? {}
+      : { maxLineBytes: BigInt(opts.max_line_bytes) }),
+  };
+}
+
+async function loadStepBytes(
+  caseDirectory: string,
+  input: { material?: string; inline_utf8?: string },
+): Promise<Uint8Array> {
+  if (input.inline_utf8 !== undefined) {
+    return new TextEncoder().encode(input.inline_utf8);
+  }
+  if (!input.material) throw new Error("Step input requires material or inline_utf8.");
+  return new Uint8Array(await readFile(safeResolve(caseDirectory, input.material)));
+}
+
+function parseStreamCursor(raw: Record<string, unknown> | undefined): StreamCursor | undefined {
+  if (!raw) return undefined;
+  const source = raw.source;
+  const groupId = raw.group_id;
+  if (typeof source !== "string" || typeof groupId !== "string") {
+    throw new Error("Step cursor requires source and group_id strings.");
+  }
+  const position = raw.position as Record<string, unknown> | undefined;
+  if (!position || position.kind !== "byte") {
+    throw new Error("Stream engine supports byte cursors only in this slice.");
+  }
+  return {
+    cursorVersion: 1,
+    source: source as TrajectorySource,
+    groupId,
+    generation: BigInt(Number(raw.generation ?? 0)),
+    position: {
+      kind: "byte",
+      nextByteOffset: BigInt(Number(position.next_byte_offset ?? 0)),
+      pendingByteLength: BigInt(Number(position.pending_byte_length ?? 0)),
+    },
+    sourceRevision: (raw.source_revision as string | null | undefined) ?? null,
+    prefixSha256: (raw.prefix_sha256 as string | null | undefined) ?? null,
+  };
+}
+
+async function applyStreamStep(
+  state: StreamState,
+  caseDirectory: string,
+  stepInput: StreamStep["input"],
+): Promise<{ state: StreamState; update: StreamUpdate }> {
+  const kind = stepInput.kind;
+  const sourceRevision = stepInput.source_revision ?? undefined;
+  const cursor = parseStreamCursor(stepInput.cursor);
+  if (kind === "append-bytes") {
+    const data = await loadStepBytes(caseDirectory, stepInput);
+    return applyAppend(state, data, cursor, sourceRevision ?? undefined);
+  }
+  if (kind === "snapshot-bytes") {
+    const data = await loadStepBytes(caseDirectory, stepInput);
+    return applySnapshot(state, data, sourceRevision ?? "", cursor);
+  }
+  if (kind === "finish") {
+    return finishStream(state);
+  }
+  if (kind === "reset") {
+    if (!stepInput.reset) throw new Error("reset step requires reset object.");
+    let material: Uint8Array | undefined;
+    if (stepInput.reset.material !== undefined || stepInput.reset.inline_utf8 !== undefined) {
+      material = await loadStepBytes(caseDirectory, stepInput.reset);
+    }
+    const request: StreamResetRequest = {
+      reason: stepInput.reset.reason as StreamResetRequest["reason"],
+      ...(stepInput.reset.generation === undefined
+        ? {}
+        : { generation: BigInt(stepInput.reset.generation) }),
+      ...(stepInput.reset.source_revision === undefined || stepInput.reset.source_revision === null
+        ? {}
+        : { sourceRevision: stepInput.reset.source_revision }),
+      ...(material === undefined ? {} : { material }),
+    };
+    return resetStream(state, request);
+  }
+  if (kind === "ahp-actions" || kind === "ahp-snapshot" || kind === "hermes-export") {
+    throw new StreamEngineUnsupported(
+      `Stream input kind '${kind}' is not implemented in this slice.`,
+    );
+  }
+  throw new Error(`Unsupported stream input kind '${kind}'.`);
+}
+
+function streamStateEquivalent(a: StreamState, b: StreamState): boolean {
+  if (a.finished !== b.finished || a.generation !== b.generation) return false;
+  if (a.committedPrefix.length !== b.committedPrefix.length) return false;
+  for (let i = 0; i < a.committedPrefix.length; i++) {
+    if (a.committedPrefix[i] !== b.committedPrefix[i]) return false;
+  }
+  if (a.pendingBytes.length !== b.pendingBytes.length) return false;
+  for (let i = 0; i < a.pendingBytes.length; i++) {
+    if (a.pendingBytes[i] !== b.pendingBytes[i]) return false;
+  }
+  const ca = a.cursor;
+  const cb = b.cursor;
+  return (
+    ca.source === cb.source &&
+    ca.groupId === cb.groupId &&
+    ca.generation === cb.generation &&
+    ca.sourceRevision === cb.sourceRevision &&
+    ca.prefixSha256 === cb.prefixSha256 &&
+    ca.position.nextByteOffset === cb.position.nextByteOffset &&
+    ca.position.pendingByteLength === cb.position.pendingByteLength
+  );
+}
+
+async function executeStreamSequence(
+  caseDirectory: string,
+  manifest: Manifest,
+): Promise<string> {
+  const steps = manifest.steps ?? [];
+  for (const step of steps) {
+    const kind = step.input?.kind;
+    if (kind === "ahp-actions" || kind === "ahp-snapshot" || kind === "hermes-export") {
+      throw new StreamEngineUnsupported(
+        `Stream input kind '${kind}' is not implemented in this slice.`,
+      );
+    }
+  }
+
+  let state = createStream(streamOptionsFromManifest(manifest));
+  const stepResults: { id: string; update: ReturnType<typeof updateToDict>; idempotent: boolean }[] = [];
+
+  for (const step of steps) {
+    const stepId = typeof step.id === "string" ? step.id : "step";
+    const double = step.double_invoke !== false;
+    let result = await applyStreamStep(state, caseDirectory, step.input);
+    let update = result.update;
+    state = result.state;
+    let idempotent = true;
+    if (double) {
+      const second = await applyStreamStep(state, caseDirectory, step.input);
+      if (update.kind === "updated" || update.kind === "unchanged") {
+        idempotent =
+          second.update.kind === "unchanged" ||
+          (second.update.kind === "updated" && streamStateEquivalent(state, second.state));
+      } else {
+        idempotent =
+          second.update.kind === update.kind && streamStateEquivalent(state, second.state);
+      }
+      state = second.state;
+    }
+    stepResults.push({
+      id: stepId,
+      update: updateToDict(update),
+      idempotent,
+    });
+  }
+
+  const payload: Record<string, unknown> = { steps: stepResults };
+  const oracle = manifest.oracle;
+  if (oracle?.append_equals_prefix || oracle?.prefix_re_normalize) {
+    const oracleState = createStream(streamOptionsFromManifest(manifest));
+    const rev = state.cursor.sourceRevision ?? "oracle";
+    const snap = applySnapshot(oracleState, state.committedPrefix, rev);
+    const appendIds = (state.snapshot?.records ?? []).map((r) => r.record.id);
+    const snapIds = (snap.update.snapshot?.records ?? []).map((r) => r.record.id);
+    const ok =
+      snap.update.kind === "updated" || snap.update.kind === "unchanged"
+        ? JSON.stringify(appendIds) === JSON.stringify(snapIds) &&
+          state.cursor.position.nextByteOffset === snap.state.cursor.position.nextByteOffset &&
+          state.cursor.prefixSha256 === snap.state.cursor.prefixSha256
+        : false;
+    const section: Record<string, boolean> = {};
+    if (oracle.append_equals_prefix) section.append_equals_prefix = ok;
+    if (oracle.prefix_re_normalize) section.prefix_re_normalize = ok;
+    payload.oracle = section;
+  }
+  return JSON.stringify(payload);
+}
 
 async function executeListing(repositoryRoot: string, manifest: Manifest): Promise<string> {
   if (!manifest.store) throw new Error("Listing case requires a declarative store.");

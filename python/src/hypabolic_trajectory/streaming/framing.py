@@ -40,19 +40,24 @@ def append_framed(
     Returns ``(complete_segment, new_pending)``.
     Raises ``ValueError`` with code-like message keys on buffer limits
     (caller maps to typed stream errors).
+
+    ``max_pending_bytes`` is enforced on the *post-frame* pending tail only
+    (parity with .NET/TS/Rust). A complete-line segment larger than the limit
+    is accepted when the resulting pending tail is within the limit.
+    ``max_line_bytes`` still applies to each complete line and the pending tail.
     """
     buf = pending + segment
-    if max_pending_bytes is not None and len(buf) > max_pending_bytes:
-        raise ValueError("stream_buffer_limit:pending")
+    complete, new_pending = split_complete_lines(buf)
     if max_line_bytes is not None:
-        # Check any line (including pending) against max_line_bytes.
         start = 0
-        for i, b in enumerate(buf):
+        for i, b in enumerate(complete):
             if b == _LF:
                 line_len = i - start + 1
                 if line_len > max_line_bytes:
                     raise ValueError("stream_buffer_limit:line")
                 start = i + 1
-        if len(buf) - start > max_line_bytes:
+        if len(new_pending) > max_line_bytes:
             raise ValueError("stream_buffer_limit:line")
-    return split_complete_lines(buf)
+    if max_pending_bytes is not None and len(new_pending) > max_pending_bytes:
+        raise ValueError("stream_buffer_limit:pending")
+    return complete, new_pending

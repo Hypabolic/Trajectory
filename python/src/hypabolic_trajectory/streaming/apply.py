@@ -276,6 +276,8 @@ def apply_snapshot(
     new_state.pending_bytes = bytearray(pending)
     new_state.committed_prefix = bytearray(committed)
     new_state.next_revision = revision_num + 1
+    # Snapshot replaces committed material; clear append-replay fingerprint.
+    new_state.last_append_segment = None
     return new_state, update
 
 
@@ -312,6 +314,13 @@ def apply_append(
     if not segment and not state.pending_bytes:
         return state, _unchanged_update(state)
 
+    # Replay of already-accepted append input is idempotent (unchanged).
+    if (
+        state.last_append_segment is not None
+        and segment == state.last_append_segment
+    ):
+        return state, _unchanged_update(state)
+
     try:
         complete, pending = append_framed(
             bytes(state.pending_bytes),
@@ -331,6 +340,7 @@ def apply_append(
             return state, _unchanged_update(state)
         new_state = _clone_state(state)
         new_state.pending_bytes = bytearray(pending)
+        new_state.last_append_segment = segment
         pos = new_state.cursor.position
         if isinstance(pos, BytePosition):
             new_state.cursor = StreamCursor(
@@ -361,45 +371,49 @@ def apply_append(
         source_revision=rev,
         cursor=None,
     )
-    if update.kind == "updated" or update.kind == "unchanged":
-        # Restore pending from append framing; always copy onto StreamUpdate.cursor.
-        pos = new_state.cursor.position
-        if isinstance(pos, BytePosition):
-            new_state.cursor = StreamCursor(
-                source=new_state.cursor.source,
-                group_id=new_state.cursor.group_id,
-                generation=new_state.cursor.generation,
-                position=BytePosition(
-                    next_byte_offset=pos.next_byte_offset,
-                    pending_byte_length=len(pending),
-                ),
-                source_revision=new_state.cursor.source_revision,
-                prefix_sha256=new_state.cursor.prefix_sha256,
-            )
-        new_state.pending_bytes = bytearray(pending)
-        # Consumed bytes for append = newly framed complete segment only.
-        consumed = StreamConsumed(
-            complete_records=update.consumed.complete_records,
-            bytes=len(complete),
-            first_source_position=(
-                len(bytes(state.committed_prefix)) if complete else None
+    # Failure-atomic: failed/reset snapshot leaves prior state and pending intact.
+    if update.kind not in {"updated", "unchanged"}:
+        return state, update
+
+    # Restore pending from append framing; always copy onto StreamUpdate.cursor.
+    pos = new_state.cursor.position
+    if isinstance(pos, BytePosition):
+        new_state.cursor = StreamCursor(
+            source=new_state.cursor.source,
+            group_id=new_state.cursor.group_id,
+            generation=new_state.cursor.generation,
+            position=BytePosition(
+                next_byte_offset=pos.next_byte_offset,
+                pending_byte_length=len(pending),
             ),
-            last_source_position=(
-                (len(new_prefix) - 1) if complete else None
-            ),
+            source_revision=new_state.cursor.source_revision,
+            prefix_sha256=new_state.cursor.prefix_sha256,
         )
-        update = StreamUpdate(
-            kind=update.kind,
-            revision=update.revision,
-            cursor=new_state.cursor,
-            snapshot=update.snapshot,
-            delta=update.delta,
-            diagnostics=update.diagnostics,
-            provisional=update.provisional,
-            consumed=consumed if update.kind == "updated" else update.consumed,
-            reset=update.reset,
-            error=update.error,
-        )
+    new_state.pending_bytes = bytearray(pending)
+    new_state.last_append_segment = segment
+    # Consumed bytes for append = newly framed complete segment only.
+    consumed = StreamConsumed(
+        complete_records=update.consumed.complete_records,
+        bytes=len(complete),
+        first_source_position=(
+            len(bytes(state.committed_prefix)) if complete else None
+        ),
+        last_source_position=(
+            (len(new_prefix) - 1) if complete else None
+        ),
+    )
+    update = StreamUpdate(
+        kind=update.kind,
+        revision=update.revision,
+        cursor=new_state.cursor,
+        snapshot=update.snapshot,
+        delta=update.delta,
+        diagnostics=update.diagnostics,
+        provisional=update.provisional,
+        consumed=consumed if update.kind == "updated" else update.consumed,
+        reset=update.reset,
+        error=update.error,
+    )
     return new_state, update
 
 
@@ -560,6 +574,7 @@ def reset_stream(
     new_state.committed_prefix = bytearray()
     new_state.snapshot = None
     new_state.group_locked = False
+    new_state.last_append_segment = None
     group_id = state.options.group_id or state.cursor.group_id
     new_state.cursor = StreamCursor(
         source=state.cursor.source,
@@ -748,6 +763,7 @@ def _clone_state(state: StreamState) -> StreamState:
         next_revision=state.next_revision,
         finished=state.finished,
         group_locked=state.group_locked,
+        last_append_segment=state.last_append_segment,
     )
 
 

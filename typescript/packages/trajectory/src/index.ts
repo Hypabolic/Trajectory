@@ -150,6 +150,7 @@ export {
   resetStream,
   snapshotToDict,
   splitCompleteLines,
+  updateToDict,
   type BytePosition,
   type StreamCursor,
   type StreamDelta,

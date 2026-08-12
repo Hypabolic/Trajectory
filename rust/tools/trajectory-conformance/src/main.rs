@@ -8,13 +8,15 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::DateTime;
 use hypabolic_trajectory::{
-    ListingOptions, NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError,
-    TruncationStrategy, list_ahp_trajectories, list_claude_code_trajectories,
-    list_codex_trajectories, list_grok_build_trajectories, list_hermes_trajectories,
-    list_openclaw_trajectories, list_pi_trajectories, normalize_ahp, normalize_claude_code,
-    normalize_codex, normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi,
-    project_canonical, project_hypabolic, project_letta, project_minimal_jsonl, project_openai,
-    project_opentelemetry,
+    BytePosition, ListingOptions, NormalizeOptions, NormalizeRequest, SourceContext, StreamCursor,
+    StreamDelivery, StreamOptions, StreamResetRequest, StreamState, StreamUpdate, TrajectoryError,
+    TrajectorySource, TruncationStrategy, apply_append, apply_snapshot, create_stream,
+    finish_stream, list_ahp_trajectories, list_claude_code_trajectories, list_codex_trajectories,
+    list_grok_build_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
+    list_pi_trajectories, normalize_ahp, normalize_claude_code, normalize_codex,
+    normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi, project_canonical,
+    project_hypabolic, project_letta, project_minimal_jsonl, project_openai,
+    project_opentelemetry, reset_stream, update_to_value,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -32,11 +34,17 @@ struct Manifest {
     id: String,
     source: String,
     #[serde(default)]
+    group_id: Option<String>,
+    #[serde(default)]
     transcript: Option<String>,
     #[serde(default)]
     operation: Map<String, Value>,
     #[serde(default)]
     steps: Option<Vec<Value>>,
+    #[serde(default)]
+    options: Option<Value>,
+    #[serde(default)]
+    oracle: Option<Value>,
     store: Option<String>,
     listing: Option<ListingManifest>,
     #[serde(default)]
@@ -180,7 +188,7 @@ fn run() -> Result<Value, String> {
         ));
     }
 
-    // LS-02: multi-step stream cases — engine lands LS-04+.
+    // LS-05: multi-step stream sequence via core apply_append / apply_snapshot.
     if is_stream_operation(&request.operation) {
         let steps_ok = manifest
             .steps
@@ -193,6 +201,50 @@ fn run() -> Result<Value, String> {
                 request.operation
             ));
         }
+        if request.operation == "stream-sequence" || request.operation == "stream-replay" {
+            match execute_stream_sequence(&case_directory, &manifest) {
+                Ok(output_text) => {
+                    return Ok(json!({
+                        "protocol_version": "1",
+                        "case": request.case,
+                        "operation": request.operation,
+                        "status": "success",
+                        "output_text": output_text,
+                        "diagnostics": [],
+                        "fatal_error": null,
+                    }));
+                }
+                Err(StreamEngineError::Unsupported(message)) => {
+                    return Ok(json!({
+                        "protocol_version": "1",
+                        "case": request.case,
+                        "operation": request.operation,
+                        "status": "unsupported",
+                        "output_text": null,
+                        "diagnostics": [],
+                        "fatal_error": {
+                            "code": "capability_unsupported",
+                            "message": message,
+                        },
+                    }));
+                }
+                Err(StreamEngineError::Protocol(message)) => return Err(message),
+                Err(StreamEngineError::Fatal(error)) => {
+                    return Ok(json!({
+                        "protocol_version": "1",
+                        "case": request.case,
+                        "operation": request.operation,
+                        "status": "fatal-error",
+                        "output_text": null,
+                        "diagnostics": [],
+                        "fatal_error": {
+                            "code": error.code,
+                            "message": error.message,
+                        },
+                    }));
+                }
+            }
+        }
         return Ok(json!({
             "protocol_version": "1",
             "case": request.case,
@@ -202,7 +254,7 @@ fn run() -> Result<Value, String> {
             "diagnostics": [],
             "fatal_error": {
                 "code": "capability_unsupported",
-                "message": "Stream engine is not implemented yet.",
+                "message": "Per-step stream apply ops are not implemented yet.",
             },
         }));
     }
@@ -241,6 +293,341 @@ fn run() -> Result<Value, String> {
             },
         })),
     }
+}
+
+enum StreamEngineError {
+    Unsupported(String),
+    Protocol(String),
+    Fatal(TrajectoryError),
+}
+
+fn parse_trajectory_source(name: &str) -> Result<TrajectorySource, StreamEngineError> {
+    match name {
+        "pi" => Ok(TrajectorySource::Pi),
+        "claude-code" => Ok(TrajectorySource::ClaudeCode),
+        "codex" => Ok(TrajectorySource::Codex),
+        "openclaw" => Ok(TrajectorySource::OpenClaw),
+        "hermes" => Ok(TrajectorySource::Hermes),
+        "ahp" => Ok(TrajectorySource::Ahp),
+        "grok-build" => Ok(TrajectorySource::GrokBuild),
+        other => Err(StreamEngineError::Protocol(format!(
+            "Unknown stream source '{other}'."
+        ))),
+    }
+}
+
+fn stream_options_from_manifest(manifest: &Manifest) -> Result<StreamOptions, StreamEngineError> {
+    let source = parse_trajectory_source(&manifest.source)?;
+    let mut opts = StreamOptions::new(source);
+    if let Some(group) = &manifest.group_id {
+        opts = opts.with_group_id(group);
+    }
+    if let Some(Value::Object(map)) = &manifest.options {
+        if let Some(Value::String(delivery)) = map.get("delivery") {
+            opts.delivery = match delivery.as_str() {
+                "snapshot" => StreamDelivery::Snapshot,
+                "delta" => StreamDelivery::Delta,
+                _ => StreamDelivery::Both,
+            };
+        }
+        if let Some(Value::Bool(v)) = map.get("include_provisional") {
+            opts.include_provisional = *v;
+        }
+        if let Some(Value::Bool(v)) = map.get("require_complete_lines") {
+            opts.require_complete_lines = *v;
+        }
+        if let Some(Value::Bool(v)) = map.get("finalize_on_close") {
+            opts.finalize_on_close = *v;
+        }
+        if let Some(Value::Number(n)) = map.get("max_pending_bytes") {
+            if let Some(v) = n.as_i64() {
+                opts.max_pending_bytes = Some(v);
+            }
+        }
+        if let Some(Value::Number(n)) = map.get("max_line_bytes") {
+            if let Some(v) = n.as_i64() {
+                opts.max_line_bytes = Some(v);
+            }
+        }
+    }
+    Ok(opts)
+}
+
+fn load_step_bytes(
+    case_directory: &Path,
+    input: &Value,
+) -> Result<Vec<u8>, StreamEngineError> {
+    if let Some(Value::String(text)) = input.get("inline_utf8") {
+        return Ok(text.as_bytes().to_vec());
+    }
+    let material = input
+        .get("material")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            StreamEngineError::Protocol("Step input requires material or inline_utf8.".into())
+        })?;
+    let path = safe_join(case_directory, material)
+        .map_err(StreamEngineError::Protocol)?;
+    fs::read(&path).map_err(|_| {
+        StreamEngineError::Protocol("Failed to read step material bytes.".into())
+    })
+}
+
+fn parse_stream_cursor(raw: Option<&Value>) -> Result<Option<StreamCursor>, StreamEngineError> {
+    let Some(Value::Object(map)) = raw else {
+        return Ok(None);
+    };
+    let source = map
+        .get("source")
+        .and_then(Value::as_str)
+        .ok_or_else(|| StreamEngineError::Protocol("cursor.source required.".into()))?
+        .to_string();
+    let group_id = map
+        .get("group_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| StreamEngineError::Protocol("cursor.group_id required.".into()))?
+        .to_string();
+    let generation = map
+        .get("generation")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let position = map
+        .get("position")
+        .and_then(Value::as_object)
+        .ok_or_else(|| StreamEngineError::Protocol("cursor.position required.".into()))?;
+    if position.get("kind").and_then(Value::as_str) != Some("byte") {
+        return Err(StreamEngineError::Protocol(
+            "Stream engine supports byte cursors only in this slice.".into(),
+        ));
+    }
+    let next_byte_offset = position
+        .get("next_byte_offset")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let pending_byte_length = position
+        .get("pending_byte_length")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let source_revision = map
+        .get("source_revision")
+        .and_then(|v| v.as_str().map(str::to_string));
+    let prefix_sha256 = map
+        .get("prefix_sha256")
+        .and_then(|v| v.as_str().map(str::to_string));
+    Ok(Some(StreamCursor {
+        cursor_version: 1,
+        source,
+        group_id,
+        generation,
+        position: BytePosition {
+            next_byte_offset,
+            pending_byte_length,
+        },
+        source_revision,
+        prefix_sha256,
+    }))
+}
+
+fn apply_stream_step(
+    state: &StreamState,
+    case_directory: &Path,
+    step_input: &Value,
+) -> Result<(StreamState, StreamUpdate), StreamEngineError> {
+    let kind = step_input
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or_else(|| StreamEngineError::Protocol("Step input.kind required.".into()))?;
+    let source_revision = step_input
+        .get("source_revision")
+        .and_then(Value::as_str);
+    let cursor = parse_stream_cursor(step_input.get("cursor"))?;
+    match kind {
+        "append-bytes" => {
+            let data = load_step_bytes(case_directory, step_input)?;
+            apply_append(state, &data, cursor.as_ref(), source_revision)
+                .map_err(StreamEngineError::Fatal)
+        }
+        "snapshot-bytes" => {
+            let data = load_step_bytes(case_directory, step_input)?;
+            apply_snapshot(
+                state,
+                &data,
+                source_revision.unwrap_or(""),
+                cursor.as_ref(),
+            )
+            .map_err(StreamEngineError::Fatal)
+        }
+        "finish" => finish_stream(state).map_err(StreamEngineError::Fatal),
+        "reset" => {
+            let reset = step_input
+                .get("reset")
+                .and_then(Value::as_object)
+                .ok_or_else(|| {
+                    StreamEngineError::Protocol("reset step requires reset object.".into())
+                })?;
+            let reason = reset
+                .get("reason")
+                .and_then(Value::as_str)
+                .ok_or_else(|| StreamEngineError::Protocol("reset.reason required.".into()))?
+                .to_string();
+            let generation = reset.get("generation").and_then(Value::as_u64);
+            let rev = reset
+                .get("source_revision")
+                .and_then(|v| v.as_str().map(str::to_string));
+            let material = if reset.contains_key("material") || reset.contains_key("inline_utf8") {
+                Some(load_step_bytes(case_directory, &Value::Object(reset.clone()))?)
+            } else {
+                None
+            };
+            let request = StreamResetRequest {
+                reason,
+                generation,
+                source_revision: rev,
+                prior_cursor: None,
+                material,
+            };
+            reset_stream(state, &request).map_err(StreamEngineError::Fatal)
+        }
+        "ahp-actions" | "ahp-snapshot" | "hermes-export" => Err(StreamEngineError::Unsupported(
+            format!("Stream input kind '{kind}' is not implemented in this slice."),
+        )),
+        other => Err(StreamEngineError::Protocol(format!(
+            "Unsupported stream input kind '{other}'."
+        ))),
+    }
+}
+
+fn stream_state_equivalent(a: &StreamState, b: &StreamState) -> bool {
+    a.finished == b.finished
+        && a.generation == b.generation
+        && a.committed_prefix == b.committed_prefix
+        && a.pending_bytes == b.pending_bytes
+        && a.cursor.source == b.cursor.source
+        && a.cursor.group_id == b.cursor.group_id
+        && a.cursor.generation == b.cursor.generation
+        && a.cursor.source_revision == b.cursor.source_revision
+        && a.cursor.prefix_sha256 == b.cursor.prefix_sha256
+        && a.cursor.position.next_byte_offset == b.cursor.position.next_byte_offset
+        && a.cursor.position.pending_byte_length == b.cursor.position.pending_byte_length
+}
+
+fn execute_stream_sequence(
+    case_directory: &Path,
+    manifest: &Manifest,
+) -> Result<String, StreamEngineError> {
+    let steps = manifest
+        .steps
+        .as_ref()
+        .ok_or_else(|| StreamEngineError::Protocol("steps required.".into()))?;
+    for step in steps {
+        if let Some(kind) = step
+            .get("input")
+            .and_then(|i| i.get("kind"))
+            .and_then(Value::as_str)
+        {
+            if matches!(kind, "ahp-actions" | "ahp-snapshot" | "hermes-export") {
+                return Err(StreamEngineError::Unsupported(format!(
+                    "Stream input kind '{kind}' is not implemented in this slice."
+                )));
+            }
+        }
+    }
+
+    let mut state = create_stream(stream_options_from_manifest(manifest)?);
+    let mut step_results = Vec::new();
+    for step in steps {
+        let step_id = step
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("step")
+            .to_string();
+        let step_input = step.get("input").ok_or_else(|| {
+            StreamEngineError::Protocol("Each step requires an input object.".into())
+        })?;
+        let double = step
+            .get("double_invoke")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        let (next_state, update) = apply_stream_step(&state, case_directory, step_input)?;
+        state = next_state;
+        let mut idempotent = true;
+        if double {
+            let (state2, update2) = apply_stream_step(&state, case_directory, step_input)?;
+            if update.kind == "updated" || update.kind == "unchanged" {
+                idempotent = update2.kind == "unchanged"
+                    || (update2.kind == "updated" && stream_state_equivalent(&state, &state2));
+            } else {
+                idempotent =
+                    update2.kind == update.kind && stream_state_equivalent(&state, &state2);
+            }
+            state = state2;
+        }
+        step_results.push(json!({
+            "id": step_id,
+            "update": update_to_value(&update),
+            "idempotent": idempotent,
+        }));
+    }
+
+    let mut payload = json!({ "steps": step_results });
+    if let Some(oracle) = &manifest.oracle {
+        let want_append = oracle
+            .get("append_equals_prefix")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let want_prefix = oracle
+            .get("prefix_re_normalize")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if want_append || want_prefix {
+            let oracle_state = create_stream(stream_options_from_manifest(manifest)?);
+            let rev = state
+                .cursor
+                .source_revision
+                .clone()
+                .unwrap_or_else(|| "oracle".into());
+            let (_, snap) = apply_snapshot(&oracle_state, &state.committed_prefix, &rev, None)
+                .map_err(StreamEngineError::Fatal)?;
+            let append_ids: Vec<String> = state
+                .snapshot
+                .as_ref()
+                .map(|s| {
+                    s.records
+                        .iter()
+                        .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let snap_ids: Vec<String> = snap
+                .snapshot
+                .as_ref()
+                .map(|s| {
+                    s.records
+                        .iter()
+                        .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let ok = (snap.kind == "updated" || snap.kind == "unchanged")
+                && append_ids == snap_ids
+                && state.cursor.position.next_byte_offset == snap.cursor.position.next_byte_offset
+                && state.cursor.prefix_sha256 == snap.cursor.prefix_sha256;
+            let mut section = Map::new();
+            if want_append {
+                section.insert("append_equals_prefix".into(), Value::Bool(ok));
+            }
+            if want_prefix {
+                section.insert("prefix_re_normalize".into(), Value::Bool(ok));
+            }
+            payload
+                .as_object_mut()
+                .unwrap()
+                .insert("oracle".into(), Value::Object(section));
+        }
+    }
+    serde_json::to_string(&payload).map_err(|e| {
+        StreamEngineError::Protocol(format!("Failed to serialize stream sequence: {e}"))
+    })
 }
 
 fn execute(

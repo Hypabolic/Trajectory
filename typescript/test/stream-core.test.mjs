@@ -457,6 +457,36 @@ test("file compaction returns source-compacted", async () => {
   assert.equal(result.state.cursor.position.nextByteOffset, prior);
 });
 
+test("file source-replaced returns source-replaced", async () => {
+  const original = await readCase("file-source-replaced-reset", "step-original.jsonl");
+  const replaced = await readCase("file-source-replaced-reset", "step-replaced.jsonl");
+  let state = createStream({
+    source: "pi",
+    groupId: "stream-file-source-replaced-reset",
+  });
+  let result = applySnapshot(state, original, "gen-0");
+  assert.equal(result.update.kind, "updated");
+  const prior = result.state.cursor.position.nextByteOffset;
+  result = applySnapshot(result.state, replaced, "gen-replaced");
+  assert.equal(result.update.kind, "reset-required");
+  assert.equal(result.update.reset?.reason, "source-replaced");
+  assert.equal(result.state.cursor.position.nextByteOffset, prior);
+});
+
+test("duplicate append input is idempotent", async () => {
+  const line = await readCase("duplicate-input-idempotent", "step-line.jsonl");
+  let state = createStream({
+    source: "pi",
+    groupId: "stream-duplicate-input-idempotent",
+  });
+  let result = applyAppend(state, line, undefined, "gen-0");
+  assert.equal(result.update.kind, "updated");
+  const prior = result.state.cursor.position.nextByteOffset;
+  result = applyAppend(result.state, line, undefined, "gen-0");
+  assert.equal(result.update.kind, "unchanged");
+  assert.equal(result.state.cursor.position.nextByteOffset, prior);
+});
+
 test("per-source append oracle parity", async () => {
   const cases = [
     { source: "pi", caseId: "pi-append-sequence", groupId: "stream-pi-append-sequence", steps: 3 },

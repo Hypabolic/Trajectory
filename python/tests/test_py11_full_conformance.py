@@ -90,8 +90,8 @@ NORMALIZER_CONTRACT_VERSION = "0.2.0"
 
 # Current tip case inventory under unfiltered verify (all declared pairs).
 # 39 batch + 24 stream scaffolds (stream ops skip as unsupported pre-engine / pre LS-12 caps).
-EXPECTED_TIP_CASES = 63
-EXPECTED_TIP_OPERATIONS = 90
+EXPECTED_TIP_CASES = 64
+EXPECTED_TIP_OPERATIONS = 91
 
 
 def _load_json(path: Path) -> dict:

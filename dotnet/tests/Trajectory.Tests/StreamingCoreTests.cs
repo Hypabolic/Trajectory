@@ -355,6 +355,42 @@ public sealed class StreamingCoreTests
         Assert.Equal(prior, state2.Cursor.Position.NextByteOffset);
     }
 
+    [Fact]
+    public void FileSourceReplaced_ReturnsSourceReplaced()
+    {
+        var original = ReadFixture("file-source-replaced-reset", "step-original.jsonl");
+        var replaced = ReadFixture("file-source-replaced-reset", "step-replaced.jsonl");
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-source-replaced-reset",
+        });
+        var (state1, u1) = TrajectoryStream.ApplySnapshot(state, original, "gen-0");
+        Assert.Equal("updated", u1.Kind);
+        var prior = state1.Cursor.Position.NextByteOffset;
+        var (state2, u2) = TrajectoryStream.ApplySnapshot(state1, replaced, "gen-replaced");
+        Assert.Equal("reset-required", u2.Kind);
+        Assert.Equal("source-replaced", u2.Reset!.Reason);
+        Assert.Equal(prior, state2.Cursor.Position.NextByteOffset);
+    }
+
+    [Fact]
+    public void DuplicateAppendInput_IsIdempotent()
+    {
+        var line = ReadFixture("duplicate-input-idempotent", "step-line.jsonl");
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-duplicate-input-idempotent",
+        });
+        var (state1, u1) = TrajectoryStream.ApplyAppend(state, line, sourceRevision: "gen-0");
+        Assert.Equal("updated", u1.Kind);
+        var prior = state1.Cursor.Position.NextByteOffset;
+        var (state2, u2) = TrajectoryStream.ApplyAppend(state1, line, sourceRevision: "gen-0");
+        Assert.Equal("unchanged", u2.Kind);
+        Assert.Equal(prior, state2.Cursor.Position.NextByteOffset);
+    }
+
     [Theory]
     [InlineData(TrajectorySource.Pi, "pi-append-sequence", "stream-pi-append-sequence", 3)]
     [InlineData(TrajectorySource.ClaudeCode, "claude-code-append-sequence", "stream-claude-code-append-sequence", 2)]

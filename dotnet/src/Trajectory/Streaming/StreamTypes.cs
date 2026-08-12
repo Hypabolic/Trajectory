@@ -179,4 +179,6 @@ public sealed class StreamState
     public ulong NextRevision { get; set; }
     public bool Finished { get; set; }
     public bool GroupLocked { get; set; }
+    /// <summary>Last accepted append-bytes segment (raw input). Re-supply is idempotent.</summary>
+    public byte[]? LastAppendSegment { get; set; }
 }

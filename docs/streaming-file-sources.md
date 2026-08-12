@@ -129,7 +129,8 @@ Generic under `conformance/cases/streaming/`:
 
 - `append-one-line`, `append-equals-prefix-oracle`, `unterminated-line-held`,
   `utf8-byte-boundary`, `cross-chunk-tool-result`, `file-truncate-reset`,
-  `file-compaction-reset`, …
+  `file-compaction-reset`, `file-source-replaced-reset`,
+  `duplicate-input-idempotent`, …
 
 Per-source append sequences:
 

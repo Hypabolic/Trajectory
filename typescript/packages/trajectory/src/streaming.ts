@@ -181,6 +181,8 @@ export interface StreamState {
   nextRevision: bigint;
   finished: boolean;
   groupLocked: boolean;
+  /** Last accepted append-bytes segment (raw input). Re-supply is idempotent. */
+  lastAppendSegment: Uint8Array | null;
 }
 
 export type StreamInputKind =
@@ -363,6 +365,44 @@ export function cursorToDict(c: StreamCursor): JsonObject {
   };
 }
 
+export function updateToDict(u: StreamUpdate): JsonObject {
+  const out: JsonObject = {
+    kind: u.kind,
+    revision: revisionToDict(u.revision),
+    cursor: cursorToDict(u.cursor),
+    snapshot: u.snapshot ? snapshotToDict(u.snapshot) : null,
+    delta: u.delta ? deltaToDict(u.delta) : null,
+    diagnostics: u.diagnostics.map(diagnosticToDict),
+    provisional: {
+      include: u.provisional.include,
+      provisional_ids: [...u.provisional.provisionalIds],
+      finalized_ids: [...u.provisional.finalizedIds],
+    },
+    consumed: {
+      complete_records: int64ToJson(u.consumed.completeRecords),
+      bytes: int64ToJson(u.consumed.bytes),
+      ...(u.consumed.firstSourcePosition !== undefined
+        ? { first_source_position: int64ToJson(u.consumed.firstSourcePosition) }
+        : {}),
+      ...(u.consumed.lastSourcePosition !== undefined
+        ? { last_source_position: int64ToJson(u.consumed.lastSourcePosition) }
+        : {}),
+    },
+  };
+  if (u.reset) {
+    out.reset = {
+      reason: u.reset.reason,
+      prior_cursor: u.reset.priorCursor ? cursorToDict(u.reset.priorCursor) : null,
+      requires_snapshot: u.reset.requiresSnapshot,
+      dropped_record_ids: [...u.reset.droppedRecordIds],
+    };
+  }
+  if (u.error) {
+    out.error = { code: u.error.code, message: u.error.message };
+  }
+  return out;
+}
+
 function stableJson(value: unknown): string {
   return JSON.stringify(value, (_k, v) =>
     typeof v === "bigint" ? int64ToJson(v) : v,
@@ -507,6 +547,9 @@ function cloneState(state: StreamState): StreamState {
     nextRevision: state.nextRevision,
     finished: state.finished,
     groupLocked: state.groupLocked,
+    lastAppendSegment: state.lastAppendSegment === null
+      ? null
+      : state.lastAppendSegment.slice(),
   };
 }
 
@@ -613,6 +656,7 @@ export function createStream(options: StreamOptions): StreamState {
     nextRevision: 0n,
     finished: false,
     groupLocked: false,
+    lastAppendSegment: null,
   };
 }
 
@@ -886,6 +930,8 @@ export function applySnapshot(
   newState.pendingBytes = pending.slice();
   newState.committedPrefix = committed.slice();
   newState.nextRevision = revisionNum + 1n;
+  // Snapshot replaces committed material; clear append-replay fingerprint.
+  newState.lastAppendSegment = null;
   return { state: newState, update };
 }
 
@@ -926,6 +972,11 @@ export function applyAppend(
   }
 
   if (segment.length === 0 && state.pendingBytes.length === 0) {
+    return { state, update: unchangedUpdate(state) };
+  }
+
+  // Replay of already-accepted append input is idempotent (unchanged).
+  if (state.lastAppendSegment !== null && equalBytes(segment, state.lastAppendSegment)) {
     return { state, update: unchangedUpdate(state) };
   }
 
@@ -974,6 +1025,7 @@ export function applyAppend(
     }
     const newState = cloneState(state);
     newState.pendingBytes = newPending.slice();
+    newState.lastAppendSegment = segment.slice();
     newState.cursor = {
       ...newState.cursor,
       position: {
@@ -996,38 +1048,41 @@ export function applyAppend(
     sourceRevision ?? state.cursor.sourceRevision ?? "",
     undefined,
   );
-  if (result.update.kind === "updated" || result.update.kind === "unchanged") {
-    result.state.pendingBytes = newPending.slice();
-    result.state.cursor = {
-      ...result.state.cursor,
-      position: {
-        kind: "byte",
-        nextByteOffset: result.state.cursor.position.nextByteOffset,
-        pendingByteLength: BigInt(newPending.length),
+  // Failure-atomic: failed/reset snapshot leaves prior state and pending intact.
+  if (result.update.kind !== "updated" && result.update.kind !== "unchanged") {
+    return { state, update: result.update };
+  }
+
+  result.state.pendingBytes = newPending.slice();
+  result.state.lastAppendSegment = segment.slice();
+  result.state.cursor = {
+    ...result.state.cursor,
+    position: {
+      kind: "byte",
+      nextByteOffset: result.state.cursor.position.nextByteOffset,
+      pendingByteLength: BigInt(newPending.length),
+    },
+  };
+  // Always copy patched cursor onto StreamUpdate (updated and unchanged).
+  let update = { ...result.update, cursor: result.state.cursor };
+  if (result.update.kind === "updated") {
+    const priorLen = BigInt(state.committedPrefix.length);
+    const completeLen = BigInt(complete.length);
+    update = {
+      ...update,
+      consumed: {
+        completeRecords: result.update.consumed.completeRecords,
+        bytes: completeLen,
+        ...(completeLen > 0n
+          ? {
+              firstSourcePosition: priorLen,
+              lastSourcePosition: priorLen + completeLen - 1n,
+            }
+          : {}),
       },
     };
-    // Always copy patched cursor onto StreamUpdate (updated and unchanged).
-    let update = { ...result.update, cursor: result.state.cursor };
-    if (result.update.kind === "updated") {
-      const priorLen = BigInt(state.committedPrefix.length);
-      const completeLen = BigInt(complete.length);
-      update = {
-        ...update,
-        consumed: {
-          completeRecords: result.update.consumed.completeRecords,
-          bytes: completeLen,
-          ...(completeLen > 0n
-            ? {
-                firstSourcePosition: priorLen,
-                lastSourcePosition: priorLen + completeLen - 1n,
-              }
-            : {}),
-        },
-      };
-    }
-    return { state: result.state, update };
   }
-  return result;
+  return { state: result.state, update };
 }
 
 function shrinkResetReason(
@@ -1246,6 +1301,7 @@ export function resetStream(
   newState.committedPrefix = new Uint8Array(0);
   newState.snapshot = null;
   newState.groupLocked = false;
+  newState.lastAppendSegment = null;
   newState.cursor = {
     cursorVersion: 1,
     source: state.cursor.source,

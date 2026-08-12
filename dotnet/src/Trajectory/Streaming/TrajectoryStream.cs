@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -266,6 +268,8 @@ public static class TrajectoryStream
         newState.PendingBytes = pending;
         newState.CommittedPrefix = committed;
         newState.NextRevision = revisionNum + 1;
+        // Snapshot replaces committed material; clear append-replay fingerprint.
+        newState.LastAppendSegment = null;
         return (newState, update);
     }
 
@@ -319,6 +323,14 @@ public static class TrajectoryStream
             return (state, UnchangedUpdate(state));
         }
 
+        // Replay of already-accepted append input is idempotent (unchanged).
+        if (state.LastAppendSegment is not null &&
+            segment.Length == state.LastAppendSegment.Length &&
+            segment.Span.SequenceEqual(state.LastAppendSegment))
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
         var combined = new byte[state.PendingBytes.Length + segment.Length];
         Buffer.BlockCopy(state.PendingBytes, 0, combined, 0, state.PendingBytes.Length);
         segment.Span.CopyTo(combined.AsSpan(state.PendingBytes.Length));
@@ -346,6 +358,7 @@ public static class TrajectoryStream
 
             var pendingOnly = Clone(state);
             pendingOnly.PendingBytes = newPending;
+            pendingOnly.LastAppendSegment = segment.ToArray();
             pendingOnly.Cursor = pendingOnly.Cursor with
             {
                 Position = pendingOnly.Cursor.Position with
@@ -364,33 +377,37 @@ public static class TrajectoryStream
         tmp.PendingBytes = Array.Empty<byte>();
         var rev = sourceRevision ?? state.Cursor.SourceRevision ?? "";
         var (newState, update) = ApplySnapshot(tmp, newPrefix, rev, cursor: null);
-        if (update.Kind is "updated" or "unchanged")
+        // Failure-atomic: failed/reset snapshot leaves prior state and pending intact.
+        if (update.Kind is not ("updated" or "unchanged"))
         {
-            newState.PendingBytes = newPending;
-            newState.Cursor = newState.Cursor with
+            return (state, update);
+        }
+
+        newState.PendingBytes = newPending;
+        newState.LastAppendSegment = segment.ToArray();
+        newState.Cursor = newState.Cursor with
+        {
+            Position = newState.Cursor.Position with
             {
-                Position = newState.Cursor.Position with
+                PendingByteLength = newPending.LongLength,
+            },
+        };
+        // Always copy patched cursor onto StreamUpdate (updated and unchanged).
+        update = update with { Cursor = newState.Cursor };
+        if (update.Kind == "updated")
+        {
+            var priorLen = state.CommittedPrefix.LongLength;
+            var completeLen = complete.LongLength;
+            update = update with
+            {
+                Consumed = new StreamConsumed
                 {
-                    PendingByteLength = newPending.LongLength,
+                    CompleteRecords = update.Consumed.CompleteRecords,
+                    Bytes = (ulong)completeLen,
+                    FirstSourcePosition = completeLen > 0 ? priorLen : null,
+                    LastSourcePosition = completeLen > 0 ? priorLen + completeLen - 1 : null,
                 },
             };
-            // Always copy patched cursor onto StreamUpdate (updated and unchanged).
-            update = update with { Cursor = newState.Cursor };
-            if (update.Kind == "updated")
-            {
-                var priorLen = state.CommittedPrefix.LongLength;
-                var completeLen = complete.LongLength;
-                update = update with
-                {
-                    Consumed = new StreamConsumed
-                    {
-                        CompleteRecords = update.Consumed.CompleteRecords,
-                        Bytes = (ulong)completeLen,
-                        FirstSourcePosition = completeLen > 0 ? priorLen : null,
-                        LastSourcePosition = completeLen > 0 ? priorLen + completeLen - 1 : null,
-                    },
-                };
-            }
         }
 
         return (newState, update);
@@ -553,6 +570,7 @@ public static class TrajectoryStream
         newState.CommittedPrefix = Array.Empty<byte>();
         newState.Snapshot = null;
         newState.GroupLocked = false;
+        newState.LastAppendSegment = null;
         newState.Cursor = new StreamCursor
         {
             Source = state.Cursor.Source,
@@ -916,6 +934,59 @@ public static class TrajectoryStream
         };
     }
 
+    /// <summary>Serialize a stream update to wire snake_case JSON objects.</summary>
+    public static Dictionary<string, object?> UpdateToDict(StreamUpdate update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        var consumed = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["complete_records"] = update.Consumed.CompleteRecords,
+            ["bytes"] = update.Consumed.Bytes,
+        };
+        if (update.Consumed.FirstSourcePosition is not null)
+        {
+            consumed["first_source_position"] = update.Consumed.FirstSourcePosition;
+        }
+
+        if (update.Consumed.LastSourcePosition is not null)
+        {
+            consumed["last_source_position"] = update.Consumed.LastSourcePosition;
+        }
+
+        var provisional = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["include"] = update.Provisional.Include,
+            ["provisional_ids"] = update.Provisional.ProvisionalIds.ToList(),
+            ["finalized_ids"] = update.Provisional.FinalizedIds.ToList(),
+        };
+        var dict = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["kind"] = update.Kind,
+            ["revision"] = RevisionToDict(update.Revision),
+            ["cursor"] = CursorToDict(update.Cursor),
+            ["snapshot"] = update.Snapshot is null ? null : SnapshotToDict(update.Snapshot),
+            ["delta"] = update.Delta is null ? null : DeltaToDict(update.Delta),
+            ["diagnostics"] = update.Diagnostics.Select(DiagnosticToDict).Cast<object?>().ToList(),
+            ["provisional"] = provisional,
+            ["consumed"] = consumed,
+        };
+        if (update.Reset is not null)
+        {
+            dict["reset"] = ResetToDict(update.Reset);
+        }
+
+        if (update.Error is { } err)
+        {
+            dict["error"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["code"] = err.Code,
+                ["message"] = err.Message,
+            };
+        }
+
+        return dict;
+    }
+
     public static Dictionary<string, object?> DeltaToDict(StreamDelta delta)
     {
         var ops = new List<object?>();
@@ -1203,6 +1274,9 @@ public static class TrajectoryStream
             NextRevision = state.NextRevision,
             Finished = state.Finished,
             GroupLocked = state.GroupLocked,
+            LastAppendSegment = state.LastAppendSegment is null
+                ? null
+                : state.LastAppendSegment.ToArray(),
         };
 
     private static (StreamSnapshot? Snapshot, StreamDelta? Delta) ApplyDelivery(
@@ -1546,7 +1620,66 @@ public static class TrajectoryStream
     }
 
     private static bool RecordBodyEqual(Dictionary<string, object?> a, Dictionary<string, object?> b) =>
-        JsonSerializer.Serialize(a) == JsonSerializer.Serialize(b);
+        DeepValueEqual(a, b);
+
+    private static bool DeepValueEqual(object? left, object? right)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return true;
+        }
+
+        if (left is null || right is null)
+        {
+            return false;
+        }
+
+        if (left is Dictionary<string, object?> ld && right is Dictionary<string, object?> rd)
+        {
+            if (ld.Count != rd.Count)
+            {
+                return false;
+            }
+
+            foreach (var (key, lv) in ld)
+            {
+                if (!rd.TryGetValue(key, out var rv) || !DeepValueEqual(lv, rv))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        if (left is IList ll && right is IList rl && left is not string && right is not string)
+        {
+            if (ll.Count != rl.Count)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < ll.Count; i++)
+            {
+                if (!DeepValueEqual(ll[i], rl[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        if (left is JsonElement jl && right is JsonElement jr)
+        {
+            return jl.ToString() == jr.ToString();
+        }
+
+        return left.Equals(right) ||
+               string.Equals(Convert.ToString(left, CultureInfo.InvariantCulture),
+                   Convert.ToString(right, CultureInfo.InvariantCulture),
+                   StringComparison.Ordinal);
+    }
 
     private static bool DiagnosticEqual(StreamDiagnostic a, StreamDiagnostic b) =>
         a.Code == b.Code && a.Message == b.Message && a.InputLine == b.InputLine &&

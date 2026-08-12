@@ -378,3 +378,5 @@ class StreamState:
     next_revision: int = 0
     finished: bool = False
     group_locked: bool = False
+    # Last accepted append-bytes segment (raw input). Re-supply is idempotent.
+    last_append_segment: bytes | None = None

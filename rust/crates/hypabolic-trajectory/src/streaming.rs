@@ -321,6 +321,8 @@ pub struct StreamState {
     pub finished: bool,
     /// Whether group is locked from material.
     pub group_locked: bool,
+    /// Last accepted append-bytes segment (raw input). Re-supply is idempotent.
+    pub last_append_segment: Option<Vec<u8>>,
 }
 
 /// Split complete LF-terminated lines from a pending tail.
@@ -423,6 +425,77 @@ pub fn snapshot_to_value(s: &StreamSnapshot) -> Value {
         Value::Array(s.diagnostics.iter().map(diagnostic_to_value).collect()),
     );
     map.insert("complete".into(), Value::Bool(s.complete));
+    Value::Object(map)
+}
+
+/// Serialize stream update to JSON value (wire snake_case).
+#[must_use]
+pub fn update_to_value(u: &StreamUpdate) -> Value {
+    let mut map = Map::new();
+    map.insert("kind".into(), Value::String(u.kind.clone()));
+    map.insert("revision".into(), revision_to_value(&u.revision));
+    map.insert("cursor".into(), cursor_to_value(&u.cursor));
+    map.insert(
+        "snapshot".into(),
+        u.snapshot
+            .as_ref()
+            .map_or(Value::Null, snapshot_to_value),
+    );
+    map.insert(
+        "delta".into(),
+        u.delta.as_ref().map_or(Value::Null, delta_to_value),
+    );
+    map.insert(
+        "diagnostics".into(),
+        Value::Array(u.diagnostics.iter().map(diagnostic_to_value).collect()),
+    );
+    let mut provisional = Map::new();
+    provisional.insert("include".into(), Value::Bool(u.provisional.include));
+    provisional.insert(
+        "provisional_ids".into(),
+        Value::Array(
+            u.provisional
+                .provisional_ids
+                .iter()
+                .cloned()
+                .map(Value::String)
+                .collect(),
+        ),
+    );
+    provisional.insert(
+        "finalized_ids".into(),
+        Value::Array(
+            u.provisional
+                .finalized_ids
+                .iter()
+                .cloned()
+                .map(Value::String)
+                .collect(),
+        ),
+    );
+    map.insert("provisional".into(), Value::Object(provisional));
+    let mut consumed = Map::new();
+    consumed.insert(
+        "complete_records".into(),
+        Value::from(u.consumed.complete_records),
+    );
+    consumed.insert("bytes".into(), Value::from(u.consumed.bytes));
+    if let Some(pos) = u.consumed.first_source_position {
+        consumed.insert("first_source_position".into(), Value::from(pos));
+    }
+    if let Some(pos) = u.consumed.last_source_position {
+        consumed.insert("last_source_position".into(), Value::from(pos));
+    }
+    map.insert("consumed".into(), Value::Object(consumed));
+    if let Some(reset) = &u.reset {
+        map.insert("reset".into(), reset_to_value(reset));
+    }
+    if let Some((code, message)) = &u.error {
+        let mut err = Map::new();
+        err.insert("code".into(), Value::String(code.clone()));
+        err.insert("message".into(), Value::String(message.clone()));
+        map.insert("error".into(), Value::Object(err));
+    }
     Value::Object(map)
 }
 
@@ -755,6 +828,7 @@ pub fn create_stream(options: StreamOptions) -> StreamState {
         next_revision: 0,
         finished: false,
         group_locked: false,
+        last_append_segment: None,
     }
 }
 
@@ -1305,6 +1379,8 @@ pub fn apply_snapshot(
     new_state.pending_bytes = pending;
     new_state.committed_prefix = committed;
     new_state.next_revision = revision_num + 1;
+    // Snapshot replaces committed material; clear append-replay fingerprint.
+    new_state.last_append_segment = None;
     Ok((new_state, update))
 }
 
@@ -1359,6 +1435,15 @@ pub fn apply_append(
         return Ok((state.clone(), unchanged(state)));
     }
 
+    // Replay of already-accepted append input is idempotent (unchanged).
+    if state
+        .last_append_segment
+        .as_ref()
+        .is_some_and(|last| last.as_slice() == segment)
+    {
+        return Ok((state.clone(), unchanged(state)));
+    }
+
     let mut combined = state.pending_bytes.clone();
     combined.extend_from_slice(segment);
     let (complete, new_pending) = split_complete_lines(&combined);
@@ -1406,6 +1491,7 @@ pub fn apply_append(
         }
         let mut new_state = state.clone();
         new_state.pending_bytes = new_pending;
+        new_state.last_append_segment = Some(segment.to_vec());
         new_state.cursor.position.pending_byte_length = pending_len;
         let update = unchanged(&new_state);
         return Ok((new_state, update));
@@ -1420,29 +1506,33 @@ pub fn apply_append(
         .or_else(|| state.cursor.source_revision.clone())
         .unwrap_or_default();
     let (mut new_state, mut update) = apply_snapshot(&tmp, &new_prefix, &rev, None)?;
-    if update.kind == "updated" || update.kind == "unchanged" {
-        new_state.pending_bytes = new_pending;
-        new_state.cursor.position.pending_byte_length = pending_len;
-        // Always copy patched cursor onto StreamUpdate (updated and unchanged).
-        update.cursor = new_state.cursor.clone();
-        if update.kind == "updated" {
-            let prior_len = state.committed_prefix.len() as i64;
-            let complete_len = complete.len() as i64;
-            update.consumed = StreamConsumed {
-                complete_records: update.consumed.complete_records,
-                bytes: complete_len as u64,
-                first_source_position: if complete_len > 0 {
-                    Some(prior_len)
-                } else {
-                    None
-                },
-                last_source_position: if complete_len > 0 {
-                    Some(prior_len + complete_len - 1)
-                } else {
-                    None
-                },
-            };
-        }
+    // Failure-atomic: failed/reset snapshot leaves prior state and pending intact.
+    if update.kind != "updated" && update.kind != "unchanged" {
+        return Ok((state.clone(), update));
+    }
+
+    new_state.pending_bytes = new_pending;
+    new_state.last_append_segment = Some(segment.to_vec());
+    new_state.cursor.position.pending_byte_length = pending_len;
+    // Always copy patched cursor onto StreamUpdate (updated and unchanged).
+    update.cursor = new_state.cursor.clone();
+    if update.kind == "updated" {
+        let prior_len = state.committed_prefix.len() as i64;
+        let complete_len = complete.len() as i64;
+        update.consumed = StreamConsumed {
+            complete_records: update.consumed.complete_records,
+            bytes: complete_len as u64,
+            first_source_position: if complete_len > 0 {
+                Some(prior_len)
+            } else {
+                None
+            },
+            last_source_position: if complete_len > 0 {
+                Some(prior_len + complete_len - 1)
+            } else {
+                None
+            },
+        };
     }
     Ok((new_state, update))
 }
@@ -1644,6 +1734,7 @@ pub fn reset_stream(
     new_state.committed_prefix.clear();
     new_state.snapshot = None;
     new_state.group_locked = false;
+    new_state.last_append_segment = None;
     new_state.cursor = StreamCursor {
         cursor_version: 1,
         source: state.cursor.source.clone(),
@@ -2168,6 +2259,39 @@ mod tests {
             snap.cursor.position.next_byte_offset
         );
         assert_eq!(state.cursor.prefix_sha256, snap.cursor.prefix_sha256);
+    }
+
+    #[test]
+    fn file_source_replaced_returns_source_replaced() {
+        let original = read_case("file-source-replaced-reset", "step-original.jsonl");
+        let replaced = read_case("file-source-replaced-reset", "step-replaced.jsonl");
+        let opts = StreamOptions::new(TrajectorySource::Pi)
+            .with_group_id("stream-file-source-replaced-reset");
+        let state = create_stream(opts);
+        let (state, u1) = apply_snapshot(&state, &original, "gen-0", None).unwrap();
+        assert_eq!(u1.kind, "updated");
+        let prior = state.cursor.position.next_byte_offset;
+        let (state2, u2) = apply_snapshot(&state, &replaced, "gen-replaced", None).unwrap();
+        assert_eq!(u2.kind, "reset-required");
+        assert_eq!(
+            u2.reset.as_ref().map(|r| r.reason.as_str()),
+            Some("source-replaced")
+        );
+        assert_eq!(state2.cursor.position.next_byte_offset, prior);
+    }
+
+    #[test]
+    fn duplicate_append_input_is_idempotent() {
+        let line = read_case("duplicate-input-idempotent", "step-line.jsonl");
+        let opts = StreamOptions::new(TrajectorySource::Pi)
+            .with_group_id("stream-duplicate-input-idempotent");
+        let state = create_stream(opts);
+        let (state, u1) = apply_append(&state, &line, None, Some("gen-0")).unwrap();
+        assert_eq!(u1.kind, "updated");
+        let prior = state.cursor.position.next_byte_offset;
+        let (state2, u2) = apply_append(&state, &line, None, Some("gen-0")).unwrap();
+        assert_eq!(u2.kind, "unchanged");
+        assert_eq!(state2.cursor.position.next_byte_offset, prior);
     }
 
     #[test]

@@ -42,9 +42,14 @@ from hypabolic_trajectory import (
     NormalizeOptions,
     NormalizeRequest,
     SourceContext,
+    StreamOptions,
     ToolArgumentBounds,
     ToolResultBounds,
     TrajectoryError,
+    apply_append,
+    apply_snapshot,
+    create_stream,
+    finish_stream,
     list_trajectories,
     normalize_to_ir,
     project_canonical,
@@ -53,10 +58,18 @@ from hypabolic_trajectory import (
     project_minimal_jsonl,
     project_openai,
     project_otel_genai,
+    reset_stream,
     serialize_projection,
 )
 from hypabolic_trajectory.diagnostics import Diagnostic
 from hypabolic_trajectory.dto import TrajectoryListing, TrajectoryListingPage
+from hypabolic_trajectory.streaming.types import (
+    BytePosition,
+    StreamCursor,
+    StreamResetRequest,
+    StreamState,
+    StreamUpdate,
+)
 
 PROTOCOL_VERSION: Final[str] = "1"
 
@@ -648,6 +661,336 @@ def execute_normalize(
     return output, wire_diagnostics
 
 
+def _parse_stream_cursor(raw: Mapping[str, Any] | None) -> StreamCursor | None:
+    if raw is None:
+        return None
+    if type(raw) is not dict:
+        raise ProtocolError("Step cursor must be an object when present.")
+    source = raw.get("source")
+    group_id = raw.get("group_id")
+    if type(source) is not str or type(group_id) is not str:
+        raise ProtocolError("Step cursor requires source and group_id strings.")
+    generation = raw.get("generation", 0)
+    if type(generation) is not int or isinstance(generation, bool) or generation < 0:
+        raise ProtocolError("Step cursor generation must be a non-negative integer.")
+    pos_raw = raw.get("position")
+    if type(pos_raw) is not dict:
+        raise ProtocolError("Step cursor position must be an object.")
+    if pos_raw.get("kind") != "byte":
+        raise ProtocolError("Stream engine supports byte cursors only in this slice.")
+    next_off = pos_raw.get("next_byte_offset", 0)
+    pending_len = pos_raw.get("pending_byte_length", 0)
+    if type(next_off) is not int or isinstance(next_off, bool) or next_off < 0:
+        raise ProtocolError("next_byte_offset must be a non-negative integer.")
+    if type(pending_len) is not int or isinstance(pending_len, bool) or pending_len < 0:
+        raise ProtocolError("pending_byte_length must be a non-negative integer.")
+    source_revision = raw.get("source_revision")
+    if source_revision is not None and type(source_revision) is not str:
+        raise ProtocolError("source_revision must be a string or null.")
+    prefix_sha256 = raw.get("prefix_sha256")
+    if prefix_sha256 is not None and type(prefix_sha256) is not str:
+        raise ProtocolError("prefix_sha256 must be a string or null.")
+    return StreamCursor(
+        source=source,
+        group_id=group_id,
+        generation=generation,
+        position=BytePosition(
+            next_byte_offset=next_off, pending_byte_length=pending_len
+        ),
+        source_revision=source_revision,
+        prefix_sha256=prefix_sha256,
+    )
+
+
+def _load_step_bytes(
+    case_directory: Path, step_input: Mapping[str, Any]
+) -> bytes:
+    if "inline_utf8" in step_input and step_input["inline_utf8"] is not None:
+        text = step_input["inline_utf8"]
+        if type(text) is not str:
+            raise ProtocolError("inline_utf8 must be a string when present.")
+        return text.encode("utf-8")
+    material = step_input.get("material")
+    if type(material) is not str or material == "":
+        raise ProtocolError("Step input requires material or inline_utf8.")
+    path = safe_join(case_directory, material)
+    try:
+        return path.read_bytes()
+    except OSError:
+        raise ProtocolError("Failed to read step material bytes.") from None
+
+
+def _stream_options_from_manifest(manifest: Mapping[str, Any]) -> StreamOptions:
+    source = manifest.get("source")
+    if type(source) is not str or source == "":
+        raise ProtocolError("Case field 'source' must be a non-empty string.")
+    group_id = manifest.get("group_id")
+    if group_id is not None and type(group_id) is not str:
+        raise ProtocolError("group_id must be a string when present.")
+    opts_raw = _optional_object(manifest, "options")
+    delivery = opts_raw.get("delivery", "both")
+    if delivery not in ("both", "snapshot", "delta"):
+        raise ProtocolError("options.delivery is invalid.")
+    include_provisional = opts_raw.get("include_provisional", True)
+    require_complete_lines = opts_raw.get("require_complete_lines", True)
+    finalize_on_close = opts_raw.get("finalize_on_close", True)
+    reset_policy = opts_raw.get("reset_policy", "return-reset-required")
+    max_pending = opts_raw.get("max_pending_bytes")
+    max_line = opts_raw.get("max_line_bytes")
+    if max_pending is not None and (
+        type(max_pending) is not int or isinstance(max_pending, bool)
+    ):
+        raise ProtocolError("max_pending_bytes must be an integer when present.")
+    if max_line is not None and (
+        type(max_line) is not int or isinstance(max_line, bool)
+    ):
+        raise ProtocolError("max_line_bytes must be an integer when present.")
+    return StreamOptions(
+        source=source,
+        group_id=group_id,
+        delivery=delivery,  # type: ignore[arg-type]
+        include_provisional=bool(include_provisional),
+        require_complete_lines=bool(require_complete_lines),
+        finalize_on_close=bool(finalize_on_close),
+        reset_policy=reset_policy,  # type: ignore[arg-type]
+        max_pending_bytes=max_pending,
+        max_line_bytes=max_line,
+    )
+
+
+def _apply_step(
+    state: StreamState,
+    case_directory: Path,
+    step_input: Mapping[str, Any],
+) -> tuple[StreamState, StreamUpdate]:
+    kind = step_input.get("kind")
+    if type(kind) is not str:
+        raise ProtocolError("Step input.kind must be a string.")
+    source_revision = step_input.get("source_revision")
+    if source_revision is not None and type(source_revision) is not str:
+        raise ProtocolError("source_revision must be a string or null.")
+    cursor = _parse_stream_cursor(step_input.get("cursor"))
+
+    if kind == "append-bytes":
+        data = _load_step_bytes(case_directory, step_input)
+        return apply_append(
+            state, data, cursor=cursor, source_revision=source_revision
+        )
+    if kind == "snapshot-bytes":
+        data = _load_step_bytes(case_directory, step_input)
+        return apply_snapshot(
+            state,
+            data,
+            source_revision=source_revision or "",
+            cursor=cursor,
+        )
+    if kind == "finish":
+        return finish_stream(state)
+    if kind == "reset":
+        reset_raw = step_input.get("reset")
+        if type(reset_raw) is not dict:
+            raise ProtocolError("reset step requires reset object.")
+        reason = reset_raw.get("reason")
+        if type(reason) is not str:
+            raise ProtocolError("reset.reason must be a string.")
+        generation = reset_raw.get("generation")
+        if generation is not None and (
+            type(generation) is not int or isinstance(generation, bool)
+        ):
+            raise ProtocolError("reset.generation must be an integer when present.")
+        rev = reset_raw.get("source_revision")
+        if rev is not None and type(rev) is not str:
+            raise ProtocolError("reset.source_revision must be a string or null.")
+        material: bytes | None = None
+        if "material" in reset_raw and reset_raw["material"] is not None:
+            material = _load_step_bytes(case_directory, reset_raw)
+        elif "inline_utf8" in reset_raw and reset_raw["inline_utf8"] is not None:
+            material = _load_step_bytes(case_directory, reset_raw)
+        return reset_stream(
+            state,
+            StreamResetRequest(
+                reason=reason,  # type: ignore[arg-type]
+                generation=generation,
+                source_revision=rev,
+                material=material,
+            ),
+        )
+    if kind in {"ahp-actions", "ahp-snapshot", "hermes-export"}:
+        # LS-06/LS-07/provider — not in LS-05 engine.
+        raise _StreamEngineUnsupported(
+            f"Stream input kind '{kind}' is not implemented in this slice."
+        )
+    raise ProtocolError(f"Unsupported stream input kind '{kind}'.")
+
+
+class _StreamEngineUnsupported(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+def _stream_state_equivalent(a: StreamState, b: StreamState) -> bool:
+    """Observable equality for double-invoke (cursor + committed + pending + flags)."""
+    if a.finished != b.finished or a.generation != b.generation:
+        return False
+    if bytes(a.committed_prefix) != bytes(b.committed_prefix):
+        return False
+    if bytes(a.pending_bytes) != bytes(b.pending_bytes):
+        return False
+    ca, cb = a.cursor, b.cursor
+    if (
+        ca.source != cb.source
+        or ca.group_id != cb.group_id
+        or ca.generation != cb.generation
+        or ca.source_revision != cb.source_revision
+        or ca.prefix_sha256 != cb.prefix_sha256
+    ):
+        return False
+    pa, pb = ca.position, cb.position
+    if type(pa) is not type(pb):
+        return False
+    if isinstance(pa, BytePosition) and isinstance(pb, BytePosition):
+        return (
+            pa.next_byte_offset == pb.next_byte_offset
+            and pa.pending_byte_length == pb.pending_byte_length
+        )
+    return True
+
+
+def _oracle_section(
+    manifest: Mapping[str, Any],
+    state: StreamState,
+    step_results: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    oracle = manifest.get("oracle")
+    if type(oracle) is not dict:
+        return None
+    want_append = bool(oracle.get("append_equals_prefix"))
+    want_prefix = bool(oracle.get("prefix_re_normalize"))
+    if not want_append and not want_prefix:
+        return None
+
+    # Fresh snapshot of the final committed prefix must match append-path records.
+    opts = _stream_options_from_manifest(manifest)
+    oracle_state = create_stream(opts)
+    prefix = bytes(state.committed_prefix)
+    rev = state.cursor.source_revision or "oracle"
+    _, snap_update = apply_snapshot(oracle_state, prefix, source_revision=rev)
+    if snap_update.kind not in {"updated", "unchanged"}:
+        return {
+            "append_equals_prefix": False if want_append else None,
+            "prefix_re_normalize": False if want_prefix else None,
+        }
+
+    append_ids: list[str] = []
+    if state.snapshot is not None:
+        append_ids = [r.record.get("id", "") for r in state.snapshot.records]
+    snap_ids: list[str] = []
+    if snap_update.snapshot is not None:
+        snap_ids = [r.record.get("id", "") for r in snap_update.snapshot.records]
+    # Also compare last updated step snapshot when present.
+    last_updated_ids: list[str] | None = None
+    for step in reversed(step_results):
+        update = step.get("update")
+        if type(update) is dict and update.get("kind") == "updated":
+            snap = update.get("snapshot")
+            if type(snap) is dict and type(snap.get("records")) is list:
+                last_updated_ids = [
+                    (rec.get("record") or {}).get("id", "")
+                    if type(rec) is dict
+                    else ""
+                    for rec in snap["records"]
+                ]
+            break
+    ids_match = append_ids == snap_ids
+    if last_updated_ids is not None:
+        ids_match = ids_match and last_updated_ids == snap_ids
+    offset_match = True
+    if isinstance(state.cursor.position, BytePosition) and isinstance(
+        snap_update.cursor.position, BytePosition
+    ):
+        offset_match = (
+            state.cursor.position.next_byte_offset
+            == snap_update.cursor.position.next_byte_offset
+            and state.cursor.prefix_sha256 == snap_update.cursor.prefix_sha256
+        )
+    ok = ids_match and offset_match
+    out: dict[str, Any] = {}
+    if want_append:
+        out["append_equals_prefix"] = ok
+    if want_prefix:
+        out["prefix_re_normalize"] = ok
+    return out
+
+
+def execute_stream_sequence(
+    case_directory: Path,
+    manifest: Mapping[str, Any],
+) -> str:
+    """Run multi-step stream case; returns JSON output_text."""
+    steps = manifest.get("steps")
+    if type(steps) is not list or len(steps) == 0:
+        raise ProtocolError("Stream sequence requires non-empty steps[].")
+
+    # Defer AHP/Hermes until those slices land.
+    for step in steps:
+        if type(step) is not dict:
+            raise ProtocolError("Each step must be an object.")
+        step_input = step.get("input")
+        if type(step_input) is not dict:
+            raise ProtocolError("Each step requires an input object.")
+        kind = step_input.get("kind")
+        if kind in {"ahp-actions", "ahp-snapshot", "hermes-export"}:
+            raise _StreamEngineUnsupported(
+                f"Stream input kind '{kind}' is not implemented in this slice."
+            )
+
+    state = create_stream(_stream_options_from_manifest(manifest))
+    step_results: list[dict[str, Any]] = []
+    for step in steps:
+        assert type(step) is dict
+        step_id = step.get("id", "step")
+        if type(step_id) is not str:
+            step_id = "step"
+        step_input = step["input"]
+        assert type(step_input) is dict
+        double = step.get("double_invoke", True)
+        if type(double) is not bool:
+            double = True
+
+        state, update = _apply_step(state, case_directory, step_input)
+        idempotent = True
+        if double:
+            state_after, update2 = _apply_step(state, case_directory, step_input)
+            if update.kind in {"updated", "unchanged"}:
+                # Prefer pure replay → unchanged; accept deterministic re-install
+                # (e.g. reset with same generation/material) when state matches.
+                idempotent = update2.kind == "unchanged" or (
+                    update2.kind == "updated"
+                    and _stream_state_equivalent(state, state_after)
+                )
+            else:
+                # reset-required / error: re-apply must not advance state.
+                idempotent = update2.kind == update.kind and _stream_state_equivalent(
+                    state, state_after
+                )
+            state = state_after
+
+        step_results.append(
+            {
+                "id": step_id,
+                "update": update.to_dict(),
+                "idempotent": idempotent,
+            }
+        )
+
+    payload: dict[str, Any] = {"steps": step_results}
+    oracle = _oracle_section(manifest, state, step_results)
+    if oracle is not None:
+        payload["oracle"] = oracle
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
 def execute(request: Mapping[str, str]) -> dict[str, Any]:
     """Full case execution after protocol preamble parse."""
     repository_root = Path(request["repository_root"]).resolve()
@@ -656,7 +999,7 @@ def execute(request: Mapping[str, str]) -> dict[str, Any]:
 
     case_directory, manifest = load_case_manifest(repository_root, case_id)
 
-    # LS-02: multi-step stream cases — engine lands LS-04+.
+    # LS-05: multi-step stream cases via core apply_append / apply_snapshot.
     if operation in PROTOCOL_STREAM_OPERATIONS:
         steps = manifest.get("steps")
         if type(steps) is not list or len(steps) == 0:
@@ -664,6 +1007,19 @@ def execute(request: Mapping[str, str]) -> dict[str, Any]:
                 f"Stream operation '{operation}' requires a streaming case "
                 "with steps[]."
             )
+        if operation in {"stream-sequence", "stream-replay"}:
+            try:
+                output_text = execute_stream_sequence(case_directory, manifest)
+            except _StreamEngineUnsupported as err:
+                return unsupported_response(
+                    case_id, operation, message=err.message
+                )
+            except TrajectoryError as err:
+                return fatal_error_response(
+                    case_id, operation, err.code, err.message
+                )
+            return success_response(case_id, operation, output_text, [])
+        # Per-step apply ops remain reserved until dedicated harness lands.
         return unsupported_response(case_id, operation)
 
     operations = manifest.get("operation")

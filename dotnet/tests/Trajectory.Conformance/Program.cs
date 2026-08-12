@@ -6,6 +6,7 @@ using System.Text.Json;
 using Hypabolic.Trajectory;
 using Hypabolic.Trajectory.Listing;
 using Hypabolic.Trajectory.OpenTelemetry;
+using Hypabolic.Trajectory.Streaming;
 
 return await ConformanceProgram.RunAsync(args);
 
@@ -86,7 +87,7 @@ internal static class ConformanceProgram
         if (!string.Equals(RequiredString(manifest, "id"), request.Case, StringComparison.Ordinal))
             throw new ProtocolException("The requested case does not match its manifest ID.");
 
-        // LS-02: multi-step stream cases (streaming-case-v1) — engine lands LS-04+.
+        // LS-05: multi-step stream sequence via core ApplyAppend / ApplySnapshot.
         if (StreamOperations.Contains(request.Operation))
         {
             if (!manifest.TryGetProperty("steps", out var steps) ||
@@ -97,6 +98,31 @@ internal static class ConformanceProgram
                     $"Stream operation '{request.Operation}' requires a streaming case with steps[].");
             }
 
+            if (request.Operation is "stream-sequence" or "stream-replay")
+            {
+                try
+                {
+                    var output = await ExecuteStreamSequenceAsync(caseDirectory, manifest);
+                    return new ConformanceResponse(
+                        request.Case,
+                        request.Operation,
+                        "success",
+                        output,
+                        [],
+                        null);
+                }
+                catch (StreamEngineUnsupportedException ex)
+                {
+                    return new ConformanceResponse(
+                        request.Case,
+                        request.Operation,
+                        "unsupported",
+                        null,
+                        [],
+                        new FatalError("capability_unsupported", ex.Message));
+                }
+            }
+
             return new ConformanceResponse(
                 request.Case,
                 request.Operation,
@@ -105,7 +131,7 @@ internal static class ConformanceProgram
                 [],
                 new FatalError(
                     "capability_unsupported",
-                    "Stream engine is not implemented yet."));
+                    "Per-step stream apply ops are not implemented yet."));
         }
 
         if (!manifest.TryGetProperty("operation", out var operations) ||
@@ -269,6 +295,387 @@ internal static class ConformanceProgram
                 Directory.Delete(temporaryRoot, recursive: true);
         }
     }
+
+    private sealed class StreamEngineUnsupportedException : Exception
+    {
+        public StreamEngineUnsupportedException(string message) : base(message)
+        {
+        }
+    }
+
+    private static async Task<string> ExecuteStreamSequenceAsync(
+        string caseDirectory,
+        JsonElement manifest)
+    {
+        if (!manifest.TryGetProperty("steps", out var stepsEl) ||
+            stepsEl.ValueKind != JsonValueKind.Array)
+        {
+            throw new ProtocolException("Stream sequence requires steps[].");
+        }
+
+        foreach (var step in stepsEl.EnumerateArray())
+        {
+            if (!step.TryGetProperty("input", out var input) ||
+                !input.TryGetProperty("kind", out var kindEl))
+            {
+                continue;
+            }
+
+            var kind = kindEl.GetString();
+            if (kind is "ahp-actions" or "ahp-snapshot" or "hermes-export")
+            {
+                throw new StreamEngineUnsupportedException(
+                    $"Stream input kind '{kind}' is not implemented in this slice.");
+            }
+        }
+
+        var state = TrajectoryStream.Create(StreamOptionsFromManifest(manifest));
+        var stepResults = new List<object?>();
+        foreach (var step in stepsEl.EnumerateArray())
+        {
+            var stepId = step.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String
+                ? idEl.GetString()!
+                : "step";
+            var stepInput = step.GetProperty("input");
+            var doubleInvoke = !step.TryGetProperty("double_invoke", out var di) ||
+                di.ValueKind != JsonValueKind.False;
+            var (next, update) = await ApplyStreamStepAsync(state, caseDirectory, stepInput);
+            state = next;
+            var idempotent = true;
+            if (doubleInvoke)
+            {
+                var (after, update2) = await ApplyStreamStepAsync(state, caseDirectory, stepInput);
+                if (update.Kind is "updated" or "unchanged")
+                {
+                    idempotent = update2.Kind == "unchanged" ||
+                        (update2.Kind == "updated" && StreamStateEquivalent(state, after));
+                }
+                else
+                {
+                    idempotent = update2.Kind == update.Kind && StreamStateEquivalent(state, after);
+                }
+
+                state = after;
+            }
+
+            stepResults.Add(new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["id"] = stepId,
+                ["update"] = TrajectoryStream.UpdateToDict(update),
+                ["idempotent"] = idempotent,
+            });
+        }
+
+        var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["steps"] = stepResults,
+        };
+        if (manifest.TryGetProperty("oracle", out var oracle) &&
+            oracle.ValueKind == JsonValueKind.Object)
+        {
+            var wantAppend = oracle.TryGetProperty("append_equals_prefix", out var ae) &&
+                ae.ValueKind == JsonValueKind.True;
+            var wantPrefix = oracle.TryGetProperty("prefix_re_normalize", out var pr) &&
+                pr.ValueKind == JsonValueKind.True;
+            if (wantAppend || wantPrefix)
+            {
+                var oracleState = TrajectoryStream.Create(StreamOptionsFromManifest(manifest));
+                var rev = state.Cursor.SourceRevision ?? "oracle";
+                var (_, snap) = TrajectoryStream.ApplySnapshot(
+                    oracleState,
+                    state.CommittedPrefix,
+                    rev);
+                var appendIds = state.Snapshot?.Records
+                    .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+                    .ToArray() ?? Array.Empty<string>();
+                var snapIds = snap.Snapshot?.Records
+                    .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+                    .ToArray() ?? Array.Empty<string>();
+                var ok = snap.Kind is "updated" or "unchanged" &&
+                    appendIds.SequenceEqual(snapIds) &&
+                    state.Cursor.Position.NextByteOffset == snap.Cursor.Position.NextByteOffset &&
+                    state.Cursor.PrefixSha256 == snap.Cursor.PrefixSha256;
+                var section = new Dictionary<string, object?>(StringComparer.Ordinal);
+                if (wantAppend)
+                {
+                    section["append_equals_prefix"] = ok;
+                }
+
+                if (wantPrefix)
+                {
+                    section["prefix_re_normalize"] = ok;
+                }
+
+                payload["oracle"] = section;
+            }
+        }
+
+        return SerializeWireObject(payload);
+    }
+
+    private static string SerializeWireObject(object? value)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using var writer = NewWriter(buffer);
+        WriteWireValue(writer, value);
+        writer.Flush();
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
+    private static void WriteWireValue(Utf8JsonWriter writer, object? value)
+    {
+        switch (value)
+        {
+            case null:
+                writer.WriteNullValue();
+                break;
+            case string s:
+                writer.WriteStringValue(s);
+                break;
+            case bool b:
+                writer.WriteBooleanValue(b);
+                break;
+            case byte by:
+                writer.WriteNumberValue(by);
+                break;
+            case sbyte sb:
+                writer.WriteNumberValue(sb);
+                break;
+            case short sh:
+                writer.WriteNumberValue(sh);
+                break;
+            case ushort ush:
+                writer.WriteNumberValue(ush);
+                break;
+            case int i:
+                writer.WriteNumberValue(i);
+                break;
+            case uint ui:
+                writer.WriteNumberValue(ui);
+                break;
+            case long l:
+                writer.WriteNumberValue(l);
+                break;
+            case ulong ul:
+                writer.WriteNumberValue(ul);
+                break;
+            case float f:
+                writer.WriteNumberValue(f);
+                break;
+            case double d:
+                writer.WriteNumberValue(d);
+                break;
+            case decimal m:
+                writer.WriteNumberValue(m);
+                break;
+            case IDictionary<string, object?> dict:
+                writer.WriteStartObject();
+                foreach (var (key, item) in dict)
+                {
+                    writer.WritePropertyName(key);
+                    WriteWireValue(writer, item);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case System.Collections.IEnumerable list when value is not string:
+                writer.WriteStartArray();
+                foreach (var item in list)
+                {
+                    WriteWireValue(writer, item);
+                }
+
+                writer.WriteEndArray();
+                break;
+            default:
+                writer.WriteStringValue(Convert.ToString(value, CultureInfo.InvariantCulture));
+                break;
+        }
+    }
+
+    private static StreamOptions StreamOptionsFromManifest(JsonElement manifest)
+    {
+        var source = ParseSource(RequiredString(manifest, "source"));
+        var groupId = OptionalString(manifest, "group_id");
+        var opts = new StreamOptions { Source = source, GroupId = groupId };
+        if (!manifest.TryGetProperty("options", out var options) ||
+            options.ValueKind != JsonValueKind.Object)
+        {
+            return opts;
+        }
+
+        if (options.TryGetProperty("delivery", out var delivery) &&
+            delivery.ValueKind == JsonValueKind.String)
+        {
+            opts = opts with
+            {
+                Delivery = delivery.GetString() switch
+                {
+                    "snapshot" => StreamDelivery.Snapshot,
+                    "delta" => StreamDelivery.Delta,
+                    _ => StreamDelivery.Both,
+                },
+            };
+        }
+
+        if (options.TryGetProperty("include_provisional", out var ip) &&
+            ip.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            opts = opts with { IncludeProvisional = ip.GetBoolean() };
+        }
+
+        if (options.TryGetProperty("require_complete_lines", out var rcl) &&
+            rcl.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            opts = opts with { RequireCompleteLines = rcl.GetBoolean() };
+        }
+
+        if (options.TryGetProperty("finalize_on_close", out var foc) &&
+            foc.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            opts = opts with { FinalizeOnClose = foc.GetBoolean() };
+        }
+
+        if (options.TryGetProperty("max_pending_bytes", out var mpb) &&
+            mpb.ValueKind == JsonValueKind.Number)
+        {
+            opts = opts with { MaxPendingBytes = mpb.GetInt64() };
+        }
+
+        if (options.TryGetProperty("max_line_bytes", out var mlb) &&
+            mlb.ValueKind == JsonValueKind.Number)
+        {
+            opts = opts with { MaxLineBytes = mlb.GetInt64() };
+        }
+
+        return opts;
+    }
+
+    private static async Task<byte[]> LoadStepBytesAsync(
+        string caseDirectory,
+        JsonElement input)
+    {
+        if (input.TryGetProperty("inline_utf8", out var inline) &&
+            inline.ValueKind == JsonValueKind.String)
+        {
+            return Encoding.UTF8.GetBytes(inline.GetString() ?? "");
+        }
+
+        var material = RequiredString(input, "material");
+        var path = Path.GetFullPath(Path.Combine(caseDirectory, material));
+        if (!IsWithin(path, caseDirectory))
+        {
+            throw new ProtocolException("Step material escapes its case directory.");
+        }
+
+        return await File.ReadAllBytesAsync(path);
+    }
+
+    private static StreamCursor? ParseStreamCursor(JsonElement input)
+    {
+        if (!input.TryGetProperty("cursor", out var cursor) ||
+            cursor.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var position = cursor.GetProperty("position");
+        if (OptionalString(position, "kind") != "byte")
+        {
+            throw new ProtocolException("Stream engine supports byte cursors only in this slice.");
+        }
+
+        return new StreamCursor
+        {
+            Source = RequiredString(cursor, "source"),
+            GroupId = RequiredString(cursor, "group_id"),
+            Generation = cursor.TryGetProperty("generation", out var gen)
+                ? gen.GetUInt64()
+                : 0,
+            Position = new BytePosition
+            {
+                NextByteOffset = position.TryGetProperty("next_byte_offset", out var nbo)
+                    ? nbo.GetInt64()
+                    : 0,
+                PendingByteLength = position.TryGetProperty("pending_byte_length", out var pbl)
+                    ? pbl.GetInt64()
+                    : 0,
+            },
+            SourceRevision = OptionalString(cursor, "source_revision"),
+            PrefixSha256 = OptionalString(cursor, "prefix_sha256"),
+        };
+    }
+
+    private static async Task<(StreamState State, StreamUpdate Update)> ApplyStreamStepAsync(
+        StreamState state,
+        string caseDirectory,
+        JsonElement stepInput)
+    {
+        var kind = RequiredString(stepInput, "kind");
+        var sourceRevision = OptionalString(stepInput, "source_revision");
+        var cursor = ParseStreamCursor(stepInput);
+        return kind switch
+        {
+            "append-bytes" => TrajectoryStream.ApplyAppend(
+                state,
+                await LoadStepBytesAsync(caseDirectory, stepInput),
+                cursor,
+                sourceRevision),
+            "snapshot-bytes" => TrajectoryStream.ApplySnapshot(
+                state,
+                await LoadStepBytesAsync(caseDirectory, stepInput),
+                sourceRevision ?? "",
+                cursor),
+            "finish" => TrajectoryStream.Finish(state),
+            "reset" => await ApplyResetStepAsync(state, caseDirectory, stepInput),
+            "ahp-actions" or "ahp-snapshot" or "hermes-export" =>
+                throw new StreamEngineUnsupportedException(
+                    $"Stream input kind '{kind}' is not implemented in this slice."),
+            _ => throw new ProtocolException($"Unsupported stream input kind '{kind}'."),
+        };
+    }
+
+    private static async Task<(StreamState State, StreamUpdate Update)> ApplyResetStepAsync(
+        StreamState state,
+        string caseDirectory,
+        JsonElement stepInput)
+    {
+        if (!stepInput.TryGetProperty("reset", out var reset) ||
+            reset.ValueKind != JsonValueKind.Object)
+        {
+            throw new ProtocolException("reset step requires reset object.");
+        }
+
+        byte[]? material = null;
+        if (reset.TryGetProperty("material", out _) || reset.TryGetProperty("inline_utf8", out _))
+        {
+            material = await LoadStepBytesAsync(caseDirectory, reset);
+        }
+
+        var request = new StreamResetRequest
+        {
+            Reason = RequiredString(reset, "reason"),
+            Generation = reset.TryGetProperty("generation", out var gen)
+                ? gen.GetUInt64()
+                : null,
+            SourceRevision = OptionalString(reset, "source_revision"),
+            Material = material,
+        };
+        return TrajectoryStream.Reset(state, request);
+    }
+
+    private static bool StreamStateEquivalent(StreamState a, StreamState b) =>
+        a.Finished == b.Finished &&
+        a.Generation == b.Generation &&
+        a.CommittedPrefix.AsSpan().SequenceEqual(b.CommittedPrefix) &&
+        a.PendingBytes.AsSpan().SequenceEqual(b.PendingBytes) &&
+        a.Cursor.Source == b.Cursor.Source &&
+        a.Cursor.GroupId == b.Cursor.GroupId &&
+        a.Cursor.Generation == b.Cursor.Generation &&
+        a.Cursor.SourceRevision == b.Cursor.SourceRevision &&
+        a.Cursor.PrefixSha256 == b.Cursor.PrefixSha256 &&
+        a.Cursor.Position.NextByteOffset == b.Cursor.Position.NextByteOffset &&
+        a.Cursor.Position.PendingByteLength == b.Cursor.Position.PendingByteLength;
 
     private static SourceContext ReadSourceContext(JsonElement element) => new()
     {
