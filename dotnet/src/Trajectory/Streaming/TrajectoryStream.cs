@@ -291,6 +291,396 @@ public static class TrajectoryStream
         return (newState, update);
     }
 
+    /// <summary>
+    /// Append complete-line segment; re-normalize full committed prefix (oracle path).
+    /// </summary>
+    public static (StreamState State, StreamUpdate Update) ApplyAppend(
+        StreamState state,
+        ReadOnlyMemory<byte> segment,
+        StreamCursor? cursor = null,
+        string? sourceRevision = null)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (state.Finished)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", "Stream is already finished."));
+        }
+
+        if (cursor is not null)
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
+        }
+
+        if (state.Options.MaxPendingBytes is long maxPending && maxPending < 0)
+        {
+            return (state, ErrorUpdate(
+                state,
+                "invalid_input",
+                "Stream buffer limits must be non-negative int64 values."));
+        }
+
+        if (state.Options.MaxLineBytes is long maxLine && maxLine < 0)
+        {
+            return (state, ErrorUpdate(
+                state,
+                "invalid_input",
+                "Stream buffer limits must be non-negative int64 values."));
+        }
+
+        var combined = new byte[state.PendingBytes.Length + segment.Length];
+        Buffer.BlockCopy(state.PendingBytes, 0, combined, 0, state.PendingBytes.Length);
+        segment.Span.CopyTo(combined.AsSpan(state.PendingBytes.Length));
+        var (complete, newPending) = SplitCompleteLines(combined);
+
+        if (state.Options.MaxPendingBytes is long maxP && newPending.LongLength > maxP)
+        {
+            return (state, ErrorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."));
+        }
+
+        if (state.Options.MaxLineBytes is long maxL &&
+            (AnyLineTooLong(complete, maxL) || newPending.LongLength > maxL))
+        {
+            return (state, ErrorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."));
+        }
+
+        var newPrefix = new byte[state.CommittedPrefix.Length + complete.Length];
+        Buffer.BlockCopy(state.CommittedPrefix, 0, newPrefix, 0, state.CommittedPrefix.Length);
+        Buffer.BlockCopy(complete, 0, newPrefix, state.CommittedPrefix.Length, complete.Length);
+
+        var tmp = Clone(state);
+        tmp.PendingBytes = Array.Empty<byte>();
+        var rev = sourceRevision ?? state.Cursor.SourceRevision ?? "";
+        var (newState, update) = ApplySnapshot(tmp, newPrefix, rev, cursor: null);
+        if (update.Kind is "updated" or "unchanged")
+        {
+            newState.PendingBytes = newPending;
+            newState.Cursor = newState.Cursor with
+            {
+                Position = newState.Cursor.Position with
+                {
+                    PendingByteLength = newPending.LongLength,
+                },
+            };
+            if (update.Kind == "updated")
+            {
+                update = update with { Cursor = newState.Cursor };
+            }
+        }
+
+        return (newState, update);
+    }
+
+    /// <summary>End-of-stream: optionally commit final unterminated line; finalize records.</summary>
+    public static (StreamState State, StreamUpdate Update) Finish(StreamState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (state.Finished)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        var material = state.CommittedPrefix;
+        var pending = state.PendingBytes;
+        if (pending.Length > 0 && !IsWhitespaceOnly(pending))
+        {
+            var withNl = new byte[material.Length + pending.Length + 1];
+            Buffer.BlockCopy(material, 0, withNl, 0, material.Length);
+            Buffer.BlockCopy(pending, 0, withNl, material.Length, pending.Length);
+            withNl[^1] = (byte)'\n';
+            material = withNl;
+            pending = Array.Empty<byte>();
+        }
+
+        var (midState, midUpdate) = ApplySnapshot(
+            state,
+            material,
+            state.Cursor.SourceRevision ?? "finish",
+            cursor: null);
+        if (midUpdate.Kind is not ("updated" or "unchanged"))
+        {
+            return (midState, midUpdate);
+        }
+
+        var baseSnapshot = midState.Snapshot;
+        if (baseSnapshot is null)
+        {
+            midState.Finished = true;
+            return (midState, midUpdate);
+        }
+
+        List<StreamRecord> finalized;
+        if (state.Options.FinalizeOnClose)
+        {
+            finalized = baseSnapshot.Records.Select(rec =>
+            {
+                if (rec.Status == "final")
+                {
+                    return rec;
+                }
+
+                return rec with
+                {
+                    Status = "final",
+                    FinalizesProvisionalId = rec.FinalizesProvisionalId ?? rec.ProvisionalId,
+                };
+            }).ToList();
+        }
+        else
+        {
+            finalized = baseSnapshot.Records.ToList();
+        }
+
+        var generation = midState.Generation;
+        var parentRevisionId = baseSnapshot.Revision.RevisionId;
+        var revisionNum = midState.NextRevision;
+        var prefixSha = midState.Cursor.PrefixSha256 ?? Sha256Hex(ReadOnlySpan<byte>.Empty);
+        var recordIds = finalized
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .Where(s => s.Length > 0)
+            .ToArray();
+        var revId = RevisionId(
+            generation,
+            revisionNum,
+            midState.Cursor.Source,
+            baseSnapshot.GroupId,
+            prefixSha,
+            recordIds);
+        var revision = new StreamRevision
+        {
+            Revision = revisionNum,
+            RevisionId = revId,
+            ParentRevisionId = parentRevisionId,
+            Complete = true,
+            Generation = generation,
+        };
+        var snapshot = new StreamSnapshot
+        {
+            Source = baseSnapshot.Source,
+            GroupId = baseSnapshot.GroupId,
+            Revision = revision,
+            Records = finalized,
+            Diagnostics = baseSnapshot.Diagnostics,
+            Complete = true,
+        };
+        var delta = DiffSnapshots(baseSnapshot, snapshot, revision);
+        var (outSnap, outDelta) = ApplyDelivery(snapshot, delta, state.Options.Delivery);
+        var newState = Clone(midState);
+        newState.Finished = true;
+        newState.PendingBytes = Array.Empty<byte>();
+        newState.CommittedPrefix = material;
+        newState.Snapshot = snapshot;
+        newState.Cursor = new StreamCursor
+        {
+            Source = midState.Cursor.Source,
+            GroupId = snapshot.GroupId,
+            Generation = generation,
+            Position = new BytePosition
+            {
+                NextByteOffset = material.LongLength,
+                PendingByteLength = 0,
+            },
+            SourceRevision = midState.Cursor.SourceRevision,
+            PrefixSha256 = Sha256Hex(material),
+        };
+        newState.NextRevision = revisionNum + 1;
+        var update = new StreamUpdate
+        {
+            Kind = "updated",
+            Revision = revision,
+            Cursor = newState.Cursor,
+            Snapshot = outSnap,
+            Delta = outDelta,
+            Diagnostics = snapshot.Diagnostics,
+            Provisional = new StreamProvisionalInfo
+            {
+                Include = state.Options.IncludeProvisional,
+                ProvisionalIds = Array.Empty<string>(),
+                FinalizedIds = finalized
+                    .Where(r => !string.IsNullOrEmpty(r.FinalizesProvisionalId))
+                    .Select(r => r.FinalizesProvisionalId!)
+                    .ToArray(),
+            },
+            Consumed = new StreamConsumed
+            {
+                CompleteRecords = (ulong)finalized.Count,
+                Bytes = (ulong)material.LongLength,
+            },
+        };
+        return (newState, update);
+    }
+
+    /// <summary>Install a new generation after reset-required or manual restart.</summary>
+    public static (StreamState State, StreamUpdate Update) Reset(
+        StreamState state,
+        StreamResetRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var generation = request.Generation ?? state.Generation + 1;
+        var groupId = state.Options.GroupId ?? state.Cursor.GroupId;
+        var newState = Clone(state);
+        newState.Generation = generation;
+        newState.NextRevision = 0;
+        newState.Finished = false;
+        newState.PendingBytes = Array.Empty<byte>();
+        newState.CommittedPrefix = Array.Empty<byte>();
+        newState.Snapshot = null;
+        newState.GroupLocked = false;
+        newState.Cursor = new StreamCursor
+        {
+            Source = state.Cursor.Source,
+            GroupId = groupId,
+            Generation = generation,
+            Position = new BytePosition { NextByteOffset = 0, PendingByteLength = 0 },
+            SourceRevision = request.SourceRevision,
+            PrefixSha256 = null,
+        };
+
+        var dropped = state.Snapshot?.Records
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .Where(s => s.Length > 0)
+            .ToArray() ?? Array.Empty<string>();
+        var resetMeta = new StreamReset
+        {
+            Reason = request.Reason,
+            PriorCursor = request.PriorCursor ?? state.Cursor,
+            RequiresSnapshot = request.Material is null,
+            DroppedRecordIds = dropped,
+        };
+
+        if (request.Material is { } material)
+        {
+            var (applied, update) = ApplySnapshot(
+                newState,
+                material,
+                request.SourceRevision ?? "",
+                cursor: null);
+            if (update.Kind is not ("updated" or "unchanged"))
+            {
+                return (applied, update);
+            }
+
+            StreamDelta? delta = update.Delta;
+            if (delta is not null)
+            {
+                var ops = new List<StreamDeltaOperation>
+                {
+                    new()
+                    {
+                        Op = "reset",
+                        Payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+                        {
+                            ["reset"] = ResetToDict(resetMeta),
+                        },
+                    },
+                };
+                ops.AddRange(delta.Operations);
+                delta = delta with { Operations = ops };
+            }
+
+            return (applied, update with { Delta = delta, Reset = resetMeta });
+        }
+
+        // Empty reset with no material → updated empty snapshot of new generation.
+        var emptySha = Sha256Hex(ReadOnlySpan<byte>.Empty);
+        var revision = new StreamRevision
+        {
+            Revision = 0,
+            RevisionId = RevisionId(generation, 0, newState.Cursor.Source, groupId, emptySha, Array.Empty<string>()),
+            ParentRevisionId = null,
+            Complete = false,
+            Generation = generation,
+        };
+        var snapshot = new StreamSnapshot
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Revision = revision,
+            Records = Array.Empty<StreamRecord>(),
+            Diagnostics = Array.Empty<StreamDiagnostic>(),
+            Complete = false,
+        };
+        var baseDelta = DiffSnapshots(null, snapshot, revision);
+        var resetOps = new List<StreamDeltaOperation>
+        {
+            new()
+            {
+                Op = "reset",
+                Payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["reset"] = ResetToDict(resetMeta),
+                },
+            },
+        };
+        resetOps.AddRange(baseDelta.Operations);
+        var fullDelta = baseDelta with { Operations = resetOps };
+        var (outSnap, outDelta) = ApplyDelivery(snapshot, fullDelta, state.Options.Delivery);
+        newState.Snapshot = snapshot;
+        newState.NextRevision = 1;
+        newState.Cursor = new StreamCursor
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Generation = generation,
+            Position = new BytePosition { NextByteOffset = 0, PendingByteLength = 0 },
+            SourceRevision = request.SourceRevision,
+            PrefixSha256 = emptySha,
+        };
+        return (newState, new StreamUpdate
+        {
+            Kind = "updated",
+            Revision = revision,
+            Cursor = newState.Cursor,
+            Snapshot = outSnap,
+            Delta = outDelta,
+            Provisional = EmptyProvisional(state),
+            Consumed = EmptyConsumed(),
+            Reset = resetMeta,
+        });
+    }
+
+    /// <summary>Pure apply(state, input) → (state, update). Failed apply leaves state unchanged when possible.</summary>
+    public static (StreamState State, StreamUpdate Update) Apply(
+        StreamState state,
+        StreamInput input)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(input);
+
+        return input.Kind switch
+        {
+            "snapshot-bytes" => ApplySnapshot(
+                state,
+                input.Data ?? ReadOnlyMemory<byte>.Empty,
+                input.SourceRevision ?? "",
+                input.Cursor),
+            "append-bytes" => ApplyAppend(
+                state,
+                input.Data ?? ReadOnlyMemory<byte>.Empty,
+                input.Cursor,
+                input.SourceRevision),
+            "finish" => Finish(state),
+            "reset" => input.Reset is null
+                ? (state, ErrorUpdate(state, "invalid_input", "reset input requires a StreamResetRequest."))
+                : Reset(state, input.Reset),
+            "ahp-actions" or "ahp-snapshot" => (
+                state,
+                ErrorUpdate(state, "stream_resync_required", "AHP stream apply is not available in this slice.")),
+            "hermes-export" => (
+                state,
+                ErrorUpdate(
+                    state,
+                    "stream_resync_required",
+                    "Hermes export stream apply requires an optional provider.")),
+            _ => (state, ErrorUpdate(state, "invalid_input", "Stream input kind is not supported for this source.")),
+        };
+    }
+
     public static StreamDelta DiffSnapshots(
         StreamSnapshot? prior,
         StreamSnapshot current,
@@ -539,7 +929,25 @@ public static class TrajectoryStream
         try
         {
             var engine = TrajectoryEngine.CreateDefault();
-            var transcript = Encoding.UTF8.GetString(committed);
+            // Byte-preserving UTF-8 decode: reject invalid sequences instead of
+            // introducing U+FFFD (would diverge prefix_sha256 from byte-native runtimes).
+            string transcript;
+            try
+            {
+                var utf8Strict = Encoding.GetEncoding(
+                    "utf-8",
+                    EncoderFallback.ExceptionFallback,
+                    DecoderFallback.ExceptionFallback);
+                transcript = utf8Strict.GetString(committed);
+            }
+            catch (DecoderFallbackException)
+            {
+                return (null, null, null, ErrorUpdate(
+                    state,
+                    "invalid_input",
+                    "Stream material contains invalid UTF-8 sequences."));
+            }
+
             var ir = engine.NormalizeToIR(new NormalizeInput
             {
                 Source = state.Options.Source,
@@ -799,6 +1207,78 @@ public static class TrajectoryStream
             Error = (code, message),
         };
 
+    private static StreamUpdate? CursorConflict(StreamState state, StreamCursor cursor)
+    {
+        if (cursor.Source != state.Cursor.Source ||
+            cursor.Generation != state.Cursor.Generation ||
+            cursor.Position.NextByteOffset != state.Cursor.Position.NextByteOffset)
+        {
+            return ResetRequired(
+                state,
+                "cursor-mismatch",
+                "stream_cursor_conflict",
+                "Supplied stream cursor does not match stream state.");
+        }
+
+        if (state.GroupLocked && cursor.GroupId != state.Cursor.GroupId)
+        {
+            return ResetRequired(
+                state,
+                "group-changed",
+                "stream_cursor_conflict",
+                "Supplied stream cursor does not match stream state.");
+        }
+
+        if (cursor.Position.NextByteOffset < 0 || cursor.Position.PendingByteLength < 0)
+        {
+            return ErrorUpdate(
+                state,
+                "invalid_input",
+                "Stream cursor byte positions must be non-negative int64 values.");
+        }
+
+        return null;
+    }
+
+    private static bool IsWhitespaceOnly(ReadOnlySpan<byte> data)
+    {
+        foreach (var b in data)
+        {
+            if (b is not (byte)' ' and not (byte)'\t' and not (byte)'\r' and not (byte)'\n')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static Dictionary<string, object?> ResetToDict(StreamReset reset) =>
+        new(StringComparer.Ordinal)
+        {
+            ["reason"] = reset.Reason,
+            ["prior_cursor"] = reset.PriorCursor is null ? null : CursorToDict(reset.PriorCursor),
+            ["requires_snapshot"] = reset.RequiresSnapshot,
+            ["dropped_record_ids"] = reset.DroppedRecordIds.ToList(),
+        };
+
+    private static Dictionary<string, object?> CursorToDict(StreamCursor c) =>
+        new(StringComparer.Ordinal)
+        {
+            ["cursor_version"] = c.CursorVersion,
+            ["source"] = c.Source,
+            ["group_id"] = c.GroupId,
+            ["generation"] = c.Generation,
+            ["position"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["kind"] = c.Position.Kind,
+                ["next_byte_offset"] = c.Position.NextByteOffset,
+                ["pending_byte_length"] = c.Position.PendingByteLength,
+            },
+            ["source_revision"] = c.SourceRevision,
+            ["prefix_sha256"] = c.PrefixSha256,
+        };
+
     private static StreamUpdate ResetRequired(
         StreamState state,
         string reason,
@@ -998,6 +1478,37 @@ public sealed class TrajectoryStreamSession
         StreamCursor? cursor = null)
     {
         var (state, update) = TrajectoryStream.ApplySnapshot(_state, prefix, sourceRevision, cursor);
+        _state = state;
+        return update;
+    }
+
+    public StreamUpdate ApplyAppend(
+        ReadOnlyMemory<byte> segment,
+        StreamCursor? cursor = null,
+        string? sourceRevision = null)
+    {
+        var (state, update) = TrajectoryStream.ApplyAppend(_state, segment, cursor, sourceRevision);
+        _state = state;
+        return update;
+    }
+
+    public StreamUpdate Finish()
+    {
+        var (state, update) = TrajectoryStream.Finish(_state);
+        _state = state;
+        return update;
+    }
+
+    public StreamUpdate Reset(StreamResetRequest request)
+    {
+        var (state, update) = TrajectoryStream.Reset(_state, request);
+        _state = state;
+        return update;
+    }
+
+    public StreamUpdate Apply(StreamInput input)
+    {
+        var (state, update) = TrajectoryStream.Apply(_state, input);
         _state = state;
         return update;
     }

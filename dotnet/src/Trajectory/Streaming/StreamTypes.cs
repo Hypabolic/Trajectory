@@ -121,6 +121,20 @@ public sealed record StreamResetRequest
     public ReadOnlyMemory<byte>? Material { get; init; }
 }
 
+/// <summary>Discriminated stream input for pure apply(state, input).</summary>
+public sealed record StreamInput
+{
+    /// <summary>
+    /// One of: append-bytes, snapshot-bytes, finish, reset,
+    /// ahp-actions, ahp-snapshot, hermes-export.
+    /// </summary>
+    public required string Kind { get; init; }
+    public ReadOnlyMemory<byte>? Data { get; init; }
+    public string? SourceRevision { get; init; }
+    public StreamCursor? Cursor { get; init; }
+    public StreamResetRequest? Reset { get; init; }
+}
+
 /// <summary>Provisional lifecycle summary on a stream update envelope.</summary>
 public sealed record StreamProvisionalInfo
 {

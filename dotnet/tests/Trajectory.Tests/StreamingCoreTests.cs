@@ -155,4 +155,80 @@ public sealed class StreamingCoreTests
         Assert.Equal("cursor-mismatch", update.Reset!.Reason);
         Assert.Equal(state1.Cursor.Position.NextByteOffset, state2.Cursor.Position.NextByteOffset);
     }
+
+    [Fact]
+    public void Reset_WithMaterial_AttachesResetEnvelope()
+    {
+        var longBytes = ReadFixture("file-truncate-reset", "step-long.jsonl");
+        var shortBytes = ReadFixture("file-truncate-reset", "step-truncated.jsonl");
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-truncate-reset",
+        });
+        var (state1, _) = TrajectoryStream.ApplySnapshot(state, longBytes, "gen-0");
+        var (state2, update) = TrajectoryStream.Reset(state1, new StreamResetRequest
+        {
+            Reason = "source-truncated",
+            Generation = 1,
+            SourceRevision = "gen-1",
+            Material = shortBytes,
+        });
+        Assert.Equal("updated", update.Kind);
+        Assert.Equal(1UL, state2.Generation);
+        Assert.Equal(1UL, state2.Cursor.Generation);
+        Assert.NotNull(update.Reset);
+        Assert.Equal("source-truncated", update.Reset!.Reason);
+        Assert.False(update.Reset.RequiresSnapshot);
+    }
+
+    [Fact]
+    public void NegativeMaxLineBytes_IsInvalidInput()
+    {
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "g",
+            MaxLineBytes = -1,
+        });
+        var material = Encoding.UTF8.GetBytes("{\"a\":1}\n");
+        var (_, update) = TrajectoryStream.ApplySnapshot(state, material, "gen-0");
+        Assert.Equal("error", update.Kind);
+        Assert.Equal("invalid_input", update.Error!.Value.Code);
+    }
+
+    [Fact]
+    public void Finish_MarksComplete()
+    {
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "g",
+        });
+        var (state1, _) = TrajectoryStream.ApplySnapshot(state, ReadOnlyMemory<byte>.Empty, "gen-0");
+        var (state2, update) = TrajectoryStream.Finish(state1);
+        Assert.Equal("updated", update.Kind);
+        Assert.True(state2.Finished);
+        Assert.True(update.Revision.Complete);
+    }
+
+    [Fact]
+    public void SessionFacade_ResetAndApply()
+    {
+        var session = TrajectoryStreamSession.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "g",
+        });
+        session.ApplySnapshot(ReadOnlyMemory<byte>.Empty, "gen-0");
+        var update = session.Reset(new StreamResetRequest { Reason = "manual" });
+        Assert.Equal("updated", update.Kind);
+        Assert.NotNull(update.Reset);
+        Assert.Equal("manual", update.Reset!.Reason);
+        Assert.Equal(1UL, session.Cursor.Generation);
+
+        var finish = session.Apply(new StreamInput { Kind = "finish" });
+        Assert.Equal("updated", finish.Kind);
+        Assert.True(session.State.Finished);
+    }
 }

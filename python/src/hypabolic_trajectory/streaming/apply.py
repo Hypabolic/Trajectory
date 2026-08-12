@@ -128,11 +128,22 @@ def apply_snapshot(
         return state, conflict
 
     opts = state.options
+    limit_err = _validate_buffer_limits(opts)
+    if limit_err is not None:
+        return state, _error_update(state, code="invalid_input", message=limit_err)
+
     # Framing: only complete lines are committed for ordinary snapshot apply.
     if opts.require_complete_lines:
         committed, pending = split_complete_lines(material)
     else:
         committed, pending = material, b""
+
+    if len(committed) > _INT64_MAX or len(pending) > _INT64_MAX:
+        return state, _error_update(
+            state,
+            code="invalid_input",
+            message="Stream material length exceeds non-negative int64 domain.",
+        )
 
     if opts.max_pending_bytes is not None and len(pending) > opts.max_pending_bytes:
         return state, _error_update(
@@ -280,6 +291,10 @@ def apply_append(
         return state, conflict
 
     opts = state.options
+    limit_err = _validate_buffer_limits(opts)
+    if limit_err is not None:
+        return state, _error_update(state, code="invalid_input", message=limit_err)
+
     try:
         complete, pending = append_framed(
             bytes(state.pending_bytes),
@@ -540,13 +555,51 @@ def reset_stream(
         source_revision=request.source_revision,
         prefix_sha256=None,
     )
+    dropped = tuple(
+        r.record["id"] for r in (state.snapshot.records if state.snapshot else ())
+    )
+    reset_meta = StreamReset(
+        reason=request.reason,
+        prior_cursor=request.prior_cursor or state.cursor,
+        requires_snapshot=request.material is None,
+        dropped_record_ids=dropped,
+    )
     if request.material is not None:
-        return apply_snapshot(
+        new_state, update = apply_snapshot(
             new_state,
             request.material,
             source_revision=request.source_revision or "",
             cursor=None,
         )
+        if update.kind not in {"updated", "unchanged"}:
+            return new_state, update
+        # Merge reset envelope onto successful post-reset snapshot update.
+        delta = update.delta
+        if delta is not None:
+            from hypabolic_trajectory.streaming.types import StreamDeltaOperation
+
+            reset_op = StreamDeltaOperation(
+                op="reset",
+                payload={"reset": reset_meta.to_dict()},
+            )
+            delta = StreamDelta(
+                base_revision_id=delta.base_revision_id,
+                revision=delta.revision,
+                operations=(reset_op, *delta.operations),
+            )
+        update = StreamUpdate(
+            kind=update.kind,
+            revision=update.revision,
+            cursor=update.cursor,
+            snapshot=update.snapshot,
+            delta=delta,
+            diagnostics=update.diagnostics,
+            provisional=update.provisional,
+            consumed=update.consumed,
+            reset=reset_meta,
+            error=update.error,
+        )
+        return new_state, update
     revision = StreamRevision(
         revision=0,
         revision_id=_revision_id(
@@ -576,17 +629,7 @@ def reset_stream(
 
     reset_op = StreamDeltaOperation(
         op="reset",
-        payload={
-            "reset": StreamReset(
-                reason=request.reason,
-                prior_cursor=request.prior_cursor or state.cursor,
-                requires_snapshot=request.material is None,
-                dropped_record_ids=tuple(
-                    r.record["id"]
-                    for r in (state.snapshot.records if state.snapshot else ())
-                ),
-            ).to_dict()
-        },
+        payload={"reset": reset_meta.to_dict()},
     )
     delta = StreamDelta(
         base_revision_id=None,
@@ -615,15 +658,7 @@ def reset_stream(
         diagnostics=(),
         provisional=StreamProvisionalInfo(include=state.options.include_provisional),
         consumed=StreamConsumed(complete_records=0, bytes=0),
-        reset=StreamReset(
-            reason=request.reason,
-            prior_cursor=request.prior_cursor or state.cursor,
-            requires_snapshot=request.material is None,
-            dropped_record_ids=tuple(
-                r.record["id"]
-                for r in (state.snapshot.records if state.snapshot else ())
-            ),
-        ),
+        reset=reset_meta,
     )
     return new_state, update
 
@@ -704,10 +739,21 @@ def _clone_state(state: StreamState) -> StreamState:
 
 _INT64_MIN = -(2**63)
 _INT64_MAX = 2**63 - 1
+_MSG_BUFFER_LIMIT_DOMAIN = "Stream buffer limits must be non-negative int64 values."
 
 
 def _is_non_negative_int64(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= _INT64_MAX
+
+
+def _validate_buffer_limits(opts: StreamOptions) -> str | None:
+    """Return fixed invalid_input message when max_* limits are out of domain."""
+    for value in (opts.max_pending_bytes, opts.max_line_bytes):
+        if value is None:
+            continue
+        if not _is_non_negative_int64(value):
+            return _MSG_BUFFER_LIMIT_DOMAIN
+    return None
 
 
 def _cursor_conflict(

@@ -15,6 +15,7 @@ import {
   applySnapshot,
   createStream,
   cursorToDict,
+  finishStream,
   int64ToJson,
   resetStream,
   snapshotToDict,
@@ -236,6 +237,69 @@ test("resetStream without material emits updated empty snapshot", () => {
   assert.equal(result.update.snapshot.records.length, 0);
   assert.ok(result.update.reset);
   assert.equal(result.update.reset.reason, "manual");
+  assert.equal(result.update.reset.requiresSnapshot, true);
+});
+
+test("resetStream with material attaches reset envelope", async () => {
+  const longBytes = await readCase("file-truncate-reset", "step-long.jsonl");
+  const shortBytes = await readCase("file-truncate-reset", "step-truncated.jsonl");
+  let state = createStream({
+    source: "pi",
+    groupId: "stream-file-truncate-reset",
+  });
+  let result = applySnapshot(state, longBytes, "gen-0");
+  state = result.state;
+  result = resetStream(state, {
+    reason: "source-truncated",
+    generation: 1n,
+    sourceRevision: "gen-1",
+    material: shortBytes,
+  });
+  assert.equal(result.update.kind, "updated");
+  assert.equal(result.state.generation, 1n);
+  assert.equal(result.state.cursor.generation, 1n);
+  assert.ok(result.update.reset);
+  assert.equal(result.update.reset.reason, "source-truncated");
+  assert.equal(result.update.reset.requiresSnapshot, false);
+});
+
+test("negative maxLineBytes is invalid_input", () => {
+  const state = createStream({
+    source: "pi",
+    groupId: "g",
+    maxLineBytes: -1n,
+  });
+  const { update } = applySnapshot(state, new TextEncoder().encode('{"a":1}\n'), "gen-0");
+  assert.equal(update.kind, "error");
+  assert.equal(update.error?.code, "invalid_input");
+});
+
+test("cursor offsets above int64 max are invalid_input", () => {
+  let state = createStream({ source: "pi", groupId: "g" });
+  let result = applySnapshot(state, new Uint8Array(0), "gen-0");
+  state = result.state;
+  const tooBig = 0x8000000000000000n; // 2^63
+  const bad = {
+    ...state.cursor,
+    position: {
+      kind: "byte",
+      nextByteOffset: tooBig,
+      pendingByteLength: 0n,
+    },
+  };
+  result = applySnapshot(state, new Uint8Array(0), "gen-0", bad);
+  assert.equal(result.update.kind, "error");
+  assert.equal(result.update.error?.code, "invalid_input");
+});
+
+test("finishStream marks complete", () => {
+  let state = createStream({ source: "pi", groupId: "g" });
+  let result = applySnapshot(state, new Uint8Array(0), "gen-0");
+  state = result.state;
+  result = finishStream(state);
+  assert.equal(result.update.kind, "updated");
+  assert.equal(result.state.finished, true);
+  assert.equal(result.update.revision.complete, true);
 });
 
 test("TrajectoryStream facade applySnapshot", () => {
@@ -246,4 +310,7 @@ test("TrajectoryStream facade applySnapshot", () => {
   const update = stream.applySnapshot(new Uint8Array(0), "gen-0");
   assert.equal(update.kind, "updated");
   assert.equal(stream.cursor.groupId, "stream-empty-prefix");
+  const finished = stream.finish();
+  assert.equal(finished.kind, "updated");
+  assert.equal(stream.state.finished, true);
 });

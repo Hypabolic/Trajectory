@@ -198,6 +198,55 @@ pub struct StreamReset {
     pub dropped_record_ids: Vec<String>,
 }
 
+/// Caller reset request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamResetRequest {
+    /// Reason.
+    pub reason: String,
+    /// Optional explicit generation (defaults to prior + 1).
+    pub generation: Option<u64>,
+    /// Host source revision after reset.
+    pub source_revision: Option<String>,
+    /// Optional prior cursor override.
+    pub prior_cursor: Option<StreamCursor>,
+    /// Optional material to install immediately after reset.
+    pub material: Option<Vec<u8>>,
+}
+
+/// Stream input kind for pure `apply(state, input)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamInputKind {
+    /// Append complete-line segment.
+    AppendBytes,
+    /// Full snapshot material.
+    SnapshotBytes,
+    /// End-of-stream finish.
+    Finish,
+    /// Explicit generation reset.
+    Reset,
+    /// AHP action batch (stub until LS-05+).
+    AhpActions,
+    /// AHP Shape A snapshot (stub until LS-05+).
+    AhpSnapshot,
+    /// Hermes export (requires optional provider).
+    HermesExport,
+}
+
+/// Pure apply input envelope.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamInput {
+    /// Input kind.
+    pub kind: StreamInputKind,
+    /// Bytes payload (append/snapshot).
+    pub data: Option<Vec<u8>>,
+    /// Source revision.
+    pub source_revision: Option<String>,
+    /// Optional cursor check.
+    pub cursor: Option<StreamCursor>,
+    /// Reset request when kind is Reset.
+    pub reset: Option<StreamResetRequest>,
+}
+
 /// Provisional lifecycle summary on a stream update envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StreamProvisionalInfo {
@@ -856,6 +905,76 @@ fn any_line_too_long(data: &[u8], max_line_bytes: i64) -> bool {
     false
 }
 
+/// Convert a byte length into non-negative int64 domain, or error message.
+fn len_as_i64(len: usize) -> Result<i64, &'static str> {
+    i64::try_from(len).map_err(|_| "Stream material length exceeds non-negative int64 domain.")
+}
+
+fn is_whitespace_only(data: &[u8]) -> bool {
+    data.iter()
+        .all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+}
+
+fn reset_to_value(reset: &StreamReset) -> Value {
+    let mut map = Map::new();
+    map.insert("reason".into(), Value::String(reset.reason.clone()));
+    map.insert(
+        "prior_cursor".into(),
+        reset
+            .prior_cursor
+            .as_ref()
+            .map_or(Value::Null, cursor_to_value),
+    );
+    map.insert(
+        "requires_snapshot".into(),
+        Value::Bool(reset.requires_snapshot),
+    );
+    map.insert(
+        "dropped_record_ids".into(),
+        Value::Array(
+            reset
+                .dropped_record_ids
+                .iter()
+                .cloned()
+                .map(Value::String)
+                .collect(),
+        ),
+    );
+    Value::Object(map)
+}
+
+fn cursor_to_value(c: &StreamCursor) -> Value {
+    let mut pos = Map::new();
+    pos.insert("kind".into(), Value::String("byte".into()));
+    pos.insert(
+        "next_byte_offset".into(),
+        Value::from(c.position.next_byte_offset),
+    );
+    pos.insert(
+        "pending_byte_length".into(),
+        Value::from(c.position.pending_byte_length),
+    );
+    let mut map = Map::new();
+    map.insert("cursor_version".into(), Value::from(c.cursor_version));
+    map.insert("source".into(), Value::String(c.source.clone()));
+    map.insert("group_id".into(), Value::String(c.group_id.clone()));
+    map.insert("generation".into(), Value::from(c.generation));
+    map.insert("position".into(), Value::Object(pos));
+    map.insert(
+        "source_revision".into(),
+        c.source_revision
+            .as_ref()
+            .map_or(Value::Null, |s| Value::String(s.clone())),
+    );
+    map.insert(
+        "prefix_sha256".into(),
+        c.prefix_sha256
+            .as_ref()
+            .map_or(Value::Null, |s| Value::String(s.clone())),
+    );
+    Value::Object(map)
+}
+
 fn cursor_conflict(state: &StreamState, cursor: Option<&StreamCursor>) -> Option<StreamUpdate> {
     let cursor = cursor?;
     if cursor.source != state.cursor.source
@@ -915,6 +1034,19 @@ pub fn apply_snapshot(
         (material.to_vec(), Vec::new())
     };
 
+    let committed_len = match len_as_i64(committed.len()) {
+        Ok(n) => n,
+        Err(msg) => {
+            return Ok((state.clone(), error_update(state, "invalid_input", msg)));
+        }
+    };
+    let pending_len = match len_as_i64(pending.len()) {
+        Ok(n) => n,
+        Err(msg) => {
+            return Ok((state.clone(), error_update(state, "invalid_input", msg)));
+        }
+    };
+
     if let Some(max) = state.options.max_pending_bytes {
         if max < 0 {
             return Ok((
@@ -926,7 +1058,7 @@ pub fn apply_snapshot(
                 ),
             ));
         }
-        if pending.len() as i64 > max {
+        if pending_len > max {
             return Ok((
                 state.clone(),
                 error_update(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
@@ -945,7 +1077,7 @@ pub fn apply_snapshot(
                 ),
             ));
         }
-        if any_line_too_long(&committed, max) || pending.len() as i64 > max {
+        if any_line_too_long(&committed, max) || pending_len > max {
             return Ok((
                 state.clone(),
                 error_update(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
@@ -1026,9 +1158,7 @@ pub fn apply_snapshot(
         records.retain(|r| r.status != "provisional");
     }
 
-    if state.snapshot.is_some()
-        && (committed.len() as i64) < state.cursor.position.next_byte_offset
-    {
+    if state.snapshot.is_some() && committed_len < state.cursor.position.next_byte_offset {
         return Ok((
             state.clone(),
             reset_required(
@@ -1107,13 +1237,12 @@ pub fn apply_snapshot(
         group_id,
         generation,
         position: BytePosition {
-            next_byte_offset: committed.len() as i64,
-            pending_byte_length: pending.len() as i64,
+            next_byte_offset: committed_len,
+            pending_byte_length: pending_len,
         },
         source_revision: Some(source_revision.into()),
         prefix_sha256: Some(effective_prefix_sha),
     };
-    let committed_len = committed.len() as u64;
     let update = StreamUpdate {
         kind: "updated".into(),
         revision,
@@ -1128,12 +1257,12 @@ pub fn apply_snapshot(
         },
         consumed: StreamConsumed {
             complete_records: records.len() as u64,
-            bytes: committed_len,
+            bytes: committed_len as u64,
             first_source_position: if committed.is_empty() { None } else { Some(0) },
             last_source_position: if committed.is_empty() {
                 None
             } else {
-                Some(committed.len() as i64 - 1)
+                Some(committed_len - 1)
             },
         },
         reset: None,
@@ -1145,6 +1274,445 @@ pub fn apply_snapshot(
     new_state.committed_prefix = committed;
     new_state.next_revision = revision_num + 1;
     Ok((new_state, update))
+}
+
+/// Append complete-line segment; re-normalize full committed prefix (oracle path).
+pub fn apply_append(
+    state: &StreamState,
+    segment: &[u8],
+    cursor: Option<&StreamCursor>,
+    source_revision: Option<&str>,
+) -> Result<(StreamState, StreamUpdate), TrajectoryError> {
+    if state.finished {
+        return Ok((
+            state.clone(),
+            error_update(state, "invalid_input", "Stream is already finished."),
+        ));
+    }
+    if let Some(conflict) = cursor_conflict(state, cursor) {
+        return Ok((state.clone(), conflict));
+    }
+    if let Some(max) = state.options.max_pending_bytes {
+        if max < 0 {
+            return Ok((
+                state.clone(),
+                error_update(
+                    state,
+                    "invalid_input",
+                    "Stream buffer limits must be non-negative int64 values.",
+                ),
+            ));
+        }
+    }
+    if let Some(max) = state.options.max_line_bytes {
+        if max < 0 {
+            return Ok((
+                state.clone(),
+                error_update(
+                    state,
+                    "invalid_input",
+                    "Stream buffer limits must be non-negative int64 values.",
+                ),
+            ));
+        }
+    }
+
+    let mut combined = state.pending_bytes.clone();
+    combined.extend_from_slice(segment);
+    let (complete, new_pending) = split_complete_lines(&combined);
+    if let Some(max) = state.options.max_pending_bytes {
+        let pending_len = match len_as_i64(new_pending.len()) {
+            Ok(n) => n,
+            Err(msg) => {
+                return Ok((state.clone(), error_update(state, "invalid_input", msg)));
+            }
+        };
+        if pending_len > max {
+            return Ok((
+                state.clone(),
+                error_update(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
+            ));
+        }
+    }
+    if let Some(max) = state.options.max_line_bytes {
+        let pending_len = match len_as_i64(new_pending.len()) {
+            Ok(n) => n,
+            Err(msg) => {
+                return Ok((state.clone(), error_update(state, "invalid_input", msg)));
+            }
+        };
+        if any_line_too_long(&complete, max) || pending_len > max {
+            return Ok((
+                state.clone(),
+                error_update(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
+            ));
+        }
+    }
+
+    let mut new_prefix = state.committed_prefix.clone();
+    new_prefix.extend_from_slice(&complete);
+    let mut tmp = state.clone();
+    tmp.pending_bytes.clear();
+    let rev = source_revision
+        .map(str::to_string)
+        .or_else(|| state.cursor.source_revision.clone())
+        .unwrap_or_default();
+    let (mut new_state, mut update) = apply_snapshot(&tmp, &new_prefix, &rev, None)?;
+    if update.kind == "updated" || update.kind == "unchanged" {
+        let pending_len = match len_as_i64(new_pending.len()) {
+            Ok(n) => n,
+            Err(msg) => {
+                return Ok((state.clone(), error_update(state, "invalid_input", msg)));
+            }
+        };
+        new_state.pending_bytes = new_pending;
+        new_state.cursor.position.pending_byte_length = pending_len;
+        if update.kind == "updated" {
+            update.cursor = new_state.cursor.clone();
+        }
+    }
+    Ok((new_state, update))
+}
+
+/// End-of-stream: optionally commit final unterminated line; finalize records.
+pub fn finish_stream(
+    state: &StreamState,
+) -> Result<(StreamState, StreamUpdate), TrajectoryError> {
+    if state.finished {
+        return Ok((state.clone(), unchanged(state)));
+    }
+
+    let mut material = state.committed_prefix.clone();
+    let pending = state.pending_bytes.clone();
+    if !pending.is_empty() && !is_whitespace_only(&pending) {
+        material.extend_from_slice(&pending);
+        material.push(b'\n');
+    }
+
+    let rev = state
+        .cursor
+        .source_revision
+        .clone()
+        .unwrap_or_else(|| "finish".into());
+    let (mid_state, mid_update) = apply_snapshot(state, &material, &rev, None)?;
+    if mid_update.kind != "updated" && mid_update.kind != "unchanged" {
+        return Ok((mid_state, mid_update));
+    }
+
+    let Some(base_snapshot) = mid_state.snapshot.clone() else {
+        let mut finished = mid_state;
+        finished.finished = true;
+        return Ok((finished, mid_update));
+    };
+
+    let finalized: Vec<StreamRecord> = if state.options.finalize_on_close {
+        base_snapshot
+            .records
+            .iter()
+            .map(|rec| {
+                if rec.status == "final" {
+                    rec.clone()
+                } else {
+                    StreamRecord {
+                        status: "final".into(),
+                        record: rec.record.clone(),
+                        provisional_id: rec.provisional_id.clone(),
+                    }
+                }
+            })
+            .collect()
+    } else {
+        base_snapshot.records.clone()
+    };
+
+    let generation = mid_state.generation;
+    let parent_revision_id = Some(base_snapshot.revision.revision_id.clone());
+    let revision_num = mid_state.next_revision;
+    let prefix_sha = mid_state
+        .cursor
+        .prefix_sha256
+        .clone()
+        .unwrap_or_else(|| sha256_bytes(&[]));
+    let record_ids: Vec<String> = finalized
+        .iter()
+        .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    let rev_id = revision_id(
+        generation,
+        revision_num,
+        mid_state.cursor.source.as_str(),
+        &base_snapshot.group_id,
+        &prefix_sha,
+        &record_ids,
+    );
+    let revision = StreamRevision {
+        revision: revision_num,
+        revision_id: rev_id,
+        parent_revision_id,
+        complete: true,
+        generation,
+    };
+    let snapshot = StreamSnapshot {
+        schema_id: STREAM_SCHEMA_ID.into(),
+        source: base_snapshot.source.clone(),
+        group_id: base_snapshot.group_id.clone(),
+        revision: revision.clone(),
+        records: finalized.clone(),
+        diagnostics: base_snapshot.diagnostics.clone(),
+        complete: true,
+    };
+    let delta = diff_snapshots(Some(&base_snapshot), &snapshot, &revision);
+    let (out_snapshot, out_delta) = match state.options.delivery {
+        StreamDelivery::Both => (Some(snapshot.clone()), Some(delta)),
+        StreamDelivery::Snapshot => (Some(snapshot.clone()), None),
+        StreamDelivery::Delta => (None, Some(delta)),
+    };
+    let material_len = match len_as_i64(material.len()) {
+        Ok(n) => n,
+        Err(msg) => {
+            return Ok((state.clone(), error_update(state, "invalid_input", msg)));
+        }
+    };
+    let mut new_state = mid_state;
+    new_state.finished = true;
+    new_state.pending_bytes.clear();
+    new_state.committed_prefix = material;
+    new_state.snapshot = Some(snapshot.clone());
+    new_state.cursor = StreamCursor {
+        cursor_version: 1,
+        source: new_state.cursor.source.clone(),
+        group_id: snapshot.group_id.clone(),
+        generation,
+        position: BytePosition {
+            next_byte_offset: material_len,
+            pending_byte_length: 0,
+        },
+        source_revision: new_state.cursor.source_revision.clone(),
+        prefix_sha256: Some(if new_state.committed_prefix.is_empty() {
+            sha256_bytes(&[])
+        } else {
+            sha256_bytes(&new_state.committed_prefix)
+        }),
+    };
+    new_state.next_revision = revision_num + 1;
+    let update = StreamUpdate {
+        kind: "updated".into(),
+        revision,
+        cursor: new_state.cursor.clone(),
+        snapshot: out_snapshot,
+        delta: out_delta,
+        diagnostics: snapshot.diagnostics,
+        provisional: StreamProvisionalInfo {
+            include: state.options.include_provisional,
+            provisional_ids: vec![],
+            finalized_ids: finalized
+                .iter()
+                .filter_map(|r| r.provisional_id.clone())
+                .collect(),
+        },
+        consumed: StreamConsumed {
+            complete_records: finalized.len() as u64,
+            bytes: material_len as u64,
+            first_source_position: None,
+            last_source_position: None,
+        },
+        reset: None,
+        error: None,
+    };
+    Ok((new_state, update))
+}
+
+/// Install a new generation after reset-required or manual restart.
+pub fn reset_stream(
+    state: &StreamState,
+    request: &StreamResetRequest,
+) -> Result<(StreamState, StreamUpdate), TrajectoryError> {
+    let generation = request.generation.unwrap_or(state.generation + 1);
+    let group_id = state
+        .options
+        .group_id
+        .clone()
+        .unwrap_or_else(|| state.cursor.group_id.clone());
+    let mut new_state = state.clone();
+    new_state.generation = generation;
+    new_state.next_revision = 0;
+    new_state.finished = false;
+    new_state.pending_bytes.clear();
+    new_state.committed_prefix.clear();
+    new_state.snapshot = None;
+    new_state.group_locked = false;
+    new_state.cursor = StreamCursor {
+        cursor_version: 1,
+        source: state.cursor.source.clone(),
+        group_id: group_id.clone(),
+        generation,
+        position: BytePosition {
+            next_byte_offset: 0,
+            pending_byte_length: 0,
+        },
+        source_revision: request.source_revision.clone(),
+        prefix_sha256: None,
+    };
+
+    let dropped: Vec<String> = state
+        .snapshot
+        .as_ref()
+        .map(|s| {
+            s.records
+                .iter()
+                .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let reset_meta = StreamReset {
+        reason: request.reason.clone(),
+        prior_cursor: request
+            .prior_cursor
+            .clone()
+            .or_else(|| Some(state.cursor.clone())),
+        requires_snapshot: request.material.is_none(),
+        dropped_record_ids: dropped,
+    };
+
+    if let Some(material) = &request.material {
+        let rev = request.source_revision.clone().unwrap_or_default();
+        let (applied, mut update) = apply_snapshot(&new_state, material, &rev, None)?;
+        if update.kind != "updated" && update.kind != "unchanged" {
+            return Ok((applied, update));
+        }
+        if let Some(delta) = update.delta.as_mut() {
+            let mut payload = Map::new();
+            payload.insert("reset".into(), reset_to_value(&reset_meta));
+            delta.operations.insert(
+                0,
+                StreamDeltaOperation {
+                    op: "reset".into(),
+                    payload,
+                },
+            );
+        }
+        update.reset = Some(reset_meta);
+        return Ok((applied, update));
+    }
+
+    // Empty reset with no material → updated empty snapshot of new generation.
+    let empty_sha = sha256_bytes(&[]);
+    let revision = StreamRevision {
+        revision: 0,
+        revision_id: revision_id(
+            generation,
+            0,
+            new_state.cursor.source.as_str(),
+            &group_id,
+            &empty_sha,
+            &[],
+        ),
+        parent_revision_id: None,
+        complete: false,
+        generation,
+    };
+    let snapshot = StreamSnapshot {
+        schema_id: STREAM_SCHEMA_ID.into(),
+        source: new_state.cursor.source.clone(),
+        group_id: group_id.clone(),
+        revision: revision.clone(),
+        records: vec![],
+        diagnostics: vec![],
+        complete: false,
+    };
+    let mut delta = diff_snapshots(None, &snapshot, &revision);
+    let mut payload = Map::new();
+    payload.insert("reset".into(), reset_to_value(&reset_meta));
+    delta.operations.insert(
+        0,
+        StreamDeltaOperation {
+            op: "reset".into(),
+            payload,
+        },
+    );
+    let (out_snapshot, out_delta) = match state.options.delivery {
+        StreamDelivery::Both => (Some(snapshot.clone()), Some(delta)),
+        StreamDelivery::Snapshot => (Some(snapshot.clone()), None),
+        StreamDelivery::Delta => (None, Some(delta)),
+    };
+    new_state.snapshot = Some(snapshot);
+    new_state.next_revision = 1;
+    new_state.cursor = StreamCursor {
+        cursor_version: 1,
+        source: new_state.cursor.source.clone(),
+        group_id,
+        generation,
+        position: BytePosition {
+            next_byte_offset: 0,
+            pending_byte_length: 0,
+        },
+        source_revision: request.source_revision.clone(),
+        prefix_sha256: Some(empty_sha),
+    };
+    let update = StreamUpdate {
+        kind: "updated".into(),
+        revision,
+        cursor: new_state.cursor.clone(),
+        snapshot: out_snapshot,
+        delta: out_delta,
+        diagnostics: vec![],
+        provisional: empty_provisional(state),
+        consumed: empty_consumed(),
+        reset: Some(reset_meta),
+        error: None,
+    };
+    Ok((new_state, update))
+}
+
+/// Pure apply(state, input) → (state, update).
+pub fn apply_stream(
+    state: &StreamState,
+    input: &StreamInput,
+) -> Result<(StreamState, StreamUpdate), TrajectoryError> {
+    match input.kind {
+        StreamInputKind::SnapshotBytes => apply_snapshot(
+            state,
+            input.data.as_deref().unwrap_or(&[]),
+            input.source_revision.as_deref().unwrap_or(""),
+            input.cursor.as_ref(),
+        ),
+        StreamInputKind::AppendBytes => apply_append(
+            state,
+            input.data.as_deref().unwrap_or(&[]),
+            input.cursor.as_ref(),
+            input.source_revision.as_deref(),
+        ),
+        StreamInputKind::Finish => finish_stream(state),
+        StreamInputKind::Reset => {
+            let Some(request) = input.reset.as_ref() else {
+                return Ok((
+                    state.clone(),
+                    error_update(
+                        state,
+                        "invalid_input",
+                        "reset input requires a StreamResetRequest.",
+                    ),
+                ));
+            };
+            reset_stream(state, request)
+        }
+        StreamInputKind::AhpActions | StreamInputKind::AhpSnapshot => Ok((
+            state.clone(),
+            error_update(
+                state,
+                "stream_resync_required",
+                "AHP stream apply is not available in this slice.",
+            ),
+        )),
+        StreamInputKind::HermesExport => Ok((
+            state.clone(),
+            error_update(
+                state,
+                "stream_resync_required",
+                "Hermes export stream apply requires an optional provider.",
+            ),
+        )),
+    }
 }
 
 fn sha256_bytes(data: &[u8]) -> String {
@@ -1267,5 +1835,53 @@ mod tests {
         let (c, p) = split_complete_lines(b"{\"a\":1}\n{\"b\":");
         assert_eq!(c, b"{\"a\":1}\n");
         assert_eq!(p, b"{\"b\":");
+    }
+
+    #[test]
+    fn reset_with_material_attaches_reset_envelope() {
+        let long = read_case("file-truncate-reset", "step-long.jsonl");
+        let short = read_case("file-truncate-reset", "step-truncated.jsonl");
+        let opts = StreamOptions::new(TrajectorySource::Pi)
+            .with_group_id("stream-file-truncate-reset");
+        let state = create_stream(opts);
+        let (state, _) = apply_snapshot(&state, &long, "gen-0", None).unwrap();
+        let request = StreamResetRequest {
+            reason: "source-truncated".into(),
+            generation: Some(1),
+            source_revision: Some("gen-1".into()),
+            prior_cursor: None,
+            material: Some(short),
+        };
+        let (state2, update) = reset_stream(&state, &request).unwrap();
+        assert_eq!(update.kind, "updated");
+        assert_eq!(state2.generation, 1);
+        assert_eq!(state2.cursor.generation, 1);
+        let reset = update.reset.as_ref().expect("reset envelope");
+        assert_eq!(reset.reason, "source-truncated");
+        assert!(!reset.requires_snapshot);
+    }
+
+    #[test]
+    fn negative_max_line_bytes_is_invalid_input() {
+        let mut opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("g");
+        opts.max_line_bytes = Some(-1);
+        let state = create_stream(opts);
+        let (_, update) = apply_snapshot(&state, b"{\"a\":1}\n", "gen-0", None).unwrap();
+        assert_eq!(update.kind, "error");
+        assert_eq!(
+            update.error.as_ref().map(|(c, _)| c.as_str()),
+            Some("invalid_input")
+        );
+    }
+
+    #[test]
+    fn finish_marks_complete() {
+        let opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("g");
+        let state = create_stream(opts);
+        let (state, _) = apply_snapshot(&state, b"", "gen-0", None).unwrap();
+        let (state2, update) = finish_stream(&state).unwrap();
+        assert_eq!(update.kind, "updated");
+        assert!(state2.finished);
+        assert!(update.revision.complete);
     }
 }

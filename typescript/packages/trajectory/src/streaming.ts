@@ -198,6 +198,15 @@ export interface StreamInput {
 }
 
 const LF = 0x0a;
+/** Signed non-negative int64 upper bound (streaming-cursor-v1 / buffer limits). */
+const INT64_MAX = 0x7fffffffffffffffn;
+const MSG_BUFFER_LIMIT_DOMAIN = "Stream buffer limits must be non-negative int64 values.";
+const MSG_CURSOR_DOMAIN = "Stream cursor byte positions must be non-negative int64 values.";
+const MSG_MATERIAL_DOMAIN = "Stream material length exceeds non-negative int64 domain.";
+
+function isNonNegativeInt64(value: bigint): boolean {
+  return value >= 0n && value <= INT64_MAX;
+}
 
 function sha256Hex(data: string | Uint8Array): string {
   return createHash("sha256").update(data).digest("hex");
@@ -664,11 +673,7 @@ export function applySnapshot(
     return { state, update: errorUpdate(state, "invalid_input", "Stream is already finished.") };
   }
   if (cursor) {
-    if (
-      cursor.source !== state.cursor.source ||
-      cursor.generation !== state.cursor.generation ||
-      cursor.position.nextByteOffset !== state.cursor.position.nextByteOffset
-    ) {
+    if (cursor.source !== state.cursor.source || cursor.generation !== state.cursor.generation) {
       return {
         state,
         update: resetRequired(
@@ -691,16 +696,40 @@ export function applySnapshot(
       };
     }
     // Domain: non-negative int64 byte positions (streaming-cursor-v1).
-    if (cursor.position.nextByteOffset < 0n || cursor.position.pendingByteLength < 0n) {
+    // Checked before position equality so overflow is invalid_input, not cursor-mismatch.
+    if (
+      !isNonNegativeInt64(cursor.position.nextByteOffset) ||
+      !isNonNegativeInt64(cursor.position.pendingByteLength)
+    ) {
       return {
         state,
-        update: errorUpdate(
+        update: errorUpdate(state, "invalid_input", MSG_CURSOR_DOMAIN),
+      };
+    }
+    if (cursor.position.nextByteOffset !== state.cursor.position.nextByteOffset) {
+      return {
+        state,
+        update: resetRequired(
           state,
-          "invalid_input",
-          "Stream cursor byte positions must be non-negative int64 values.",
+          "cursor-mismatch",
+          "stream_cursor_conflict",
+          "Supplied stream cursor does not match stream state.",
         ),
       };
     }
+  }
+
+  if (state.options.maxPendingBytes !== undefined && !isNonNegativeInt64(state.options.maxPendingBytes)) {
+    return {
+      state,
+      update: errorUpdate(state, "invalid_input", MSG_BUFFER_LIMIT_DOMAIN),
+    };
+  }
+  if (state.options.maxLineBytes !== undefined && !isNonNegativeInt64(state.options.maxLineBytes)) {
+    return {
+      state,
+      update: errorUpdate(state, "invalid_input", MSG_BUFFER_LIMIT_DOMAIN),
+    };
   }
 
   const requireComplete = state.options.requireCompleteLines !== false;
@@ -708,17 +737,14 @@ export function applySnapshot(
     ? splitCompleteLines(material)
     : { committed: material, pending: new Uint8Array(0) };
 
+  if (BigInt(committed.length) > INT64_MAX || BigInt(pending.length) > INT64_MAX) {
+    return {
+      state,
+      update: errorUpdate(state, "invalid_input", MSG_MATERIAL_DOMAIN),
+    };
+  }
+
   if (state.options.maxPendingBytes !== undefined) {
-    if (state.options.maxPendingBytes < 0n) {
-      return {
-        state,
-        update: errorUpdate(
-          state,
-          "invalid_input",
-          "Stream buffer limits must be non-negative int64 values.",
-        ),
-      };
-    }
     if (BigInt(pending.length) > state.options.maxPendingBytes) {
       return {
         state,
@@ -728,16 +754,6 @@ export function applySnapshot(
   }
 
   if (state.options.maxLineBytes !== undefined) {
-    if (state.options.maxLineBytes < 0n) {
-      return {
-        state,
-        update: errorUpdate(
-          state,
-          "invalid_input",
-          "Stream buffer limits must be non-negative int64 values.",
-        ),
-      };
-    }
     if (
       anyLineTooLong(committed, state.options.maxLineBytes) ||
       BigInt(pending.length) > state.options.maxLineBytes
@@ -898,12 +914,145 @@ export function applyStream(
     return result;
   }
   if (input.kind === "finish") {
-    return { state, update: errorUpdate(state, "invalid_input", "finish not fully implemented.") };
+    return finishStream(state);
   }
   if (input.kind === "reset" && input.reset) {
     return resetStream(state, input.reset);
   }
   return { state, update: errorUpdate(state, "invalid_input", "Stream input kind is not supported.") };
+}
+
+/** End-of-stream: optionally commit final unterminated line; finalize records. */
+export function finishStream(state: StreamState): { state: StreamState; update: StreamUpdate } {
+  if (state.finished) {
+    return { state, update: unchangedUpdate(state) };
+  }
+
+  const opts = state.options;
+  let material = state.committedPrefix.slice();
+  let pending = state.pendingBytes.slice();
+  // Commit one final non-empty unterminated line once (parity with Python).
+  if (pending.length > 0 && !pending.every((b) => b === 0x20 || b === 0x09 || b === 0x0d || b === 0x0a)) {
+    const withNl = new Uint8Array(material.length + pending.length + 1);
+    withNl.set(material, 0);
+    withNl.set(pending, material.length);
+    withNl[withNl.length - 1] = LF;
+    material = withNl;
+    pending = new Uint8Array(0);
+  }
+
+  const { state: midState, update: midUpdate } = applySnapshot(
+    state,
+    material,
+    state.cursor.sourceRevision ?? "finish",
+    undefined,
+  );
+  if (midUpdate.kind !== "updated" && midUpdate.kind !== "unchanged") {
+    return { state: midState, update: midUpdate };
+  }
+
+  const baseSnapshot = midState.snapshot;
+  if (baseSnapshot === null) {
+    const finished = cloneState(midState);
+    finished.finished = true;
+    return { state: finished, update: midUpdate };
+  }
+
+  const finalizeOnClose = opts.finalizeOnClose !== false;
+  let finalized: StreamRecord[];
+  if (finalizeOnClose) {
+    finalized = baseSnapshot.records.map((rec): StreamRecord => {
+      if (rec.status === "final") return rec;
+      const finalizes = rec.finalizesProvisionalId ?? rec.provisionalId;
+      return {
+        status: "final",
+        record: rec.record,
+        ...(rec.provisionalId !== undefined ? { provisionalId: rec.provisionalId } : {}),
+        ...(rec.replacesProvisionalId !== undefined
+          ? { replacesProvisionalId: rec.replacesProvisionalId }
+          : {}),
+        ...(finalizes !== undefined ? { finalizesProvisionalId: finalizes } : {}),
+      };
+    });
+  } else {
+    finalized = [...baseSnapshot.records];
+  }
+
+  const generation = midState.generation;
+  const parentRevisionId = baseSnapshot.revision.revisionId;
+  const revisionNum = midState.nextRevision;
+  const prefixSha = midState.cursor.prefixSha256 ?? sha256Hex(new Uint8Array(0));
+  const revId = revisionId(
+    generation,
+    revisionNum,
+    midState.cursor.source,
+    baseSnapshot.groupId,
+    prefixSha,
+    finalized.map((r) => String(r.record.id)),
+  );
+  const revision: StreamRevision = {
+    revision: revisionNum,
+    revisionId: revId,
+    parentRevisionId,
+    complete: true,
+    generation,
+  };
+  const snapshot: StreamSnapshot = {
+    schemaId: STREAM_SCHEMA_ID,
+    source: baseSnapshot.source,
+    groupId: baseSnapshot.groupId,
+    revision,
+    records: finalized,
+    diagnostics: baseSnapshot.diagnostics,
+    complete: true,
+  };
+  const delta = diffSnapshots(baseSnapshot, snapshot, revision);
+  const delivery = opts.delivery ?? "both";
+  const delivered = applyDelivery(snapshot, delta, delivery);
+
+  const newState = cloneState(midState);
+  newState.finished = true;
+  newState.pendingBytes = new Uint8Array(0);
+  newState.committedPrefix = material.slice();
+  newState.snapshot = snapshot;
+  newState.cursor = {
+    cursorVersion: 1,
+    source: midState.cursor.source,
+    groupId: snapshot.groupId,
+    generation,
+    position: {
+      kind: "byte",
+      nextByteOffset: BigInt(newState.committedPrefix.length),
+      pendingByteLength: 0n,
+    },
+    sourceRevision: midState.cursor.sourceRevision,
+    prefixSha256:
+      newState.committedPrefix.length === 0
+        ? sha256Hex(new Uint8Array(0))
+        : sha256Hex(newState.committedPrefix),
+  };
+  newState.nextRevision = revisionNum + 1n;
+
+  const update: StreamUpdate = {
+    kind: "updated",
+    revision,
+    cursor: newState.cursor,
+    snapshot: delivered.snapshot,
+    delta: delivered.delta,
+    diagnostics: snapshot.diagnostics,
+    provisional: {
+      include: opts.includeProvisional !== false,
+      provisionalIds: [],
+      finalizedIds: finalized
+        .map((r) => r.finalizesProvisionalId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    },
+    consumed: {
+      completeRecords: BigInt(finalized.length),
+      bytes: BigInt(newState.committedPrefix.length),
+    },
+  };
+  return { state: newState, update };
 }
 
 export function resetStream(
@@ -929,8 +1078,42 @@ export function resetStream(
     sourceRevision: request.sourceRevision ?? null,
     prefixSha256: null,
   };
+  const dropped = (state.snapshot?.records ?? []).map((r) => String(r.record.id));
+  const resetMeta: StreamReset = {
+    reason: request.reason,
+    priorCursor: request.priorCursor ?? state.cursor,
+    requiresSnapshot: request.material === undefined,
+    droppedRecordIds: dropped,
+  };
   if (request.material) {
-    return applySnapshot(newState, request.material, request.sourceRevision ?? "", undefined);
+    const result = applySnapshot(
+      newState,
+      request.material,
+      request.sourceRevision ?? "",
+      undefined,
+    );
+    if (result.update.kind !== "updated" && result.update.kind !== "unchanged") {
+      return result;
+    }
+    // Merge reset envelope onto successful post-reset snapshot update.
+    let delta = result.update.delta;
+    if (delta) {
+      delta = {
+        ...delta,
+        operations: [
+          { op: "reset", reset: cursorToDictCompatibleReset(resetMeta) },
+          ...delta.operations,
+        ],
+      };
+    }
+    return {
+      state: result.state,
+      update: {
+        ...result.update,
+        delta,
+        reset: resetMeta,
+      },
+    };
   }
   // Empty reset with no material → updated empty snapshot of new generation
   // (parity with Python reset_stream shell semantics).
@@ -959,13 +1142,6 @@ export function resetStream(
     records: [],
     diagnostics: [],
     complete: false,
-  };
-  const dropped = (state.snapshot?.records ?? []).map((r) => String(r.record.id));
-  const resetMeta: StreamReset = {
-    reason: request.reason,
-    priorCursor: request.priorCursor ?? state.cursor,
-    requiresSnapshot: true,
-    droppedRecordIds: dropped,
   };
   let delta = diffSnapshots(null, snapshot, revision);
   delta = {
@@ -1042,6 +1218,29 @@ export class TrajectoryStream {
 
   applySnapshot(data: Uint8Array, sourceRevision: string, cursor?: StreamCursor): StreamUpdate {
     const result = applySnapshot(this.#state, data, sourceRevision, cursor);
+    this.#state = result.state;
+    return result.update;
+  }
+
+  applyAppend(data: Uint8Array, cursor?: StreamCursor, sourceRevision?: string): StreamUpdate {
+    const result = applyStream(this.#state, {
+      kind: "append-bytes",
+      data,
+      ...(cursor !== undefined ? { cursor } : {}),
+      ...(sourceRevision !== undefined ? { sourceRevision } : {}),
+    });
+    this.#state = result.state;
+    return result.update;
+  }
+
+  finish(): StreamUpdate {
+    const result = finishStream(this.#state);
+    this.#state = result.state;
+    return result.update;
+  }
+
+  reset(request: StreamResetRequest): StreamUpdate {
+    const result = resetStream(this.#state, request);
     this.#state = result.state;
     return result.update;
   }

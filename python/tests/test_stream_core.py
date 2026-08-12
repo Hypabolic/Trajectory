@@ -175,6 +175,43 @@ def test_reset_installs_new_generation() -> None:
     assert update.kind == "updated"
     assert state.generation == 1
     assert state.cursor.generation == 1
+    assert update.reset is not None
+    assert update.reset.reason == "source-truncated"
+    assert update.reset.requires_snapshot is False
+
+
+def test_negative_max_line_bytes_is_invalid_input() -> None:
+    state = create_stream(
+        StreamOptions(source="pi", group_id="g", max_line_bytes=-1)
+    )
+    state2, update = apply_snapshot(state, b'{"a":1}\n', source_revision="gen-0")
+    assert update.kind == "error"
+    assert update.error is not None
+    assert update.error.code == "invalid_input"
+    assert "non-negative int64" in update.error.message
+    assert state2.cursor.position.next_byte_offset == 0  # type: ignore[union-attr]
+
+
+def test_negative_max_pending_bytes_is_invalid_input() -> None:
+    state = create_stream(
+        StreamOptions(source="pi", group_id="g", max_pending_bytes=-1)
+    )
+    state2, update = apply_snapshot(state, b'{"a":1', source_revision="gen-0")
+    assert update.kind == "error"
+    assert update.error is not None
+    assert update.error.code == "invalid_input"
+    assert state2.cursor.position.next_byte_offset == 0  # type: ignore[union-attr]
+
+
+def test_finish_stream_marks_complete() -> None:
+    from hypabolic_trajectory.streaming import finish_stream
+
+    state = create_stream(StreamOptions(source="pi", group_id="g"))
+    state, _ = apply_snapshot(state, b"", source_revision="gen-0")
+    state2, update = finish_stream(state)
+    assert update.kind == "updated"
+    assert state2.finished is True
+    assert update.revision.complete is True
 
 
 def test_diagnostic_key_null_input_line_uses_sentinel() -> None:
