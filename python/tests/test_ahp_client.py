@@ -121,6 +121,86 @@ def test_auth_success_then_subscribe() -> None:
     client.cancel()
 
 
+def test_held_token_in_update_payload_is_not_delivered() -> None:
+    """Regression: secret check must suppress stream-update, not only emit error.
+
+    If a held auth token appears in the serialized StreamUpdate, on_event must
+    receive a protocol error only — never the original update envelope.
+    """
+    from hypabolic_trajectory.ahp_client.protocol import ERR_PROTOCOL
+    from hypabolic_trajectory.streaming.types import (
+        BytePosition,
+        StreamConsumed,
+        StreamCursor,
+        StreamProvisionalInfo,
+        StreamRevision,
+        StreamUpdate,
+    )
+
+    pair = InMemoryAhpTransportPair()
+    host = FakeAhpHost(
+        transport=pair.host,
+        script=FakeAhpHostScript(initial_snapshot=_shape_a_empty()),
+        chat_channel=CHAT,
+    )
+    events: list[AhpClientEvent] = []
+    client = AhpStreamClient(
+        transport=pair.client,
+        options=AhpClientOptions(chat_channel=CHAT),
+        on_event=events.append,
+    )
+    client.start()
+    events.clear()
+
+    # Distinctive token that cannot appear as an incidental field name.
+    leak_token = "TRJ-AUTH-LEAK-MARKER-9f3c2e1b7a44"
+    client._auth_token_held = leak_token  # simulate mid-auth hold
+
+    # Embed the token in a JSON-visible cursor field (group_id).
+    leaky = StreamUpdate(
+        kind="updated",
+        revision=StreamRevision(
+            revision=0,
+            revision_id="r0",
+            parent_revision_id=None,
+            complete=True,
+            generation=0,
+        ),
+        cursor=StreamCursor(
+            source="ahp",
+            group_id=f"ahp-chat:/{leak_token}",
+            generation=0,
+            position=BytePosition(next_byte_offset=0),
+        ),
+        provisional=StreamProvisionalInfo(include=True),
+        consumed=StreamConsumed(complete_records=0, bytes=0),
+    )
+    assert leak_token in json.dumps(leaky.to_dict())
+
+    delivered = client._emit_update(leaky)
+    assert delivered is False
+    assert client._auth_token_held is None  # scrubbed on detect
+
+    stream_updates = [e for e in events if e.kind == "stream-update"]
+    assert stream_updates == [], "leaky StreamUpdate must not reach on_event"
+    errors = [e for e in events if e.kind == "error"]
+    assert len(errors) == 1
+    assert errors[0].code == ERR_PROTOCOL
+    for e in events:
+        blob = json.dumps(
+            {
+                "kind": e.kind,
+                "code": e.code,
+                "message": e.message,
+                "update": e.update.to_dict() if e.update is not None else None,
+            }
+        )
+        assert leak_token not in blob
+
+    client.cancel()
+    host.close()
+
+
 def test_sequence_gap_triggers_resync() -> None:
     pair = InMemoryAhpTransportPair()
     actions = _actions_from_case("ahp-action-turn-flow", "step-actions.jsonl")

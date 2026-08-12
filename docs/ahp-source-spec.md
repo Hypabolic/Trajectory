@@ -14,9 +14,13 @@ synthetic fixtures.
 **Phase 1 (AHP-1):** Shape A snapshot decoder → IR on all four runtimes,
 shared conformance goldens, wire source `ahp` in runners/CLIs, and
 `compatibility.json` → `implemented.sources`.  
-**Streaming (LS-06 / LS-07):** `apply_ahp_snapshot` + core Shape B reducer /
-`apply_ahp_actions` (no network). Capability advertising deferred to LS-12.  
-**Not yet:** live WebSocket host / optional client packages, export listing.
+**Streaming (LS-06 / LS-07 / LS-12):** `apply_ahp_snapshot` + core Shape B
+reducer / `apply_ahp_actions` (no network). Core stream AHP capabilities
+(`stream-ahp-snapshot`, `stream-ahp-action-log`) are **claimed** on tip after
+the shared matrix is green. Optional AHP / file-I/O / Hermes client packages
+are **in-tree** with package-capability claims only (not on core manifests).  
+**Not yet:** export-directory listing, real WebSocket host transport
+(consumer-injected `AhpTransport`; fake-host tested).
 
 Related Trajectory docs:
 
@@ -50,10 +54,11 @@ live WebSocket client inside core packages, terminal/changeset as primary
 transcripts, or ACP agent backends.
 
 ```text
-AHP ChatState snapshot (Shape A; Phase 1)
+AHP ChatState snapshot (Shape A; Phase 1 offline + LS-06 stream)
         →  source adapter "ahp"  →  shared normalizer  →  IR  →  projections
 
-AHP action log (Shape B; Phase 2, not shipped)
+AHP action log (Shape B; stream path LS-07 shipped in core apply_ahp_actions;
+               batch one-shot listing/export still deferred)
         →  reduce to ChatState  →  same decoder path
 ```
 
@@ -73,7 +78,7 @@ immutable state, pure reducers, and write-ahead reconciliation.
 | --- | --- | --- |
 | **Harness files** (Pi, Claude Code, Codex, …) | On-disk session JSONL | Existing sources |
 | **ACP** (Agent Client Protocol) | 1:1 client ↔ agent | Not a Trajectory source; host-internal |
-| **AHP** | N clients ↔ host (state + sequencing) | **Implemented** Shape A offline source (Phase 1); Shape B / listing / live deferred |
+| **AHP** | N clients ↔ host (state + sequencing) | **Implemented** Shape A offline (Phase 1) + core stream Shape A/B apply (LS-06/07, claimed LS-12); batch listing / real WebSocket still deferred |
 
 AHP hosts often *use* ACP (or vendor APIs) *below* the host; clients never see
 agent-private wire formats. Trajectory should ingest the **agent-agnostic AHP

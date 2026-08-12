@@ -14,14 +14,14 @@ suite in every ecosystem.
 | .NET | [`Hypabolic.Trajectory`](https://www.nuget.org/packages/Hypabolic.Trajectory) | `dotnet add package Hypabolic.Trajectory` |
 | TypeScript | [`@hypabolic/trajectory`](https://www.npmjs.com/package/@hypabolic/trajectory) | `npm install @hypabolic/trajectory` |
 | Rust | [`hypabolic-trajectory`](https://crates.io/crates/hypabolic-trajectory) | `cargo add hypabolic-trajectory` |
-| Python | [`hypabolic-trajectory`](https://pypi.org/project/hypabolic-trajectory/) (first public cut with next multi-registry tag) | `pip install hypabolic-trajectory==<tag-semver>` |
+| Python | [`hypabolic-trajectory`](https://pypi.org/project/hypabolic-trajectory/) | `pip install hypabolic-trajectory` |
 
 Optional OpenTelemetry: `Hypabolic.Trajectory.OpenTelemetry`,
 `@hypabolic/trajectory-otel`, `hypabolic-trajectory-opentelemetry`, and Python
 extra `hypabolic-trajectory[otel]` (SDK sinks only — pure OTEL project is in core).
 
-Optional live-session stream packages (tip; registry publish on the next
-multi-registry tag after `0.1.0`): `Hypabolic.Trajectory.IO` / `.Ahp` / `.Hermes`,
+Optional live-session stream packages (**tip / Unreleased**; not yet on a
+registry tag): `Hypabolic.Trajectory.IO` / `.Ahp` / `.Hermes`,
 `@hypabolic/trajectory-node` (file I/O) / `trajectory-ahp` / `trajectory-hermes`,
 `hypabolic-trajectory-io` / `-ahp` / `-hermes`, and Python extras
 `hypabolic-trajectory[io]` / `[ahp]` / `[hermes]`.
@@ -30,12 +30,15 @@ Releases use the **git tag as the version** (same model as Hypa): push
 `vX.Y.Z` and CI stamps packages, publishes NuGet/npm/crates/PyPI, and creates a
 GitHub Release. See [docs/publishing.md](docs/publishing.md).
 
-> **Published vs this tree:** NuGet / npm / crates at **`0.1.0`** include Pi, Claude
-> Code, Codex, OpenClaw, and Hermes only (**no** AHP, **no** PyPI yet). **AHP**
-> Shape A offline snapshot ingest and the **Python** runtime are implemented
-> **in this repository tip** and ship under the **next** synchronized package
-> version (a new tag after `v0.1.0`). Install unversioned NuGet/npm/crates
-> commands resolve to latest published `0.1.0` until that cut.
+> **Published vs this tree:** Latest synchronized registry cut is **`0.1.2`**
+> (NuGet / npm / crates / PyPI): Pi, Claude Code, Codex, OpenClaw, Hermes, **AHP**
+> Shape A offline snapshots, **Grok Build**, and the **Python** runtime. Historical
+> **`0.1.0`** stopped at Hermes (no AHP, no PyPI); **`0.1.1`** added Python + AHP
+> Shape A. **Tip-only (Unreleased / this branch):** live-session streaming core
+> APIs + capability claims, optional I/O / AHP client / Hermes provider packages,
+> and sample `stream` / `ahp-stream` CLIs — see CHANGELOG `[Unreleased]`. Install
+> commands **without a version pin** resolve to the latest *published* tag, which
+> is **not** necessarily this tip.
 
 ## What you get
 
@@ -62,7 +65,7 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
 # .NET
 dotnet add package Hypabolic.Trajectory
 # optional: dotnet add package Hypabolic.Trajectory.OpenTelemetry
-# optional stream packages (next multi-registry tag):
+# optional stream packages (tip / Unreleased — not yet on a registry tag):
 #   dotnet add package Hypabolic.Trajectory.IO
 #   dotnet add package Hypabolic.Trajectory.Ahp
 #   dotnet add package Hypabolic.Trajectory.Hermes
@@ -71,27 +74,27 @@ dotnet add package Hypabolic.Trajectory
 npm install @hypabolic/trajectory
 npm install @hypabolic/trajectory-node   # local listing + stream file I/O
 # optional: npm install @hypabolic/trajectory-otel
-# optional stream packages (next multi-registry tag):
+# optional stream packages (tip / Unreleased — not yet on a registry tag):
 #   npm install @hypabolic/trajectory-ahp
 #   npm install @hypabolic/trajectory-hermes
 
 # Rust
 cargo add hypabolic-trajectory
 # optional: cargo add hypabolic-trajectory-opentelemetry
-# optional stream packages (next multi-registry tag):
+# optional stream packages (tip / Unreleased — not yet on a registry tag):
 #   cargo add hypabolic-trajectory-io
 #   cargo add hypabolic-trajectory-ahp
 #   cargo add hypabolic-trajectory-hermes
 
-# Python (first public PyPI cut ships with the next multi-registry tag after 0.1.0)
-pip install hypabolic-trajectory==<tag-semver>
+# Python (published from 0.1.1; pin a tag when you need a fixed cut)
+pip install hypabolic-trajectory
 # optional SDK sinks only:
-pip install 'hypabolic-trajectory[otel]==<tag-semver>'
-# optional stream extras (same wheel; mark install intent):
-#   pip install 'hypabolic-trajectory[io]==<tag-semver>'
-#   pip install 'hypabolic-trajectory[ahp]==<tag-semver>'
-#   pip install 'hypabolic-trajectory[hermes]==<tag-semver>'
-# monorepo / pre-publish:
+pip install 'hypabolic-trajectory[otel]'
+# optional stream extras (same wheel; tip surface under Unreleased):
+#   pip install 'hypabolic-trajectory[io]'
+#   pip install 'hypabolic-trajectory[ahp]'
+#   pip install 'hypabolic-trajectory[hermes]'
+# monorepo / tip checkout:
 #   python -m pip install -e './python[dev]'
 ```
 

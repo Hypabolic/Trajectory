@@ -31,13 +31,13 @@ ingests the agent-agnostic chat surface only.
 
 Phase 1 product advertising covers **Shape A offline snapshot decode only**.
 
-| In scope (Phase 0–1) | Deferred |
+| In scope (Phase 0–1) | Deferred / stream note |
 | --- | --- |
-| **Shape A** snapshot export (`input.json`) | **Shape B** action-log reduce (`input.jsonl`) — Phase 2 |
-| One chat per normalize | Live host / WebSocket client — Phase 4 |
+| **Shape A** snapshot export (`input.json`) | **Batch** Shape B action-log reduce / one-shot `input.jsonl` normalize — Phase 2 |
+| One chat per normalize | Live host / real WebSocket transport — Phase 4 (optional client packages are in-tree; transport is consumer-injected) |
 | Completed turns + optional `activeTurn` policy | Terminals, changesets, MCP channel as primary transcripts |
-| Snapshot decode on all runtimes (Phase 1) | Official reducer parity (Phase 2) |
-| | Export directory listing (Phase 3; empty stubs today) |
+| Snapshot decode on all runtimes (Phase 1) | Official vendor reducer parity (Phase 2) |
+| **Stream** Shape B reducer (`apply_ahp_actions`) + Shape A successive snapshots — shipped in core (LS-06/07; see [streaming.md](../streaming.md) / [ahp-action-streaming.md](../../../docs/ahp-action-streaming.md)) | Export directory listing (Phase 3; empty stubs today) |
 | | Multi-chat unpack helper (Phase 3) |
 | | ACP session logs as a separate source |
 

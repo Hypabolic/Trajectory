@@ -390,7 +390,9 @@ class AhpStreamClient:
         lines = [json.dumps(env, separators=(",", ":"), ensure_ascii=False) for env in batch]
         data = ("\n".join(lines) + "\n").encode("utf-8")
         self._state, update = apply_ahp_actions(self._state, data, cursor=None)
-        self._emit_update(update)
+        if not self._emit_update(update):
+            # Privacy suppress: do not forward leaky update on resync path either.
+            return
         if update.kind == "reset-required" and (
             update.reset is not None and update.reset.reason == "sequence-gap"
         ):
@@ -458,27 +460,30 @@ class AhpStreamClient:
         self._apply_host_snapshot(result)
         self._resync_inflight = False
 
-    def _emit_update(self, update: StreamUpdate) -> None:
-        # Privacy: never attach auth token to events.
-        assert self._auth_token_held is None or update.kind in {
-            "updated",
-            "unchanged",
-            "reset-required",
-            "error",
-        }
-        self._assert_no_secrets_in_update(update)
-        self.on_event(AhpClientEvent(kind="stream-update", update=update))
+    def _emit_update(self, update: StreamUpdate) -> bool:
+        """Emit ``stream-update`` only when the payload is free of held auth.
 
-    def _assert_no_secrets_in_update(self, update: StreamUpdate) -> None:
-        # Defensive: ensure auth token is not stringified into diagnostics.
+        Returns ``False`` when a held token appears in the serialized update:
+        the original envelope is **not** delivered to ``on_event`` (protocol
+        error only). Callers must not re-forward the same ``update``.
+        """
+        if not self._assert_no_secrets_in_update(update):
+            return False
+        self.on_event(AhpClientEvent(kind="stream-update", update=update))
+        return True
+
+    def _assert_no_secrets_in_update(self, update: StreamUpdate) -> bool:
+        """Return False (and emit protocol error) if a held auth token leaks."""
         token = self._auth_token_held
         if not token:
-            return
+            return True
         blob = json.dumps(update.to_dict(), ensure_ascii=False)
         if token in blob:
-            # Scrub and emit protocol error rather than leak.
+            # Scrub held token and suppress the leaky update entirely.
             self._auth_token_held = None
             self._emit_error(ERR_PROTOCOL)
+            return False
+        return True
 
     def _emit_error(self, code: str) -> None:
         self.on_event(
