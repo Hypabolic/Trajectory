@@ -21,6 +21,15 @@ test("workspace packages install and import through public exports", () => {
   assert.deepEqual(
     Object.keys(TrajectoryNode).sort(),
     [
+      "FileStreamHostError",
+      "FileTrajectoryStream",
+      "HOST_IO_ERROR",
+      "HOST_IO_NOT_FOUND",
+      "HOST_IO_PERMISSION",
+      "HOST_PATH_OUTSIDE_ROOT",
+      "HOST_PATH_REQUIRED",
+      "HOST_ROOT_REQUIRED",
+      "followFile",
       "listAhpTrajectories",
       "listClaudeCodeTrajectories",
       "listCodexTrajectories",
@@ -29,6 +38,8 @@ test("workspace packages install and import through public exports", () => {
       "listOpenClawTrajectories",
       "listPiTrajectories",
       "listTrajectories",
+      "openFileStream",
+      "splitCompleteLines",
     ],
   );
   assert.deepEqual(

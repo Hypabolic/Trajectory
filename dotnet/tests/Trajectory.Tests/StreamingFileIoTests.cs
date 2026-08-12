@@ -1,0 +1,183 @@
+using Hypabolic.Trajectory.IO;
+using Hypabolic.Trajectory.Streaming;
+using Xunit;
+
+namespace Hypabolic.Trajectory.Tests;
+
+public sealed class StreamingFileIoTests
+{
+    private static readonly byte[] SessionLine =
+        """{"type":"session","version":3,"id":"stream-file-io-dotnet","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/workspace/demo"}"""u8.ToArray()
+        .Concat(new byte[] { (byte)'\n' }).ToArray();
+
+    private static readonly byte[] UserLine =
+        """{"type":"message","id":"m1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"hello"}]},"sessionId":"stream-file-io-dotnet"}"""u8.ToArray()
+        .Concat(new byte[] { (byte)'\n' }).ToArray();
+
+    [Fact]
+    public void GrowthAndIncompleteLine()
+    {
+        var root = CreateTempRoot();
+        var path = Path.Combine(root, "session.jsonl");
+        File.WriteAllBytes(path, Array.Empty<byte>());
+
+        using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+        {
+            Root = root,
+            Path = path,
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-io-dotnet",
+        });
+
+        var u0 = stream.Poll();
+        Assert.NotNull(u0);
+        Assert.Equal("updated", u0!.Kind);
+        Assert.NotNull(u0.Snapshot);
+        Assert.Empty(u0.Snapshot!.Records);
+
+        var incomplete = SessionLine.Concat(UserLine.Take(40)).ToArray();
+        File.WriteAllBytes(path, incomplete);
+        var u1 = stream.Poll();
+        Assert.NotNull(u1);
+        Assert.Equal("updated", u1!.Kind);
+
+        File.WriteAllBytes(path, SessionLine.Concat(UserLine).ToArray());
+        var u2 = stream.Poll();
+        Assert.NotNull(u2);
+        Assert.Equal("updated", u2!.Kind);
+        Assert.NotNull(u2.Snapshot);
+        Assert.True(u2.Snapshot!.Records.Count >= 1);
+        foreach (var d in u2.Diagnostics)
+        {
+            Assert.DoesNotContain(path, d.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void CoalescedGrowth()
+    {
+        var root = CreateTempRoot();
+        var path = Path.Combine(root, "session.jsonl");
+        File.WriteAllBytes(path, SessionLine);
+
+        using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+        {
+            Root = root,
+            Path = path,
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-io-dotnet",
+        });
+        Assert.NotNull(stream.Poll());
+
+        File.WriteAllBytes(path, SessionLine.Concat(UserLine).ToArray());
+        var update = stream.Poll();
+        Assert.NotNull(update);
+        Assert.Equal("updated", update!.Kind);
+        Assert.True(update.Snapshot!.Records.Count >= 1);
+    }
+
+    [Fact]
+    public void TruncationSurfacesCoreReset()
+    {
+        var root = CreateTempRoot();
+        var path = Path.Combine(root, "session.jsonl");
+        File.WriteAllBytes(path, SessionLine.Concat(UserLine).ToArray());
+
+        using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+        {
+            Root = root,
+            Path = path,
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-io-dotnet",
+        });
+        var first = stream.Poll();
+        Assert.NotNull(first);
+        Assert.Equal("updated", first!.Kind);
+
+        File.WriteAllBytes(path, SessionLine);
+        var update = stream.Poll();
+        Assert.NotNull(update);
+        Assert.Equal("reset-required", update!.Kind);
+        Assert.NotNull(update.Reset);
+    }
+
+    [Fact]
+    public void PathOutsideRootIsHostError()
+    {
+        var root = CreateTempRoot();
+        var outsideDir = Path.Combine(Path.GetTempPath(), "traj-io-out-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outsideDir);
+        var outside = Path.Combine(outsideDir, "x.jsonl");
+        File.WriteAllBytes(outside, "\n"u8.ToArray());
+
+        var ex = Assert.Throws<FileStreamHostException>(() =>
+            FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+            {
+                Root = root,
+                Path = outside,
+                Source = TrajectorySource.Pi,
+            }));
+        Assert.Equal(FileStreamHostException.PathOutsideRoot, ex.Code);
+        Assert.Equal("File stream path is outside the explicit root.", ex.Message);
+    }
+
+    [Fact]
+    public void RootRequired()
+    {
+        var ex = Assert.Throws<FileStreamHostException>(() =>
+            FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+            {
+                Root = "  ",
+                Path = "/tmp/x.jsonl",
+                Source = TrajectorySource.Pi,
+            }));
+        Assert.Equal(FileStreamHostException.RootRequired, ex.Code);
+    }
+
+    [Fact]
+    public void PermissionDeniedIsHostError()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = CreateTempRoot();
+        var path = Path.Combine(root, "session.jsonl");
+        File.WriteAllBytes(path, SessionLine);
+        File.SetUnixFileMode(path, (UnixFileMode)0);
+        try
+        {
+            using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+            {
+                Root = root,
+                Path = path,
+                Source = TrajectorySource.Pi,
+                GroupId = "x",
+            });
+            var ex = Assert.Throws<FileStreamHostException>(() => stream.Poll());
+            Assert.True(
+                ex.Code is FileStreamHostException.IoPermission or FileStreamHostException.IoError);
+            Assert.DoesNotContain(path, ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+    }
+
+    [Fact]
+    public void SplitCompleteLinesHoldsIncomplete()
+    {
+        var (complete, pending) = TrajectoryStream.SplitCompleteLines("abc\ndef"u8.ToArray());
+        Assert.Equal("abc\n"u8.ToArray(), complete);
+        Assert.Equal("def"u8.ToArray(), pending);
+    }
+
+    private static string CreateTempRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "traj-io-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        return root;
+    }
+}

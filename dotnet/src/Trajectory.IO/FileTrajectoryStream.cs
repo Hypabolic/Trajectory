@@ -1,0 +1,321 @@
+using System.Runtime.CompilerServices;
+using Hypabolic.Trajectory.Streaming;
+
+namespace Hypabolic.Trajectory.IO;
+
+/// <summary>
+/// Poll a single JSONL path and apply complete-line segments to core streaming.
+/// Library helper only — not a daemon. Caller owns lifetime and cancellation.
+/// </summary>
+public sealed class FileTrajectoryStream : IAsyncDisposable, IDisposable
+{
+    private static readonly string MsgRootRequired = "File stream root is required.";
+    private static readonly string MsgPathRequired = "File stream path is required.";
+    private static readonly string MsgPathOutsideRoot = "File stream path is outside the explicit root.";
+    private static readonly string MsgIoPermission = "File stream could not read the path (permission denied).";
+    private static readonly string MsgIoNotFound = "File stream path was not found.";
+    private static readonly string MsgIoError = "File stream I/O failed.";
+
+    private readonly string _root;
+    private readonly string _path;
+    private readonly TrajectoryStreamSession _session;
+    private readonly TimeSpan _pollInterval;
+    private readonly int _reconcileEvery;
+    private readonly string _sourceRevision;
+
+    private long _fileOffset;
+    private byte[] _hostPending = Array.Empty<byte>();
+    private bool _first = true;
+    private int _polls;
+    private bool _closed;
+
+    private FileTrajectoryStream(
+        string root,
+        string path,
+        TrajectoryStreamSession session,
+        TimeSpan pollInterval,
+        int reconcileEvery,
+        string sourceRevision)
+    {
+        _root = root;
+        _path = path;
+        _session = session;
+        _pollInterval = pollInterval;
+        _reconcileEvery = reconcileEvery;
+        _sourceRevision = sourceRevision;
+    }
+
+    public string Root => _root;
+    public string Path => _path;
+    public StreamCursor Cursor => _session.Cursor;
+    public TrajectoryStreamSession Session => _session;
+
+    public static FileTrajectoryStream Open(FileTrajectoryStreamOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (string.IsNullOrWhiteSpace(options.Root))
+        {
+            throw new FileStreamHostException(FileStreamHostException.RootRequired, MsgRootRequired);
+        }
+
+        if (string.IsNullOrWhiteSpace(options.Path))
+        {
+            throw new FileStreamHostException(FileStreamHostException.PathRequired, MsgPathRequired);
+        }
+
+        var root = System.IO.Path.GetFullPath(options.Root);
+        var path = System.IO.Path.GetFullPath(options.Path);
+        if (!IsUnderRoot(root, path))
+        {
+            throw new FileStreamHostException(
+                FileStreamHostException.PathOutsideRoot,
+                MsgPathOutsideRoot,
+                path);
+        }
+
+        var streamOptions = options.Stream ?? new StreamOptions
+        {
+            Source = options.Source,
+            GroupId = options.GroupId,
+        };
+        if (options.GroupId is not null && streamOptions.GroupId is null)
+        {
+            streamOptions = streamOptions with { GroupId = options.GroupId };
+        }
+
+        var session = TrajectoryStreamSession.Create(streamOptions);
+        return new FileTrajectoryStream(
+            root,
+            path,
+            session,
+            options.PollInterval < TimeSpan.Zero ? TimeSpan.Zero : options.PollInterval,
+            Math.Max(0, options.ReconcileEvery),
+            options.SourceRevision);
+    }
+
+    /// <summary>Read growth once. Returns null when unchanged at the host edge.</summary>
+    public StreamUpdate? Poll(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_closed)
+        {
+            return null;
+        }
+
+        var size = StatSize();
+        if (size < _fileOffset)
+        {
+            return SnapshotFull(size);
+        }
+
+        if (_first)
+        {
+            return SnapshotFull(size);
+        }
+
+        if (size > _fileOffset)
+        {
+            return AppendGrowth(size);
+        }
+
+        _polls++;
+        if (_reconcileEvery > 0 && _polls % _reconcileEvery == 0)
+        {
+            return ReconcileSnapshot(size);
+        }
+
+        return null;
+    }
+
+    public ValueTask<StreamUpdate?> PollAsync(CancellationToken cancellationToken = default)
+    {
+        // File reads are small; keep API async-friendly without thread hops.
+        try
+        {
+            return ValueTask.FromResult(Poll(cancellationToken));
+        }
+        catch (OperationCanceledException)
+        {
+            return ValueTask.FromCanceled<StreamUpdate?>(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Yield non-empty updates until cancelled. Caller owns process lifetime (not a daemon).
+    /// </summary>
+    public async IAsyncEnumerable<StreamUpdate> FollowAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        while (!cancellationToken.IsCancellationRequested && !_closed)
+        {
+            var update = Poll(cancellationToken);
+            if (update is not null && update.Kind != "unchanged")
+            {
+                yield return update;
+            }
+
+            if (_pollInterval > TimeSpan.Zero)
+            {
+                await Task.Delay(_pollInterval, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    public StreamUpdate Finish() => _session.Finish();
+
+    public void Dispose() => _closed = true;
+
+    public ValueTask DisposeAsync()
+    {
+        _closed = true;
+        return ValueTask.CompletedTask;
+    }
+
+    private StreamUpdate SnapshotFull(long size)
+    {
+        var material = ReadRange(0, size);
+        _fileOffset = size;
+        var (complete, pending) = TrajectoryStream.SplitCompleteLines(material);
+        _hostPending = pending;
+        _first = false;
+        _polls++;
+        return _session.ApplySnapshot(complete, _sourceRevision);
+    }
+
+    private StreamUpdate? ReconcileSnapshot(long size)
+    {
+        var material = ReadRange(0, size);
+        var (complete, pending) = TrajectoryStream.SplitCompleteLines(material);
+        _hostPending = pending;
+        _fileOffset = size;
+        var update = _session.ApplySnapshot(complete, _sourceRevision);
+        return update.Kind == "unchanged" ? null : update;
+    }
+
+    private StreamUpdate? AppendGrowth(long size)
+    {
+        var chunk = ReadRange(_fileOffset, size);
+        _fileOffset = size;
+        var buf = Concat(_hostPending, chunk);
+        var (complete, pending) = TrajectoryStream.SplitCompleteLines(buf);
+        _hostPending = pending;
+        _polls++;
+        if (complete.Length == 0)
+        {
+            return null;
+        }
+
+        var update = _session.ApplyAppend(complete, sourceRevision: _sourceRevision);
+        return update.Kind == "unchanged" ? null : update;
+    }
+
+    private long StatSize()
+    {
+        try
+        {
+            return new FileInfo(_path).Length;
+        }
+        catch (FileNotFoundException ex)
+        {
+            throw new FileStreamHostException(FileStreamHostException.IoNotFound, MsgIoNotFound, _path, ex);
+        }
+        catch (DirectoryNotFoundException ex)
+        {
+            throw new FileStreamHostException(FileStreamHostException.IoNotFound, MsgIoNotFound, _path, ex);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            throw new FileStreamHostException(FileStreamHostException.IoPermission, MsgIoPermission, _path, ex);
+        }
+        catch (IOException ex)
+        {
+            throw new FileStreamHostException(FileStreamHostException.IoError, MsgIoError, _path, ex);
+        }
+    }
+
+    private byte[] ReadRange(long start, long end)
+    {
+        if (end <= start)
+        {
+            return Array.Empty<byte>();
+        }
+
+        try
+        {
+            using var stream = new FileStream(
+                _path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            stream.Seek(start, SeekOrigin.Begin);
+            var length = checked((int)(end - start));
+            var buffer = new byte[length];
+            var read = 0;
+            while (read < length)
+            {
+                var n = stream.Read(buffer, read, length - read);
+                if (n == 0)
+                {
+                    break;
+                }
+
+                read += n;
+            }
+
+            if (read == length)
+            {
+                return buffer;
+            }
+
+            var trimmed = new byte[read];
+            Buffer.BlockCopy(buffer, 0, trimmed, 0, read);
+            return trimmed;
+        }
+        catch (FileNotFoundException ex)
+        {
+            throw new FileStreamHostException(FileStreamHostException.IoNotFound, MsgIoNotFound, _path, ex);
+        }
+        catch (DirectoryNotFoundException ex)
+        {
+            throw new FileStreamHostException(FileStreamHostException.IoNotFound, MsgIoNotFound, _path, ex);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            throw new FileStreamHostException(FileStreamHostException.IoPermission, MsgIoPermission, _path, ex);
+        }
+        catch (IOException ex)
+        {
+            throw new FileStreamHostException(FileStreamHostException.IoError, MsgIoError, _path, ex);
+        }
+    }
+
+    private static byte[] Concat(byte[] left, byte[] right)
+    {
+        if (left.Length == 0)
+        {
+            return right;
+        }
+
+        if (right.Length == 0)
+        {
+            return left;
+        }
+
+        var result = new byte[left.Length + right.Length];
+        Buffer.BlockCopy(left, 0, result, 0, left.Length);
+        Buffer.BlockCopy(right, 0, result, left.Length, right.Length);
+        return result;
+    }
+
+    private static bool IsUnderRoot(string root, string path)
+    {
+        var rootFull = root.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar)
+            + System.IO.Path.DirectorySeparatorChar;
+        var pathFull = path;
+        return pathFull.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                pathFull.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar),
+                root.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase);
+    }
+}

@@ -20,6 +20,8 @@ otel = [
   "opentelemetry-api>=1.27.0",
   "opentelemetry-sdk>=1.27.0",
 ]
+# LS-09 file I/O uses stdlib only; extra marks install intent for optional surface.
+io = []
 dev = [
   "pytest>=8.0",
   "jsonschema>=4.0",

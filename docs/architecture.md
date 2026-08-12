@@ -119,19 +119,21 @@ Technical schema IDs are versioned under `contracts/`; see
 
 There is no shared native core, FFI bridge, or cross-language subprocess.
 
-## Live session streaming (wire contracts landed; engines pending)
+## Live session streaming (core + optional file I/O)
 
 One-shot normalize and listing remain the shipped batch path. A **library**
 streaming surface (not a Trajectory daemon) has **normative wire contracts**
-(`trajectory-stream-v1`, LS-01); stream engines land in later LS slices:
+(`trajectory-stream-v1`) and pure stream engines in all four cores (LS-03–LS-08):
 
 - pure stream state machine in each core package (cursor, apply, snapshot +
-  delta, provisional records, reset);
-- optional file I/O, AHP client, and Hermes provider packages;
+  delta, provisional records, reset, AHP reducer);
+- optional file I/O packages (LS-09; poll/follow only; explicit root);
+- optional AHP client and Hermes provider packages (later slices);
 - shared `trajectory-stream-v1` contracts and multi-runtime conformance.
 
 Normative design: [live-session-streaming.md](live-session-streaming.md).  
 Wire contract: [streaming.md](../contracts/spec/streaming.md).  
+File I/O: [streaming-file-io.md](streaming-file-io.md).  
 Delivery slices: [live-session-streaming-plan.md](live-session-streaming-plan.md).
 
 ## Further reading

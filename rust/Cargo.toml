@@ -2,6 +2,8 @@
 members = [
     "crates/hypabolic-trajectory",
     "crates/hypabolic-trajectory-opentelemetry",
+    "crates/hypabolic-trajectory-io",
+    "crates/hypabolic-trajectory-ahp",
     "tools/trajectory-conformance",
     "tools/trajectory-cli",
 ]

@@ -145,8 +145,8 @@ lines, or group/native ids. Operational codes: `stream_source_reset`,
 `stream_cursor_conflict`, `stream_buffer_limit`, `stream_sequence_gap`,
 `stream_resync_required`.
 
-## Not in this slice
+## Related slices
 
-- AHP Shape A/B streaming (LS-06 / LS-07)
-- Optional file I/O packages (LS-09)
+- AHP Shape A/B streaming: [`ahp-action-streaming.md`](ahp-action-streaming.md)
+- Optional file I/O packages: [`streaming-file-io.md`](streaming-file-io.md) (LS-09)
 - Capability advertising for `stream-*` (LS-12)

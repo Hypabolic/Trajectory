@@ -18,6 +18,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Trajectory/Trajectory.csproj" />
+    <ProjectReference Include="../../src/Trajectory.IO/Trajectory.IO.csproj" />
     <ProjectReference Include="../../src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj" />
     <ProjectReference Include="../../src/Trajectory.Testing/Trajectory.Testing.csproj" />
   </ItemGroup>

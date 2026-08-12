@@ -1,6 +1,6 @@
 # Live session streaming — product and technical specification
 
-Status: **locked design**; wire contracts landed (LS-01); core stream state + snapshot + append (LS-03–LS-05) landed; AHP snapshot + action-log (LS-06–LS-07) in-tree on tip; **LS-08 full stream matrix gate green** (shared goldens + oracle on all four runtimes); I/O packages, clients, CLIs, and capability advertising remain LS-09–LS-12  
+Status: **locked design**; wire contracts landed (LS-01); core stream state + snapshot + append (LS-03–LS-05) landed; AHP snapshot + action-log (LS-06–LS-07) in-tree on tip; **LS-08 full stream matrix gate green** (shared goldens + oracle on all four runtimes); **LS-09 optional file I/O packages** in-tree (poll/follow helpers; no capability advertising yet); clients, CLIs, and capability advertising remain LS-10–LS-12  
 
 Contract family: `trajectory-stream-v1` under `contracts/`  
 Scope: full feature across all four runtimes — not an MVP cut  

@@ -10,7 +10,7 @@
 
 §11 Definition of Done holds for independence, tip capabilities honesty, full shared verify (100 ops / 73 cases, `stream_unsupported_skips: 0` under LS-08), identity baseline (21 goldens), free-function + `TrajectoryEngine` API, pure OTEL + always-importable `otel` submodule, listing, packaging (two-column pack-smoke + root-anchored sdist artifacts), CI tip gate + OIDC release path, and docs. **Do not retag `0.1.0`.** First public PyPI cut is the **next** synchronized multi-registry tag after existing NuGet/npm/crates `0.1.0`.
 
-**Ship-continuation pass (DoD recheck):** pytest green; filtered pi verify **16 ops / 7 cases** green; unfiltered tip **100 ops / 73 cases** green (`stream_unsupported_skips: 0`); identity **21/21**; pack-smoke + tip capabilities honesty OK. Hermes/AHP empty-page listing is **documented policy** (SQLite-free hermes / AHP Phase 3 deferred), not a silent stub. LS-08 stream matrix is in-tree; next streaming slice is **LS-09** (optional file I/O packages).
+**Ship-continuation pass (DoD recheck):** pytest green; filtered pi verify **16 ops / 7 cases** green; unfiltered tip **100 ops / 73 cases** green (`stream_unsupported_skips: 0`); identity **21/21**; pack-smoke + tip capabilities honesty OK. Hermes/AHP empty-page listing is **documented policy** (SQLite-free hermes / AHP Phase 3 deferred), not a silent stub. LS-08 stream matrix is in-tree; **LS-09** optional file I/O is in-tree as `hypabolic_trajectory.io` / `[io]` extra (stdlib poll/follow; no capability advertising).
 
 ## What landed (mapped to spec §9)
 

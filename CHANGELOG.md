@@ -5,6 +5,15 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **LS-09 optional file I/O packages (all four ecosystems):** path poll/follow
+  helpers that feed only complete-line material into core `apply_snapshot` /
+  `apply_append`. Packages: `Hypabolic.Trajectory.IO`,
+  `@hypabolic/trajectory-node` (extended), `hypabolic-trajectory-io`,
+  `hypabolic-trajectory[io]` (`hypabolic_trajectory.io`). Explicit root required;
+  host errors (`FileStreamHostError` / peers) are not transcript diagnostics.
+  Docs: `docs/streaming-file-io.md`. Core packages gain no I/O dependencies.
+  **Do not** advertise `stream-file-io` / `stream-file-watch` until LS-12.
+
 - **LS-08 full stream matrix gate (all four runtimes):** complete shared
   `conformance/cases/streaming/**` corpus with per-step `expected.result`
   goldens; `stream-oracle-parity` expanded across file-JSONL growth/reset cases;

@@ -114,8 +114,9 @@ core, optional I/O/clients.
 | LS-03 … LS-05 | Stream state/cursor, snapshot apply + delta, JSONL append (×4) | **In-tree** |
 | LS-06 … LS-07 | AHP Shape A snapshot stream + Shape B action-log reducer in core (×4) | **In-tree** |
 | **LS-08** | **Full stream matrix gate** — shared `conformance/cases/streaming/**` green on all four runtimes; per-step goldens; append ≡ prefix oracle; batch still green; **no** `stream-*` capability claims | **In-tree on tip** |
-| LS-09 … LS-11 | Optional file I/O packages, optional AHP clients, sample CLIs | Scheduled |
-| LS-12 | Capability advertising + release gate | Blocked on LS-09–11 |
+| LS-09 | Optional file I/O packages (×4) | Delivered on tip (`streaming-file-io.md`) |
+| LS-10 … LS-11 | Optional AHP clients, sample CLIs | Scheduled |
+| LS-12 | Capability advertising + release gate | Blocked on LS-10–11 |
 
 ### LS-08 definition of done (core matrix)
 

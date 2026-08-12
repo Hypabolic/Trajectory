@@ -1,0 +1,22 @@
+[package]
+name = "hypabolic-trajectory-io"
+description = "Optional file path poll/follow helpers for Hypabolic Trajectory live session streaming"
+readme = "README.md"
+keywords = ["agents", "transcripts", "streaming", "jsonl"]
+categories = ["development-tools", "filesystem"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# Optional OS watcher wake-ups (not required for poll-based follow).
+watch = []
+
+[dependencies]
+hypabolic-trajectory.workspace = true
+
+[lints]
+workspace = true

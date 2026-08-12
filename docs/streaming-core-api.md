@@ -117,9 +117,9 @@ JSON lines, or group/native ids. Operational codes:
 See [`ahp-action-streaming.md`](ahp-action-streaming.md) for Shape A successive
 snapshots, Shape B reducer, provisional `activeTurn`, and serverSeq gaps.
 
-## Not in this slice
+## Related slices
 
-- File I/O packages (LS-09)
+- File I/O packages: [`streaming-file-io.md`](streaming-file-io.md) (LS-09)
 - Optional AHP network clients (LS-10)
 - Capability advertising (LS-12)
 
