@@ -93,10 +93,12 @@ def diff_snapshots(
             )
         )
 
-    # 2. finalizations — not emitted by plain stable-id snapshot diff (no
-    # provisional tracking in LS-04 snapshot path unless records carry
-    # provisional_id). When a prior provisional becomes non-provisional with
-    # same provisional_id linkage, emit finalize; otherwise upsert handles it.
+    # 2. finalizations — only when the new record carries
+    # finalizes_provisional_id equal to the prior provisional_id. AHP
+    # provisional→stable activeTurn mapping assigns a new stable identity
+    # without that linkage, so producers emit remove + upsert instead. Envelope
+    # provisional.finalized_ids still lists dropped provisional ids; the
+    # finalize delta op is unused for native AHP lineage changes.
 
     # 3. upserts (snapshot record order)
     for rec in curr_records:

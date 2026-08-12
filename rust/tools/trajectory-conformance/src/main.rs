@@ -641,28 +641,64 @@ fn execute_stream_sequence(
             .get("prefix_re_normalize")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        if want_append || want_prefix {
-            let oracle_state = create_stream(stream_options_from_manifest(manifest)?);
-            let rev = state
-                .cursor
-                .source_revision
-                .clone()
-                .unwrap_or_else(|| "oracle".into());
-            let (_, snap) = apply_snapshot(&oracle_state, &state.committed_prefix, &rev, None)
-                .map_err(StreamEngineError::Fatal)?;
-            let ok = (snap.kind == "updated" || snap.kind == "unchanged")
-                && oracle_snapshots_match(
-                    state.snapshot.as_ref(),
-                    snap.snapshot.as_ref(),
-                    &state.cursor,
-                    &snap.cursor,
-                );
+        let want_action = oracle
+            .get("action_equals_snapshot")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if want_append || want_prefix || want_action {
             let mut section = Map::new();
-            if want_append {
-                section.insert("append_equals_prefix".into(), Value::Bool(ok));
+            if want_append || want_prefix {
+                let oracle_state = create_stream(stream_options_from_manifest(manifest)?);
+                let rev = state
+                    .cursor
+                    .source_revision
+                    .clone()
+                    .unwrap_or_else(|| "oracle".into());
+                let (_, snap) = apply_snapshot(&oracle_state, &state.committed_prefix, &rev, None)
+                    .map_err(StreamEngineError::Fatal)?;
+                let ok = (snap.kind == "updated" || snap.kind == "unchanged")
+                    && oracle_snapshots_match(
+                        state.snapshot.as_ref(),
+                        snap.snapshot.as_ref(),
+                        &state.cursor,
+                        &snap.cursor,
+                    );
+                if want_append {
+                    section.insert("append_equals_prefix".into(), Value::Bool(ok));
+                }
+                if want_prefix {
+                    section.insert("prefix_re_normalize".into(), Value::Bool(ok));
+                }
             }
-            if want_prefix {
-                section.insert("prefix_re_normalize".into(), Value::Bool(ok));
+            if want_action {
+                let material_name = oracle
+                    .get("snapshot_material")
+                    .and_then(Value::as_str)
+                    .unwrap_or("step-snapshot.json");
+                let snap_rev = oracle
+                    .get("snapshot_source_revision")
+                    .and_then(Value::as_str)
+                    .unwrap_or("ahp-equiv-1");
+                let ok = match load_step_bytes(
+                    case_directory,
+                    &json!({ "material": material_name }),
+                ) {
+                    Ok(material) => {
+                        let snap_state = create_stream(stream_options_from_manifest(manifest)?);
+                        match apply_ahp_snapshot(&snap_state, &material, snap_rev, None) {
+                            Ok((_, snap)) => {
+                                (snap.kind == "updated" || snap.kind == "unchanged")
+                                    && action_snapshot_parity(
+                                        state.snapshot.as_ref(),
+                                        snap.snapshot.as_ref(),
+                                    )
+                            }
+                            Err(_) => false,
+                        }
+                    }
+                    Err(_) => false,
+                };
+                section.insert("action_equals_snapshot".into(), Value::Bool(ok));
             }
             payload
                 .as_object_mut()
@@ -673,6 +709,39 @@ fn execute_stream_sequence(
     serde_json::to_string(&payload).map_err(|e| {
         StreamEngineError::Protocol(format!("Failed to serialize stream sequence: {e}"))
     })
+}
+
+fn action_snapshot_parity(
+    action_snap: Option<&StreamSnapshot>,
+    snapshot_snap: Option<&StreamSnapshot>,
+) -> bool {
+    match (action_snap, snapshot_snap) {
+        (None, None) => true,
+        (Some(a), Some(o)) => {
+            if a.records.len() != o.records.len() {
+                return false;
+            }
+            for (ar, or) in a.records.iter().zip(o.records.iter()) {
+                let aid = ar.record.get("id").and_then(Value::as_str).unwrap_or("");
+                let oid = or.record.get("id").and_then(Value::as_str).unwrap_or("");
+                if aid != oid || ar.status != or.status {
+                    return false;
+                }
+                let arole = ar.record.get("role").and_then(Value::as_str).unwrap_or("");
+                let orole = or.record.get("role").and_then(Value::as_str).unwrap_or("");
+                if arole == "meta" && orole == "meta" {
+                    continue;
+                }
+                let acontent = ar.record.get("content");
+                let ocontent = or.record.get("content");
+                if arole != orole || acontent != ocontent {
+                    return false;
+                }
+            }
+            true
+        }
+        _ => false,
+    }
 }
 
 fn oracle_snapshots_match(

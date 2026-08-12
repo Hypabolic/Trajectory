@@ -109,6 +109,8 @@ export interface StreamOptions {
   readonly maxPendingBytes?: bigint;
   readonly maxLineBytes?: bigint;
   readonly normalize?: NormalizationOptions;
+  /** Pinned AHP protocol version for Shape B → Shape A materialization (default 0.7.0). */
+  readonly ahpProtocolVersion?: string;
 }
 
 export interface StreamRevision {
@@ -1608,7 +1610,7 @@ export function applyAhpActions(
   const chatIn = state.ahpChatState ?? emptyChatState(target);
   const reduced = reduceAhpActions(chatIn, envelopes, target, state.ahpLastServerSeq);
   const protocol =
-    state.ahpProtocolVersion ?? "0.7.0";
+    state.ahpProtocolVersion ?? state.options.ahpProtocolVersion ?? "0.7.0";
   const material = shapeABytes(reduced.chat, protocol, state.ahpSession);
   const rev =
     reduced.lastServerSeq !== null ? `seq:${reduced.lastServerSeq}` : state.cursor.sourceRevision ?? "seq:0";

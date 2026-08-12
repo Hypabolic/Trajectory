@@ -1034,20 +1034,15 @@ public static class TrajectoryStream
             return (state, UnchangedUpdate(state));
         }
 
+        // Target channel locks only after group lock (first accepted material) or
+        // from the first ahp-chat envelope in the reducer — not from create-time
+        // options.GroupId alone (aligns with Python/TS/Rust).
         var target = state.AhpTargetChannel;
         if (target is null &&
             state.GroupLocked &&
             state.Cursor.GroupId.StartsWith("ahp-chat:", StringComparison.Ordinal))
         {
             target = state.Cursor.GroupId;
-        }
-
-        // Prefer options group_id as target when first batch and not locked yet.
-        if (target is null &&
-            state.Options.GroupId is { } optGroup &&
-            optGroup.StartsWith("ahp-chat:", StringComparison.Ordinal))
-        {
-            target = optGroup;
         }
 
         var gap = AhpReducer.DetectSequenceGap(envelopes, state.AhpLastServerSeq, target);

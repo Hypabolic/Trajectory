@@ -3269,6 +3269,65 @@ mod tests {
     }
 
     #[test]
+    fn ahp_action_equals_snapshot() {
+        let actions = read_case("ahp-action-equals-snapshot", "step-actions.jsonl");
+        let snapshot = read_case("ahp-action-equals-snapshot", "step-snapshot.json");
+        let chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c1";
+
+        let mut opts = StreamOptions::new(TrajectorySource::Ahp).with_group_id(chat);
+        opts.ahp_protocol_version = Some("0.7.0".into());
+        let s_act = create_stream(opts.clone());
+        let (_, u_act) = apply_ahp_actions(&s_act, &actions, None).unwrap();
+        assert_eq!(u_act.kind, "updated");
+        let act_snap = u_act.snapshot.as_ref().unwrap();
+
+        let s_snap = create_stream(opts);
+        let (_, u_snap) = apply_ahp_snapshot(&s_snap, &snapshot, "ahp-equiv-1", None).unwrap();
+        assert_eq!(u_snap.kind, "updated");
+        let snap = u_snap.snapshot.as_ref().unwrap();
+
+        let act_ids: Vec<_> = act_snap
+            .records
+            .iter()
+            .map(|r| {
+                (
+                    r.record.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    r.status.clone(),
+                )
+            })
+            .collect();
+        let snap_ids: Vec<_> = snap
+            .records
+            .iter()
+            .map(|r| {
+                (
+                    r.record.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    r.status.clone(),
+                )
+            })
+            .collect();
+        assert_eq!(act_ids, snap_ids);
+
+        let non_meta = |records: &[StreamRecord]| {
+            records
+                .iter()
+                .filter(|r| r.record.get("role").and_then(|v| v.as_str()) != Some("meta"))
+                .map(|r| {
+                    (
+                        r.record
+                            .get("role")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        r.record.get("content").cloned(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(non_meta(&act_snap.records), non_meta(&snap.records));
+    }
+
+    #[test]
     fn per_source_append_oracle_parity() {
         let cases: &[(&str, TrajectorySource, &str, usize)] = &[
             ("pi-append-sequence", TrajectorySource::Pi, "stream-pi-append-sequence", 3),

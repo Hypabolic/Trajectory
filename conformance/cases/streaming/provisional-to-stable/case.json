@@ -47,7 +47,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "finalized_ids": ["prov-active-turn-1"]
       },
       "double_invoke": true
     }

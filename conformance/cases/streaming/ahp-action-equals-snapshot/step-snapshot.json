@@ -41,14 +41,5 @@
       }
     ],
     "activeTurn": null
-  },
-  "session": {
-    "provider": "synthetic-provider",
-    "title": "Synthetic action equals snapshot",
-    "status": 1,
-    "resource": "ahp-session:/00000000-0000-4000-8000-0000000000s1",
-    "workingDirectories": [
-      "file:///workspace/demo"
-    ]
   }
 }

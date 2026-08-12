@@ -784,8 +784,10 @@ def compare_stream_modes(
 
             elif mode == "stream-oracle-parity":
                 oracle = manifest.get("oracle") or {}
-                if not oracle.get("append_equals_prefix") and not oracle.get(
-                    "prefix_re_normalize"
+                if (
+                    not oracle.get("append_equals_prefix")
+                    and not oracle.get("prefix_re_normalize")
+                    and not oracle.get("action_equals_snapshot")
                 ):
                     continue
                 # Engines must embed oracle section when they claim success.
@@ -806,6 +808,13 @@ def compare_stream_modes(
                 ):
                     raise AssertionError(
                         f"{label}: stream-oracle-parity prefix re-normalize mismatch"
+                    )
+                if oracle.get("action_equals_snapshot") and not oracle_section.get(
+                    "action_equals_snapshot"
+                ):
+                    raise AssertionError(
+                        f"{label}: stream-oracle-parity action path diverged from "
+                        "independent Shape A snapshot"
                     )
 
             else:

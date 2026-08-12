@@ -69,10 +69,14 @@ interface Manifest {
     reset_policy?: "return-reset-required" | "auto-reset";
     max_pending_bytes?: number;
     max_line_bytes?: number;
+    ahp_protocol_version?: string;
   };
   oracle?: {
     prefix_re_normalize?: boolean;
     append_equals_prefix?: boolean;
+    action_equals_snapshot?: boolean;
+    snapshot_material?: string;
+    snapshot_source_revision?: string;
   };
   store?: string;
   listing?: { limit?: number; all_pages?: boolean };
@@ -340,6 +344,9 @@ function streamOptionsFromManifest(manifest: Manifest): StreamOptions {
     ...(opts.max_line_bytes === undefined
       ? {}
       : { maxLineBytes: BigInt(opts.max_line_bytes) }),
+    ...(opts.ahp_protocol_version === undefined
+      ? {}
+      : { ahpProtocolVersion: opts.ahp_protocol_version }),
   };
 }
 
@@ -565,25 +572,65 @@ async function executeStreamSequence(
 
   const payload: Record<string, unknown> = { steps: stepResults };
   const oracle = manifest.oracle;
-  if (oracle?.append_equals_prefix || oracle?.prefix_re_normalize) {
-    const oracleState = createStream(streamOptionsFromManifest(manifest));
-    const rev = state.cursor.sourceRevision ?? "oracle";
-    const snap = applySnapshot(oracleState, state.committedPrefix, rev);
-    const ok =
-      snap.update.kind === "updated" || snap.update.kind === "unchanged"
-        ? oracleSnapshotsMatch(
-            state.snapshot,
-            snap.update.snapshot,
-            state.cursor,
-            snap.update.cursor,
-          )
-        : false;
+  if (
+    oracle?.append_equals_prefix ||
+    oracle?.prefix_re_normalize ||
+    oracle?.action_equals_snapshot
+  ) {
     const section: Record<string, boolean> = {};
-    if (oracle.append_equals_prefix) section.append_equals_prefix = ok;
-    if (oracle.prefix_re_normalize) section.prefix_re_normalize = ok;
+    if (oracle.append_equals_prefix || oracle.prefix_re_normalize) {
+      const oracleState = createStream(streamOptionsFromManifest(manifest));
+      const rev = state.cursor.sourceRevision ?? "oracle";
+      const snap = applySnapshot(oracleState, state.committedPrefix, rev);
+      const ok =
+        snap.update.kind === "updated" || snap.update.kind === "unchanged"
+          ? oracleSnapshotsMatch(
+              state.snapshot,
+              snap.update.snapshot,
+              state.cursor,
+              snap.update.cursor,
+            )
+          : false;
+      if (oracle.append_equals_prefix) section.append_equals_prefix = ok;
+      if (oracle.prefix_re_normalize) section.prefix_re_normalize = ok;
+    }
+    if (oracle.action_equals_snapshot) {
+      const materialName = oracle.snapshot_material ?? "step-snapshot.json";
+      const rev = oracle.snapshot_source_revision ?? "ahp-equiv-1";
+      try {
+        const material = await loadStepBytes(caseDirectory, {
+          material: materialName,
+        });
+        const snap = applyAhpSnapshot(
+          createStream(streamOptionsFromManifest(manifest)),
+          material,
+          rev,
+        );
+        section.action_equals_snapshot =
+          (snap.update.kind === "updated" || snap.update.kind === "unchanged") &&
+          actionSnapshotParity(state.snapshot, snap.update.snapshot);
+      } catch {
+        section.action_equals_snapshot = false;
+      }
+    }
     payload.oracle = section;
   }
   return JSON.stringify(payload);
+}
+
+function actionSnapshotParity(
+  actionSnap: StreamSnapshot | null | undefined,
+  snapshotSnap: StreamSnapshot | null | undefined,
+): boolean {
+  if (!actionSnap || !snapshotSnap) return !actionSnap && !snapshotSnap;
+  const actIds = actionSnap.records.map((r) => [r.record.id ?? null, r.status]);
+  const snapIds = snapshotSnap.records.map((r) => [r.record.id ?? null, r.status]);
+  if (JSON.stringify(actIds) !== JSON.stringify(snapIds)) return false;
+  const nonMeta = (records: StreamSnapshot["records"]) =>
+    records
+      .filter((r) => r.record.role !== "meta")
+      .map((r) => [r.record.id ?? null, r.status, r.record.role ?? null, r.record.content ?? null]);
+  return JSON.stringify(nonMeta(actionSnap.records)) === JSON.stringify(nonMeta(snapshotSnap.records));
 }
 
 function recordParityKey(r: {

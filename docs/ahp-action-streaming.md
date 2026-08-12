@@ -93,6 +93,39 @@ must produce the same stream record identities, statuses, and content for the
 committed chat state. Shared fixture:
 `conformance/cases/streaming/ahp-action-equals-snapshot/`.
 
+The case runs the **action path only** as ordered steps, then engines populate
+`oracle.action_equals_snapshot` by applying the independent Shape A material
+(`oracle.snapshot_material` / `oracle.snapshot_source_revision`) on a fresh
+stream and comparing non-meta record ids, statuses, and content. Sequential
+action-then-snapshot steps on one stream are **not** the oracle.
+
+Oracle Shape A material must match what the action reducer synthesizes for
+chat state (no extra `session` object unless the action path also has session
+state). `stream-oracle-parity` fails the case when the independent paths
+diverge.
+
+## AHP target channel lock
+
+Create-time `options.group_id` seeds the public cursor only. The AHP action
+**target channel** is locked from:
+
+1. `state.ahp_target_channel` after prior material, or
+2. locked stream group when `group_locked` and the group is an `ahp-chat:` URI, or
+3. the first `ahp-chat:` envelope channel in the batch (reducer lock).
+
+Runtimes must **not** pre-lock the target from create-time `group_id` alone.
+Mismatched option URI vs first envelope therefore rebinds to the envelope
+channel on first accept (then group-locks); foreign-channel diagnostics apply
+only after a target is established.
+
+## Provisional → stable deltas
+
+When an `activeTurn` provisional disappears and stable records appear with new
+native identities, the stream delta is **remove + upsert** (not `op: finalize`).
+`provisional.finalized_ids` still reports the dropped provisional ids.
+`op: finalize` requires `finalizes_provisional_id` linkage on the replacement
+record and is reserved for explicit finalize producers.
+
 ## Diagnostics (content-safe)
 
 | Code | Meaning |

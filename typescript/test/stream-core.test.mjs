@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 import {
   TrajectoryStream,
   anyLineTooLong,
+  applyAhpActions,
+  applyAhpSnapshot,
   applyAppend,
   applyDeltaToSnapshot,
   applySnapshot,
@@ -573,4 +575,166 @@ test("grok backend tool provisional then stable", async () => {
   const tool = result.update.snapshot.records.filter((r) => r.record.role === "tool");
   assert.equal(tool.length, 1);
   assert.equal(tool[0].record.content, "real later result");
+});
+
+// ─── LS-06 / LS-07 AHP stream parity ─────────────────────────────────────────
+
+test("ahp snapshot provisional activeTurn maps and finalizes", async () => {
+  const chat = "ahp-chat:/00000000-0000-4000-8000-0000000000b1";
+  let state = createStream({
+    source: "ahp",
+    groupId: chat,
+    ahpProtocolVersion: "0.7.0",
+  });
+  let result = applyAhpSnapshot(
+    state,
+    await readCase("provisional-to-stable", "step-provisional.json"),
+    "ahp-rev-1",
+  );
+  state = result.state;
+  const u1 = result.update;
+  assert.equal(u1.kind, "updated");
+  assert.deepEqual([...u1.provisional.provisionalIds], ["prov-active-turn-1"]);
+  assert.equal(u1.cursor.position.kind, "snapshot-revision");
+  assert.equal(u1.cursor.position.revision, "ahp-rev-1");
+  assert.ok(u1.snapshot.records.some((r) => r.status === "provisional"));
+
+  const dup = applyAhpSnapshot(
+    state,
+    await readCase("provisional-to-stable", "step-provisional.json"),
+    "ahp-rev-1",
+  );
+  assert.equal(dup.update.kind, "unchanged");
+
+  result = applyAhpSnapshot(
+    state,
+    await readCase("provisional-to-stable", "step-stable.json"),
+    "ahp-rev-2",
+  );
+  const u2 = result.update;
+  assert.equal(u2.kind, "updated");
+  assert.deepEqual([...u2.provisional.provisionalIds], []);
+  assert.ok(u2.provisional.finalizedIds.includes("prov-active-turn-1"));
+  const recon = applyDeltaToSnapshot(snapshotToDict(u1.snapshot), {
+    schema_id: u2.delta.schemaId,
+    base_revision_id: u2.delta.baseRevisionId,
+    revision: {
+      revision: Number(u2.revision.revision),
+      revision_id: u2.revision.revisionId,
+      parent_revision_id: u2.revision.parentRevisionId,
+      complete: u2.revision.complete,
+      generation: Number(u2.revision.generation),
+    },
+    operations: u2.delta.operations,
+  });
+  assert.deepEqual(recon.records, snapshotToDict(u2.snapshot).records);
+});
+
+test("ahp action turn flow and sequence gap freezes cursor", async () => {
+  const chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c1";
+  let state = createStream({
+    source: "ahp",
+    groupId: chat,
+    ahpProtocolVersion: "0.7.0",
+  });
+  let result = applyAhpActions(
+    state,
+    await readCase("ahp-action-turn-flow", "step-actions.jsonl"),
+  );
+  state = result.state;
+  const u = result.update;
+  assert.equal(u.kind, "updated");
+  assert.equal(u.cursor.position.kind, "ahp-server-seq");
+  assert.equal(u.cursor.position.lastServerSeq, 5n);
+  assert.equal(u.cursor.position.nextServerSeq, 6n);
+  const roles = u.snapshot.records.map((r) => r.record.role);
+  assert.ok(roles.includes("user"));
+  assert.ok(roles.includes("assistant"));
+  assert.ok(
+    u.snapshot.records
+      .filter((r) => r.record.role !== "meta")
+      .every((r) => r.status === "stable"),
+  );
+
+  const prior = state.cursor;
+  const gap = applyAhpActions(
+    state,
+    await readCase("ahp-action-sequence-gap", "step-gap.jsonl"),
+  );
+  assert.equal(gap.update.kind, "reset-required");
+  assert.equal(gap.update.reset.reason, "sequence-gap");
+  assert.equal(gap.state.cursor.position.kind, prior.position.kind);
+  assert.equal(gap.state.cursor.position.lastServerSeq, prior.position.lastServerSeq);
+  assert.equal(gap.update.cursor.position.lastServerSeq, prior.position.lastServerSeq);
+});
+
+test("ahp unknown and foreign channel diagnostics are content-safe", async () => {
+  const chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c1";
+  let state = createStream({
+    source: "ahp",
+    groupId: chat,
+    ahpProtocolVersion: "0.7.0",
+  });
+  state = applyAhpActions(
+    state,
+    await readCase("ahp-action-unknown-foreign", "step-baseline.jsonl"),
+  ).state;
+  const result = applyAhpActions(
+    state,
+    await readCase("ahp-action-unknown-foreign", "step-mixed.jsonl"),
+  );
+  assert.equal(result.update.kind, "updated");
+  const codes = new Set(result.update.diagnostics.map((d) => d.code));
+  assert.ok(codes.has("ahp_unknown_action"));
+  assert.ok(codes.has("ahp_foreign_channel"));
+  for (const d of result.update.diagnostics) {
+    assert.ok(!d.message.includes("notARealAction"));
+    assert.ok(!d.message.includes("SECRET"));
+  }
+});
+
+test("ahp action path equals independent snapshot path", async () => {
+  const chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c1";
+  const actions = await readCase("ahp-action-equals-snapshot", "step-actions.jsonl");
+  const snapshot = await readCase("ahp-action-equals-snapshot", "step-snapshot.json");
+
+  const uAct = applyAhpActions(
+    createStream({ source: "ahp", groupId: chat, ahpProtocolVersion: "0.7.0" }),
+    actions,
+  ).update;
+  assert.equal(uAct.kind, "updated");
+  assert.ok(uAct.snapshot);
+
+  const uSnap = applyAhpSnapshot(
+    createStream({ source: "ahp", groupId: chat, ahpProtocolVersion: "0.7.0" }),
+    snapshot,
+    "ahp-equiv-1",
+  ).update;
+  assert.equal(uSnap.kind, "updated");
+  assert.ok(uSnap.snapshot);
+
+  const actIds = uAct.snapshot.records.map((r) => [r.record.id, r.status]);
+  const snapIds = uSnap.snapshot.records.map((r) => [r.record.id, r.status]);
+  assert.deepEqual(actIds, snapIds);
+
+  const nonMeta = (records) =>
+    records
+      .filter((r) => r.record.role !== "meta")
+      .map((r) => [r.record.role, r.record.content]);
+  assert.deepEqual(nonMeta(uAct.snapshot.records), nonMeta(uSnap.snapshot.records));
+});
+
+test("ahp action true-replay is idempotent", async () => {
+  const chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c1";
+  const data = await readCase("ahp-action-turn-flow", "step-actions.jsonl");
+  let state = createStream({
+    source: "ahp",
+    groupId: chat,
+    ahpProtocolVersion: "0.7.0",
+  });
+  const pre = state.cursor;
+  const first = applyAhpActions(state, data);
+  assert.equal(first.update.kind, "updated");
+  const second = applyAhpActions(first.state, data, pre);
+  assert.equal(second.update.kind, "unchanged");
 });

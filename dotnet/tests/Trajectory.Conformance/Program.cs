@@ -400,29 +400,74 @@ internal static class ConformanceProgram
                 ae.ValueKind == JsonValueKind.True;
             var wantPrefix = oracle.TryGetProperty("prefix_re_normalize", out var pr) &&
                 pr.ValueKind == JsonValueKind.True;
-            if (wantAppend || wantPrefix)
+            var wantAction = oracle.TryGetProperty("action_equals_snapshot", out var aes) &&
+                aes.ValueKind == JsonValueKind.True;
+            if (wantAppend || wantPrefix || wantAction)
             {
-                var oracleState = TrajectoryStream.Create(StreamOptionsFromManifest(manifest));
-                var rev = state.Cursor.SourceRevision ?? "oracle";
-                var (_, snap) = TrajectoryStream.ApplySnapshot(
-                    oracleState,
-                    state.CommittedPrefix,
-                    rev);
-                var ok = snap.Kind is "updated" or "unchanged" &&
-                    OracleSnapshotsMatch(
-                        state.Snapshot,
-                        snap.Snapshot,
-                        state.Cursor,
-                        snap.Cursor);
                 var section = new Dictionary<string, object?>(StringComparer.Ordinal);
-                if (wantAppend)
+                if (wantAppend || wantPrefix)
                 {
-                    section["append_equals_prefix"] = ok;
+                    var oracleState = TrajectoryStream.Create(StreamOptionsFromManifest(manifest));
+                    var rev = state.Cursor.SourceRevision ?? "oracle";
+                    var (_, snap) = TrajectoryStream.ApplySnapshot(
+                        oracleState,
+                        state.CommittedPrefix,
+                        rev);
+                    var ok = snap.Kind is "updated" or "unchanged" &&
+                        OracleSnapshotsMatch(
+                            state.Snapshot,
+                            snap.Snapshot,
+                            state.Cursor,
+                            snap.Cursor);
+                    if (wantAppend)
+                    {
+                        section["append_equals_prefix"] = ok;
+                    }
+
+                    if (wantPrefix)
+                    {
+                        section["prefix_re_normalize"] = ok;
+                    }
                 }
 
-                if (wantPrefix)
+                if (wantAction)
                 {
-                    section["prefix_re_normalize"] = ok;
+                    var materialName =
+                        oracle.TryGetProperty("snapshot_material", out var sm) &&
+                        sm.ValueKind == JsonValueKind.String
+                            ? sm.GetString()!
+                            : "step-snapshot.json";
+                    var snapRev =
+                        oracle.TryGetProperty("snapshot_source_revision", out var sr) &&
+                        sr.ValueKind == JsonValueKind.String
+                            ? sr.GetString()!
+                            : "ahp-equiv-1";
+                    try
+                    {
+                        var materialPath = Path.GetFullPath(Path.Combine(caseDirectory, materialName));
+                        if (!materialPath.StartsWith(
+                                Path.GetFullPath(caseDirectory) + Path.DirectorySeparatorChar,
+                                StringComparison.Ordinal) &&
+                            materialPath != Path.GetFullPath(caseDirectory))
+                        {
+                            section["action_equals_snapshot"] = false;
+                        }
+                        else
+                        {
+                            var material = await File.ReadAllBytesAsync(materialPath);
+                            var (_, snap) = TrajectoryStream.ApplyAhpSnapshot(
+                                TrajectoryStream.Create(StreamOptionsFromManifest(manifest)),
+                                material,
+                                snapRev);
+                            section["action_equals_snapshot"] =
+                                snap.Kind is "updated" or "unchanged" &&
+                                ActionSnapshotParity(state.Snapshot, snap.Snapshot);
+                        }
+                    }
+                    catch
+                    {
+                        section["action_equals_snapshot"] = false;
+                    }
                 }
 
                 payload["oracle"] = section;
@@ -430,6 +475,47 @@ internal static class ConformanceProgram
         }
 
         return SerializeWireObject(payload);
+    }
+
+    private static bool ActionSnapshotParity(StreamSnapshot? actionSnap, StreamSnapshot? snapshotSnap)
+    {
+        if (actionSnap is null || snapshotSnap is null)
+        {
+            return actionSnap is null && snapshotSnap is null;
+        }
+
+        if (actionSnap.Records.Count != snapshotSnap.Records.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < actionSnap.Records.Count; i++)
+        {
+            var a = actionSnap.Records[i];
+            var o = snapshotSnap.Records[i];
+            var aId = a.Record.TryGetValue("id", out var aid) ? aid?.ToString() : null;
+            var oId = o.Record.TryGetValue("id", out var oid) ? oid?.ToString() : null;
+            if (aId != oId || a.Status != o.Status)
+            {
+                return false;
+            }
+
+            var aRole = a.Record.TryGetValue("role", out var ar) ? ar?.ToString() : null;
+            var oRole = o.Record.TryGetValue("role", out var orole) ? orole?.ToString() : null;
+            if (aRole == "meta" && oRole == "meta")
+            {
+                continue;
+            }
+
+            var aContent = a.Record.TryGetValue("content", out var ac) ? ac?.ToString() : null;
+            var oContent = o.Record.TryGetValue("content", out var oc) ? oc?.ToString() : null;
+            if (aRole != oRole || aContent != oContent)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool OracleSnapshotsMatch(

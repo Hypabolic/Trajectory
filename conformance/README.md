@@ -52,7 +52,7 @@ Stream comparison modes (from `contracts/spec/streaming.md`):
 | `stream-delta-apply` | Applying delta to prior snapshot yields new snapshot |
 | `stream-diagnostics-by-step` | `expected.diagnostic_codes` per step |
 | `stream-idempotence` | Double-apply parity (`idempotent: true`) |
-| `stream-oracle-parity` | Append path equals prefix re-normalize (`case.oracle`) |
+| `stream-oracle-parity` | Append path equals prefix re-normalize, or AHP action path equals independent Shape A snapshot (`case.oracle`) |
 
 Goldens under each step’s `expected.result` are filled as engines land
 (LS-04+). Scaffold cases ship **inputs first**; missing goldens do not fail

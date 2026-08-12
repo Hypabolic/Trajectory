@@ -74,6 +74,20 @@
         "append_equals_prefix": {
           "type": "boolean",
           "description": "When true, append-path updates must match prefix-oracle path."
+        },
+        "action_equals_snapshot": {
+          "type": "boolean",
+          "description": "When true, an independent Shape A snapshot apply must match the action-path stream for non-meta record ids, statuses, and content (AHP LS-07 oracle)."
+        },
+        "snapshot_material": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative path under the case directory for the independent Shape A oracle material when action_equals_snapshot is true."
+        },
+        "snapshot_source_revision": {
+          "type": "string",
+          "minLength": 1,
+          "description": "source_revision for the independent Shape A oracle apply when action_equals_snapshot is true."
         }
       }
     },

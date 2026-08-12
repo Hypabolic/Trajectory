@@ -782,6 +782,9 @@ def _stream_options_from_manifest(manifest: Mapping[str, Any]) -> StreamOptions:
         type(max_line) is not int or isinstance(max_line, bool)
     ):
         raise ProtocolError("max_line_bytes must be an integer when present.")
+    ahp_protocol_version = opts_raw.get("ahp_protocol_version")
+    if ahp_protocol_version is not None and type(ahp_protocol_version) is not str:
+        raise ProtocolError("ahp_protocol_version must be a string when present.")
     return StreamOptions(
         source=source,
         group_id=group_id,
@@ -792,6 +795,7 @@ def _stream_options_from_manifest(manifest: Mapping[str, Any]) -> StreamOptions:
         reset_policy=reset_policy,  # type: ignore[arg-type]
         max_pending_bytes=max_pending,
         max_line_bytes=max_line,
+        ahp_protocol_version=ahp_protocol_version,
     )
 
 
@@ -962,98 +966,151 @@ def _oracle_snapshots_match(
     return True
 
 
+def _action_snapshot_parity(
+    action_snap: StreamSnapshot | None,
+    snapshot_snap: StreamSnapshot | None,
+) -> bool:
+    """Non-meta record id/status/content parity for AHP action ≡ snapshot oracle."""
+    if action_snap is None or snapshot_snap is None:
+        return action_snap is None and snapshot_snap is None
+
+    def _non_meta(records: tuple[StreamRecord, ...] | list[StreamRecord]) -> list[tuple]:
+        out: list[tuple] = []
+        for r in records:
+            role = r.record.get("role")
+            if role == "meta":
+                continue
+            out.append((r.record.get("id"), r.status, role, r.record.get("content")))
+        return out
+
+    # Full identity parity including meta (matches unit oracle).
+    act_ids = [(r.record.get("id"), r.status) for r in action_snap.records]
+    snap_ids = [(r.record.get("id"), r.status) for r in snapshot_snap.records]
+    if act_ids != snap_ids:
+        return False
+    return _non_meta(action_snap.records) == _non_meta(snapshot_snap.records)
+
+
 def _oracle_section(
     manifest: Mapping[str, Any],
     state: StreamState,
     step_results: list[dict[str, Any]],
+    *,
+    case_directory: Path | None = None,
 ) -> dict[str, Any] | None:
     oracle = manifest.get("oracle")
     if type(oracle) is not dict:
         return None
     want_append = bool(oracle.get("append_equals_prefix"))
     want_prefix = bool(oracle.get("prefix_re_normalize"))
-    if not want_append and not want_prefix:
+    want_action = bool(oracle.get("action_equals_snapshot"))
+    if not want_append and not want_prefix and not want_action:
         return None
 
-    # Fresh snapshot of the final committed prefix must match append-path records,
-    # status/provisional finality, diagnostics, and cursor fingerprint.
-    opts = _stream_options_from_manifest(manifest)
-    oracle_state = create_stream(opts)
-    prefix = bytes(state.committed_prefix)
-    rev = state.cursor.source_revision or "oracle"
-    _, snap_update = apply_snapshot(oracle_state, prefix, source_revision=rev)
-    if snap_update.kind not in {"updated", "unchanged"}:
-        return {
-            "append_equals_prefix": False if want_append else None,
-            "prefix_re_normalize": False if want_prefix else None,
-        }
-
-    ok = _oracle_snapshots_match(
-        state.snapshot,
-        snap_update.snapshot,
-        state.cursor,
-        snap_update.cursor,
-    )
-    # Cross-check last updated step snapshot records when present (wire form).
-    if ok:
-        for step in reversed(step_results):
-            update = step.get("update")
-            if type(update) is not dict or update.get("kind") != "updated":
-                continue
-            snap = update.get("snapshot")
-            if type(snap) is not dict or type(snap.get("records")) is not list:
-                break
-            if snap_update.snapshot is None:
-                ok = False
-                break
-            wire_keys = []
-            for rec in snap["records"]:
-                if type(rec) is not dict:
-                    wire_keys.append(("", "", None, None, None))
-                    continue
-                body = rec.get("record") if type(rec.get("record")) is dict else {}
-                wire_keys.append(
-                    (
-                        body.get("id", "") if type(body) is dict else "",
-                        rec.get("status", ""),
-                        rec.get("provisional_id"),
-                        rec.get("replaces_provisional_id"),
-                        rec.get("finalizes_provisional_id"),
-                    )
-                )
-            oracle_keys = [
-                _stream_record_parity_key(r) for r in snap_update.snapshot.records
-            ]
-            if wire_keys != oracle_keys:
-                ok = False
-            wire_diags = []
-            diags = snap.get("diagnostics")
-            if type(diags) is list:
-                for d in diags:
-                    if type(d) is not dict:
-                        continue
-                    wire_diags.append(
-                        (
-                            d.get("code", ""),
-                            d.get("message", ""),
-                            d.get("input_line"),
-                            d.get("record_index"),
-                            d.get("count"),
-                        )
-                    )
-            oracle_diags = [
-                _stream_diagnostic_parity_key(d)
-                for d in snap_update.snapshot.diagnostics
-            ]
-            if wire_diags != oracle_diags:
-                ok = False
-            break
     out: dict[str, Any] = {}
-    if want_append:
-        out["append_equals_prefix"] = ok
-    if want_prefix:
-        out["prefix_re_normalize"] = ok
-    return out
+    opts = _stream_options_from_manifest(manifest)
+
+    if want_append or want_prefix:
+        # Fresh snapshot of the final committed prefix must match append-path records,
+        # status/provisional finality, diagnostics, and cursor fingerprint.
+        oracle_state = create_stream(opts)
+        prefix = bytes(state.committed_prefix)
+        rev = state.cursor.source_revision or "oracle"
+        _, snap_update = apply_snapshot(oracle_state, prefix, source_revision=rev)
+        if snap_update.kind not in {"updated", "unchanged"}:
+            if want_append:
+                out["append_equals_prefix"] = False
+            if want_prefix:
+                out["prefix_re_normalize"] = False
+        else:
+            ok = _oracle_snapshots_match(
+                state.snapshot,
+                snap_update.snapshot,
+                state.cursor,
+                snap_update.cursor,
+            )
+            # Cross-check last updated step snapshot records when present (wire form).
+            if ok:
+                for step in reversed(step_results):
+                    update = step.get("update")
+                    if type(update) is not dict or update.get("kind") != "updated":
+                        continue
+                    snap = update.get("snapshot")
+                    if type(snap) is not dict or type(snap.get("records")) is not list:
+                        break
+                    if snap_update.snapshot is None:
+                        ok = False
+                        break
+                    wire_keys = []
+                    for rec in snap["records"]:
+                        if type(rec) is not dict:
+                            wire_keys.append(("", "", None, None, None))
+                            continue
+                        body = rec.get("record") if type(rec.get("record")) is dict else {}
+                        wire_keys.append(
+                            (
+                                body.get("id", "") if type(body) is dict else "",
+                                rec.get("status", ""),
+                                rec.get("provisional_id"),
+                                rec.get("replaces_provisional_id"),
+                                rec.get("finalizes_provisional_id"),
+                            )
+                        )
+                    oracle_keys = [
+                        _stream_record_parity_key(r) for r in snap_update.snapshot.records
+                    ]
+                    if wire_keys != oracle_keys:
+                        ok = False
+                    wire_diags = []
+                    diags = snap.get("diagnostics")
+                    if type(diags) is list:
+                        for d in diags:
+                            if type(d) is not dict:
+                                continue
+                            wire_diags.append(
+                                (
+                                    d.get("code", ""),
+                                    d.get("message", ""),
+                                    d.get("input_line"),
+                                    d.get("record_index"),
+                                    d.get("count"),
+                                )
+                            )
+                    oracle_diags = [
+                        _stream_diagnostic_parity_key(d)
+                        for d in snap_update.snapshot.diagnostics
+                    ]
+                    if wire_diags != oracle_diags:
+                        ok = False
+                    break
+            if want_append:
+                out["append_equals_prefix"] = ok
+            if want_prefix:
+                out["prefix_re_normalize"] = ok
+
+    if want_action:
+        material_name = oracle.get("snapshot_material") or "step-snapshot.json"
+        rev = oracle.get("snapshot_source_revision") or "ahp-equiv-1"
+        if type(material_name) is not str or type(rev) is not str:
+            out["action_equals_snapshot"] = False
+        elif case_directory is None:
+            out["action_equals_snapshot"] = False
+        else:
+            try:
+                material = (case_directory / material_name).read_bytes()
+            except OSError:
+                out["action_equals_snapshot"] = False
+            else:
+                snap_state = create_stream(opts)
+                _, snap_update = apply_ahp_snapshot(
+                    snap_state, material, source_revision=rev
+                )
+                out["action_equals_snapshot"] = (
+                    snap_update.kind in {"updated", "unchanged"}
+                    and _action_snapshot_parity(state.snapshot, snap_update.snapshot)
+                )
+
+    return out if out else None
 
 
 def execute_stream_sequence(
@@ -1141,7 +1198,9 @@ def execute_stream_sequence(
         )
 
     payload: dict[str, Any] = {"steps": step_results}
-    oracle = _oracle_section(manifest, state, step_results)
+    oracle = _oracle_section(
+        manifest, state, step_results, case_directory=case_directory
+    )
     if oracle is not None:
         payload["oracle"] = oracle
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))

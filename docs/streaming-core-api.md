@@ -47,6 +47,7 @@ Options (defaults):
 | `require_complete_lines` | `true` |
 | `finalize_on_close` | `true` |
 | `normalize` | batch normalize defaults |
+| `ahp_protocol_version` | optional; Shape B → Shape A pin (default `"0.7.0"`) |
 
 ## `apply_snapshot`
 
