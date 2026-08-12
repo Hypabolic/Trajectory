@@ -21,7 +21,7 @@ ordered for semantic safety, not for a reduced MVP.
 | LS-06 | **Done on tip** — AHP Shape A snapshot streaming (×4) |
 | LS-07 | **Done on tip** — AHP Shape B action-log reducer (×4) |
 | LS-07h | **Done on tip** — Hermes optional provider (×4; package-test-gated) |
-| LS-08 | **Done on tip** — full stream matrix gate (34 cases; skips: 0 ×4) |
+| LS-08 | **Done on tip** — full stream matrix gate (38 cases; skips: 0 ×4) |
 | LS-09 | **Done on tip** — optional file I/O packages (×4) |
 | LS-10 | **Done on tip** — optional AHP clients (×4; fake-host) |
 | LS-11 | **Done on tip** — sample CLI `stream` / `ahp-stream` (×4) |
@@ -526,7 +526,7 @@ Optional packages (LS-09/10/07h) may trail core matrix but are required for
 
 **LS-00** … **LS-12** are delivered on tip: locked design, wire contracts,
 stream conformance protocol + shared corpus, state/cursor, snapshot/delta,
-JSONL append, AHP Shape A/B, full stream matrix gate (34 cases;
+JSONL append, AHP Shape A/B, full stream matrix gate (38 cases;
 `stream_unsupported_skips: 0` on all four runtimes), optional file I/O (LS-09),
 optional AHP clients (LS-10), sample CLI `stream` / `ahp-stream` (LS-11), and
 honest capability advertising (LS-12).

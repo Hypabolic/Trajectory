@@ -15,6 +15,10 @@ internal static class AhpReducer
     public const string MsgUnknownAction = "Ignored an unknown AHP action type.";
     public const string MsgForeignChannel = "Ignored an AHP action for a non-target channel.";
     public const string MsgInvalidActions = "AHP action batch must be JSONL envelopes or a JSON array.";
+    public const string MsgBatchReorder =
+        "AHP action batch serverSeq order must be strictly increasing.";
+    public const string MsgBatchMixedSeq =
+        "AHP action batch must not mix sequenced and unsequenced envelopes.";
 
     private static readonly HashSet<string> KnownChatActions = new(StringComparer.Ordinal)
     {
@@ -269,12 +273,77 @@ internal static class AhpReducer
         return null;
     }
 
+    /// <summary>
+    /// Validate original batch order under reorder=reject.
+    /// Returns a fixed content-safe error message when invalid, else null.
+    /// Does not sort. Rejects non-monotonic/duplicate seqs and mixed sequencing.
+    /// </summary>
+    public static string? ValidateAhpBatchOrder(
+        IReadOnlyList<JsonObject> envelopes,
+        string? targetChannel)
+    {
+        var hasSeq = false;
+        var hasUnseq = false;
+        long? lastSeq = null;
+        foreach (var raw in envelopes)
+        {
+            var env = NormalizeEnvelope(raw);
+            if (env is null)
+            {
+                continue;
+            }
+
+            var ch = env.Channel;
+            if (ch is not null && targetChannel is not null && ch != targetChannel)
+            {
+                continue;
+            }
+
+            if (ch is not null && !ch.StartsWith("ahp-chat:", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (env.ServerSeq is null)
+            {
+                hasUnseq = true;
+                if (hasSeq)
+                {
+                    return MsgBatchMixedSeq;
+                }
+
+                continue;
+            }
+
+            hasSeq = true;
+            if (hasUnseq)
+            {
+                return MsgBatchMixedSeq;
+            }
+
+            var seq = env.ServerSeq.Value;
+            if (lastSeq is not null && seq <= lastSeq.Value)
+            {
+                return MsgBatchReorder;
+            }
+
+            lastSeq = seq;
+        }
+
+        return null;
+    }
+
     public sealed record ReduceResult(
         JsonObject Chat,
         long? LastServerSeq,
         IReadOnlyList<(string Code, string Message)> Diagnostics,
         IReadOnlyList<long> Applied);
 
+    /// <summary>
+    /// Reduce ordered envelopes into chat state. Consumes original batch order
+    /// and does not sort. Callers must reject non-monotonic / mixed batches via
+    /// <see cref="ValidateAhpBatchOrder"/> first.
+    /// </summary>
     public static ReduceResult ReduceAhpActions(
         JsonObject? chat,
         IReadOnlyList<JsonObject> envelopes,
@@ -297,6 +366,7 @@ internal static class AhpReducer
             state["resource"] = channel;
         }
 
+        // Preserve original batch order (reorder=reject). Do not sort-then-apply.
         var normalized = new List<NormalizedEnvelope>();
         foreach (var raw in envelopes)
         {
@@ -309,26 +379,6 @@ internal static class AhpReducer
 
             normalized.Add(env);
         }
-
-        normalized.Sort(static (a, b) =>
-        {
-            if (a.ServerSeq is null && b.ServerSeq is null)
-            {
-                return 0;
-            }
-
-            if (a.ServerSeq is null)
-            {
-                return 1;
-            }
-
-            if (b.ServerSeq is null)
-            {
-                return -1;
-            }
-
-            return a.ServerSeq.Value.CompareTo(b.ServerSeq.Value);
-        });
 
         foreach (var env in normalized)
         {

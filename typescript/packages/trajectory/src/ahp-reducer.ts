@@ -6,6 +6,10 @@
 export const MSG_UNKNOWN_ACTION = "Ignored an unknown AHP action type.";
 export const MSG_FOREIGN_CHANNEL = "Ignored an AHP action for a non-target channel.";
 export const MSG_INVALID_ACTIONS = "AHP action batch must be JSONL envelopes or a JSON array.";
+export const MSG_BATCH_REORDER =
+  "AHP action batch serverSeq order must be strictly increasing.";
+export const MSG_BATCH_MIXED_SEQ =
+  "AHP action batch must not mix sequenced and unsequenced envelopes.";
 
 const KNOWN_CHAT = new Set([
   "chat/turnStarted",
@@ -132,6 +136,37 @@ export function detectSequenceGap(
   return null;
 }
 
+/**
+ * Validate original batch order under reorder=reject.
+ * Returns a fixed content-safe error message when invalid, else null.
+ * Does not sort. Rejects non-monotonic/duplicate seqs and mixed sequencing.
+ */
+export function validateAhpBatchOrder(
+  envelopes: Record<string, Json>[],
+  targetChannel: string | null,
+): string | null {
+  let hasSeq = false;
+  let hasUnseq = false;
+  let lastSeq: number | null = null;
+  for (const raw of envelopes) {
+    const env = normalizeEnvelope(raw);
+    if (!env) continue;
+    const ch = env.channel;
+    if (typeof ch === "string" && targetChannel !== null && ch !== targetChannel) continue;
+    if (typeof ch === "string" && !ch.startsWith("ahp-chat:")) continue;
+    if (env.serverSeq === null) {
+      hasUnseq = true;
+      if (hasSeq) return MSG_BATCH_MIXED_SEQ;
+      continue;
+    }
+    hasSeq = true;
+    if (hasUnseq) return MSG_BATCH_MIXED_SEQ;
+    if (lastSeq !== null && env.serverSeq <= lastSeq) return MSG_BATCH_REORDER;
+    lastSeq = env.serverSeq;
+  }
+  return null;
+}
+
 export function reduceAhpActions(
   chat: ChatState | null,
   envelopes: Record<string, Json>[],
@@ -152,15 +187,10 @@ export function reduceAhpActions(
   let channel = targetChannel ?? (typeof state.resource === "string" ? state.resource : null);
   if (channel && state.resource == null) state.resource = channel;
 
+  // Preserve original batch order (reorder=reject). Do not sort-then-apply.
   const normalized = envelopes
     .map(normalizeEnvelope)
-    .filter((e): e is NonNullable<typeof e> => e !== null)
-    .sort((a, b) => {
-      if (a.serverSeq === null && b.serverSeq === null) return 0;
-      if (a.serverSeq === null) return 1;
-      if (b.serverSeq === null) return -1;
-      return a.serverSeq - b.serverSeq;
-    });
+    .filter((e): e is NonNullable<typeof e> => e !== null);
 
   for (const env of normalized) {
     const action = env.action;

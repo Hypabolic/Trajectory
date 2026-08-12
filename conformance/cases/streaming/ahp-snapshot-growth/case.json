@@ -34,7 +34,7 @@
         "update_kind": "updated",
         "complete": false,
         "provisional_ids": [
-          "prov-active-turn-1"
+          "prov-active:part-md-active-1"
         ],
         "result": "expected.snapshot-1.json"
       },

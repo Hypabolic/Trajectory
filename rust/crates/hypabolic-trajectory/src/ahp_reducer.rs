@@ -8,6 +8,12 @@ use serde_json::{Map, Value, json};
 pub const MSG_UNKNOWN_ACTION: &str = "Ignored an unknown AHP action type.";
 pub const MSG_FOREIGN_CHANNEL: &str = "Ignored an AHP action for a non-target channel.";
 pub const MSG_INVALID_ACTIONS: &str = "AHP action batch must be JSONL envelopes or a JSON array.";
+/// Non-monotonic or duplicate serverSeq in original batch order.
+pub const MSG_BATCH_REORDER: &str =
+    "AHP action batch serverSeq order must be strictly increasing.";
+/// Sequenced and unsequenced envelopes mixed in one batch.
+pub const MSG_BATCH_MIXED_SEQ: &str =
+    "AHP action batch must not mix sequenced and unsequenced envelopes.";
 
 const KNOWN_CHAT: &[&str] = &[
     "chat/turnStarted",
@@ -211,6 +217,55 @@ pub fn detect_sequence_gap(
     None
 }
 
+/// Validate original batch order under reorder=reject.
+/// Returns a fixed content-safe error message when invalid, else None.
+/// Does not sort. Rejects non-monotonic/duplicate seqs and mixed sequencing.
+#[must_use]
+pub fn validate_ahp_batch_order(
+    envelopes: &[Map<String, Value>],
+    target_channel: Option<&str>,
+) -> Option<&'static str> {
+    let mut has_seq = false;
+    let mut has_unseq = false;
+    let mut last_seq: Option<i64> = None;
+    for raw in envelopes {
+        let Some(env) = normalize_envelope(raw) else {
+            continue;
+        };
+        if let Some(ch) = env.channel.as_deref() {
+            if let Some(target) = target_channel {
+                if ch != target {
+                    continue;
+                }
+            }
+            if !ch.starts_with("ahp-chat:") {
+                continue;
+            }
+        }
+        match env.server_seq {
+            None => {
+                has_unseq = true;
+                if has_seq {
+                    return Some(MSG_BATCH_MIXED_SEQ);
+                }
+            }
+            Some(seq) => {
+                has_seq = true;
+                if has_unseq {
+                    return Some(MSG_BATCH_MIXED_SEQ);
+                }
+                if let Some(prev) = last_seq {
+                    if seq <= prev {
+                        return Some(MSG_BATCH_REORDER);
+                    }
+                }
+                last_seq = Some(seq);
+            }
+        }
+    }
+    None
+}
+
 /// Result of reducing an action batch.
 pub struct ReduceResult {
     /// Reduced chat state.
@@ -225,6 +280,9 @@ pub struct ReduceResult {
 }
 
 /// Reduce ordered envelopes into chat state.
+///
+/// Consumes original batch order and does not sort. Callers must reject
+/// non-monotonic / mixed batches via [`validate_ahp_batch_order`] first.
 #[must_use]
 pub fn reduce_ahp_actions(
     chat: Option<&Value>,
@@ -254,6 +312,7 @@ pub fn reduce_ahp_actions(
         }
     }
 
+    // Preserve original batch order (reorder=reject). Do not sort-then-apply.
     let mut normalized: Vec<NormalizedEnvelope> = Vec::new();
     for raw in envelopes {
         match normalize_envelope(raw) {
@@ -266,12 +325,6 @@ pub fn reduce_ahp_actions(
             }
         }
     }
-    normalized.sort_by(|a, b| match (a.server_seq, b.server_seq) {
-        (None, None) => std::cmp::Ordering::Equal,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (Some(x), Some(y)) => x.cmp(&y),
-    });
 
     for env in normalized {
         let action_type = env

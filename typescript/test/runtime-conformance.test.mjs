@@ -33,8 +33,8 @@ test("TypeScript runner passes every advertised shared operation deterministical
   assert.deepEqual(JSON.parse(output), {
     protocol_version: "1",
     status: "success",
-    cases: 73,
-    operations: 100,
+    cases: 77,
+    operations: 104,
     stream_unsupported_skips: 0,
   });
 });

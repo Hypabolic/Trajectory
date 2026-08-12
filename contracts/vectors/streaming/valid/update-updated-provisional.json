@@ -37,7 +37,7 @@
       "records": [
         {
           "status": "provisional",
-          "provisional_id": "prov-active-turn-1",
+          "provisional_id": "prov-active:part-md-active-1",
           "record": {
             "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "kind": "message",
@@ -79,7 +79,7 @@
           "op": "upsert",
           "record": {
             "status": "provisional",
-            "provisional_id": "prov-active-turn-1",
+            "provisional_id": "prov-active:part-md-active-1",
             "record": {
               "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               "kind": "message",
@@ -108,7 +108,7 @@
     "diagnostics": [],
     "provisional": {
       "include": true,
-      "provisional_ids": ["prov-active-turn-1"],
+      "provisional_ids": ["prov-active:part-md-active-1"],
       "finalized_ids": []
     },
     "consumed": {

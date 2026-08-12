@@ -1,0 +1,38 @@
+{
+  "kind": "error",
+  "revision": {
+    "revision": 0,
+    "revision_id": "error",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000c2",
+    "generation": 0,
+    "position": {
+      "kind": "snapshot-revision",
+      "revision": ""
+    },
+    "source_revision": null,
+    "prefix_sha256": null
+  },
+  "snapshot": null,
+  "delta": null,
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 0,
+    "bytes": 0
+  },
+  "error": {
+    "code": "invalid_input",
+    "message": "AHP action batch must not mix sequenced and unsequenced envelopes."
+  }
+}

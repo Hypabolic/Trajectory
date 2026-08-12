@@ -33,7 +33,7 @@ are **post-LS-12** engineering / product follow-ons, not open plan slices.
 | **LS-06** | AHP Shape A `apply_ahp_snapshot` (×4) | **Shipped in-tree** |
 | **LS-07** | AHP Shape B action-log reducer / `apply_ahp_actions` (×4) | **Shipped in-tree** |
 | **LS-07h** | Hermes optional provider packages (×4) + core `apply_hermes_export` | **Shipped in-tree** (package-test-gated) |
-| **LS-08** | Full stream matrix gate — 34 shared cases, goldens, oracle parity | **Shipped in-tree** |
+| **LS-08** | Full stream matrix gate — 38 shared cases, goldens, oracle parity | **Shipped in-tree** |
 | **LS-09** | Optional file I/O packages (poll/follow; ×4) | **Shipped in-tree** |
 | **LS-10** | Optional AHP client packages (transport-only; fake-host; ×4) | **Shipped in-tree** |
 | **LS-11** | Sample CLI `stream` / `ahp-stream` (×4) | **Shipped in-tree** |
@@ -77,7 +77,7 @@ are **post-LS-12** engineering / product follow-ons, not open plan slices.
 
 ### Stream corpus
 
-Shared authority: `conformance/cases/streaming/**` (**34** cases), including:
+Shared authority: `conformance/cases/streaming/**` (**38** cases), including:
 
 - Generic framing / cursor / reset / delta cases
 - Per-source append sequences (`pi`, `claude-code`, `codex`, `openclaw`,

@@ -161,7 +161,7 @@ def test_schema_valid_finalize_and_diagnostic_remove_shapes_accepted() -> None:
         "records": [
             {
                 "status": "provisional",
-                "provisional_id": "prov-active-turn-1",
+                "provisional_id": "prov-active:part-md-active-1",
                 "record": _minimal_body(
                     "1111111111111111111111111111111111111111111111111111111111111111",
                     content="partial",
@@ -182,7 +182,7 @@ def test_schema_valid_finalize_and_diagnostic_remove_shapes_accepted() -> None:
         rec["record"]["id"]
         == "2222222222222222222222222222222222222222222222222222222222222222"
     )
-    assert rec.get("finalizes_provisional_id") == "prov-active-turn-1"
+    assert rec.get("finalizes_provisional_id") == "prov-active:part-md-active-1"
 
     diag_delta = _vector_instance("delta-diagnostic-add-remove.json")
     prior_diag = {
@@ -232,7 +232,7 @@ def test_upsert_matches_provisional_id_not_body_id() -> None:
         "records": [
             {
                 "status": "provisional",
-                "provisional_id": "prov-active-turn-1",
+                "provisional_id": "prov-active:part-md-active-1",
                 "record": _minimal_body(rid_a, content="partial"),
             }
         ],
@@ -251,7 +251,7 @@ def test_upsert_matches_provisional_id_not_body_id() -> None:
     assert len(result["records"]) == 1
     assert result["records"][0]["record"]["id"] == rid_b
     assert result["records"][0]["record"]["content"] == "partial+"
-    assert result["records"][0]["provisional_id"] == "prov-active-turn-1"
+    assert result["records"][0]["provisional_id"] == "prov-active:part-md-active-1"
     assert result["revision"]["revision_id"] == "rev-2"
     assert result["source"] == "ahp"
     assert result["group_id"] == "ahp-chat-1"

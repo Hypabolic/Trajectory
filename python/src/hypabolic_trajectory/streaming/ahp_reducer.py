@@ -26,6 +26,12 @@ MSG_UNKNOWN_ACTION = "Ignored an unknown AHP action type."
 MSG_FOREIGN_CHANNEL = "Ignored an AHP action for a non-target channel."
 MSG_INVALID_ACTIONS = "AHP action batch must be JSONL envelopes or a JSON array."
 MSG_MISSING_SEQ = "AHP action envelope is missing a valid serverSeq."
+MSG_BATCH_REORDER = (
+    "AHP action batch serverSeq order must be strictly increasing."
+)
+MSG_BATCH_MIXED_SEQ = (
+    "AHP action batch must not mix sequenced and unsequenced envelopes."
+)
 
 # Chat actions the reducer understands (AHP 0.7.x names).
 _KNOWN_CHAT_ACTIONS: frozenset[str] = frozenset(
@@ -139,6 +145,53 @@ def normalize_envelope(raw: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def validate_ahp_batch_order(
+    envelopes: list[dict[str, Any]],
+    *,
+    target_channel: str | None,
+) -> str | None:
+    """Validate original batch order under reorder=reject.
+
+    Returns a fixed content-safe error message when the batch is invalid, else
+    None. Does not sort or reorder input. Rejects:
+
+    - non-monotonic / duplicate serverSeq in original order
+    - sequenced envelopes mixed with unsequenced ones on the target channel
+
+    Foreign / non-chat channels are ignored (same filter as gap detection).
+    """
+    has_seq = False
+    has_unseq = False
+    last_seq: int | None = None
+    for raw in envelopes:
+        env = normalize_envelope(raw)
+        if env is None:
+            continue
+        env_channel = env.get("channel")
+        if (
+            isinstance(env_channel, str)
+            and target_channel is not None
+            and env_channel != target_channel
+        ):
+            continue
+        if isinstance(env_channel, str) and not env_channel.startswith("ahp-chat:"):
+            continue
+        seq_raw = env.get("serverSeq")
+        if seq_raw is None:
+            has_unseq = True
+            if has_seq:
+                return MSG_BATCH_MIXED_SEQ
+            continue
+        has_seq = True
+        if has_unseq:
+            return MSG_BATCH_MIXED_SEQ
+        seq = int(seq_raw)
+        if last_seq is not None and seq <= last_seq:
+            return MSG_BATCH_REORDER
+        last_seq = seq
+    return None
+
+
 def reduce_ahp_actions(
     chat: dict[str, Any] | None,
     envelopes: list[dict[str, Any]],
@@ -151,7 +204,9 @@ def reduce_ahp_actions(
     Returns (chat_state, new_last_server_seq, diagnostics, applied_seqs).
 
     Gaps are NOT applied: caller detects sequence-gap when next expected is
-    skipped. This function assumes envelopes are contiguous or first-time.
+    skipped. This function consumes original batch order and does not sort.
+    Callers must reject non-monotonic / mixed batches via
+    ``validate_ahp_batch_order`` before invoking.
     """
     state = copy.deepcopy(chat) if chat is not None else empty_chat_state(resource=target_channel)
     diagnostics: list[dict[str, str]] = []
@@ -161,7 +216,7 @@ def reduce_ahp_actions(
     if isinstance(channel, str) and state.get("resource") is None:
         state["resource"] = channel
 
-    # Sort by serverSeq ascending (stable for equal seq).
+    # Preserve original batch order (reorder=reject). Do not sort-then-apply.
     normalized: list[dict[str, Any]] = []
     for raw in envelopes:
         env = normalize_envelope(raw)
@@ -171,14 +226,6 @@ def reduce_ahp_actions(
             )
             continue
         normalized.append(env)
-
-    def _seq_key(e: dict[str, Any]) -> tuple[int, int]:
-        seq = e.get("serverSeq")
-        if seq is None:
-            return (1, 0)
-        return (0, int(seq))
-
-    normalized.sort(key=_seq_key)
 
     for env in normalized:
         seq_raw = env.get("serverSeq")

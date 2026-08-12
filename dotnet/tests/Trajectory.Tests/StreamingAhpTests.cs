@@ -30,7 +30,7 @@ public sealed class StreamingAhpTests
             ReadFixture("provisional-to-stable", "step-provisional.json"),
             "ahp-rev-1");
         Assert.Equal("updated", u1.Kind);
-        Assert.Equal(new[] { "prov-active-turn-1" }, u1.Provisional.ProvisionalIds);
+        Assert.Equal(new[] { "prov-active:part-md-active-1" }, u1.Provisional.ProvisionalIds);
         Assert.IsType<SnapshotRevisionPosition>(u1.Cursor.Position);
         Assert.Equal("ahp-rev-1", ((SnapshotRevisionPosition)u1.Cursor.Position).Revision);
         Assert.Contains(u1.Snapshot!.Records, r => r.Status == "provisional");
@@ -48,7 +48,7 @@ public sealed class StreamingAhpTests
             "ahp-rev-2");
         Assert.Equal("updated", u2.Kind);
         Assert.Empty(u2.Provisional.ProvisionalIds);
-        Assert.Contains("prov-active-turn-1", u2.Provisional.FinalizedIds);
+        Assert.Contains("prov-active:part-md-active-1", u2.Provisional.FinalizedIds);
         Assert.NotNull(u1.Snapshot);
         Assert.NotNull(u2.Snapshot);
         Assert.NotNull(u2.Delta);
@@ -221,5 +221,53 @@ public sealed class StreamingAhpTests
         // May be updated or sequence continues from empty seq baseline on new channel.
         Assert.True(u2.Kind is "updated" or "unchanged" or "reset-required");
         _ = state2;
+    }
+
+    [Fact]
+    public void AhpAction_RejectsNonMonotonicBatch()
+    {
+        const string chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c2";
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Ahp,
+            GroupId = chat,
+        });
+        var data = System.Text.Encoding.UTF8.GetBytes(
+            "{\"channel\":\"" + chat + "\",\"serverSeq\":2,\"action\":{\"type\":\"chat/activityChanged\",\"activity\":\"a\"}}\n" +
+            "{\"channel\":\"" + chat + "\",\"serverSeq\":1,\"action\":{\"type\":\"chat/activityChanged\",\"activity\":\"b\"}}\n");
+        var (state2, u) = TrajectoryStream.ApplyAhpActions(state, data);
+        Assert.Equal("error", u.Kind);
+        Assert.NotNull(u.Error);
+        Assert.Equal("invalid_input", u.Error!.Value.Code);
+        Assert.Null(state2.AhpLastServerSeq);
+    }
+
+    [Fact]
+    public void AhpSnapshot_MultipartProvisionalIdsStable()
+    {
+        const string chat = "ahp-chat:/00000000-0000-4000-8000-0000000000b2";
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Ahp,
+            GroupId = chat,
+            AhpProtocolVersion = "0.7.0",
+        });
+        var (s1, u1) = TrajectoryStream.ApplyAhpSnapshot(
+            state,
+            ReadFixture("ahp-snapshot-active-turn-multipart", "step-1.json"),
+            "ahp-mp-1");
+        Assert.Contains("prov-active:part-md-multi-1", u1.Provisional.ProvisionalIds);
+        var (s2, u2) = TrajectoryStream.ApplyAhpSnapshot(
+            s1,
+            ReadFixture("ahp-snapshot-active-turn-multipart", "step-2.json"),
+            "ahp-mp-2");
+        Assert.Contains("prov-active:part-md-multi-1", u2.Provisional.ProvisionalIds);
+        Assert.Contains("prov-active:tool-call-multi-1", u2.Provisional.ProvisionalIds);
+        var (_, u3) = TrajectoryStream.ApplyAhpSnapshot(
+            s2,
+            ReadFixture("ahp-snapshot-active-turn-multipart", "step-3.json"),
+            "ahp-mp-3");
+        Assert.Contains("prov-active:part-md-multi-1", u3.Provisional.FinalizedIds);
+        Assert.Contains("prov-active:tool-call-multi-1", u3.Provisional.FinalizedIds);
     }
 }

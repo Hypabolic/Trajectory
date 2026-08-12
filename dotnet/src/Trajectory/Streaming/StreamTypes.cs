@@ -234,6 +234,13 @@ public sealed class StreamState
     public string? LastAhpActionsSha256 { get; set; }
     public long? LastAhpActionsPreSeq { get; set; }
 
+    /// <summary>
+    /// Stable provisional-id mapping for AHP activeTurn native keys → provisional_id.
+    /// Keys are native turn/part/tool ids (or deterministic fallbacks).
+    /// </summary>
+    public Dictionary<string, string> AhpProvisionalMap { get; set; } =
+        new(StringComparer.Ordinal);
+
     // ---- Hermes export stream state (LS-07h) ----
     public IReadOnlyList<string>? HermesRowFingerprints { get; set; }
     public string? HermesLastExportSha { get; set; }

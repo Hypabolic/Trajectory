@@ -33,8 +33,8 @@ apply_ahp_actions(state, action_batch_bytes, cursor?) → StreamUpdate
 1. Decode Shape A `{ ahpProtocolVersion?, chat, session? }` with **partial**
    normalize so `activeTurn` is included.
 2. Mark records whose native ids belong to `chat.activeTurn` as
-   `status: provisional` with stable ids `prov-active-turn-{n}` (1-based in
-   snapshot order).
+   `status: provisional` with stable ids `prov-active:{native_id}` derived from
+   turn/part/tool native ids and persisted in `StreamState`.
 3. Diff against prior stream snapshot (both snapshot + delta by default).
 4. Commit cursor `position.kind = snapshot-revision` with host
    `source_revision` and content SHA-256.

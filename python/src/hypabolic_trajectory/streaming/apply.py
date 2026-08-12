@@ -17,11 +17,14 @@ from hypabolic_trajectory.identity import sha256_hex
 from hypabolic_trajectory.normalize.core import normalize_to_ir, resolve_source
 from hypabolic_trajectory.project.core import project_hypabolic
 from hypabolic_trajectory.streaming.ahp_reducer import (
+    MSG_BATCH_MIXED_SEQ,
+    MSG_BATCH_REORDER,
     detect_sequence_gap,
     empty_chat_state,
     parse_action_batch,
     reduce_ahp_actions,
     shape_a_bytes,
+    validate_ahp_batch_order,
 )
 from hypabolic_trajectory.streaming.delta import diagnostic_key, diff_snapshots
 from hypabolic_trajectory.streaming.framing import append_framed, split_complete_lines
@@ -65,6 +68,8 @@ _MSG_INVALID_SOURCE = "Unknown or invalid stream source."
 _MSG_SEQUENCE_GAP = "AHP action-log serverSeq gap requires snapshot resync."
 _MSG_INVALID_AHP_ACTIONS = "AHP action batch could not be parsed."
 _MSG_INVALID_AHP_SNAPSHOT = "AHP snapshot material is not valid Shape A JSON."
+_MSG_BATCH_REORDER = MSG_BATCH_REORDER
+_MSG_BATCH_MIXED_SEQ = MSG_BATCH_MIXED_SEQ
 
 _STREAM_BUFFER_LIMIT = "stream_buffer_limit"
 _STREAM_CURSOR_CONFLICT = "stream_cursor_conflict"
@@ -327,7 +332,8 @@ def apply_ahp_snapshot(
     """Apply a successive AHP Shape A snapshot (LS-06).
 
     Cursor family: snapshot-revision. activeTurn records are provisional with
-    stable provisional ids ``prov-active-turn-{n}``.
+    stable provisional ids derived from native turn/part/tool ids
+    (``prov-active:{native_id}``), persisted in StreamState.
     """
     if type(material) is not bytes:
         raise TypeError("material must be bytes")
@@ -363,12 +369,21 @@ def apply_ahp_snapshot(
     built = _build_ahp_records(state, material)
     if isinstance(built, StreamUpdate):
         return state, built
-    records, diagnostics, group_id, chat_state, session, protocol_version = built
+    (
+        records,
+        diagnostics,
+        group_id,
+        chat_state,
+        session,
+        protocol_version,
+        provisional_map,
+    ) = built
 
     if not state.options.include_provisional:
         records = tuple(r for r in records if r.status != "provisional")
 
     new_state = _clone_state(state)
+    new_state.ahp_provisional_map = provisional_map
     new_state.group_locked = True
     generation = new_state.generation
     parent_revision_id = (
@@ -563,6 +578,11 @@ def apply_ahp_actions(
     if target is None and state.group_locked and isinstance(state.cursor.group_id, str):
         if state.cursor.group_id.startswith("ahp-chat:"):
             target = state.cursor.group_id
+
+    # reorder=reject: never silently reorder / accept non-monotonic batches.
+    order_err = validate_ahp_batch_order(envelopes, target_channel=target)
+    if order_err is not None:
+        return state, _error_update(state, code="invalid_input", message=order_err)
 
     gap = detect_sequence_gap(
         envelopes,
@@ -1220,6 +1240,7 @@ def reset_stream(
     new_state.ahp_last_content_sha256 = None
     new_state.last_ahp_actions_sha256 = None
     new_state.last_ahp_actions_pre_seq = None
+    new_state.ahp_provisional_map = {}
     new_state.hermes_row_fingerprints = None
     new_state.hermes_last_export_sha = None
     group_id = state.options.group_id or state.cursor.group_id
@@ -1484,6 +1505,7 @@ def _clone_state(state: StreamState) -> StreamState:
         ahp_last_content_sha256=state.ahp_last_content_sha256,
         last_ahp_actions_sha256=state.last_ahp_actions_sha256,
         last_ahp_actions_pre_seq=state.last_ahp_actions_pre_seq,
+        ahp_provisional_map=dict(state.ahp_provisional_map),
         hermes_row_fingerprints=state.hermes_row_fingerprints,
         hermes_last_export_sha=state.hermes_last_export_sha,
     )
@@ -1635,6 +1657,7 @@ def _build_ahp_records(
         dict[str, Any] | None,
         dict[str, Any] | None,
         str | None,
+        dict[str, str],
     ]
     | StreamUpdate
 ):
@@ -1693,7 +1716,8 @@ def _build_ahp_records(
     hyp = project_hypabolic(ir_full)
     raw_records = hyp.get("records") or []
     built: list[StreamRecord] = []
-    prov_n = 0
+    provisional_map = dict(state.ahp_provisional_map)
+    fallback_n = sum(1 for k in provisional_map if k.startswith("__fallback:"))
     for r in raw_records:
         if not isinstance(r, dict):
             continue
@@ -1702,9 +1726,10 @@ def _build_ahp_records(
         provisional_id: str | None = None
         status = "stable"
         if is_prov:
-            prov_n += 1
             status = "provisional"
-            provisional_id = f"prov-active-turn-{prov_n}"
+            provisional_id, provisional_map, fallback_n = _stable_provisional_id(
+                r, active_native_ids, provisional_map, fallback_n
+            )
         built.append(
             StreamRecord(
                 status=status,  # type: ignore[arg-type]
@@ -1724,7 +1749,15 @@ def _build_ahp_records(
         for d in ir_full.diagnostics
         if d.code != "ahp_active_turn_omitted"
     )
-    return records, diagnostics, ir_full.group_id, chat, session, protocol_version
+    return (
+        records,
+        diagnostics,
+        ir_full.group_id,
+        chat,
+        session,
+        protocol_version,
+        provisional_map,
+    )
 
 
 def _ahp_active_turn_native_ids(active: Any) -> set[str]:
@@ -1751,17 +1784,42 @@ def _ahp_active_turn_native_ids(active: Any) -> set[str]:
     return ids
 
 
-def _record_from_active_turn(record: dict[str, Any], active_ids: set[str]) -> bool:
+def _active_native_key(record: dict[str, Any], active_ids: set[str]) -> str | None:
+    """Return the native key that places this record in activeTurn, if any."""
     if not active_ids:
-        return False
+        return None
     prov = record.get("provenance")
     if not isinstance(prov, dict):
-        return False
+        return None
     for key in ("native_record_id", "stable_source_record_id"):
         val = prov.get(key)
-        if isinstance(val, str) and val in active_ids:
-            return True
-    return False
+        if isinstance(val, str) and val and val in active_ids:
+            return val
+    return None
+
+
+def _stable_provisional_id(
+    record: dict[str, Any],
+    active_ids: set[str],
+    provisional_map: dict[str, str],
+    fallback_n: int,
+) -> tuple[str, dict[str, str], int]:
+    """Derive or look up a stable provisional_id for an activeTurn record."""
+    native_key = _active_native_key(record, active_ids)
+    if native_key is None:
+        fallback_n += 1
+        native_key = f"__fallback:{fallback_n}"
+    existing = provisional_map.get(native_key)
+    if existing is not None:
+        return existing, provisional_map, fallback_n
+    provisional_id = f"prov-active:{native_key}"
+    provisional_map = dict(provisional_map)
+    provisional_map[native_key] = provisional_id
+    return provisional_id, provisional_map, fallback_n
+
+
+def _record_from_active_turn(record: dict[str, Any], active_ids: set[str]) -> bool:
+    return _active_native_key(record, active_ids) is not None
 
 
 def _hermes_export_meta(

@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 
 use crate::ahp_reducer::{
     detect_sequence_gap, empty_chat_state, parse_action_batch, reduce_ahp_actions, shape_a_bytes,
+    validate_ahp_batch_order,
 };
 use crate::model::{
     NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError, TrajectorySource,
@@ -440,6 +441,8 @@ pub struct StreamState {
     pub last_ahp_actions_sha256: Option<String>,
     /// `ahp_last_server_seq` before the last accepted action batch.
     pub last_ahp_actions_pre_seq: Option<i64>,
+    /// Stable provisional-id mapping for AHP activeTurn native keys → provisional_id.
+    pub ahp_provisional_map: std::collections::BTreeMap<String, String>,
     /// Ordered active-row fingerprints of last Hermes export (LS-07h).
     pub hermes_row_fingerprints: Option<Vec<String>>,
     /// SHA-256 of last accepted Hermes export material.
@@ -972,6 +975,7 @@ pub fn create_stream(options: StreamOptions) -> StreamState {
         ahp_last_content_sha256: None,
         last_ahp_actions_sha256: None,
         last_ahp_actions_pre_seq: None,
+        ahp_provisional_map: std::collections::BTreeMap::new(),
         hermes_row_fingerprints: None,
         hermes_last_export_sha: None,
     }
@@ -1813,7 +1817,7 @@ fn is_synthetic_backend_tool_result(record: &Value) -> bool {
 ///
 /// Cursor family: snapshot-revision (or ahp-server-seq when action authority
 /// already established). activeTurn records are provisional with stable ids
-/// `prov-active-turn-{n}`.
+/// derived from native turn/part/tool ids (`prov-active:{native_id}`).
 pub fn apply_ahp_snapshot(
     state: &StreamState,
     material: &[u8],
@@ -1864,12 +1868,14 @@ pub fn apply_ahp_snapshot(
     let chat_state = built.chat;
     let session = built.session;
     let protocol_version = built.protocol_version;
+    let provisional_map = built.provisional_map;
 
     if !state.options.include_provisional {
         records.retain(|r| r.status != "provisional");
     }
 
     let mut new_state = state.clone();
+    new_state.ahp_provisional_map = provisional_map;
     new_state.group_locked = true;
     let generation = new_state.generation;
     let parent_revision_id = new_state
@@ -2096,6 +2102,14 @@ pub fn apply_ahp_actions(
         target = Some(state.cursor.group_id.clone());
     }
 
+    // reorder=reject: never silently reorder / accept non-monotonic batches.
+    if let Some(order_err) = validate_ahp_batch_order(&envelopes, target.as_deref()) {
+        return Ok((
+            state.clone(),
+            error_update(state, "invalid_input", order_err),
+        ));
+    }
+
     if detect_sequence_gap(
         &envelopes,
         state.ahp_last_server_seq,
@@ -2274,6 +2288,7 @@ struct AhpBuilt {
     chat: Value,
     session: Option<Value>,
     protocol_version: Option<String>,
+    provisional_map: std::collections::BTreeMap<String, String>,
 }
 
 fn build_ahp_records(
@@ -2353,16 +2368,20 @@ fn build_ahp_records(
         .cloned()
         .unwrap_or_default();
     let mut records = Vec::new();
-    let mut prov_n = 0u32;
+    let mut provisional_map = state.ahp_provisional_map.clone();
+    let mut fallback_n = provisional_map
+        .keys()
+        .filter(|k| k.starts_with("__fallback:"))
+        .count();
     for r in raw_records {
         let role = r.get("role").and_then(Value::as_str);
         let is_prov = role != Some("meta") && record_from_active_turn(&r, &active_ids);
         let (status, provisional_id) = if is_prov {
-            prov_n += 1;
-            (
-                "provisional".to_string(),
-                Some(format!("prov-active-turn-{prov_n}")),
-            )
+            let (pid, map, fb) =
+                stable_provisional_id(&r, &active_ids, provisional_map, fallback_n);
+            provisional_map = map;
+            fallback_n = fb;
+            ("provisional".to_string(), Some(pid))
         } else {
             ("stable".to_string(), None)
         };
@@ -2393,6 +2412,7 @@ fn build_ahp_records(
         chat,
         session,
         protocol_version,
+        provisional_map,
     })
 }
 
@@ -2428,24 +2448,54 @@ fn ahp_active_turn_native_ids(active: Option<&Value>) -> std::collections::BTree
     ids
 }
 
+fn active_native_key(
+    record: &Value,
+    active_ids: &std::collections::BTreeSet<String>,
+) -> Option<String> {
+    if active_ids.is_empty() {
+        return None;
+    }
+    let prov = record.get("provenance").and_then(Value::as_object)?;
+    for key in ["native_record_id", "stable_source_record_id"] {
+        if let Some(val) = prov.get(key).and_then(Value::as_str) {
+            if !val.is_empty() && active_ids.contains(val) {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn record_from_active_turn(
     record: &Value,
     active_ids: &std::collections::BTreeSet<String>,
 ) -> bool {
-    if active_ids.is_empty() {
-        return false;
-    }
-    let Some(prov) = record.get("provenance").and_then(Value::as_object) else {
-        return false;
-    };
-    for key in ["native_record_id", "stable_source_record_id"] {
-        if let Some(val) = prov.get(key).and_then(Value::as_str) {
-            if active_ids.contains(val) {
-                return true;
-            }
+    active_native_key(record, active_ids).is_some()
+}
+
+fn stable_provisional_id(
+    record: &Value,
+    active_ids: &std::collections::BTreeSet<String>,
+    mut provisional_map: std::collections::BTreeMap<String, String>,
+    mut fallback_n: usize,
+) -> (
+    String,
+    std::collections::BTreeMap<String, String>,
+    usize,
+) {
+    let native_key = match active_native_key(record, active_ids) {
+        Some(k) => k,
+        None => {
+            fallback_n += 1;
+            format!("__fallback:{fallback_n}")
         }
+    };
+    if let Some(existing) = provisional_map.get(&native_key) {
+        return (existing.clone(), provisional_map, fallback_n);
     }
-    false
+    let provisional_id = format!("prov-active:{native_key}");
+    provisional_map.insert(native_key, provisional_id.clone());
+    (provisional_id, provisional_map, fallback_n)
 }
 
 /// End-of-stream: optionally commit final unterminated line; finalize records.
@@ -2631,6 +2681,7 @@ pub fn reset_stream(
     new_state.ahp_last_content_sha256 = None;
     new_state.last_ahp_actions_sha256 = None;
     new_state.last_ahp_actions_pre_seq = None;
+    new_state.ahp_provisional_map.clear();
     new_state.hermes_row_fingerprints = None;
     new_state.hermes_last_export_sha = None;
     let position = match state.options.source {
@@ -3604,6 +3655,74 @@ mod tests {
     }
 
     #[test]
+    fn ahp_action_batch_rejects_non_monotonic() {
+        let chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c2";
+        let opts = StreamOptions::new(TrajectorySource::Ahp).with_group_id(chat);
+        let state = create_stream(opts);
+        let data = format!(
+            "{{\"channel\":\"{chat}\",\"serverSeq\":2,\"action\":{{\"type\":\"chat/activityChanged\",\"activity\":\"a\"}}}}\n{{\"channel\":\"{chat}\",\"serverSeq\":1,\"action\":{{\"type\":\"chat/activityChanged\",\"activity\":\"b\"}}}}\n"
+        );
+        let (state2, update) = apply_ahp_actions(&state, data.as_bytes(), None).unwrap();
+        assert_eq!(update.kind, "error");
+        assert!(update.error.is_some());
+        assert_eq!(state2.ahp_last_server_seq, None);
+    }
+
+    #[test]
+    fn ahp_active_turn_multipart_provisional_ids_stable() {
+        let chat = "ahp-chat:/00000000-0000-4000-8000-0000000000b2";
+        let mut opts = StreamOptions::new(TrajectorySource::Ahp).with_group_id(chat);
+        opts.ahp_protocol_version = Some("0.7.0".into());
+        let state = create_stream(opts);
+        let (state, u1) = apply_ahp_snapshot(
+            &state,
+            &read_case("ahp-snapshot-active-turn-multipart", "step-1.json"),
+            "ahp-mp-1",
+            None,
+        )
+        .unwrap();
+        assert!(u1
+            .provisional
+            .provisional_ids
+            .iter()
+            .any(|id| id == "prov-active:part-md-multi-1"));
+        let (state, u2) = apply_ahp_snapshot(
+            &state,
+            &read_case("ahp-snapshot-active-turn-multipart", "step-2.json"),
+            "ahp-mp-2",
+            None,
+        )
+        .unwrap();
+        assert!(u2
+            .provisional
+            .provisional_ids
+            .iter()
+            .any(|id| id == "prov-active:part-md-multi-1"));
+        assert!(u2
+            .provisional
+            .provisional_ids
+            .iter()
+            .any(|id| id == "prov-active:tool-call-multi-1"));
+        let (_, u3) = apply_ahp_snapshot(
+            &state,
+            &read_case("ahp-snapshot-active-turn-multipart", "step-3.json"),
+            "ahp-mp-3",
+            None,
+        )
+        .unwrap();
+        assert!(u3
+            .provisional
+            .finalized_ids
+            .iter()
+            .any(|id| id == "prov-active:part-md-multi-1"));
+        assert!(u3
+            .provisional
+            .finalized_ids
+            .iter()
+            .any(|id| id == "prov-active:tool-call-multi-1"));
+    }
+
+    #[test]
     fn ahp_snapshot_active_turn_provisional() {
         let material = read_case("ahp-snapshot-active-turn", "step-active.json");
         let mut opts = StreamOptions::new(TrajectorySource::Ahp)
@@ -3626,7 +3745,7 @@ mod tests {
         assert!(!provisional.is_empty());
         assert_eq!(
             provisional[0].provisional_id.as_deref(),
-            Some("prov-active-turn-1")
+            Some("prov-active:part-md-active-1")
         );
         let (_, update2) = apply_ahp_snapshot(&state, &material, "ahp-rev-1", None).unwrap();
         assert_eq!(update2.kind, "unchanged");

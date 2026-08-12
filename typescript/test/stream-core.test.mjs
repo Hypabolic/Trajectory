@@ -594,7 +594,7 @@ test("ahp snapshot provisional activeTurn maps and finalizes", async () => {
   state = result.state;
   const u1 = result.update;
   assert.equal(u1.kind, "updated");
-  assert.deepEqual([...u1.provisional.provisionalIds], ["prov-active-turn-1"]);
+  assert.deepEqual([...u1.provisional.provisionalIds], ["prov-active:part-md-active-1"]);
   assert.equal(u1.cursor.position.kind, "snapshot-revision");
   assert.equal(u1.cursor.position.revision, "ahp-rev-1");
   assert.ok(u1.snapshot.records.some((r) => r.status === "provisional"));
@@ -614,7 +614,7 @@ test("ahp snapshot provisional activeTurn maps and finalizes", async () => {
   const u2 = result.update;
   assert.equal(u2.kind, "updated");
   assert.deepEqual([...u2.provisional.provisionalIds], []);
-  assert.ok(u2.provisional.finalizedIds.includes("prov-active-turn-1"));
+  assert.ok(u2.provisional.finalizedIds.includes("prov-active:part-md-active-1"));
   const recon = applyDeltaToSnapshot(snapshotToDict(u1.snapshot), {
     schema_id: u2.delta.schemaId,
     base_revision_id: u2.delta.baseRevisionId,
@@ -737,4 +737,62 @@ test("ahp action true-replay is idempotent", async () => {
   assert.equal(first.update.kind, "updated");
   const second = applyAhpActions(first.state, data, pre);
   assert.equal(second.update.kind, "unchanged");
+});
+
+test("ahp action batch rejects non-monotonic reorder and mixed sequencing", () => {
+  const chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c2";
+  const enc = new TextEncoder();
+  const run = (lines) => {
+    const state = createStream({ source: "ahp", groupId: chat });
+    const data = enc.encode(lines.join("\n") + "\n");
+    return applyAhpActions(state, data);
+  };
+  let r = run([
+    `{"channel":"${chat}","serverSeq":2,"action":{"type":"chat/activityChanged","activity":"a"}}`,
+    `{"channel":"${chat}","serverSeq":1,"action":{"type":"chat/activityChanged","activity":"b"}}`,
+  ]);
+  assert.equal(r.update.kind, "error");
+  assert.equal(r.state.ahpLastServerSeq, null);
+  r = run([
+    `{"channel":"${chat}","serverSeq":1,"action":{"type":"chat/activityChanged","activity":"a"}}`,
+    `{"channel":"${chat}","serverSeq":1,"action":{"type":"chat/activityChanged","activity":"b"}}`,
+  ]);
+  assert.equal(r.update.kind, "error");
+  r = run([
+    `{"channel":"${chat}","serverSeq":1,"action":{"type":"chat/activityChanged","activity":"a"}}`,
+    `{"channel":"${chat}","action":{"type":"chat/activityChanged","activity":"b"}}`,
+  ]);
+  assert.equal(r.update.kind, "error");
+  assert.match(r.update.error.message, /mix sequenced/);
+});
+
+test("ahp activeTurn provisional ids stay stable across multi-part growth", async () => {
+  const chat = "ahp-chat:/00000000-0000-4000-8000-0000000000b2";
+  let state = createStream({
+    source: "ahp",
+    groupId: chat,
+    ahpProtocolVersion: "0.7.0",
+  });
+  let r = applyAhpSnapshot(
+    state,
+    await readCase("ahp-snapshot-active-turn-multipart", "step-1.json"),
+    "ahp-mp-1",
+  );
+  state = r.state;
+  assert.ok(r.update.provisional.provisionalIds.includes("prov-active:part-md-multi-1"));
+  r = applyAhpSnapshot(
+    state,
+    await readCase("ahp-snapshot-active-turn-multipart", "step-2.json"),
+    "ahp-mp-2",
+  );
+  state = r.state;
+  assert.ok(r.update.provisional.provisionalIds.includes("prov-active:part-md-multi-1"));
+  assert.ok(r.update.provisional.provisionalIds.includes("prov-active:tool-call-multi-1"));
+  r = applyAhpSnapshot(
+    state,
+    await readCase("ahp-snapshot-active-turn-multipart", "step-3.json"),
+    "ahp-mp-3",
+  );
+  assert.ok(r.update.provisional.finalizedIds.includes("prov-active:part-md-multi-1"));
+  assert.ok(r.update.provisional.finalizedIds.includes("prov-active:tool-call-multi-1"));
 });

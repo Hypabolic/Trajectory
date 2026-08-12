@@ -34,7 +34,7 @@ def test_ahp_snapshot_provisional_active_turn() -> None:
         source_revision="ahp-rev-1",
     )
     assert u1.kind == "updated"
-    assert list(u1.provisional.provisional_ids) == ["prov-active-turn-1"]
+    assert list(u1.provisional.provisional_ids) == ["prov-active:part-md-active-1"]
     assert isinstance(u1.cursor.position, SnapshotRevisionPosition)
     assert u1.cursor.position.revision == "ahp-rev-1"
     assert any(r.status == "provisional" for r in (u1.snapshot.records if u1.snapshot else ()))
@@ -54,7 +54,7 @@ def test_ahp_snapshot_provisional_active_turn() -> None:
     )
     assert u2.kind == "updated"
     assert list(u2.provisional.provisional_ids) == []
-    assert "prov-active-turn-1" in u2.provisional.finalized_ids
+    assert "prov-active:part-md-active-1" in u2.provisional.finalized_ids
     assert u1.snapshot is not None and u2.snapshot is not None and u2.delta is not None
     recon = apply_delta_to_snapshot(u1.snapshot.to_dict(), u2.delta.to_dict())
     assert recon["records"] == u2.snapshot.to_dict()["records"]
@@ -142,3 +142,71 @@ def test_ahp_action_idempotent_replay() -> None:
     # True replay: same bytes + pre-apply cursor
     _, u2 = apply_ahp_actions(state, data, cursor=pre)
     assert u2.kind == "unchanged"
+
+
+def test_ahp_action_batch_rejects_non_monotonic_order() -> None:
+    chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c2"
+    state = create_stream(StreamOptions(source="ahp", group_id=chat))
+    prior = state.cursor
+    # [2,1]
+    data = (
+        b'{"channel":"%s","serverSeq":2,"action":{"type":"chat/activityChanged","activity":"a"}}\n'
+        b'{"channel":"%s","serverSeq":1,"action":{"type":"chat/activityChanged","activity":"b"}}\n'
+    ) % (chat.encode(), chat.encode())
+    state2, u = apply_ahp_actions(state, data)
+    assert u.kind == "error"
+    assert u.error is not None and u.error.code == "invalid_input"
+    assert "strictly increasing" in u.error.message
+    assert state2.ahp_last_server_seq is None
+    assert state2.cursor.position == prior.position
+
+
+def test_ahp_action_batch_rejects_duplicate_seq() -> None:
+    chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c2"
+    state = create_stream(StreamOptions(source="ahp", group_id=chat))
+    data = (
+        b'{"channel":"%s","serverSeq":1,"action":{"type":"chat/activityChanged","activity":"a"}}\n'
+        b'{"channel":"%s","serverSeq":1,"action":{"type":"chat/activityChanged","activity":"b"}}\n'
+    ) % (chat.encode(), chat.encode())
+    state2, u = apply_ahp_actions(state, data)
+    assert u.kind == "error"
+    assert state2.ahp_last_server_seq is None
+
+
+def test_ahp_action_batch_rejects_mixed_sequencing() -> None:
+    chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c2"
+    state = create_stream(StreamOptions(source="ahp", group_id=chat))
+    data = (
+        b'{"channel":"%s","serverSeq":1,"action":{"type":"chat/activityChanged","activity":"a"}}\n'
+        b'{"channel":"%s","action":{"type":"chat/activityChanged","activity":"b"}}\n'
+    ) % (chat.encode(), chat.encode())
+    state2, u = apply_ahp_actions(state, data)
+    assert u.kind == "error"
+    assert u.error is not None and "mix sequenced" in u.error.message
+    assert state2.ahp_last_server_seq is None
+
+
+def test_ahp_active_turn_provisional_ids_stable_across_multipart_growth() -> None:
+    chat = "ahp-chat:/00000000-0000-4000-8000-0000000000b2"
+    state = create_stream(StreamOptions(source="ahp", group_id=chat))
+    state, u1 = apply_ahp_snapshot(
+        state,
+        _read("ahp-snapshot-active-turn-multipart", "step-1.json"),
+        source_revision="ahp-mp-1",
+    )
+    state, u2 = apply_ahp_snapshot(
+        state,
+        _read("ahp-snapshot-active-turn-multipart", "step-2.json"),
+        source_revision="ahp-mp-2",
+    )
+    state, u3 = apply_ahp_snapshot(
+        state,
+        _read("ahp-snapshot-active-turn-multipart", "step-3.json"),
+        source_revision="ahp-mp-3",
+    )
+    assert "prov-active:part-md-multi-1" in u1.provisional.provisional_ids
+    assert "prov-active:part-md-multi-1" in u2.provisional.provisional_ids
+    assert "prov-active:tool-call-multi-1" in u2.provisional.provisional_ids
+    assert set(u1.provisional.provisional_ids).issubset(set(u2.provisional.provisional_ids))
+    assert "prov-active:part-md-multi-1" in u3.provisional.finalized_ids
+    assert "prov-active:tool-call-multi-1" in u3.provisional.finalized_ids

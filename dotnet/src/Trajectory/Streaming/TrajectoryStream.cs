@@ -1012,6 +1012,8 @@ public static class TrajectoryStream
         var chatState = built.Chat!;
         var session = built.Session;
         var protocolVersion = built.ProtocolVersion;
+        var provisionalMap = built.ProvisionalMap ??
+            new Dictionary<string, string>(StringComparer.Ordinal);
 
         if (!state.Options.IncludeProvisional)
         {
@@ -1019,6 +1021,7 @@ public static class TrajectoryStream
         }
 
         var newState = Clone(state);
+        newState.AhpProvisionalMap = provisionalMap;
         newState.GroupLocked = true;
         var generation = newState.Generation;
         var parentRevisionId = newState.Snapshot?.Revision.RevisionId;
@@ -1238,6 +1241,13 @@ public static class TrajectoryStream
             state.Cursor.GroupId.StartsWith("ahp-chat:", StringComparison.Ordinal))
         {
             target = state.Cursor.GroupId;
+        }
+
+        // reorder=reject: never silently reorder / accept non-monotonic batches.
+        var orderErr = AhpReducer.ValidateAhpBatchOrder(envelopes, target);
+        if (orderErr is not null)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", orderErr));
         }
 
         var gap = AhpReducer.DetectSequenceGap(envelopes, state.AhpLastServerSeq, target);
@@ -1745,6 +1755,7 @@ public static class TrajectoryStream
         JsonObject? Chat,
         JsonObject? Session,
         string? ProtocolVersion,
+        Dictionary<string, string>? ProvisionalMap,
         StreamUpdate? Update);
 
     /// <summary>Normalize Shape A material with provisional activeTurn mapping.</summary>
@@ -1758,7 +1769,7 @@ public static class TrajectoryStream
             if (node is not JsonObject obj || obj["chat"] is not JsonObject)
             {
                 return new AhpBuildResult(
-                    null, null, null, null, null, null,
+                    null, null, null, null, null, null, null,
                     ErrorUpdate(state, "invalid_input", MsgInvalidAhpSnapshot));
             }
 
@@ -1767,7 +1778,7 @@ public static class TrajectoryStream
         catch (Exception ex) when (ex is JsonException or DecoderFallbackException or ArgumentException)
         {
             return new AhpBuildResult(
-                null, null, null, null, null, null,
+                null, null, null, null, null, null, null,
                 ErrorUpdate(state, "invalid_input", MsgInvalidAhpSnapshot));
         }
 
@@ -1805,7 +1816,10 @@ public static class TrajectoryStream
             });
 
             var hyp = engine.Project<HypabolicTrajectoryV1>(ir, OutputSchemaIds.HypabolicTrajectoryV1);
-            var provN = 0;
+            var provisionalMap = new Dictionary<string, string>(
+                state.AhpProvisionalMap,
+                StringComparer.Ordinal);
+            var fallbackN = provisionalMap.Keys.Count(static k => k.StartsWith("__fallback:", StringComparison.Ordinal));
             var records = new List<StreamRecord>();
             foreach (var r in hyp.Records)
             {
@@ -1814,12 +1828,15 @@ public static class TrajectoryStream
                 var isProv = role != "meta" && RecordFromActiveTurn(dict, activeIds);
                 if (isProv)
                 {
-                    provN += 1;
+                    var (provisionalId, nextMap, nextFb) =
+                        StableProvisionalId(dict, activeIds, provisionalMap, fallbackN);
+                    provisionalMap = nextMap;
+                    fallbackN = nextFb;
                     records.Add(new StreamRecord
                     {
                         Status = "provisional",
                         Record = dict,
-                        ProvisionalId = $"prov-active-turn-{provN}",
+                        ProvisionalId = provisionalId,
                     });
                 }
                 else
@@ -1851,12 +1868,13 @@ public static class TrajectoryStream
                 (JsonObject)chat.DeepClone(),
                 session is null ? null : (JsonObject)session.DeepClone(),
                 protocolVersion,
+                provisionalMap,
                 null);
         }
         catch (TrajectoryNormalizationException ex) when (ex.Code == NormalizationErrorCode.SourceGroupConflict)
         {
             return new AhpBuildResult(
-                null, null, null, null, null, null,
+                null, null, null, null, null, null, null,
                 ResetRequired(
                     state,
                     "group-changed",
@@ -1876,7 +1894,7 @@ public static class TrajectoryStream
                 _ => "invalid_input",
             };
             return new AhpBuildResult(
-                null, null, null, null, null, null,
+                null, null, null, null, null, null, null,
                 ErrorUpdate(state, wire, ex.Message));
         }
     }
@@ -1925,32 +1943,65 @@ public static class TrajectoryStream
         return ids;
     }
 
-    private static bool RecordFromActiveTurn(
+    private static string? ActiveNativeKey(
         Dictionary<string, object?> record,
         HashSet<string> activeIds)
     {
         if (activeIds.Count == 0)
         {
-            return false;
+            return null;
         }
 
         if (!record.TryGetValue("provenance", out var provObj) ||
             provObj is not Dictionary<string, object?> prov)
         {
-            return false;
+            return null;
         }
 
         foreach (var key in new[] { "native_record_id", "stable_source_record_id" })
         {
             if (prov.TryGetValue(key, out var val) &&
                 val is string s &&
+                s.Length > 0 &&
                 activeIds.Contains(s))
             {
-                return true;
+                return s;
             }
         }
 
-        return false;
+        return null;
+    }
+
+    private static bool RecordFromActiveTurn(
+        Dictionary<string, object?> record,
+        HashSet<string> activeIds) =>
+        ActiveNativeKey(record, activeIds) is not null;
+
+    private static (string ProvisionalId, Dictionary<string, string> Map, int FallbackN)
+        StableProvisionalId(
+            Dictionary<string, object?> record,
+            HashSet<string> activeIds,
+            Dictionary<string, string> provisionalMap,
+            int fallbackN)
+    {
+        var nativeKey = ActiveNativeKey(record, activeIds);
+        if (nativeKey is null)
+        {
+            fallbackN += 1;
+            nativeKey = $"__fallback:{fallbackN}";
+        }
+
+        if (provisionalMap.TryGetValue(nativeKey, out var existing))
+        {
+            return (existing, provisionalMap, fallbackN);
+        }
+
+        var provisionalId = $"prov-active:{nativeKey}";
+        var next = new Dictionary<string, string>(provisionalMap, StringComparer.Ordinal)
+        {
+            [nativeKey] = provisionalId,
+        };
+        return (provisionalId, next, fallbackN);
     }
 
     /// <summary>
@@ -2147,6 +2198,9 @@ public static class TrajectoryStream
             AhpLastContentSha256 = state.AhpLastContentSha256,
             LastAhpActionsSha256 = state.LastAhpActionsSha256,
             LastAhpActionsPreSeq = state.LastAhpActionsPreSeq,
+            AhpProvisionalMap = new Dictionary<string, string>(
+                state.AhpProvisionalMap,
+                StringComparer.Ordinal),
             HermesRowFingerprints = state.HermesRowFingerprints,
             HermesLastExportSha = state.HermesLastExportSha,
         };
@@ -2162,6 +2216,7 @@ public static class TrajectoryStream
         state.AhpLastContentSha256 = null;
         state.LastAhpActionsSha256 = null;
         state.LastAhpActionsPreSeq = null;
+        state.AhpProvisionalMap = new Dictionary<string, string>(StringComparer.Ordinal);
         state.HermesRowFingerprints = null;
         state.HermesLastExportSha = null;
     }

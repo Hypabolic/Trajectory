@@ -296,11 +296,11 @@ public sealed class StreamingSchemaVectorTests
         Assert.Equal("updated", instance.GetProperty("kind").GetString());
         var record = instance.GetProperty("snapshot").GetProperty("records")[0];
         Assert.Equal("provisional", record.GetProperty("status").GetString());
-        Assert.Equal("prov-active-turn-1", record.GetProperty("provisional_id").GetString());
+        Assert.Equal("prov-active:part-md-active-1", record.GetProperty("provisional_id").GetString());
         var provisionalIds = instance.GetProperty("provisional").GetProperty("provisional_ids");
         Assert.Contains(
             provisionalIds.EnumerateArray(),
-            static e => e.GetString() == "prov-active-turn-1");
+            static e => e.GetString() == "prov-active:part-md-active-1");
         var result = Evaluate("trajectory-stream-v1.schema.json", instance);
         Assert.True(result.IsValid, result.ToString());
     }

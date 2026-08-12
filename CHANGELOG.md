@@ -5,6 +5,14 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **Streaming H1/H3 fixes (all four runtimes):** AHP reducers enforce
+  `reorder=reject` — reject non-monotonic / duplicate `serverSeq` and mixed
+  sequenced+unsequenced batches without advancing the cursor (no silent
+  sort-then-apply). Active-turn provisional IDs are derived from stable
+  turn/part/tool native IDs (`prov-active:{native_id}`) with mapping persisted
+  in `StreamState`. Shared stream cases expanded (38): batch reorder /
+  duplicate / mixed-seq negatives and multi-part provisional growth+finalize.
+
 - **Live session streaming packaging docs:** tip status note for LS-00…LS-12
   shipped vs post-LS-12 remaining work
   (`docs/live-session-streaming-status.md`); plan slice status markers; cross-

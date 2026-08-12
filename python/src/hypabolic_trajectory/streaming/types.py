@@ -397,6 +397,10 @@ class StreamState:
     # Last accepted action batch fingerprint for idempotent replay.
     last_ahp_actions_sha256: str | None = None
     last_ahp_actions_pre_seq: int | None = None
+    # Stable provisional-id mapping for AHP activeTurn native keys → provisional_id.
+    # Keys are native turn/part/tool ids (or deterministic fallbacks); values are
+    # stable provisional ids reused across snapshot growth and finalization.
+    ahp_provisional_map: dict[str, str] = field(default_factory=dict)
     # Hermes export stream state (LS-07h). Ordered row fingerprints of last export.
     hermes_row_fingerprints: tuple[str, ...] | None = None
     hermes_last_export_sha: str | None = None

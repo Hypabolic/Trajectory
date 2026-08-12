@@ -113,7 +113,7 @@
             "record_sha256": "3f552bf750dc258a5ec82c6f586b34d69f87d4e7a07eaa52dea77aea0d756443"
           }
         },
-        "provisional_id": "prov-active-turn-1"
+        "provisional_id": "prov-active:part-md-active-1"
       }
     ],
     "diagnostics": [],
@@ -219,7 +219,7 @@
               "record_sha256": "3f552bf750dc258a5ec82c6f586b34d69f87d4e7a07eaa52dea77aea0d756443"
             }
           },
-          "provisional_id": "prov-active-turn-1"
+          "provisional_id": "prov-active:part-md-active-1"
         }
       }
     ]
@@ -228,7 +228,7 @@
   "provisional": {
     "include": true,
     "provisional_ids": [
-      "prov-active-turn-1"
+      "prov-active:part-md-active-1"
     ],
     "finalized_ids": []
   },

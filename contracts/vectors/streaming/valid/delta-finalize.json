@@ -13,10 +13,10 @@
     "operations": [
       {
         "op": "finalize",
-        "provisional_id": "prov-active-turn-1",
+        "provisional_id": "prov-active:part-md-active-1",
         "record": {
           "status": "stable",
-          "finalizes_provisional_id": "prov-active-turn-1",
+          "finalizes_provisional_id": "prov-active:part-md-active-1",
           "record": {
             "id": "2222222222222222222222222222222222222222222222222222222222222222",
             "kind": "message",

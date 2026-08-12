@@ -24,6 +24,7 @@ import {
   parseActionBatch,
   reduceAhpActions,
   shapeABytes,
+  validateAhpBatchOrder,
   type ChatState,
 } from "./ahp-reducer.js";
 import { projectHypabolic } from "./projections.js";
@@ -225,6 +226,11 @@ export interface StreamState {
   ahpLastContentSha256: string | null;
   lastAhpActionsSha256: string | null;
   lastAhpActionsPreSeq: number | null;
+  /**
+   * Stable provisional-id mapping for AHP activeTurn native keys → provisional_id.
+   * Keys are native turn/part/tool ids (or deterministic fallbacks).
+   */
+  ahpProvisionalMap: Record<string, string>;
   /** Hermes export stream state (LS-07h). */
   hermesRowFingerprints: string[] | null;
   hermesLastExportSha: string | null;
@@ -656,6 +662,7 @@ function cloneState(state: StreamState): StreamState {
     ahpLastContentSha256: state.ahpLastContentSha256,
     lastAhpActionsSha256: state.lastAhpActionsSha256,
     lastAhpActionsPreSeq: state.lastAhpActionsPreSeq,
+    ahpProvisionalMap: { ...state.ahpProvisionalMap },
     hermesRowFingerprints: state.hermesRowFingerprints,
     hermesLastExportSha: state.hermesLastExportSha,
   };
@@ -783,6 +790,7 @@ export function createStream(options: StreamOptions): StreamState {
     ahpLastContentSha256: null,
     lastAhpActionsSha256: null,
     lastAhpActionsPreSeq: null,
+    ahpProvisionalMap: {},
     hermesRowFingerprints: null,
     hermesLastExportSha: null,
   };
@@ -1349,16 +1357,44 @@ function activeTurnNativeIds(active: unknown): Set<string> {
   return ids;
 }
 
-function recordFromActiveTurn(record: JsonObject, activeIds: Set<string>): boolean {
-  if (activeIds.size === 0) return false;
+function activeNativeKey(record: JsonObject, activeIds: Set<string>): string | null {
+  if (activeIds.size === 0) return null;
   const prov = record.provenance;
-  if (!prov || typeof prov !== "object" || Array.isArray(prov)) return false;
+  if (!prov || typeof prov !== "object" || Array.isArray(prov)) return null;
   const p = prov as Record<string, unknown>;
   for (const key of ["native_record_id", "stable_source_record_id"]) {
     const val = p[key];
-    if (typeof val === "string" && activeIds.has(val)) return true;
+    if (typeof val === "string" && val && activeIds.has(val)) return val;
   }
-  return false;
+  return null;
+}
+
+function recordFromActiveTurn(record: JsonObject, activeIds: Set<string>): boolean {
+  return activeNativeKey(record, activeIds) !== null;
+}
+
+function stableProvisionalId(
+  record: JsonObject,
+  activeIds: Set<string>,
+  provisionalMap: Record<string, string>,
+  fallbackN: number,
+): { provisionalId: string; provisionalMap: Record<string, string>; fallbackN: number } {
+  let nativeKey = activeNativeKey(record, activeIds);
+  let nextFallback = fallbackN;
+  if (nativeKey === null) {
+    nextFallback += 1;
+    nativeKey = `__fallback:${nextFallback}`;
+  }
+  const existing = provisionalMap[nativeKey];
+  if (existing !== undefined) {
+    return { provisionalId: existing, provisionalMap, fallbackN: nextFallback };
+  }
+  const provisionalId = `prov-active:${nativeKey}`;
+  return {
+    provisionalId,
+    provisionalMap: { ...provisionalMap, [nativeKey]: provisionalId },
+    fallbackN: nextFallback,
+  };
 }
 
 function buildAhpRecords(
@@ -1372,6 +1408,7 @@ function buildAhpRecords(
       chat: ChatState;
       session: ChatState | null;
       protocolVersion: string | null;
+      provisionalMap: Record<string, string>;
     }
   | StreamUpdate {
   let root: Record<string, unknown>;
@@ -1410,16 +1447,19 @@ function buildAhpRecords(
     });
     const hyp = projectHypabolic(ir);
     const rawRecords = (hyp.records as JsonObject[]) ?? [];
-    let provN = 0;
+    let provisionalMap = { ...state.ahpProvisionalMap };
+    let fallbackN = Object.keys(provisionalMap).filter((k) => k.startsWith("__fallback:")).length;
     const records: StreamRecord[] = [];
     for (const r of rawRecords) {
       const isProv = r.role !== "meta" && recordFromActiveTurn(r, activeIds);
       if (isProv) {
-        provN += 1;
+        const assigned = stableProvisionalId(r, activeIds, provisionalMap, fallbackN);
+        provisionalMap = assigned.provisionalMap;
+        fallbackN = assigned.fallbackN;
         records.push({
           status: "provisional",
           record: r,
-          provisionalId: `prov-active-turn-${provN}`,
+          provisionalId: assigned.provisionalId,
         });
       } else {
         records.push({ status: "stable", record: r });
@@ -1441,6 +1481,7 @@ function buildAhpRecords(
       chat,
       session,
       protocolVersion,
+      provisionalMap,
     };
   } catch (err) {
     if (err instanceof TrajectoryNormalizationError) {
@@ -1485,12 +1526,13 @@ export function applyAhpSnapshot(
 
   const built = buildAhpRecords(state, material);
   if ("kind" in built) return { state, update: built };
-  let { records, diagnostics, groupId, chat, session, protocolVersion } = built;
+  let { records, diagnostics, groupId, chat, session, protocolVersion, provisionalMap } = built;
   if (state.options.includeProvisional === false) {
     records = records.filter((r) => r.status !== "provisional");
   }
 
   const newState = cloneState(state);
+  newState.ahpProvisionalMap = provisionalMap;
   newState.groupLocked = true;
   const generation = newState.generation;
   const parentRevisionId = newState.snapshot?.revision.revisionId ?? null;
@@ -1651,6 +1693,12 @@ export function applyAhpActions(
   let target = state.ahpTargetChannel;
   if (target === null && state.groupLocked && state.cursor.groupId.startsWith("ahp-chat:")) {
     target = state.cursor.groupId;
+  }
+
+  // reorder=reject: never silently reorder / accept non-monotonic batches.
+  const orderErr = validateAhpBatchOrder(envelopes, target);
+  if (orderErr !== null) {
+    return { state, update: errorUpdate(state, "invalid_input", orderErr) };
   }
 
   const gap = detectSequenceGap(envelopes, state.ahpLastServerSeq, target);
@@ -2191,6 +2239,7 @@ export function resetStream(
   newState.ahpLastContentSha256 = null;
   newState.lastAhpActionsSha256 = null;
   newState.lastAhpActionsPreSeq = null;
+  newState.ahpProvisionalMap = {};
   newState.hermesRowFingerprints = null;
   newState.hermesLastExportSha = null;
   let resetPosition: StreamPosition;

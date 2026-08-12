@@ -131,7 +131,7 @@
     "operations": [
       {
         "op": "remove",
-        "record_id": "prov-active-turn-1",
+        "record_id": "prov-active:part-md-active-1",
         "reason": "source-rewrite"
       },
       {
@@ -172,7 +172,7 @@
     "include": true,
     "provisional_ids": [],
     "finalized_ids": [
-      "prov-active-turn-1"
+      "prov-active:part-md-active-1"
     ]
   },
   "consumed": {
