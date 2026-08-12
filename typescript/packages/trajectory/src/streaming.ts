@@ -187,7 +187,10 @@ export type StreamInputKind =
   | "append-bytes"
   | "snapshot-bytes"
   | "finish"
-  | "reset";
+  | "reset"
+  | "ahp-actions"
+  | "ahp-snapshot"
+  | "hermes-export";
 
 export interface StreamInput {
   readonly kind: StreamInputKind;
@@ -203,6 +206,9 @@ const INT64_MAX = 0x7fffffffffffffffn;
 const MSG_BUFFER_LIMIT_DOMAIN = "Stream buffer limits must be non-negative int64 values.";
 const MSG_CURSOR_DOMAIN = "Stream cursor byte positions must be non-negative int64 values.";
 const MSG_MATERIAL_DOMAIN = "Stream material length exceeds non-negative int64 domain.";
+const MSG_AHP_UNSUPPORTED = "AHP stream apply is not available in this slice.";
+const MSG_HERMES_UNSUPPORTED = "Hermes export stream apply requires an optional provider.";
+const MSG_UNSUPPORTED_INPUT = "Stream input kind is not supported for this source.";
 
 function isNonNegativeInt64(value: bigint): boolean {
   return value >= 0n && value <= INT64_MAX;
@@ -663,6 +669,46 @@ function buildRecords(
   }
 }
 
+/**
+ * Cursor validation shared by applySnapshot / apply append-bytes.
+ * Domain (non-negative int64) is checked before position equality so out-of-domain
+ * offsets yield invalid_input, not cursor-mismatch.
+ */
+function cursorConflict(state: StreamState, cursor: StreamCursor | undefined): StreamUpdate | null {
+  if (!cursor) return null;
+  if (cursor.source !== state.cursor.source || cursor.generation !== state.cursor.generation) {
+    return resetRequired(
+      state,
+      "cursor-mismatch",
+      "stream_cursor_conflict",
+      "Supplied stream cursor does not match stream state.",
+    );
+  }
+  if (state.groupLocked && cursor.groupId !== state.cursor.groupId) {
+    return resetRequired(
+      state,
+      "group-changed",
+      "stream_cursor_conflict",
+      "Supplied stream cursor does not match stream state.",
+    );
+  }
+  if (
+    !isNonNegativeInt64(cursor.position.nextByteOffset) ||
+    !isNonNegativeInt64(cursor.position.pendingByteLength)
+  ) {
+    return errorUpdate(state, "invalid_input", MSG_CURSOR_DOMAIN);
+  }
+  if (cursor.position.nextByteOffset !== state.cursor.position.nextByteOffset) {
+    return resetRequired(
+      state,
+      "cursor-mismatch",
+      "stream_cursor_conflict",
+      "Supplied stream cursor does not match stream state.",
+    );
+  }
+  return null;
+}
+
 export function applySnapshot(
   state: StreamState,
   material: Uint8Array,
@@ -672,51 +718,9 @@ export function applySnapshot(
   if (state.finished) {
     return { state, update: errorUpdate(state, "invalid_input", "Stream is already finished.") };
   }
-  if (cursor) {
-    if (cursor.source !== state.cursor.source || cursor.generation !== state.cursor.generation) {
-      return {
-        state,
-        update: resetRequired(
-          state,
-          "cursor-mismatch",
-          "stream_cursor_conflict",
-          "Supplied stream cursor does not match stream state.",
-        ),
-      };
-    }
-    if (state.groupLocked && cursor.groupId !== state.cursor.groupId) {
-      return {
-        state,
-        update: resetRequired(
-          state,
-          "group-changed",
-          "stream_cursor_conflict",
-          "Supplied stream cursor does not match stream state.",
-        ),
-      };
-    }
-    // Domain: non-negative int64 byte positions (streaming-cursor-v1).
-    // Checked before position equality so overflow is invalid_input, not cursor-mismatch.
-    if (
-      !isNonNegativeInt64(cursor.position.nextByteOffset) ||
-      !isNonNegativeInt64(cursor.position.pendingByteLength)
-    ) {
-      return {
-        state,
-        update: errorUpdate(state, "invalid_input", MSG_CURSOR_DOMAIN),
-      };
-    }
-    if (cursor.position.nextByteOffset !== state.cursor.position.nextByteOffset) {
-      return {
-        state,
-        update: resetRequired(
-          state,
-          "cursor-mismatch",
-          "stream_cursor_conflict",
-          "Supplied stream cursor does not match stream state.",
-        ),
-      };
-    }
+  const conflict = cursorConflict(state, cursor);
+  if (conflict) {
+    return { state, update: conflict };
   }
 
   if (state.options.maxPendingBytes !== undefined && !isNonNegativeInt64(state.options.maxPendingBytes)) {
@@ -882,6 +886,14 @@ export function applyStream(
     return applySnapshot(state, input.data ?? new Uint8Array(0), input.sourceRevision ?? "", input.cursor);
   }
   if (input.kind === "append-bytes") {
+    // Validate cursor before framing/combining (parity with Python/Rust/.NET apply_append).
+    if (state.finished) {
+      return { state, update: errorUpdate(state, "invalid_input", "Stream is already finished.") };
+    }
+    const conflict = cursorConflict(state, input.cursor);
+    if (conflict) {
+      return { state, update: conflict };
+    }
     // Oracle path: extend committed prefix + pending framing, re-normalize.
     const pending = state.pendingBytes;
     const segment = input.data ?? new Uint8Array(0);
@@ -916,10 +928,22 @@ export function applyStream(
   if (input.kind === "finish") {
     return finishStream(state);
   }
-  if (input.kind === "reset" && input.reset) {
+  if (input.kind === "reset") {
+    if (!input.reset) {
+      return {
+        state,
+        update: errorUpdate(state, "invalid_input", "reset input requires a StreamResetRequest."),
+      };
+    }
     return resetStream(state, input.reset);
   }
-  return { state, update: errorUpdate(state, "invalid_input", "Stream input kind is not supported.") };
+  if (input.kind === "ahp-actions" || input.kind === "ahp-snapshot") {
+    return { state, update: errorUpdate(state, "stream_resync_required", MSG_AHP_UNSUPPORTED) };
+  }
+  if (input.kind === "hermes-export") {
+    return { state, update: errorUpdate(state, "stream_resync_required", MSG_HERMES_UNSUPPORTED) };
+  }
+  return { state, update: errorUpdate(state, "invalid_input", MSG_UNSUPPORTED_INPUT) };
 }
 
 /** End-of-stream: optionally commit final unterminated line; finalize records. */

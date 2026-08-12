@@ -110,10 +110,13 @@ from hypabolic_trajectory.streaming import (
     StreamState,
     StreamUpdate,
     TrajectoryStream,
+    apply_append,
     apply_delta_to_snapshot,
     apply_snapshot,
     apply_stream,
     create_stream,
+    finish_stream,
+    reset_stream,
 )
 
 # Import-time registration hooks for built-in sources/listers.
@@ -206,8 +209,11 @@ __all__ = [
     "StreamState",
     "StreamUpdate",
     "TrajectoryStream",
+    "apply_append",
     "apply_delta_to_snapshot",
     "apply_snapshot",
     "apply_stream",
     "create_stream",
+    "finish_stream",
+    "reset_stream",
 ]

@@ -13,6 +13,7 @@ import {
   anyLineTooLong,
   applyDeltaToSnapshot,
   applySnapshot,
+  applyStream,
   createStream,
   cursorToDict,
   finishStream,
@@ -290,6 +291,60 @@ test("cursor offsets above int64 max are invalid_input", () => {
   result = applySnapshot(state, new Uint8Array(0), "gen-0", bad);
   assert.equal(result.update.kind, "error");
   assert.equal(result.update.error?.code, "invalid_input");
+});
+
+test("negative nextByteOffset is invalid_input not cursor-mismatch", () => {
+  let state = createStream({ source: "pi", groupId: "g" });
+  let result = applySnapshot(state, new Uint8Array(0), "gen-0");
+  state = result.state;
+  const bad = {
+    ...state.cursor,
+    position: {
+      kind: "byte",
+      nextByteOffset: -1n,
+      pendingByteLength: 0n,
+    },
+  };
+  result = applySnapshot(state, new Uint8Array(0), "gen-0", bad);
+  assert.equal(result.update.kind, "error");
+  assert.equal(result.update.error?.code, "invalid_input");
+  assert.equal(result.state.cursor.position.nextByteOffset, state.cursor.position.nextByteOffset);
+});
+
+test("applyStream append-bytes validates cursor before framing", () => {
+  let state = createStream({ source: "pi", groupId: "g" });
+  let result = applySnapshot(state, new Uint8Array(0), "gen-0");
+  state = result.state;
+  const bad = {
+    ...state.cursor,
+    position: {
+      kind: "byte",
+      nextByteOffset: 99n,
+      pendingByteLength: 0n,
+    },
+  };
+  result = applyStream(state, {
+    kind: "append-bytes",
+    data: new TextEncoder().encode('{"type":"message"}\n'),
+    cursor: bad,
+  });
+  assert.equal(result.update.kind, "reset-required");
+  assert.equal(result.update.reset?.reason, "cursor-mismatch");
+  assert.equal(result.state.cursor.position.nextByteOffset, state.cursor.position.nextByteOffset);
+});
+
+test("applyStream ahp/hermes kinds return stream_resync_required", () => {
+  const state = createStream({ source: "pi", groupId: "g" });
+  for (const kind of ["ahp-actions", "ahp-snapshot"]) {
+    const { update } = applyStream(state, { kind });
+    assert.equal(update.kind, "error");
+    assert.equal(update.error?.code, "stream_resync_required");
+    assert.match(update.error?.message ?? "", /AHP stream apply/);
+  }
+  const hermes = applyStream(state, { kind: "hermes-export" });
+  assert.equal(hermes.update.kind, "error");
+  assert.equal(hermes.update.error?.code, "stream_resync_required");
+  assert.match(hermes.update.error?.message ?? "", /Hermes export/);
 });
 
 test("finishStream marks complete", () => {

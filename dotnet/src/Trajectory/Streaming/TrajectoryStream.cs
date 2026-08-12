@@ -109,33 +109,10 @@ public static class TrajectoryStream
 
         if (cursor is not null)
         {
-            if (cursor.Source != state.Cursor.Source ||
-                cursor.Generation != state.Cursor.Generation ||
-                cursor.Position.NextByteOffset != state.Cursor.Position.NextByteOffset)
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
             {
-                return (state, ResetRequired(
-                    state,
-                    "cursor-mismatch",
-                    "stream_cursor_conflict",
-                    "Supplied stream cursor does not match stream state."));
-            }
-
-            if (state.GroupLocked && cursor.GroupId != state.Cursor.GroupId)
-            {
-                return (state, ResetRequired(
-                    state,
-                    "group-changed",
-                    "stream_cursor_conflict",
-                    "Supplied stream cursor does not match stream state."));
-            }
-
-            // Domain: non-negative int64 byte positions (streaming-cursor-v1).
-            if (cursor.Position.NextByteOffset < 0 || cursor.Position.PendingByteLength < 0)
-            {
-                return (state, ErrorUpdate(
-                    state,
-                    "invalid_input",
-                    "Stream cursor byte positions must be non-negative int64 values."));
+                return (state, conflict);
             }
         }
 
@@ -1210,8 +1187,7 @@ public static class TrajectoryStream
     private static StreamUpdate? CursorConflict(StreamState state, StreamCursor cursor)
     {
         if (cursor.Source != state.Cursor.Source ||
-            cursor.Generation != state.Cursor.Generation ||
-            cursor.Position.NextByteOffset != state.Cursor.Position.NextByteOffset)
+            cursor.Generation != state.Cursor.Generation)
         {
             return ResetRequired(
                 state,
@@ -1229,12 +1205,24 @@ public static class TrajectoryStream
                 "Supplied stream cursor does not match stream state.");
         }
 
+        // Domain: non-negative int64 byte positions (streaming-cursor-v1).
+        // Checked before position equality so out-of-domain offsets are invalid_input,
+        // not cursor-mismatch (parity with Python/TS).
         if (cursor.Position.NextByteOffset < 0 || cursor.Position.PendingByteLength < 0)
         {
             return ErrorUpdate(
                 state,
                 "invalid_input",
                 "Stream cursor byte positions must be non-negative int64 values.");
+        }
+
+        if (cursor.Position.NextByteOffset != state.Cursor.Position.NextByteOffset)
+        {
+            return ResetRequired(
+                state,
+                "cursor-mismatch",
+                "stream_cursor_conflict",
+                "Supplied stream cursor does not match stream state.");
         }
 
         return null;

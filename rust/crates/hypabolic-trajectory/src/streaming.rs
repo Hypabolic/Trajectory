@@ -142,6 +142,10 @@ pub struct StreamRecord {
     pub record: Value,
     /// Optional provisional id.
     pub provisional_id: Option<String>,
+    /// Optional id of the provisional record this replaces.
+    pub replaces_provisional_id: Option<String>,
+    /// Optional id of the provisional record this finalizes.
+    pub finalizes_provisional_id: Option<String>,
 }
 
 /// Stream snapshot.
@@ -361,6 +365,12 @@ fn record_to_value(r: &StreamRecord) -> Value {
     map.insert("record".into(), r.record.clone());
     if let Some(pid) = &r.provisional_id {
         map.insert("provisional_id".into(), Value::String(pid.clone()));
+    }
+    if let Some(id) = &r.replaces_provisional_id {
+        map.insert("replaces_provisional_id".into(), Value::String(id.clone()));
+    }
+    if let Some(id) = &r.finalizes_provisional_id {
+        map.insert("finalizes_provisional_id".into(), Value::String(id.clone()));
     }
     Value::Object(map)
 }
@@ -977,10 +987,7 @@ fn cursor_to_value(c: &StreamCursor) -> Value {
 
 fn cursor_conflict(state: &StreamState, cursor: Option<&StreamCursor>) -> Option<StreamUpdate> {
     let cursor = cursor?;
-    if cursor.source != state.cursor.source
-        || cursor.generation != state.cursor.generation
-        || cursor.position.next_byte_offset != state.cursor.position.next_byte_offset
-    {
+    if cursor.source != state.cursor.source || cursor.generation != state.cursor.generation {
         return Some(reset_required(
             state,
             "cursor-mismatch",
@@ -997,11 +1004,21 @@ fn cursor_conflict(state: &StreamState, cursor: Option<&StreamCursor>) -> Option
         ));
     }
     // Domain: non-negative int64 byte positions (streaming-cursor-v1).
+    // Checked before position equality so out-of-domain offsets are invalid_input,
+    // not cursor-mismatch (parity with Python/TS).
     if cursor.position.next_byte_offset < 0 || cursor.position.pending_byte_length < 0 {
         return Some(error_update(
             state,
             "invalid_input",
             "Stream cursor byte positions must be non-negative int64 values.",
+        ));
+    }
+    if cursor.position.next_byte_offset != state.cursor.position.next_byte_offset {
+        return Some(reset_required(
+            state,
+            "cursor-mismatch",
+            "stream_cursor_conflict",
+            "Supplied stream cursor does not match stream state.",
         ));
     }
     None
@@ -1138,6 +1155,8 @@ pub fn apply_snapshot(
                 status: "stable".into(),
                 record,
                 provisional_id: None,
+                replaces_provisional_id: None,
+                finalizes_provisional_id: None,
             })
             .collect();
         let diagnostics: Vec<StreamDiagnostic> = trajectory
@@ -1417,6 +1436,11 @@ pub fn finish_stream(
                         status: "final".into(),
                         record: rec.record.clone(),
                         provisional_id: rec.provisional_id.clone(),
+                        replaces_provisional_id: rec.replaces_provisional_id.clone(),
+                        finalizes_provisional_id: rec
+                            .finalizes_provisional_id
+                            .clone()
+                            .or_else(|| rec.provisional_id.clone()),
                     }
                 }
             })
@@ -1715,6 +1739,79 @@ pub fn apply_stream(
     }
 }
 
+/// Mutable façade over [`StreamState`] for API parity with other runtimes.
+#[derive(Debug, Clone)]
+pub struct TrajectoryStream {
+    state: StreamState,
+}
+
+impl TrajectoryStream {
+    /// Create a new stream façade from options.
+    #[must_use]
+    pub fn create(options: StreamOptions) -> Self {
+        Self {
+            state: create_stream(options),
+        }
+    }
+
+    /// Current cursor.
+    #[must_use]
+    pub fn cursor(&self) -> &StreamCursor {
+        &self.state.cursor
+    }
+
+    /// Borrow the underlying pure state.
+    #[must_use]
+    pub fn state(&self) -> &StreamState {
+        &self.state
+    }
+
+    /// Apply a full snapshot of source material.
+    pub fn apply_snapshot(
+        &mut self,
+        material: &[u8],
+        source_revision: &str,
+        cursor: Option<&StreamCursor>,
+    ) -> Result<StreamUpdate, TrajectoryError> {
+        let (state, update) = apply_snapshot(&self.state, material, source_revision, cursor)?;
+        self.state = state;
+        Ok(update)
+    }
+
+    /// Append a complete-line segment.
+    pub fn apply_append(
+        &mut self,
+        segment: &[u8],
+        cursor: Option<&StreamCursor>,
+        source_revision: Option<&str>,
+    ) -> Result<StreamUpdate, TrajectoryError> {
+        let (state, update) = apply_append(&self.state, segment, cursor, source_revision)?;
+        self.state = state;
+        Ok(update)
+    }
+
+    /// End-of-stream finish.
+    pub fn finish(&mut self) -> Result<StreamUpdate, TrajectoryError> {
+        let (state, update) = finish_stream(&self.state)?;
+        self.state = state;
+        Ok(update)
+    }
+
+    /// Explicit generation reset.
+    pub fn reset(&mut self, request: &StreamResetRequest) -> Result<StreamUpdate, TrajectoryError> {
+        let (state, update) = reset_stream(&self.state, request)?;
+        self.state = state;
+        Ok(update)
+    }
+
+    /// Pure apply envelope.
+    pub fn apply(&mut self, input: &StreamInput) -> Result<StreamUpdate, TrajectoryError> {
+        let (state, update) = apply_stream(&self.state, input)?;
+        self.state = state;
+        Ok(update)
+    }
+}
+
 fn sha256_bytes(data: &[u8]) -> String {
     use sha2::{Digest as _, Sha256};
     let mut hasher = Sha256::new();
@@ -1810,6 +1907,25 @@ mod tests {
         let (state2, update) = apply_snapshot(&state, b"", "gen-0", Some(&bad)).unwrap();
         assert_eq!(update.kind, "reset-required");
         assert_eq!(update.reset.as_ref().unwrap().reason, "cursor-mismatch");
+        assert_eq!(
+            state2.cursor.position.next_byte_offset,
+            state.cursor.position.next_byte_offset
+        );
+    }
+
+    #[test]
+    fn negative_next_byte_offset_is_invalid_input() {
+        let opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("g");
+        let state = create_stream(opts);
+        let (state, _) = apply_snapshot(&state, b"", "gen-0", None).unwrap();
+        let mut bad = state.cursor.clone();
+        bad.position.next_byte_offset = -1;
+        let (state2, update) = apply_snapshot(&state, b"", "gen-0", Some(&bad)).unwrap();
+        assert_eq!(update.kind, "error");
+        assert_eq!(
+            update.error.as_ref().map(|(c, _)| c.as_str()),
+            Some("invalid_input")
+        );
         assert_eq!(
             state2.cursor.position.next_byte_offset,
             state.cursor.position.next_byte_offset

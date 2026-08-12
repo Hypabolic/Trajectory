@@ -157,6 +157,25 @@ public sealed class StreamingCoreTests
     }
 
     [Fact]
+    public void NegativeNextByteOffset_IsInvalidInput()
+    {
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "g",
+        });
+        var (state1, _) = TrajectoryStream.ApplySnapshot(state, ReadOnlyMemory<byte>.Empty, "gen-0");
+        var bad = state1.Cursor with
+        {
+            Position = state1.Cursor.Position with { NextByteOffset = -1 },
+        };
+        var (state2, update) = TrajectoryStream.ApplySnapshot(state1, ReadOnlyMemory<byte>.Empty, "gen-0", bad);
+        Assert.Equal("error", update.Kind);
+        Assert.Equal("invalid_input", update.Error!.Value.Code);
+        Assert.Equal(state1.Cursor.Position.NextByteOffset, state2.Cursor.Position.NextByteOffset);
+    }
+
+    [Fact]
     public void Reset_WithMaterial_AttachesResetEnvelope()
     {
         var longBytes = ReadFixture("file-truncate-reset", "step-long.jsonl");
