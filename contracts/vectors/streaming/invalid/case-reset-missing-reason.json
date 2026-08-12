@@ -1,0 +1,33 @@
+{
+  "schema": "streaming-case-v1.schema.json",
+  "reason": "StreamResetRequest requires reason; unconstrained reset objects are rejected.",
+  "instance": {
+    "case_version": 1,
+    "id": "streaming/bad-reset",
+    "source": "pi",
+    "required_capabilities": ["stream-core", "stream-reset"],
+    "options": {
+      "delivery": "both",
+      "include_provisional": true,
+      "require_complete_lines": true,
+      "finalize_on_close": true,
+      "reset_policy": "return-reset-required"
+    },
+    "steps": [
+      {
+        "id": "bad-reset",
+        "input": {
+          "kind": "reset",
+          "reset": {
+            "generation": 1,
+            "inline_utf8": ""
+          }
+        },
+        "expected": {
+          "update_kind": "updated"
+        }
+      }
+    ],
+    "comparison": ["stream-json-exact"]
+  }
+}

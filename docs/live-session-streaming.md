@@ -331,10 +331,16 @@ StreamDeltaOperation =
   | { op: "reset", reset: StreamReset }
 ```
 
-Ordering: snapshot order, then operation kind, then stable id. `reset`
+**Match key:** if `StreamRecord.provisional_id` is set, upsert/remove/state_change
+key that; else `record.record.id`. **Diagnostic key:** recomputed as
+`code|input_line|record_index` with `-` sentinels for omitted fields; `count` and
+`message` are not part of the key (see normative [streaming.md](../contracts/spec/streaming.md)
+§7). Ordering: snapshot order, then operation kind, then stable id. `reset`
 invalidates prior generation record ids.
 
 ### 4.8 Reset
+
+Response metadata on `reset-required` / delta `op: "reset"`:
 
 ```text
 StreamReset = {
@@ -347,7 +353,22 @@ StreamReset = {
 }
 ```
 
-Default policy: return `kind = "reset-required"` **without** advancing the
+Caller payload for `reset(state, request)` (distinct from `StreamReset`):
+
+```text
+StreamResetRequest = {
+  reason: <same reason enum>,
+  generation?: uint64,
+  source_revision?: string | null,
+  prior_cursor?: StreamCursor | null,
+  material?: string,       # case vectors: path
+  inline_utf8?: string,    # case vectors: synthetic prefix
+  change_token?: string
+}
+```
+
+Normative detail: [contracts/spec/streaming.md](../contracts/spec/streaming.md)
+§8. Default policy: return `kind = "reset-required"` **without** advancing the
 cursor. Caller supplies a full snapshot and calls `reset` / snapshot apply with
 a new generation. Optional `resetPolicy = "auto-reset"` only when the caller
 opts in and supplies replacement material.

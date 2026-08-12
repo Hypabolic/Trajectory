@@ -161,6 +161,204 @@ public sealed class StreamingSchemaVectorTests
         Assert.True(result.IsValid, result.ToString());
     }
 
+    [Fact]
+    public void SharedStreamingSchemaFragmentsStayAligned()
+    {
+        // Schemas intentionally inline shared defs (offline validation without
+        // cross-document $ref). Guard structural drift across the three docs.
+        var stream = LoadSchemaNode("trajectory-stream-v1.schema.json");
+        var delta = LoadSchemaNode("streaming-delta-v1.schema.json");
+        var cursor = LoadSchemaNode("streaming-cursor-v1.schema.json");
+        var caseSchema = LoadSchemaNode("streaming-case-v1.schema.json");
+        var manifest = LoadSchemaNode("compatibility-manifest-v1.schema.json");
+
+        var sdefs = stream["$defs"]!.AsObject();
+        var ddefs = delta["$defs"]!.AsObject();
+        var cdefs = cursor["$defs"]!.AsObject();
+
+        foreach (var key in new[]
+                 {
+                     "bytePosition", "ahpServerSeqPosition", "snapshotRevisionPosition",
+                     "hermesRowPosition", "sha256", "uint64", "int64", "nonNegativeInt64",
+                     "position", "sourceName",
+                 })
+        {
+            if (sdefs.ContainsKey(key) && cdefs.ContainsKey(key))
+            {
+                AssertJsonEqual(
+                    $"cursor/{key} vs stream/{key}",
+                    StripDocs(cdefs[key]!),
+                    StripDocs(sdefs[key]!));
+            }
+
+            if (ddefs.ContainsKey(key) && cdefs.ContainsKey(key))
+            {
+                AssertJsonEqual(
+                    $"cursor/{key} vs delta/{key}",
+                    StripDocs(cdefs[key]!),
+                    StripDocs(ddefs[key]!));
+            }
+        }
+
+        foreach (var key in new[]
+                 {
+                     "streamDiagnostic", "streamRecordBody", "streamRecord",
+                     "streamReset", "streamRevision", "recordStatus", "streamCursor",
+                     "timestamp",
+                 })
+        {
+            Assert.True(sdefs.ContainsKey(key), $"stream missing $defs.{key}");
+            Assert.True(ddefs.ContainsKey(key), $"delta missing $defs.{key}");
+            AssertJsonEqual(
+                $"stream/{key} vs delta/{key}",
+                StripDocs(sdefs[key]!),
+                StripDocs(ddefs[key]!));
+        }
+
+        var cursorRoot = new JsonObject();
+        foreach (var prop in cursor)
+        {
+            if (prop.Key is "$schema" or "$id" or "title" or "description" or "$defs")
+            {
+                continue;
+            }
+
+            cursorRoot[prop.Key] = prop.Value?.DeepClone();
+        }
+
+        if (cursorRoot["properties"] is JsonObject props)
+        {
+            props.Remove("$schema");
+        }
+
+        AssertJsonEqual(
+            "streaming-cursor-v1 root vs streamCursor",
+            StripDocs(cursorRoot),
+            StripDocs(sdefs["streamCursor"]!));
+
+        var caseCaps = caseSchema["$defs"]!["streamCapability"]!["enum"]!.AsArray()
+            .Select(static n => n!.GetValue<string>())
+            .ToArray();
+        var manifestCaps = manifest["$defs"]!["capabilityName"]!["enum"]!.AsArray()
+            .Select(static n => n!.GetValue<string>())
+            .ToArray();
+        Assert.Equal(manifestCaps, caseCaps);
+    }
+
+    [Fact]
+    public void ProvisionalSnapshotVectorLocksWireShape()
+    {
+        var path = Path.Combine(VectorsRoot, "valid", "update-updated-provisional.json");
+        Assert.True(File.Exists(path), path);
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        var instance = document.RootElement.GetProperty("instance");
+        Assert.Equal("updated", instance.GetProperty("kind").GetString());
+        var record = instance.GetProperty("snapshot").GetProperty("records")[0];
+        Assert.Equal("provisional", record.GetProperty("status").GetString());
+        Assert.Equal("prov-active-turn-1", record.GetProperty("provisional_id").GetString());
+        var provisionalIds = instance.GetProperty("provisional").GetProperty("provisional_ids");
+        Assert.Contains(
+            provisionalIds.EnumerateArray(),
+            static e => e.GetString() == "prov-active-turn-1");
+        var result = Evaluate("trajectory-stream-v1.schema.json", instance);
+        Assert.True(result.IsValid, result.ToString());
+    }
+
+    private static JsonObject LoadSchemaNode(string schemaName)
+    {
+        var text = File.ReadAllText(Path.Combine(SchemasRoot, schemaName));
+        return JsonNode.Parse(text)!.AsObject();
+    }
+
+    private static JsonNode StripDocs(JsonNode node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+            {
+                var copy = new JsonObject();
+                foreach (var prop in obj)
+                {
+                    if (prop.Key is "description" or "title" or "$comment" or "comment")
+                    {
+                        continue;
+                    }
+
+                    if (prop.Value is not null)
+                    {
+                        copy[prop.Key] = StripDocs(prop.Value);
+                    }
+                    else
+                    {
+                        copy[prop.Key] = null;
+                    }
+                }
+
+                return copy;
+            }
+            case JsonArray arr:
+            {
+                var copy = new JsonArray();
+                foreach (var item in arr)
+                {
+                    copy.Add(item is null ? null : StripDocs(item));
+                }
+
+                return copy;
+            }
+            default:
+                return node.DeepClone();
+        }
+    }
+
+    private static void AssertJsonEqual(string label, JsonNode left, JsonNode right)
+    {
+        var a = left.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+        var b = right.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+        // Normalize property order via parse/serialize round-trip with sorted keys.
+        a = CanonicalJson(a);
+        b = CanonicalJson(b);
+        Assert.True(a == b, $"schema fragment drift ({label})");
+    }
+
+    private static string CanonicalJson(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return CanonicalElement(doc.RootElement);
+    }
+
+    private static string CanonicalElement(JsonElement el)
+    {
+        switch (el.ValueKind)
+        {
+            case JsonValueKind.Object:
+            {
+                var parts = el.EnumerateObject()
+                    .OrderBy(static p => p.Name, StringComparer.Ordinal)
+                    .Select(static p =>
+                        $"{JsonSerializer.Serialize(p.Name)}:{CanonicalElement(p.Value)}");
+                return "{" + string.Join(",", parts) + "}";
+            }
+            case JsonValueKind.Array:
+            {
+                var parts = el.EnumerateArray().Select(CanonicalElement);
+                return "[" + string.Join(",", parts) + "]";
+            }
+            case JsonValueKind.String:
+                return JsonSerializer.Serialize(el.GetString());
+            case JsonValueKind.Number:
+                return el.GetRawText();
+            case JsonValueKind.True:
+                return "true";
+            case JsonValueKind.False:
+                return "false";
+            case JsonValueKind.Null:
+                return "null";
+            default:
+                return el.GetRawText();
+        }
+    }
+
     private static EvaluationResults Evaluate(string schemaName, JsonElement instance)
     {
         var schema = LoadSchema(schemaName);

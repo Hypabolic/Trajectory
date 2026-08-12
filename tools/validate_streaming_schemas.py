@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = ROOT / "contracts" / "schemas"
@@ -20,10 +21,130 @@ PRIVACY_SENTINELS = (
     "/Users/real-user/",
 )
 
+# Doc-only keys ignored when comparing embedded fragments across schema files.
+_STRIP_KEYS = frozenset({"description", "title", "$comment", "comment"})
+
+
+def _strip_docs(node: Any) -> Any:
+    if isinstance(node, dict):
+        return {
+            k: _strip_docs(v)
+            for k, v in node.items()
+            if k not in _STRIP_KEYS
+        }
+    if isinstance(node, list):
+        return [_strip_docs(x) for x in node]
+    return node
+
+
+def _load_schema(name: str) -> dict[str, Any]:
+    return json.loads((SCHEMAS / name).read_text(encoding="utf-8"))
+
+
+def _assert_fragment_equiv(
+    errors: list[str],
+    label: str,
+    left: Any,
+    right: Any,
+) -> None:
+    a = _strip_docs(left)
+    b = _strip_docs(right)
+    if a != b:
+        errors.append(
+            f"schema fragment drift ({label}): embedded copies differ after "
+            "stripping description/title/$comment"
+        )
+
+
+def check_shared_fragments(errors: list[str]) -> None:
+    """Guard against drift between standalone cursor/delta and embedded copies.
+
+    Schemas intentionally inline shared defs (offline validation without $ref
+    registry). This check keeps structural constraints aligned.
+    """
+    stream = _load_schema("trajectory-stream-v1.schema.json")
+    delta = _load_schema("streaming-delta-v1.schema.json")
+    cursor = _load_schema("streaming-cursor-v1.schema.json")
+    case = _load_schema("streaming-case-v1.schema.json")
+    manifest = _load_schema("compatibility-manifest-v1.schema.json")
+
+    sdefs = stream["$defs"]
+    ddefs = delta["$defs"]
+    cdefs = cursor["$defs"]
+
+    for key in (
+        "bytePosition",
+        "ahpServerSeqPosition",
+        "snapshotRevisionPosition",
+        "hermesRowPosition",
+        "sha256",
+        "uint64",
+        "int64",
+        "nonNegativeInt64",
+    ):
+        if key in sdefs and key in cdefs:
+            _assert_fragment_equiv(
+                errors, f"cursor/{key} vs stream/{key}", cdefs[key], sdefs[key]
+            )
+        if key in ddefs and key in cdefs:
+            _assert_fragment_equiv(
+                errors, f"cursor/{key} vs delta/{key}", cdefs[key], ddefs[key]
+            )
+
+    # Full cursor object: standalone root vs embedded streamCursor (ignore root
+    # metadata and optional document-level $schema property).
+    cursor_root = {
+        k: v
+        for k, v in cursor.items()
+        if k
+        not in {
+            "$schema",
+            "$id",
+            "title",
+            "description",
+            "$defs",
+        }
+    }
+    cursor_root_props = dict(cursor_root.get("properties") or {})
+    cursor_root_props.pop("$schema", None)
+    cursor_root = {**cursor_root, "properties": cursor_root_props}
+    _assert_fragment_equiv(
+        errors,
+        "streaming-cursor-v1 root vs streamCursor",
+        cursor_root,
+        sdefs["streamCursor"],
+    )
+    _assert_fragment_equiv(
+        errors,
+        "stream streamCursor vs delta streamCursor",
+        sdefs["streamCursor"],
+        ddefs["streamCursor"],
+    )
+
+    for key in (
+        "streamDiagnostic",
+        "streamRecordBody",
+        "streamRecord",
+        "streamReset",
+        "streamRevision",
+        "recordStatus",
+    ):
+        if key in sdefs and key in ddefs:
+            _assert_fragment_equiv(
+                errors, f"stream/{key} vs delta/{key}", sdefs[key], ddefs[key]
+            )
+
+    cap_case = case["$defs"]["streamCapability"]["enum"]
+    cap_manifest = manifest["$defs"]["capabilityName"]["enum"]
+    if cap_case != cap_manifest:
+        errors.append(
+            "capability enum drift: streaming-case-v1 streamCapability.enum "
+            "must equal compatibility-manifest-v1 capabilityName.enum"
+        )
+
 
 def main() -> int:
     try:
-        import jsonschema
         from jsonschema import Draft202012Validator
     except ImportError:
         print(
@@ -45,6 +166,8 @@ def main() -> int:
         return schema_cache[name]
 
     errors: list[str] = []
+
+    check_shared_fragments(errors)
 
     valid_dir = VECTORS / "valid"
     invalid_dir = VECTORS / "invalid"
@@ -104,7 +227,7 @@ def main() -> int:
 
     print(
         f"ok: {len(valid_files)} valid, {len(invalid_files)} invalid vectors; "
-        "compatibility.json has no stream-* claims"
+        "compatibility.json has no stream-* claims; shared fragments aligned"
     )
     return 0
 

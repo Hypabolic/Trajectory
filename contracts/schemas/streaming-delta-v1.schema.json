@@ -54,6 +54,22 @@
       "type": "string",
       "enum": ["provisional", "stable", "final"]
     },
+    "sourceName": {
+      "type": "string",
+      "enum": [
+        "pi",
+        "claude-code",
+        "codex",
+        "openclaw",
+        "hermes",
+        "ahp",
+        "grok-build"
+      ]
+    },
+    "timestamp": {
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
     "bytePosition": {
       "type": "object",
       "additionalProperties": false,
@@ -190,14 +206,8 @@
           "type": "integer",
           "minimum": -1
         },
-        "source_timestamp": {
-          "type": ["string", "null"],
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
-        },
-        "timestamp": {
-          "type": ["string", "null"],
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
-        },
+        "source_timestamp": { "$ref": "#/$defs/timestamp" },
+        "timestamp": { "$ref": "#/$defs/timestamp" },
         "source_name": { "type": "string", "minLength": 1 },
         "cwd": { "type": "string" },
         "git_branch": { "type": "string" },
@@ -314,17 +324,7 @@
       ],
       "properties": {
         "cursor_version": { "const": 1 },
-        "source": {
-          "enum": [
-            "pi",
-            "claude-code",
-            "codex",
-            "openclaw",
-            "hermes",
-            "ahp",
-            "grok-build"
-          ]
-        },
+        "source": { "$ref": "#/$defs/sourceName" },
         "group_id": { "type": "string", "minLength": 1 },
         "generation": { "$ref": "#/$defs/uint64" },
         "position": { "$ref": "#/$defs/position" },
@@ -439,7 +439,11 @@
       "required": ["op", "diagnostic_key"],
       "properties": {
         "op": { "const": "diagnostic_remove" },
-        "diagnostic_key": { "type": "string", "minLength": 1 }
+        "diagnostic_key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Recomputed diagnostic_key: code|input_line|record_index with '-' for omitted fields. message and count do not participate. See contracts/spec/streaming.md §7."
+        }
       }
     },
     "opReset": {

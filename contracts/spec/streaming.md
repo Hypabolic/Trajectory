@@ -300,6 +300,60 @@ StreamDeltaOperation =
 
 Wire schema: [`streaming-delta-v1.schema.json`](../schemas/streaming-delta-v1.schema.json).
 
+### Record match key (normative)
+
+Every `StreamRecord` has a single match key used by `upsert`, `remove`, and
+`state_change`:
+
+```text
+match_key(R) =
+  if R.provisional_id is present (property set, non-empty string):
+    R.provisional_id
+  else:
+    R.record.id
+```
+
+Rules:
+
+1. When `provisional_id` is set, it is the **sole** match key — even though
+   `record.record.id` is always a required sha256 on the wire. Body id / content
+   hash may change across provisional revisions without opening a second slot.
+2. When `provisional_id` is absent, match by durable `record.record.id`.
+3. Do **not** use “not yet durable” wording: the body id is always present; the
+   provisional flag only selects which field is the match key.
+4. `remove.record_id` and `state_change.record_id` are compared to
+   `match_key(R)` of existing records (not to a second free-form namespace).
+
+### Diagnostic key encoding (normative)
+
+`StreamDiagnostic` has no `key` field on the wire. Producers and consumers
+**recompute** a stable key from structural fields:
+
+```text
+diagnostic_key(D) =
+  encode_code(D.code) + "|" + encode_opt_int(D.input_line) + "|" + encode_opt_int(D.record_index)
+```
+
+| Component | Rule |
+| --- | --- |
+| `encode_code(code)` | The `code` string **as-is**. `code` MUST NOT contain the ASCII character `\|` (U+007C). |
+| `encode_opt_int(absent)` | Single ASCII hyphen-minus `-` (U+002D) when the property is omitted. |
+| `encode_opt_int(n)` | Decimal integer with no `+` sign and no leading zeros (`0` is `"0"`; `10` is `"10"`). |
+| Separators | Exactly two `|` separators; three fields always. |
+| **Not in key** | `message` and `count` do **not** participate. Count may refresh on de-dupe without changing identity. |
+
+Examples (normative):
+
+| Diagnostic (JSON fields) | `diagnostic_key` |
+| --- | --- |
+| `{ "code": "invalid_json_line" }` | `invalid_json_line\|-\|-` |
+| `{ "code": "invalid_json_line", "input_line": 3 }` | `invalid_json_line\|3\|-` |
+| `{ "code": "orphan_tool_result", "input_line": 10, "record_index": 2, "count": 1 }` | `orphan_tool_result\|10\|2` |
+
+`diagnostic_remove.diagnostic_key` is this string. Remove matches diagnostics
+whose **recomputed** key equals the op’s `diagnostic_key` exactly (byte-for-byte
+UTF-8 / JSON string equality).
+
 ### Delta-apply law (normative)
 
 Given prior snapshot `S0` and an `updated` result with snapshot `S1` and
@@ -308,17 +362,23 @@ null for the first revision):
 
 1. Start from a deep copy of `S0` (records and diagnostics).
 2. Apply each operation in `D.operations` **in array order**:
-   - `upsert` — insert or replace by durable `record.record.id` (or by
-     `provisional_id` when the body id is not yet durable and the op carries
-     provisional linkage). Resulting status comes from the op’s `StreamRecord`.
-   - `remove` — drop the record with matching `record_id` (or matching
-     provisional id when only provisional).
-   - `finalize` — remove any record keyed by `provisional_id`; upsert `record`
-     as the terminal body (status typically `stable` or `final`).
-   - `state_change` — set `status` on the matching record; identity unchanged.
-   - `diagnostic_add` — append diagnostic; de-dupe by stable diagnostic key
-     (`code` + structural fields `input_line` / `record_index` when present).
-   - `diagnostic_remove` — remove diagnostics matching `diagnostic_key`.
+   - `upsert` — let `K = match_key(op.record)`. If some `records[i]` has
+     `match_key(records[i]) == K`, replace `records[i]` with `op.record`;
+     otherwise append. Resulting status comes from the op’s `StreamRecord`.
+   - `remove` — drop every record with `match_key(R) == op.record_id`
+     (stable relative order of survivors). No-op if none match.
+   - `finalize` — remove every record with `provisional_id == op.provisional_id`
+     (or, equivalently, `match_key(R) == op.provisional_id` when that field is
+     set); then apply `upsert` semantics to `op.record` (status typically
+     `stable` or `final`).
+   - `state_change` — find the record with `match_key(R) == op.record_id`; set
+     only `status` to `op.status`; identity and body unchanged. No-op if none
+     match.
+   - `diagnostic_add` — let `K = diagnostic_key(op.diagnostic)`. Remove every
+     existing diagnostic whose recomputed key equals `K`, then **append**
+     `op.diagnostic`. (De-dupe + refresh: `count` / `message` may update.)
+   - `diagnostic_remove` — remove every diagnostic whose recomputed
+     `diagnostic_key` equals `op.diagnostic_key`. No-op if none match.
    - `reset` — clear records and diagnostics for the prior generation; install
      `reset` metadata; subsequent ops (if any) belong to the new generation.
 3. Set `revision` and `complete` from `D.revision`.
@@ -331,11 +391,11 @@ null for the first revision):
 When emitting a delta for a non-reset update, producers SHOULD order
 operations as:
 
-1. removals (stable id order);
-2. finalizations (provisional_id order);
+1. removals (`match_key` / `record_id` ascending);
+2. finalizations (`provisional_id` ascending);
 3. upserts (snapshot record order);
-4. state changes (stable id order);
-5. diagnostic removes then diagnostic adds (key order).
+4. state changes (`record_id` ascending);
+5. diagnostic removes then diagnostic adds (`diagnostic_key` ascending).
 
 A `reset` op, when present, appears first and invalidates prior-generation
 record ids. Conformance may also accept any order that still satisfies the
@@ -344,6 +404,10 @@ delta-apply law against the golden snapshot.
 ---
 
 ## 8. Reset
+
+### Response metadata (`StreamReset`)
+
+Emitted on `kind = "reset-required"` and on delta `op: "reset"`:
 
 ```text
 StreamReset = {
@@ -356,15 +420,40 @@ StreamReset = {
 }
 ```
 
+### Request (`StreamResetRequest`)
+
+Caller payload for `reset(state, request)` and for conformance case
+`step.input.kind = "reset"`. Distinct from response `StreamReset`.
+
+```text
+StreamResetRequest = {
+  reason: "source-truncated" | "source-replaced" | "source-compacted" |
+          "cursor-mismatch" | "group-changed" | "sequence-gap" |
+          "prefix-hash-mismatch" | "manual",
+  generation?: uint64,             # new generation; default prior generation + 1
+  source_revision?: string | null, # revision token of replacement material
+  prior_cursor?: StreamCursor | null,
+  # Replacement material (required when reset_policy = "auto-reset" or when the
+  # caller installs a new prefix in the same call). Case vectors use one of:
+  material?: string,               # relative path under the case directory
+  inline_utf8?: string,            # small synthetic UTF-8 prefix
+  change_token?: string            # Hermes provider token when applicable
+}
+```
+
+Wire shape for case steps: [`streaming-case-v1.schema.json`](../schemas/streaming-case-v1.schema.json)
+`$defs/streamResetRequest`. Runtime typed APIs land in LS-03+.
+
 Default policy (`reset_policy = "return-reset-required"`):
 
 1. Return `kind = "reset-required"` **without** advancing the cursor.
-2. Include `reset` describing why.
+2. Include response `reset` (`StreamReset`) describing why.
 3. Caller supplies a full snapshot and calls `reset` / snapshot apply with a
-   new `generation`.
+   `StreamResetRequest` and a new `generation`.
 
 Optional `reset_policy = "auto-reset"` only when the caller opts in **and**
-supplies replacement material in the same call.
+supplies replacement material in the same call (`material` / `inline_utf8` /
+source bytes on the typed API).
 
 Silent merge of conflicting `group_id` is forbidden (`group-changed` /
 fatal `source_group_conflict` per batch rules).

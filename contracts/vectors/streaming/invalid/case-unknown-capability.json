@@ -1,0 +1,29 @@
+{
+  "schema": "streaming-case-v1.schema.json",
+  "reason": "required_capabilities must use the known capabilityName enum; typos like stream-coree are rejected.",
+  "instance": {
+    "case_version": 1,
+    "id": "streaming/typo-cap",
+    "source": "pi",
+    "required_capabilities": ["stream-coree"],
+    "options": {
+      "delivery": "both",
+      "include_provisional": true,
+      "require_complete_lines": true,
+      "finalize_on_close": true,
+      "reset_policy": "return-reset-required"
+    },
+    "steps": [
+      {
+        "id": "step-1",
+        "input": {
+          "kind": "finish"
+        },
+        "expected": {
+          "update_kind": "unchanged"
+        }
+      }
+    ],
+    "comparison": ["stream-json-exact"]
+  }
+}

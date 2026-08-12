@@ -253,6 +253,14 @@
         "change_token": { "type": "string", "minLength": 1 }
       }
     },
+    "position": {
+      "oneOf": [
+        { "$ref": "#/$defs/bytePosition" },
+        { "$ref": "#/$defs/ahpServerSeqPosition" },
+        { "$ref": "#/$defs/snapshotRevisionPosition" },
+        { "$ref": "#/$defs/hermesRowPosition" }
+      ]
+    },
     "streamCursor": {
       "type": "object",
       "additionalProperties": false,
@@ -270,14 +278,7 @@
         "source": { "$ref": "#/$defs/sourceName" },
         "group_id": { "type": "string", "minLength": 1 },
         "generation": { "$ref": "#/$defs/uint64" },
-        "position": {
-          "oneOf": [
-            { "$ref": "#/$defs/bytePosition" },
-            { "$ref": "#/$defs/ahpServerSeqPosition" },
-            { "$ref": "#/$defs/snapshotRevisionPosition" },
-            { "$ref": "#/$defs/hermesRowPosition" }
-          ]
-        },
+        "position": { "$ref": "#/$defs/position" },
         "source_revision": { "type": ["string", "null"] },
         "prefix_sha256": {
           "oneOf": [
@@ -415,7 +416,11 @@
             "required": ["op", "diagnostic_key"],
             "properties": {
               "op": { "const": "diagnostic_remove" },
-              "diagnostic_key": { "type": "string", "minLength": 1 }
+              "diagnostic_key": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Recomputed diagnostic_key: code|input_line|record_index with '-' for omitted fields. message and count do not participate. See contracts/spec/streaming.md §7."
+              }
             }
           }
         },

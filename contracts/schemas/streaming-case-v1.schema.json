@@ -92,8 +92,37 @@
   "$defs": {
     "streamCapability": {
       "type": "string",
-      "minLength": 1,
-      "description": "Capability name. Stream vocabulary includes stream-core, stream-cursor-v1, stream-jsonl-framing, stream-apply-snapshot, stream-apply-append, stream-full-snapshot, stream-record-delta, stream-reset, stream-provisional-records, stream-deterministic-replay, stream-file-jsonl, stream-ahp-snapshot, stream-ahp-action-log, and optional stream-file-io, stream-file-watch, stream-ahp-client, stream-ahp-list-sessions, stream-hermes-provider, stream-async-iterator."
+      "description": "Known batch and stream capability names (same enum as compatibility-manifest-v1 capabilityName). Typos like stream-coree are rejected.",
+      "enum": [
+        "normalize",
+        "normalize-partial",
+        "list-explicit-root",
+        "typed-diagnostics",
+        "typed-fatal-errors",
+        "deterministic-rerun",
+        "native-aot",
+        "otel-sdk-emission",
+        "sqlite-stores",
+        "stream-core",
+        "stream-cursor-v1",
+        "stream-jsonl-framing",
+        "stream-apply-snapshot",
+        "stream-apply-append",
+        "stream-full-snapshot",
+        "stream-record-delta",
+        "stream-reset",
+        "stream-provisional-records",
+        "stream-deterministic-replay",
+        "stream-file-jsonl",
+        "stream-ahp-snapshot",
+        "stream-ahp-action-log",
+        "stream-file-io",
+        "stream-file-watch",
+        "stream-ahp-client",
+        "stream-ahp-list-sessions",
+        "stream-hermes-provider",
+        "stream-async-iterator"
+      ]
     },
     "comparisonMode": {
       "enum": [
@@ -191,8 +220,8 @@
           "description": "Optional StreamCursor object for this step (validated against streaming-cursor-v1 at apply time)."
         },
         "reset": {
-          "type": "object",
-          "description": "StreamResetRequest / reset payload when kind=reset."
+          "$ref": "#/$defs/streamResetRequest",
+          "description": "StreamResetRequest when kind=reset (not response StreamReset)."
         },
         "change_token": {
           "type": "string",
@@ -221,8 +250,63 @@
               { "required": ["inline_utf8"] }
             ]
           }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "reset" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["reset"]
+          }
         }
       ]
+    },
+    "streamResetRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "description": "Caller payload for reset(state, request) and case step kind=reset. Distinct from response StreamReset.",
+      "properties": {
+        "reason": {
+          "enum": [
+            "source-truncated",
+            "source-replaced",
+            "source-compacted",
+            "cursor-mismatch",
+            "group-changed",
+            "sequence-gap",
+            "prefix-hash-mismatch",
+            "manual"
+          ]
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "New generation; default prior generation + 1 when omitted."
+        },
+        "source_revision": {
+          "type": ["string", "null"]
+        },
+        "prior_cursor": {
+          "type": "object",
+          "description": "Optional StreamCursor (validated against streaming-cursor-v1 at apply time)."
+        },
+        "material": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative path to replacement source material under the case directory."
+        },
+        "inline_utf8": {
+          "type": "string",
+          "description": "Small synthetic UTF-8 replacement prefix for case vectors."
+        },
+        "change_token": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     },
     "stepExpected": {
       "type": "object",

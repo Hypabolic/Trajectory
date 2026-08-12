@@ -55,7 +55,7 @@ jobs:
         run: >-
           dotnet test dotnet/tests/Trajectory.Tests/Trajectory.Tests.csproj
           -c Release --no-build
-          --filter FullyQualifiedName~ContractsAndConformanceTests
+          --filter "FullyQualifiedName~ContractsAndConformanceTests|FullyQualifiedName~StreamingSchemaVectorTests"
 
   conformance:
     name: Shared conformance / .NET
