@@ -18,8 +18,10 @@ Wire contract: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md).
 | Rust | `hypabolic-trajectory-io` | Poll by default; optional `watch` feature reserved/unimplemented |
 | Python | `hypabolic-trajectory[io]` | Stdlib-only module `hypabolic_trajectory.io` |
 
-Capability names `stream-file-io` / `stream-file-watch` / `stream-async-iterator`
-are **vocabulary only** until LS-12. Do not advertise them in runtime manifests yet.
+Capability `stream-file-io` (and `stream-async-iterator` where the package
+exposes async follow) is advertised on optional I/O packages only via
+`package-capabilities.json` — never on core `runtime-capabilities.json`.
+`stream-file-watch` remains unimplemented and is **not** claimed.
 
 ## Responsibility split
 
@@ -196,10 +198,10 @@ if let Some(update) = stream.poll()? { ... }
 - Coalesced growth (multiple appends before poll) → single apply of complete segment.
 - Core packages still have zero FS-watcher / network / SQLite imports for streaming modules.
 
-## Not in this slice
+## Related / out of scope
 
 - AHP network clients (LS-10 — delivered; see `docs/ahp-client.md`)
 - Sample `stream` CLI commands (LS-11 — delivered on sample CLIs)
-- Capability advertising (LS-12)
+- Capability advertising (LS-12 — `stream-file-io` on optional packages only)
 - Hermes SQLite provider (LS-07h — see `docs/streaming-hermes-provider.md`)
 - Multi-file home-directory supervisor

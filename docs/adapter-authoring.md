@@ -196,12 +196,15 @@ A stream engine change is **done** for the core packages only when:
    unchanged.
 8. Core packages gain **no** FS watcher, network, or SQLite dependencies.
 
-### Capability advertising (LS-12 only)
+### Capability advertising (LS-12)
 
-Do **not** set `stream-*` names true in `runtime-capabilities.json` or claim
-them in `compatibility.json` until LS-12 (optional I/O packages, optional AHP
-clients, sample CLIs, and the full release gate). Engines may be complete in
-core while manifests still omit stream capabilities.
+Core `stream-*` names are claimed in `contracts/compatibility.json` (required)
+and each runtime’s core `runtime-capabilities.json` only after the shared stream
+matrix is green on all four runtimes. Optional package caps (`stream-file-io`,
+`stream-ahp-client`, `stream-hermes-provider`, `stream-async-iterator`) are
+advertised only on those optional packages’ `package-capabilities.json` — never
+on core, and never via a global `stream` flag. Do not claim unimplemented names
+(`stream-file-watch`, `stream-ahp-list-sessions`).
 
 ### Extending a source for streaming
 

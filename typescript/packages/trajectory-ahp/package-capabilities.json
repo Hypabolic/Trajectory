@@ -1,0 +1,8 @@
+{
+  "package": "@hypabolic/trajectory-ahp",
+  "runtime": "typescript",
+  "capabilities": [
+    "stream-ahp-client"
+  ],
+  "notes": "Optional AHP live-host client (transport + auth callback). Not claimed by core @hypabolic/trajectory."
+}

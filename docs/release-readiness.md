@@ -37,7 +37,7 @@ AHP phase truth: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
 Machine-readable surfaces (repository tip advertises `ahp`):
 
 - [`contracts/compatibility.json`](../contracts/compatibility.json)
-- Runtime `runtime-capabilities.json` files (TypeScript, Rust, Python)
+- Runtime `runtime-capabilities.json` files (.NET, TypeScript, Rust, Python)
 - `tools/validate_release_metadata.py`
 - CI preview packaging + **Release** workflow (see [publishing.md](publishing.md))
 
@@ -148,13 +148,14 @@ After the first multi-registry release:
 - Identical public APIs across languages
 - A stable serialized internal IR
 
-## Live session streaming (post-v1; LS-08 matrix)
+## Live session streaming (post-v1; LS-12 complete on tip)
 
-Core stream engines are **in-tree on tip** (file JSONL append/snapshot, AHP
-snapshot + action-log, delta+snapshot delivery). They are **not** yet
-advertised in runtime capability manifests (`stream-*` claims are LS-12).
+Core stream engines, optional I/O/AHP/Hermes packages, sample CLIs, and honest
+capability advertising are **in-tree on tip** (LS-00–LS-12). Not yet a
+registry-published multi-registry version bump (no retag of `0.1.0` / `0.1.x`
+capability rewrites).
 
-### Stream matrix definition of done (LS-08)
+### Stream matrix definition of done (LS-08 + LS-12)
 
 | Gate | Requirement |
 | --- | --- |
@@ -162,9 +163,18 @@ advertised in runtime capability manifests (`stream-*` claims are LS-12).
 | Oracle | Append path ≡ prefix re-normalize (`stream-oracle-parity`); AHP action ≡ Shape A when declared |
 | Goldens | Per-step `expected.result` stream-json-exact goldens are shared authority |
 | Batch | Existing normalize/list conformance + identity baseline remain green |
-| Privacy | Stream diagnostics/fixtures obey the same sanitization rules as batch |
-| Capabilities | Do **not** claim `stream-*` in manifests until LS-12 (optional I/O + clients + CLIs) |
+| Privacy | Stream diagnostics/fixtures obey the same sanitization rules as batch (no paths/secrets/raw lines) |
+| Capabilities | Core `stream-*` claimed in `compatibility.json` required + four `runtime-capabilities.json`; optional package caps only on those packages |
 | Core purity | No FS watchers, network, or SQLite in core packages |
+| Optional matrix | File I/O + AHP client green; Hermes provider claimed only on provider packages |
+
+### Streaming privacy audit checklist
+
+- [x] Stream diagnostics schema forbids path/raw payload fields
+- [x] Shared stream fixtures privacy-scanned by `conformance/verify.py`
+- [x] Optional host errors (`FileStreamHostError` / peers) stay out of transcript diagnostics
+- [x] AHP auth tokens never enter stream snapshots/deltas/diagnostics
+- [x] Schema vector privacy sentinels + `tools/validate_streaming_schemas.py`
 
 Operator verify (stream filter only):
 

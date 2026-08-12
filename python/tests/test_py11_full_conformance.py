@@ -84,12 +84,25 @@ TIP_CAPABILITIES: list[str] = [
     "typed-diagnostics",
     "typed-fatal-errors",
     "deterministic-rerun",
+    "stream-core",
+    "stream-cursor-v1",
+    "stream-jsonl-framing",
+    "stream-apply-snapshot",
+    "stream-apply-append",
+    "stream-full-snapshot",
+    "stream-record-delta",
+    "stream-reset",
+    "stream-provisional-records",
+    "stream-deterministic-replay",
+    "stream-file-jsonl",
+    "stream-ahp-snapshot",
+    "stream-ahp-action-log",
 ]
 TIP_SLICE = "ML13"
 NORMALIZER_CONTRACT_VERSION = "0.2.0"
 
 # Current tip case inventory under unfiltered verify (all declared pairs).
-# 39 batch + 34 stream cases (LS-08 matrix; stream engines green, no stream-* caps).
+# 39 batch + 34 stream cases (LS-08 matrix; LS-12 advertises core stream-* caps).
 EXPECTED_TIP_CASES = 73
 EXPECTED_TIP_OPERATIONS = 100
 

@@ -149,4 +149,4 @@ lines, or group/native ids. Operational codes: `stream_source_reset`,
 
 - AHP Shape A/B streaming: [`ahp-action-streaming.md`](ahp-action-streaming.md)
 - Optional file I/O packages: [`streaming-file-io.md`](streaming-file-io.md) (LS-09)
-- Capability advertising for `stream-*` (LS-12)
+- Capability advertising for core `stream-*` (LS-12 — claimed on tip)

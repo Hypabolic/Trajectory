@@ -1,5 +1,5 @@
 {
-  "runtime": "python",
+  "runtime": "dotnet",
   "slice": "ML13",
   "normalizer_contract_version": "0.2.0",
   "sources": [

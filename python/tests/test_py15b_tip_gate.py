@@ -45,6 +45,19 @@ TIP_CAPABILITIES = [
     "typed-diagnostics",
     "typed-fatal-errors",
     "deterministic-rerun",
+    "stream-core",
+    "stream-cursor-v1",
+    "stream-jsonl-framing",
+    "stream-apply-snapshot",
+    "stream-apply-append",
+    "stream-full-snapshot",
+    "stream-record-delta",
+    "stream-reset",
+    "stream-provisional-records",
+    "stream-deterministic-replay",
+    "stream-file-jsonl",
+    "stream-ahp-snapshot",
+    "stream-ahp-action-log",
 ]
 TIP_SLICE = "ML13"
 

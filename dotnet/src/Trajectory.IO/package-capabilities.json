@@ -1,0 +1,9 @@
+{
+  "package": "Hypabolic.Trajectory.IO",
+  "runtime": "dotnet",
+  "capabilities": [
+    "stream-file-io",
+    "stream-async-iterator"
+  ],
+  "notes": "Optional file poll/follow + IAsyncEnumerable FollowAsync. Not claimed by core Hypabolic.Trajectory."
+}

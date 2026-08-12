@@ -23,7 +23,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "package-capabilities.json"
   ],
   "dependencies": {
     "@hypabolic/trajectory": "0.1.2"

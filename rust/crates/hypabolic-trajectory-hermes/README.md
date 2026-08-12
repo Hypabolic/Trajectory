@@ -8,4 +8,5 @@ Optional Hermes **SQLite/provider** streaming for Trajectory (LS-07h).
 - Soft-delete / DB generation change → `reset-required`
 - `MemoryHermesStore` for CI; `SqliteHermesProvider` behind the default `sqlite` feature
 
-Core crate stays SQLite-free. Capability `stream-hermes-provider` is not advertised until LS-12.
+Core crate stays SQLite-free. Capability `stream-hermes-provider` is advertised
+only on this optional package (`package-capabilities.json`), never on core.

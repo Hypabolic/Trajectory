@@ -17,7 +17,8 @@ Wire contract: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md).
 | Snapshot + delta, soft-delete reset law | Memory fixture store for CI |
 
 **Core packages must not import these providers.** Capability
-`stream-hermes-provider` is not advertised until LS-12.
+`stream-hermes-provider` is advertised only on these optional packages’
+`package-capabilities.json` (LS-12) — never on core.
 
 ### Package names
 
@@ -76,5 +77,6 @@ Wire contract: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md).
 
 ## Capability advertising
 
-Do **not** claim `stream-hermes-provider` (or other `stream-*` caps) in runtime
-manifests until LS-12 acceptance.
+Claim `stream-hermes-provider` only on optional Hermes provider packages
+(`package-capabilities.json`). Core `runtime-capabilities.json` must not list
+it. Unimplemented stream names must not be claimed.

@@ -113,13 +113,13 @@ core, optional I/O/clients.
 | LS-00 … LS-02 | Product freeze, contracts/schemas, stream conformance protocol + fixtures | **In-tree** |
 | LS-03 … LS-05 | Stream state/cursor, snapshot apply + delta, JSONL append (×4) | **In-tree** |
 | LS-06 … LS-07 | AHP Shape A snapshot stream + Shape B action-log reducer in core (×4) | **In-tree** |
-| **LS-08** | **Full stream matrix gate** — shared `conformance/cases/streaming/**` green on all four runtimes; per-step goldens; append ≡ prefix oracle; batch still green; **no** `stream-*` capability claims | **In-tree on tip** |
-| LS-09 | Optional file I/O packages (×4) | Delivered on tip (`streaming-file-io.md`) |
-| LS-10 | Optional AHP client packages (×4) | Delivered on tip (`ahp-client.md`) |
-| LS-11 | Sample CLIs (`stream` / `ahp-stream` ×4) | **Done on tip** |
-| LS-12 | Capability advertising + release gate | Scheduled (blocked on honesty review) |
+| **LS-08** | **Full stream matrix gate** — shared `conformance/cases/streaming/**` green on all four runtimes; per-step goldens; append ≡ prefix oracle; batch still green | **In-tree on tip** |
+| LS-09 | Optional file I/O packages (×4) | **In-tree on tip** (`streaming-file-io.md`) |
+| LS-10 | Optional AHP client packages (×4) | **In-tree on tip** (`ahp-client.md`) |
+| LS-11 | Sample CLIs (`stream` / `ahp-stream` ×4) | **In-tree on tip** |
+| **LS-12** | **Capability advertising + release gate** — honest core `stream-*` claims; optional package caps only on I/O / AHP / Hermes packages; privacy + multi-runtime parity docs | **In-tree on tip** |
 
-### LS-08 definition of done (core matrix)
+### LS-08 / LS-12 definition of done (core matrix + claims)
 
 - One shared corpus under `conformance/cases/streaming/` is authority (no
   runtime-private stream goldens).
@@ -129,10 +129,12 @@ core, optional I/O/clients.
 - `stream-oracle-parity` / `append_equals_prefix` covers file-JSONL growth
   cases; `action_equals_snapshot` covers AHP action≡snapshot.
 - Batch tip verify and identity baseline remain green.
-- `runtime-capabilities.json` still omits `stream-*` until LS-12.
+- Core `stream-*` capabilities are claimed in `compatibility.json` required and
+  all four `runtime-capabilities.json`; optional package caps only on those
+  packages’ `package-capabilities.json`.
 
 This supersedes the informal “AHP Shape B / live host later” note as a concrete
-roadmap; optional I/O/clients and capability advertising remain later slices.
+roadmap; live session streaming is complete on tip at LS-12.
 
 ## Post-v1 ideas (not scheduled)
 

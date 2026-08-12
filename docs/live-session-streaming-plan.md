@@ -461,13 +461,17 @@ Optional packages (LS-09/10/07h) may trail core matrix but are required for
 
 ## Immediate next action
 
-**LS-00** … **LS-08** are delivered on tip: locked design, wire contracts,
+**LS-00** … **LS-12** are delivered on tip: locked design, wire contracts,
 stream conformance protocol + shared corpus, state/cursor, snapshot/delta,
-JSONL append, AHP Shape A/B, and the full stream matrix gate (34 cases /
-68 step goldens; `stream_unsupported_skips: 0` on all four runtimes; no
-`stream-*` capability claims until LS-12).
+JSONL append, AHP Shape A/B, full stream matrix gate (34 cases;
+`stream_unsupported_skips: 0` on all four runtimes), optional file I/O (LS-09),
+optional AHP clients (LS-10), sample CLI `stream` / `ahp-stream` (LS-11), and
+honest capability advertising (LS-12).
 
-**LS-09** optional file I/O packages, **LS-10** optional AHP client packages,
-and **LS-11** sample CLI `stream` / `ahp-stream` commands are delivered on tip
-(see `docs/streaming-file-io.md`, `docs/ahp-client.md`, and sample CLI READMEs).
+Core `stream-*` names are claimed in `contracts/compatibility.json` (required)
+and all four core `runtime-capabilities.json`. Optional package caps
+(`stream-file-io`, `stream-async-iterator`, `stream-ahp-client`,
+`stream-hermes-provider`) are claimed only on those packages’
+`package-capabilities.json`. Unimplemented `stream-file-watch` /
+`stream-ahp-list-sessions` are not claimed.
 Next engineering slice: **LS-12** — capability claims and release gate.

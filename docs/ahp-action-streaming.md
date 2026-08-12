@@ -16,9 +16,10 @@ AHP source: [`contracts/spec/sources/ahp.md`](../contracts/spec/sources/ahp.md).
 | `apply_ahp_actions` + Shape B reducer | Auth, reconnect, listSessions |
 | snapshot-revision and ahp-server-seq cursors | Host credentials |
 
-Core packages must not open network sockets. Capability manifests must not claim
-`stream-ahp-snapshot` / `stream-ahp-action-log` until LS-12 acceptance is met on
-all four runtimes.
+Core packages must not open network sockets. `stream-ahp-snapshot` /
+`stream-ahp-action-log` are core stream capabilities claimed after LS-12 (shared
+matrix green on all four runtimes). Live-host transport remains optional
+`stream-ahp-client` only.
 
 ## Operations
 

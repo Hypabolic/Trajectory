@@ -42,6 +42,11 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
   optional OpenTelemetry GenAI spans
 - **Local store listing** with explicit roots and pagination
 - **Partial / chunked input** where the source supports append-only sessions
+- **Live session streaming (library, not a daemon)** — pure core
+  `StreamState` / apply APIs with snapshot + delta envelopes, JSONL append,
+  AHP snapshot + action-log, optional file follow / AHP client / Hermes
+  provider packages, and sample `stream` / `ahp-stream` CLIs (tip;
+  capability-advertised as core `stream-*` plus optional package caps)
 - **Native AOT–friendly .NET**, ESM TypeScript (Node 22+), Rust 2024 (MSRV 1.85),
   Python 3.11+
 

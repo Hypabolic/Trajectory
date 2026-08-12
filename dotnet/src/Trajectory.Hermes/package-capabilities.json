@@ -1,0 +1,8 @@
+{
+  "package": "Hypabolic.Trajectory.Hermes",
+  "runtime": "dotnet",
+  "capabilities": [
+    "stream-hermes-provider"
+  ],
+  "notes": "Optional Hermes SQLite/provider stream. Not claimed by core Hypabolic.Trajectory."
+}

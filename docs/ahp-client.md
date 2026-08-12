@@ -18,7 +18,8 @@ Wire contract: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md).
 | | Fake-host test doubles |
 
 **Core packages must not import these clients.** Capability
-`stream-ahp-client` is not advertised until LS-12.
+`stream-ahp-client` is advertised only on these optional packages’
+`package-capabilities.json` (LS-12) — never on core.
 
 ### Package names
 
@@ -110,5 +111,5 @@ client.cancel()  # cursor still readable
 
 - Daemon or global multi-session supervisor
 - Loading `auth.json` inside Trajectory packages
-- Advertising `stream-ahp-client` before LS-12
+- Advertising `stream-ahp-client` on core packages (optional packages only)
 - Replacing official language AHP SDKs for full host control surfaces

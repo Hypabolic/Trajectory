@@ -158,7 +158,7 @@
   "$defs": {
     "capabilityName": {
       "type": "string",
-      "description": "Known batch and stream capability names. stream-* names are allowed in manifests but must not be claimed implemented until the multi-runtime stream matrix (LS-12) is green.",
+      "description": "Known batch and stream capability names. Core stream-* names are claimed only after the multi-runtime stream matrix is green (LS-12). Optional package stream caps (file-io, ahp-client, hermes-provider, …) must not be listed on core packages.",
       "enum": [
         "normalize",
         "normalize-partial",

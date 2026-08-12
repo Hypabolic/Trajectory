@@ -14,8 +14,8 @@ synchronized package version / tag after `v0.1.0` (do not retag or republish
 | --- | --- | --- |
 | **0 (AHP-0)** | Spec freeze, export schema, vendor pin, synthetic fixtures | **Shipped in-tree** |
 | **1 (AHP-1)** | Shape A snapshot → IR on .NET / TypeScript / Rust / Python + conformance + CLI | **Shipped in-tree** |
-| **Stream (LS-06)** | Successive Shape A snapshot streaming + provisional `activeTurn` | **In-tree on tip** (core algorithm; not capability-advertised until LS-12) |
-| **Stream (LS-07)** | Shape B action-log reducer + `apply_ahp_actions` + serverSeq cursor | **In-tree on tip** (core algorithm; not capability-advertised until LS-12) |
+| **Stream (LS-06)** | Successive Shape A snapshot streaming + provisional `activeTurn` | **In-tree on tip**; core `stream-ahp-snapshot` claimed (LS-12) |
+| **Stream (LS-07)** | Shape B action-log reducer + `apply_ahp_actions` + serverSeq cursor | **In-tree on tip**; core `stream-ahp-action-log` claimed (LS-12) |
 | **2+ remaining** | Export listing, live WebSocket host / optional client packages | **Not shipped** |
 
 Protocol pin: **0.7.0** (`conformance/vendor/ahp/PROTOCOL_VERSION`). Wire source
@@ -112,21 +112,21 @@ Fixtures: `conformance/cases/streaming/ahp-snapshot-*`,
 `conformance/cases/streaming/ahp-action-*`,
 `conformance/cases/streaming/provisional-to-stable`.
 
-Do **not** mark `stream-ahp-snapshot` / `stream-ahp-action-log` implemented in
-runtime capability manifests until LS-12 acceptance (full matrix green on all
-four runtimes). Optional AHP **client** packages remain deferred.
+Core capabilities `stream-ahp-snapshot` / `stream-ahp-action-log` are claimed
+(LS-12) after the shared matrix is green on all four runtimes. Optional AHP
+**client** packages advertise `stream-ahp-client` only on those packages.
 
 ## Known gaps vs listing / live host
 
 | Area | Gap |
 | --- | --- |
-| **Live host client** | Optional packages (LS-10): transport-only clients with auth callback + fake-host tests; **not** in core; not capability-advertised until LS-12 |
+| **Live host client** | Optional packages (LS-10): transport-only clients with auth callback + fake-host tests; **not** in core; `stream-ahp-client` on optional package manifests only |
 | **Listing** | Phase 3 — no export-directory discoverer; listers are empty stubs |
 | **Multi-chat unpack** | Combined session export helper deferred (one chat per normalize) |
 | **Official reducer parity** | Trajectory ships a **minimal complete** chat reducer subset, not a vendored copy of every AHP client fixture |
 | **Extra batch goldens** | Spec lists `ahp/reasoning`, `ahp/list-export` — not all landed |
 | **Real-world export path** | Synthetic fixtures only; capture path from VS Code / AHPX still doc-only |
-| **Capability advertising** | Stream AHP caps wait for LS-12 |
+| **Capability advertising** | Core stream AHP caps claimed (LS-12); optional client cap only on AHP packages |
 
 Offline Shape A normalize remains the batch path. Streaming is layered on top
 via stream apply APIs; batch goldens stay green.

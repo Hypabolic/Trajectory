@@ -117,8 +117,11 @@ public sealed class StreamingSchemaVectorTests
     }
 
     [Fact]
-    public void CompatibilityManifestStillValidWithoutStreamCapsClaimed()
+    public void CompatibilityManifestClaimsCoreStreamCapsHonestly()
     {
+        // LS-12: core stream-* required after matrix green; optional package
+        // stream caps may appear only under capabilities.optional; no global
+        // "stream" flag; unimplemented watch/list-sessions not claimed.
         var manifestText = File.ReadAllText(Path.Combine(
             AppContext.BaseDirectory,
             "Contracts",
@@ -141,8 +144,46 @@ public sealed class StreamingSchemaVectorTests
             .EnumerateArray()
             .Select(static e => e.GetString()!)
             .ToArray();
-        Assert.DoesNotContain(required, static c => c.StartsWith("stream-", StringComparison.Ordinal));
-        Assert.DoesNotContain(optional, static c => c.StartsWith("stream-", StringComparison.Ordinal));
+
+        string[] coreStream =
+        [
+            "stream-core",
+            "stream-cursor-v1",
+            "stream-jsonl-framing",
+            "stream-apply-snapshot",
+            "stream-apply-append",
+            "stream-full-snapshot",
+            "stream-record-delta",
+            "stream-reset",
+            "stream-provisional-records",
+            "stream-deterministic-replay",
+            "stream-file-jsonl",
+            "stream-ahp-snapshot",
+            "stream-ahp-action-log",
+        ];
+        foreach (var cap in coreStream)
+        {
+            Assert.Contains(cap, required);
+        }
+
+        string[] optionalPackageOnly =
+        [
+            "stream-file-io",
+            "stream-async-iterator",
+            "stream-ahp-client",
+            "stream-hermes-provider",
+        ];
+        foreach (var cap in optionalPackageOnly)
+        {
+            Assert.DoesNotContain(cap, required);
+        }
+
+        Assert.DoesNotContain("stream", required);
+        Assert.DoesNotContain("stream", optional);
+        Assert.DoesNotContain("stream-file-watch", required);
+        Assert.DoesNotContain("stream-file-watch", optional);
+        Assert.DoesNotContain("stream-ahp-list-sessions", required);
+        Assert.DoesNotContain("stream-ahp-list-sessions", optional);
     }
 
     [Fact]

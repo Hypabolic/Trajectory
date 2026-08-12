@@ -205,19 +205,63 @@ def main() -> int:
         if not errs:
             errors.append(f"INVALID expected fail: {path.name}")
 
-    # Checked-in compatibility.json must still validate and must not claim stream-*.
+    # Checked-in compatibility.json must validate and honestly claim LS-12 core
+    # stream caps (required) while keeping optional package stream caps out of
+    # required and never claiming unimplemented stream-file-watch / list-sessions.
+    CORE_STREAM = [
+        "stream-core",
+        "stream-cursor-v1",
+        "stream-jsonl-framing",
+        "stream-apply-snapshot",
+        "stream-apply-append",
+        "stream-full-snapshot",
+        "stream-record-delta",
+        "stream-reset",
+        "stream-provisional-records",
+        "stream-deterministic-replay",
+        "stream-file-jsonl",
+        "stream-ahp-snapshot",
+        "stream-ahp-action-log",
+    ]
+    OPTIONAL_PACKAGE_STREAM = {
+        "stream-file-io",
+        "stream-async-iterator",
+        "stream-ahp-client",
+        "stream-hermes-provider",
+    }
+    UNIMPLEMENTED_STREAM = {"stream-file-watch", "stream-ahp-list-sessions"}
+
     manifest_path = ROOT / "contracts" / "compatibility.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     v = validator_for("compatibility-manifest-v1.schema.json")
     man_errs = list(v.iter_errors(manifest))
     if man_errs:
         errors.append(f"compatibility.json invalid: {man_errs[0].message}")
-    for section in ("required", "optional"):
-        for cap in manifest["capabilities"][section]:
-            if isinstance(cap, str) and cap.startswith("stream-"):
-                errors.append(
-                    f"compatibility.json must not claim stream capability yet: {cap}"
-                )
+    required = list(manifest.get("capabilities", {}).get("required", []))
+    optional = list(manifest.get("capabilities", {}).get("optional", []))
+    all_claimed = required + optional
+    for cap in CORE_STREAM:
+        if cap not in required:
+            errors.append(
+                f"compatibility.json capabilities.required missing core stream cap: {cap}"
+            )
+    for cap in OPTIONAL_PACKAGE_STREAM:
+        if cap in required:
+            errors.append(
+                f"compatibility.json must not put optional package stream cap "
+                f"in required: {cap}"
+            )
+    for cap in all_claimed:
+        if isinstance(cap, str) and cap in UNIMPLEMENTED_STREAM:
+            errors.append(
+                f"compatibility.json must not claim unimplemented stream cap: {cap}"
+            )
+    # No global "stream" flag masking partial implementation.
+    if "stream" in all_claimed:
+        errors.append(
+            "compatibility.json must not claim global 'stream' capability "
+            "(use fine-grained stream-* names)"
+        )
 
     if errors:
         print(f"{len(errors)} failure(s):", file=sys.stderr)
@@ -227,7 +271,7 @@ def main() -> int:
 
     print(
         f"ok: {len(valid_files)} valid, {len(invalid_files)} invalid vectors; "
-        "compatibility.json has no stream-* claims; shared fragments aligned"
+        "compatibility.json LS-12 stream claims honest; shared fragments aligned"
     )
     return 0
 

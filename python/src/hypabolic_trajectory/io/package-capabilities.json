@@ -1,0 +1,9 @@
+{
+  "package": "hypabolic-trajectory[io]",
+  "runtime": "python",
+  "module": "hypabolic_trajectory.io",
+  "capabilities": [
+    "stream-file-io"
+  ],
+  "notes": "Optional stdlib file poll/follow extra. Not claimed by core runtime-capabilities.json."
+}

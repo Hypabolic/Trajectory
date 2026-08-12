@@ -17,7 +17,9 @@ product design: [`live-session-streaming.md`](live-session-streaming.md).
 | Python | `hypabolic_trajectory.streaming` (also re-exported from package root) |
 
 Core packages **must not** open filesystem watchers, network sockets, or SQLite.
-Do **not** advertise `stream-*` capabilities in runtime manifests until LS-12.
+Core `stream-*` capabilities are advertised after LS-12 (see
+`contracts/compatibility.json` and runtime `runtime-capabilities.json`).
+Optional I/O / client / provider caps stay on optional packages only.
 
 ## Mental model
 
@@ -129,8 +131,8 @@ snapshots, Shape B reducer, provisional `activeTurn`, and serverSeq gaps.
 ## Related slices
 
 - File I/O packages: [`streaming-file-io.md`](streaming-file-io.md) (LS-09)
-- Optional AHP network clients (LS-10)
-- Capability advertising (LS-12)
+- Optional AHP network clients: [`ahp-client.md`](ahp-client.md) (LS-10)
+- Capability advertising: LS-12 (core manifests + optional `package-capabilities.json`)
 
 ## Idiomatic entry points
 

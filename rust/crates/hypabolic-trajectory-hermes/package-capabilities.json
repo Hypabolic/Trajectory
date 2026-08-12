@@ -1,0 +1,8 @@
+{
+  "package": "hypabolic-trajectory-hermes",
+  "runtime": "rust",
+  "capabilities": [
+    "stream-hermes-provider"
+  ],
+  "notes": "Optional Hermes SQLite/provider stream. Not claimed by core hypabolic-trajectory."
+}

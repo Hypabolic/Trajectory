@@ -599,12 +599,14 @@ Known stream capability names (for manifests and case requirements):
 | `stream-hermes-provider` | SQLite/query provider |
 | `stream-async-iterator` | async iteration helpers |
 
-**Do not** mark `stream-*` capabilities implemented in runtime
-`runtime-capabilities.json` or claim them in `compatibility.json` until the
-matrix for that capability is green on all four runtimes (or the optional
-package is explicitly per-ecosystem for I/O only). The compatibility manifest
-schema **allows** these names so later slices can advertise them without a
-schema break.
+Core `stream-*` capabilities are claimed in `compatibility.json` (required)
+and each runtime’s core `runtime-capabilities.json` only when the shared stream
+matrix is green on all four runtimes (LS-12). Optional package capabilities
+(`stream-file-io`, `stream-ahp-client`, `stream-hermes-provider`,
+`stream-async-iterator`, …) are advertised only on those optional packages’
+`package-capabilities.json` manifests — never as a global `stream` flag and
+never on core packages. Unimplemented names (`stream-file-watch`,
+`stream-ahp-list-sessions`) must not be claimed.
 
 ---
 

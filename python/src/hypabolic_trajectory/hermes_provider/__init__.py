@@ -11,7 +11,8 @@ Queries session rows (never byte-tails ``state.db``) and feeds pure core
         SqliteHermesProvider,
     )
 
-Capability ``stream-hermes-provider`` is not advertised until LS-12.
+Capability ``stream-hermes-provider`` is advertised only on this optional
+module (``package-capabilities.json``), never on core runtime-capabilities.
 """
 
 from __future__ import annotations

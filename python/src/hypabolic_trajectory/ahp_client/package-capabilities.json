@@ -1,0 +1,9 @@
+{
+  "package": "hypabolic-trajectory[ahp]",
+  "runtime": "python",
+  "module": "hypabolic_trajectory.ahp_client",
+  "capabilities": [
+    "stream-ahp-client"
+  ],
+  "notes": "Optional AHP live-host client module. Not claimed by core runtime-capabilities.json."
+}

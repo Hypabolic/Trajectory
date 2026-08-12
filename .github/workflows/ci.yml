@@ -72,6 +72,43 @@ jobs:
           dotnet build
           dotnet/tests/Trajectory.Conformance/Trajectory.Conformance.csproj
           -c Release --no-restore
+      - name: Validate .NET capability manifest
+        run: |
+          jq -e '
+            .runtime == "dotnet"
+            and .slice == "ML13"
+            and .normalizer_contract_version == "0.2.0"
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"]
+            and .outputs == [
+              "letta-trajectory-v1",
+              "letta-canonical-v1",
+              "hypabolic-trajectory-v1",
+              "openai-chat-messages",
+              "jsonl-minimal",
+              "otel-genai-spans-v1"
+            ]
+            and .capabilities == [
+              "normalize",
+              "normalize-partial",
+              "list-explicit-root",
+              "typed-diagnostics",
+              "typed-fatal-errors",
+              "deterministic-rerun",
+              "stream-core",
+              "stream-cursor-v1",
+              "stream-jsonl-framing",
+              "stream-apply-snapshot",
+              "stream-apply-append",
+              "stream-full-snapshot",
+              "stream-record-delta",
+              "stream-reset",
+              "stream-provisional-records",
+              "stream-deterministic-replay",
+              "stream-file-jsonl",
+              "stream-ahp-snapshot",
+              "stream-ahp-action-log"
+            ]
+          ' dotnet/src/Trajectory/runtime-capabilities.json > /dev/null
       - name: Run every shared case twice
         run: |
           summary=$(python3 conformance/verify.py --repository-root . -- \
@@ -207,6 +244,27 @@ jobs:
               "jsonl-minimal",
               "otel-genai-spans-v1"
             ]
+            and .capabilities == [
+              "normalize",
+              "normalize-partial",
+              "list-explicit-root",
+              "typed-diagnostics",
+              "typed-fatal-errors",
+              "deterministic-rerun",
+              "stream-core",
+              "stream-cursor-v1",
+              "stream-jsonl-framing",
+              "stream-apply-snapshot",
+              "stream-apply-append",
+              "stream-full-snapshot",
+              "stream-record-delta",
+              "stream-reset",
+              "stream-provisional-records",
+              "stream-deterministic-replay",
+              "stream-file-jsonl",
+              "stream-ahp-snapshot",
+              "stream-ahp-action-log"
+            ]
           ' typescript/packages/trajectory/runtime-capabilities.json > /dev/null
       - name: Run every advertised shared case twice
         run: |
@@ -333,7 +391,20 @@ jobs:
               "list-explicit-root",
               "typed-diagnostics",
               "typed-fatal-errors",
-              "deterministic-rerun"
+              "deterministic-rerun",
+              "stream-core",
+              "stream-cursor-v1",
+              "stream-jsonl-framing",
+              "stream-apply-snapshot",
+              "stream-apply-append",
+              "stream-full-snapshot",
+              "stream-record-delta",
+              "stream-reset",
+              "stream-provisional-records",
+              "stream-deterministic-replay",
+              "stream-file-jsonl",
+              "stream-ahp-snapshot",
+              "stream-ahp-action-log"
             ]
           ' python/runtime-capabilities.json > /dev/null
       - name: Check progressive argv maps (claimed ⊆ verified; tip equality)
@@ -464,6 +535,27 @@ jobs:
               "openai-chat-messages",
               "jsonl-minimal",
               "otel-genai-spans-v1"
+            ]
+            and .capabilities == [
+              "normalize",
+              "normalize-partial",
+              "list-explicit-root",
+              "typed-diagnostics",
+              "typed-fatal-errors",
+              "deterministic-rerun",
+              "stream-core",
+              "stream-cursor-v1",
+              "stream-jsonl-framing",
+              "stream-apply-snapshot",
+              "stream-apply-append",
+              "stream-full-snapshot",
+              "stream-record-delta",
+              "stream-reset",
+              "stream-provisional-records",
+              "stream-deterministic-replay",
+              "stream-file-jsonl",
+              "stream-ahp-snapshot",
+              "stream-ahp-action-log"
             ]
           ' rust/crates/hypabolic-trajectory/runtime-capabilities.json > /dev/null
       - name: Run every advertised shared case and output twice

@@ -5,6 +5,17 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **LS-12 capability claims and release gate:** advertise completed live-session
+  streaming honestly. `contracts/compatibility.json` required list and all four
+  core `runtime-capabilities.json` (dotnet / typescript / rust / python) claim
+  core `stream-*` capabilities after the LS-08 matrix is green on every runtime.
+  Optional package caps (`stream-file-io`, `stream-async-iterator`,
+  `stream-ahp-client`, `stream-hermes-provider`) live only on optional package
+  `package-capabilities.json` manifests — not on core. Unimplemented
+  `stream-file-watch` / `stream-ahp-list-sessions` are not claimed. Docs, CI tip
+  equality, release-metadata validators, progressive capability maps, and
+  privacy/schema gates updated. No root `VERSION` bump / no registry publish.
+
 - **LS-11 sample CLI stream commands (all four ecosystems):** unpublished
   sample CLIs gain `stream` (JSONL file follow via optional file I/O + core
   apply; default emit `snapshot+delta`; `--follow` is process-owned, not a
@@ -12,7 +23,7 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
   `fake://` FakeAhpHost + fixture paths; live WebSocket remains
   consumer-injected `AhpTransport`). Privacy-safe defaults with
   `--show-content` opt-in. Automated tests use temp stores and fake hosts
-  only. Capability advertising still deferred to LS-12.
+  only.
 
 - **LS-10 optional AHP client packages (all four ecosystems):** transport-only
   live-host clients (`Hypabolic.Trajectory.Ahp`, `@hypabolic/trajectory-ahp`,

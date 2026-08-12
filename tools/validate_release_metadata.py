@@ -28,16 +28,30 @@ OUTPUTS = [
     "otel-genai-spans-v1",
 ]
 EXPECTED_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"]
-# Tip capability set advertised by peer runtimes (ML13). PY-15b / ship require
-# python/runtime-capabilities.json equality to this set (order-sensitive).
+# Tip capability set advertised by peer runtimes (ML13 + LS-12 stream core).
+# PY-15b / ship require python/runtime-capabilities.json equality to this set
+# (order-sensitive). Optional package stream caps (file-io / ahp-client /
+# hermes-provider) live only on optional package-capabilities.json manifests.
 TIP_CAPABILITIES = [
-
     "normalize",
     "normalize-partial",
     "list-explicit-root",
     "typed-diagnostics",
     "typed-fatal-errors",
     "deterministic-rerun",
+    "stream-core",
+    "stream-cursor-v1",
+    "stream-jsonl-framing",
+    "stream-apply-snapshot",
+    "stream-apply-append",
+    "stream-full-snapshot",
+    "stream-record-delta",
+    "stream-reset",
+    "stream-provisional-records",
+    "stream-deterministic-replay",
+    "stream-file-jsonl",
+    "stream-ahp-snapshot",
+    "stream-ahp-action-log",
 ]
 
 
@@ -110,7 +124,33 @@ def main() -> None:
         )
 
     expected_sources = compatibility["implemented"]["sources"]
+    if compatibility["capabilities"]["required"] != TIP_CAPABILITIES:
+        raise SystemExit(
+            "contracts/compatibility.json capabilities.required must equal tip "
+            f"{TIP_CAPABILITIES} (got {compatibility['capabilities']['required']})."
+        )
+    # Optional stream package caps may appear only under capabilities.optional —
+    # never as a global "stream" flag, and never on core-required alone.
+    optional_caps = compatibility["capabilities"]["optional"]
+    for forbidden in ("stream-file-watch", "stream-ahp-list-sessions"):
+        if forbidden in TIP_CAPABILITIES or forbidden in optional_caps:
+            raise SystemExit(
+                f"compatibility.json must not claim unimplemented capability {forbidden!r}."
+            )
+    for optional_stream in (
+        "stream-file-io",
+        "stream-async-iterator",
+        "stream-ahp-client",
+        "stream-hermes-provider",
+    ):
+        if optional_stream in TIP_CAPABILITIES:
+            raise SystemExit(
+                f"optional package capability {optional_stream!r} must not be in "
+                "capabilities.required (claim only on optional packages)."
+            )
+
     runtime_manifests = [
+        root / "dotnet/src/Trajectory/runtime-capabilities.json",
         root / "typescript/packages/trajectory/runtime-capabilities.json",
         root / "rust/crates/hypabolic-trajectory/runtime-capabilities.json",
     ]
@@ -120,10 +160,12 @@ def main() -> None:
             manifest.get("slice") != SLICE
             or manifest.get("outputs") != OUTPUTS
             or manifest.get("sources") != expected_sources
+            or manifest.get("capabilities") != TIP_CAPABILITIES
         ):
             raise SystemExit(
-                f"{path.relative_to(root)} does not advertise ML13 source/output parity "
-                f"(slice={SLICE}, sources={expected_sources})."
+                f"{path.relative_to(root)} does not advertise tip source/output/"
+                f"capability parity (slice={SLICE}, sources={expected_sources}, "
+                f"capabilities={TIP_CAPABILITIES})."
             )
 
     npm_paths = [

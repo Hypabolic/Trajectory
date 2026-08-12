@@ -56,10 +56,11 @@ Stream comparison modes (from `contracts/spec/streaming.md`):
 | `stream-idempotence` | Double-apply parity (`idempotent: true`) |
 | `stream-oracle-parity` | Append path equals prefix re-normalize, or AHP action path equals independent Shape A snapshot (`case.oracle`) |
 
-**LS-08:** per-step `expected.result` goldens are checked in for the full
+**LS-08 / LS-12:** per-step `expected.result` goldens are checked in for the full
 streaming corpus. `stream-oracle-parity` is enabled on file-JSONL growth and
-reset cases (and AHP action≡snapshot where materials exist). Do **not** claim
-`stream-*` capabilities in runtime manifests until LS-12.
+reset cases (and AHP action≡snapshot where materials exist). Core `stream-*`
+capabilities are claimed in `contracts/compatibility.json` and the four
+runtime capability manifests; optional package caps only on those packages.
 
 Privacy: every stream case should list `privacy.forbidden_substrings` (plus
 defaults in `verify.py`). Diagnostics, errors, and goldens are scanned.
@@ -83,7 +84,7 @@ defaults in `verify.py`). Diagnostics, errors, and goldens are scanned.
 2. Prefer synthetic `inline_utf8` for tiny steps; use `material` relative paths
    for multi-line JSONL / AHP JSON.
 3. Declare `required_capabilities` with the `stream-*` names the case needs
-   (capability advertising is LS-12; engines still execute the cases today).
+   (must match claimed core or optional package capabilities).
 4. List comparison modes including `stream-oracle-parity` when append or AHP
    action≡snapshot applies; set `oracle` flags accordingly.
 5. Produce `expected.<step-id>.json` goldens from a trusted runner, review by
