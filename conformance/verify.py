@@ -809,20 +809,25 @@ def _envelope_finalized_ids(update: dict[str, Any]) -> list[Any]:
 
 
 def _step_diagnostic_codes(update: dict[str, Any]) -> list[str]:
+    """Codes for stream-diagnostics-by-step / expected.diagnostic_codes.
+
+    Prefer ``update.diagnostics`` (StreamUpdate field) as the authoritative
+    per-step source. Fall back to ``snapshot.diagnostics`` only when the update
+    omits the field entirely. Never concatenate both — engines may populate
+    both with the same codes (normative StreamUpdate and StreamSnapshot each
+    carry diagnostics), which would double-count.
+    """
+    items = update.get("diagnostics")
+    if items is None:
+        snapshot = update.get("snapshot")
+        if isinstance(snapshot, dict):
+            items = snapshot.get("diagnostics")
+    if not isinstance(items, list):
+        return []
     codes: list[str] = []
-    for key in ("diagnostics",):
-        items = update.get(key)
-        if isinstance(items, list):
-            for item in items:
-                if isinstance(item, dict) and isinstance(item.get("code"), str):
-                    codes.append(item["code"])
-    snapshot = update.get("snapshot")
-    if isinstance(snapshot, dict):
-        items = snapshot.get("diagnostics")
-        if isinstance(items, list):
-            for item in items:
-                if isinstance(item, dict) and isinstance(item.get("code"), str):
-                    codes.append(item["code"])
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("code"), str):
+            codes.append(item["code"])
     return codes
 
 

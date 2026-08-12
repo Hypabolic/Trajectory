@@ -600,7 +600,7 @@ extension or v2 alongside):
 - `stream-apply-ahp-snapshot`
 - `stream-finish`
 - `stream-reset`
-- `stream-replay`
+- `stream-sequence` (synonym: `stream-replay`)
 
 Cases are **ordered sequences** of inputs with expected update arrays.
 

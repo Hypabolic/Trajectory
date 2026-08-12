@@ -34,6 +34,19 @@
         "complete": false
       },
       "double_invoke": true
+    },
+    {
+      "id": "append-line-replay",
+      "input": {
+        "kind": "append-bytes",
+        "material": "step-line.jsonl",
+        "source_revision": "gen-0"
+      },
+      "expected": {
+        "update_kind": "unchanged",
+        "complete": false
+      },
+      "double_invoke": true
     }
   ],
   "comparison": [

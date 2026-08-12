@@ -31,7 +31,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "diagnostic_codes": ["invalid_json_line"]
       },
       "double_invoke": true
     },

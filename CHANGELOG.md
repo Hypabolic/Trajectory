@@ -5,6 +5,14 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **LS-02 stream conformance protocol & fixture skeleton:** protocol ops
+  (`stream-sequence` / `stream-replay` plus reserved per-step apply ops) on
+  request-v1; `conformance/verify.py` branches batch vs multi-step stream cases
+  with comparison modes from `contracts/spec/streaming.md` (including
+  normative delta-apply); all four runtime runners accept stream ops and return
+  `status: unsupported` until engines land (LS-04+); 18 scaffold cases under
+  `conformance/cases/streaming/` with privacy scans. No stream capability claims.
+
 - **LS-01 streaming contracts:** normative `contracts/spec/streaming.md` and
   schemas `trajectory-stream-v1`, `streaming-cursor-v1`, `streaming-delta-v1`,
   `streaming-case-v1`; compatibility manifest schema allows `stream-*`

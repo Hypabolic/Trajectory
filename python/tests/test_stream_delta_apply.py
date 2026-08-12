@@ -97,6 +97,35 @@ def test_diagnostic_key_encoding_normative_examples() -> None:
     )
 
 
+def test_step_diagnostic_codes_prefers_update_not_concat() -> None:
+    """update.diagnostics is authoritative; do not double-count snapshot."""
+    same = {"code": "invalid_json_line", "message": "bad"}
+    update = {
+        "kind": "updated",
+        "diagnostics": [same],
+        "snapshot": {"diagnostics": [same]},
+    }
+    assert verify._step_diagnostic_codes(update) == ["invalid_json_line"]
+
+    # Explicit empty list on update is authoritative (no fall-through).
+    cleared = {
+        "kind": "updated",
+        "diagnostics": [],
+        "snapshot": {"diagnostics": [same]},
+    }
+    assert verify._step_diagnostic_codes(cleared) == []
+
+    # Fall back to snapshot only when update omits the field.
+    snap_only = {
+        "kind": "updated",
+        "snapshot": {"diagnostics": [same, {"code": "orphan_tool_result"}]},
+    }
+    assert verify._step_diagnostic_codes(snap_only) == [
+        "invalid_json_line",
+        "orphan_tool_result",
+    ]
+
+
 def test_match_key_prefers_provisional_id() -> None:
     provisional = {
         "status": "provisional",
