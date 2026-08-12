@@ -1,0 +1,38 @@
+{
+  "schema": "trajectory-stream-v1.schema.json",
+  "instance": {
+    "kind": "unchanged",
+    "revision": {
+      "revision": 1,
+      "revision_id": "rev-1",
+      "parent_revision_id": "rev-0",
+      "complete": false,
+      "generation": 0
+    },
+    "cursor": {
+      "cursor_version": 1,
+      "source": "codex",
+      "group_id": "codex-group",
+      "generation": 0,
+      "position": {
+        "kind": "byte",
+        "next_byte_offset": 64,
+        "pending_byte_length": 0
+      },
+      "source_revision": "r1",
+      "prefix_sha256": null
+    },
+    "snapshot": null,
+    "delta": null,
+    "diagnostics": [],
+    "provisional": {
+      "include": true,
+      "provisional_ids": [],
+      "finalized_ids": []
+    },
+    "consumed": {
+      "complete_records": 0,
+      "bytes": 0
+    }
+  }
+}

@@ -1,0 +1,575 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hypabolic.dev/trajectory/contracts/trajectory-stream-v1.schema.json",
+  "title": "Trajectory stream update / snapshot v1",
+  "description": "Normative StreamUpdate envelope and embedded StreamSnapshot for trajectory-stream-v1. Default delivery includes both snapshot and delta on kind=updated. Empty records arrays are valid. See contracts/spec/streaming.md.",
+  "oneOf": [
+    { "$ref": "#/$defs/streamUpdate" },
+    { "$ref": "#/$defs/streamSnapshot" }
+  ],
+  "$defs": {
+    "uint64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "int64": {
+      "type": "integer",
+      "minimum": -9223372036854775808,
+      "maximum": 9223372036854775807
+    },
+    "nonNegativeInt64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sourceName": {
+      "type": "string",
+      "enum": [
+        "pi",
+        "claude-code",
+        "codex",
+        "openclaw",
+        "hermes",
+        "ahp",
+        "grok-build"
+      ]
+    },
+    "recordStatus": {
+      "type": "string",
+      "enum": ["provisional", "stable", "final"]
+    },
+    "timestamp": {
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "streamRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "revision_id",
+        "parent_revision_id",
+        "complete",
+        "generation"
+      ],
+      "properties": {
+        "revision": { "$ref": "#/$defs/uint64" },
+        "revision_id": { "type": "string", "minLength": 1 },
+        "parent_revision_id": { "type": ["string", "null"] },
+        "complete": { "type": "boolean" },
+        "generation": { "$ref": "#/$defs/uint64" }
+      }
+    },
+    "streamDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Typed code. Stream operational: stream_source_reset, stream_cursor_conflict, stream_sequence_gap, stream_resync_required, stream_buffer_limit. No path/raw/secret fields."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Content-safe fixed text only."
+        },
+        "input_line": { "type": "integer", "minimum": 1 },
+        "record_index": { "type": "integer", "minimum": 0 },
+        "count": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "streamRecordBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "role",
+        "order",
+        "source_timestamp",
+        "timestamp",
+        "provenance",
+        "hashes"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/sha256" },
+        "kind": {
+          "enum": ["meta", "message", "assistant_tool_calls", "tool_result"]
+        },
+        "role": {
+          "enum": ["meta", "user", "reasoning", "assistant", "tool"]
+        },
+        "order": { "type": "integer", "minimum": -1 },
+        "source_timestamp": { "$ref": "#/$defs/timestamp" },
+        "timestamp": { "$ref": "#/$defs/timestamp" },
+        "source_name": { "type": "string", "minLength": 1 },
+        "cwd": { "type": "string" },
+        "git_branch": { "type": "string" },
+        "model": { "type": "string" },
+        "producer_version": { "type": "string" },
+        "content": { "type": ["string", "null"] },
+        "tool_calls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "arguments_json"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "arguments_json": { "type": "string" }
+            }
+          }
+        },
+        "tool_call_id": { "type": "string", "minLength": 1 },
+        "tool_name": { "type": "string", "minLength": 1 },
+        "is_error": { "type": "boolean" },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stable_source_record_id",
+            "source_identity_kind",
+            "source_order_id",
+            "component_key",
+            "component_index",
+            "component_type_ordinal"
+          ],
+          "properties": {
+            "stable_source_record_id": { "type": "string", "minLength": 1 },
+            "source_identity_kind": {
+              "enum": ["native", "location", "content", "synthetic"]
+            },
+            "source_order_id": { "type": "string", "minLength": 1 },
+            "component_key": { "type": "string", "minLength": 1 },
+            "component_index": { "type": "integer", "minimum": 0 },
+            "component_type_ordinal": { "type": "integer", "minimum": 0 },
+            "producer_version": { "type": "string", "minLength": 1 },
+            "native_record_id": { "type": "string", "minLength": 1 },
+            "source_sequence": { "type": "integer", "minimum": 0 },
+            "source_offset": { "type": "integer", "minimum": 0 },
+            "source_anchor_kind": {
+              "enum": ["byte", "ordinal", "row", "sequence"]
+            }
+          }
+        },
+        "hashes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["content_sha256", "record_sha256"],
+          "properties": {
+            "content_sha256": { "$ref": "#/$defs/sha256" },
+            "record_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      }
+    },
+    "streamRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "record"],
+      "properties": {
+        "status": { "$ref": "#/$defs/recordStatus" },
+        "record": { "$ref": "#/$defs/streamRecordBody" },
+        "provisional_id": { "type": "string", "minLength": 1 },
+        "replaces_provisional_id": { "type": "string", "minLength": 1 },
+        "finalizes_provisional_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "bytePosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "next_byte_offset", "pending_byte_length"],
+      "properties": {
+        "kind": { "const": "byte" },
+        "next_byte_offset": { "$ref": "#/$defs/nonNegativeInt64" },
+        "pending_byte_length": { "$ref": "#/$defs/nonNegativeInt64" }
+      }
+    },
+    "ahpServerSeqPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "next_server_seq", "last_server_seq"],
+      "properties": {
+        "kind": { "const": "ahp-server-seq" },
+        "next_server_seq": { "$ref": "#/$defs/int64" },
+        "last_server_seq": { "$ref": "#/$defs/int64" },
+        "next_byte_offset": { "$ref": "#/$defs/nonNegativeInt64" }
+      }
+    },
+    "snapshotRevisionPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "revision"],
+      "properties": {
+        "kind": { "const": "snapshot-revision" },
+        "revision": { "type": "string", "minLength": 1 },
+        "content_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "hermesRowPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "database_generation"],
+      "properties": {
+        "kind": { "const": "hermes-row" },
+        "database_generation": { "type": "string", "minLength": 1 },
+        "last_row_id": { "$ref": "#/$defs/int64" },
+        "change_token": { "type": "string", "minLength": 1 }
+      }
+    },
+    "streamCursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cursor_version",
+        "source",
+        "group_id",
+        "generation",
+        "position",
+        "source_revision",
+        "prefix_sha256"
+      ],
+      "properties": {
+        "cursor_version": { "const": 1 },
+        "source": { "$ref": "#/$defs/sourceName" },
+        "group_id": { "type": "string", "minLength": 1 },
+        "generation": { "$ref": "#/$defs/uint64" },
+        "position": {
+          "oneOf": [
+            { "$ref": "#/$defs/bytePosition" },
+            { "$ref": "#/$defs/ahpServerSeqPosition" },
+            { "$ref": "#/$defs/snapshotRevisionPosition" },
+            { "$ref": "#/$defs/hermesRowPosition" }
+          ]
+        },
+        "source_revision": { "type": ["string", "null"] },
+        "prefix_sha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "streamReset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "prior_cursor",
+        "requires_snapshot",
+        "dropped_record_ids"
+      ],
+      "properties": {
+        "reason": {
+          "enum": [
+            "source-truncated",
+            "source-replaced",
+            "source-compacted",
+            "cursor-mismatch",
+            "group-changed",
+            "sequence-gap",
+            "prefix-hash-mismatch",
+            "manual"
+          ]
+        },
+        "prior_cursor": {
+          "oneOf": [
+            { "$ref": "#/$defs/streamCursor" },
+            { "type": "null" }
+          ]
+        },
+        "requires_snapshot": { "type": "boolean" },
+        "dropped_record_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "streamDeltaOperation": {
+      "type": "object",
+      "required": ["op"],
+      "properties": {
+        "op": {
+          "enum": [
+            "upsert",
+            "remove",
+            "finalize",
+            "state_change",
+            "diagnostic_add",
+            "diagnostic_remove",
+            "reset"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "op": { "const": "upsert" } }, "required": ["op"] },
+          "then": {
+            "additionalProperties": false,
+            "required": ["op", "record"],
+            "properties": {
+              "op": { "const": "upsert" },
+              "record": { "$ref": "#/$defs/streamRecord" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "remove" } }, "required": ["op"] },
+          "then": {
+            "additionalProperties": false,
+            "required": ["op", "record_id", "reason"],
+            "properties": {
+              "op": { "const": "remove" },
+              "record_id": { "type": "string", "minLength": 1 },
+              "reason": {
+                "enum": ["retracted", "reset", "source-rewrite"]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "finalize" } }, "required": ["op"] },
+          "then": {
+            "additionalProperties": false,
+            "required": ["op", "provisional_id", "record"],
+            "properties": {
+              "op": { "const": "finalize" },
+              "provisional_id": { "type": "string", "minLength": 1 },
+              "record": { "$ref": "#/$defs/streamRecord" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "op": { "const": "state_change" } },
+            "required": ["op"]
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": ["op", "record_id", "status"],
+            "properties": {
+              "op": { "const": "state_change" },
+              "record_id": { "type": "string", "minLength": 1 },
+              "status": { "$ref": "#/$defs/recordStatus" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "op": { "const": "diagnostic_add" } },
+            "required": ["op"]
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": ["op", "diagnostic"],
+            "properties": {
+              "op": { "const": "diagnostic_add" },
+              "diagnostic": { "$ref": "#/$defs/streamDiagnostic" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "op": { "const": "diagnostic_remove" } },
+            "required": ["op"]
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": ["op", "diagnostic_key"],
+            "properties": {
+              "op": { "const": "diagnostic_remove" },
+              "diagnostic_key": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "op": { "const": "reset" } }, "required": ["op"] },
+          "then": {
+            "additionalProperties": false,
+            "required": ["op", "reset"],
+            "properties": {
+              "op": { "const": "reset" },
+              "reset": { "$ref": "#/$defs/streamReset" }
+            }
+          }
+        }
+      ]
+    },
+    "streamDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_id",
+        "base_revision_id",
+        "revision",
+        "operations"
+      ],
+      "properties": {
+        "schema_id": { "const": "trajectory-stream-v1" },
+        "base_revision_id": { "type": ["string", "null"] },
+        "revision": { "$ref": "#/$defs/streamRevision" },
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/streamDeltaOperation" }
+        }
+      }
+    },
+    "streamSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_id",
+        "source",
+        "group_id",
+        "revision",
+        "records",
+        "diagnostics",
+        "complete"
+      ],
+      "properties": {
+        "$schema": { "type": "string" },
+        "schema_id": { "const": "trajectory-stream-v1" },
+        "source": { "$ref": "#/$defs/sourceName" },
+        "group_id": { "type": "string", "minLength": 1 },
+        "revision": { "$ref": "#/$defs/streamRevision" },
+        "records": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/streamRecord" },
+          "description": "Empty arrays are valid for live empty prefixes."
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/streamDiagnostic" }
+        },
+        "complete": { "type": "boolean" }
+      }
+    },
+    "provisionalInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["include", "provisional_ids", "finalized_ids"],
+      "properties": {
+        "include": { "type": "boolean" },
+        "provisional_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "finalized_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "consumedInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete_records", "bytes"],
+      "properties": {
+        "complete_records": { "$ref": "#/$defs/uint64" },
+        "bytes": { "$ref": "#/$defs/uint64" },
+        "first_source_position": { "$ref": "#/$defs/int64" },
+        "last_source_position": { "$ref": "#/$defs/int64" }
+      }
+    },
+    "streamError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Typed error code. Content-safe; no paths or secrets."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "streamUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "revision",
+        "cursor",
+        "snapshot",
+        "delta",
+        "diagnostics",
+        "provisional",
+        "consumed"
+      ],
+      "properties": {
+        "$schema": { "type": "string" },
+        "kind": {
+          "enum": ["updated", "unchanged", "reset-required", "error"]
+        },
+        "revision": { "$ref": "#/$defs/streamRevision" },
+        "cursor": { "$ref": "#/$defs/streamCursor" },
+        "snapshot": {
+          "oneOf": [
+            { "$ref": "#/$defs/streamSnapshot" },
+            { "type": "null" }
+          ]
+        },
+        "delta": {
+          "oneOf": [
+            { "$ref": "#/$defs/streamDelta" },
+            { "type": "null" }
+          ]
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/streamDiagnostic" }
+        },
+        "provisional": { "$ref": "#/$defs/provisionalInfo" },
+        "consumed": { "$ref": "#/$defs/consumedInfo" },
+        "reset": { "$ref": "#/$defs/streamReset" },
+        "error": { "$ref": "#/$defs/streamError" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "const": "updated" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "snapshot": { "$ref": "#/$defs/streamSnapshot" },
+              "delta": { "$ref": "#/$defs/streamDelta" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "reset-required" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["reset"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "error" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["error"]
+          }
+        }
+      ]
+    }
+  }
+}

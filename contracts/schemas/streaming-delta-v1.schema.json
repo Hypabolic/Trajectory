@@ -1,0 +1,368 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hypabolic.dev/trajectory/contracts/streaming-delta-v1.schema.json",
+  "title": "Trajectory stream delta v1",
+  "description": "Ordered record/diagnostic operations such that applying the delta to the prior snapshot yields the new snapshot (delta-apply law). See contracts/spec/streaming.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "base_revision_id",
+    "revision",
+    "operations"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_id": {
+      "const": "trajectory-stream-v1"
+    },
+    "base_revision_id": {
+      "type": ["string", "null"],
+      "description": "revision_id of the prior snapshot; null for the first revision of a generation."
+    },
+    "revision": {
+      "$ref": "#/$defs/streamRevision"
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    }
+  },
+  "$defs": {
+    "uint64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "recordStatus": {
+      "type": "string",
+      "enum": ["provisional", "stable", "final"]
+    },
+    "streamRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "revision_id",
+        "parent_revision_id",
+        "complete",
+        "generation"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/uint64",
+          "description": "Stream-local monotonic revision within the generation."
+        },
+        "revision_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Deterministic revision identifier."
+        },
+        "parent_revision_id": {
+          "type": ["string", "null"]
+        },
+        "complete": {
+          "type": "boolean",
+          "description": "True when the stream has been finished for this generation."
+        },
+        "generation": {
+          "$ref": "#/$defs/uint64"
+        }
+      }
+    },
+    "streamDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Typed diagnostic code. Stream operational codes include stream_source_reset, stream_cursor_conflict, stream_sequence_gap, stream_resync_required, stream_buffer_limit. Batch decode codes remain valid."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Content-safe fixed text. No paths, secrets, raw lines, or transcript prose."
+        },
+        "input_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "record_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "streamRecordBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "role",
+        "order",
+        "source_timestamp",
+        "timestamp",
+        "provenance",
+        "hashes"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/sha256" },
+        "kind": {
+          "enum": ["meta", "message", "assistant_tool_calls", "tool_result"]
+        },
+        "role": {
+          "enum": ["meta", "user", "reasoning", "assistant", "tool"]
+        },
+        "order": {
+          "type": "integer",
+          "minimum": -1
+        },
+        "source_timestamp": {
+          "type": ["string", "null"],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "timestamp": {
+          "type": ["string", "null"],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "source_name": { "type": "string", "minLength": 1 },
+        "cwd": { "type": "string" },
+        "git_branch": { "type": "string" },
+        "model": { "type": "string" },
+        "producer_version": { "type": "string" },
+        "content": { "type": ["string", "null"] },
+        "tool_calls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "arguments_json"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "arguments_json": { "type": "string" }
+            }
+          }
+        },
+        "tool_call_id": { "type": "string", "minLength": 1 },
+        "tool_name": { "type": "string", "minLength": 1 },
+        "is_error": { "type": "boolean" },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stable_source_record_id",
+            "source_identity_kind",
+            "source_order_id",
+            "component_key",
+            "component_index",
+            "component_type_ordinal"
+          ],
+          "properties": {
+            "stable_source_record_id": { "type": "string", "minLength": 1 },
+            "source_identity_kind": {
+              "enum": ["native", "location", "content", "synthetic"]
+            },
+            "source_order_id": { "type": "string", "minLength": 1 },
+            "component_key": { "type": "string", "minLength": 1 },
+            "component_index": { "type": "integer", "minimum": 0 },
+            "component_type_ordinal": { "type": "integer", "minimum": 0 },
+            "producer_version": { "type": "string", "minLength": 1 },
+            "native_record_id": { "type": "string", "minLength": 1 },
+            "source_sequence": { "type": "integer", "minimum": 0 },
+            "source_offset": { "type": "integer", "minimum": 0 },
+            "source_anchor_kind": {
+              "enum": ["byte", "ordinal", "row", "sequence"]
+            }
+          }
+        },
+        "hashes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["content_sha256", "record_sha256"],
+          "properties": {
+            "content_sha256": { "$ref": "#/$defs/sha256" },
+            "record_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      }
+    },
+    "streamRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "record"],
+      "properties": {
+        "status": { "$ref": "#/$defs/recordStatus" },
+        "record": { "$ref": "#/$defs/streamRecordBody" },
+        "provisional_id": { "type": "string", "minLength": 1 },
+        "replaces_provisional_id": { "type": "string", "minLength": 1 },
+        "finalizes_provisional_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "streamCursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cursor_version",
+        "source",
+        "group_id",
+        "generation",
+        "position",
+        "source_revision",
+        "prefix_sha256"
+      ],
+      "properties": {
+        "cursor_version": { "const": 1 },
+        "source": {
+          "enum": [
+            "pi",
+            "claude-code",
+            "codex",
+            "openclaw",
+            "hermes",
+            "ahp",
+            "grok-build"
+          ]
+        },
+        "group_id": { "type": "string", "minLength": 1 },
+        "generation": { "$ref": "#/$defs/uint64" },
+        "position": { "type": "object" },
+        "source_revision": { "type": ["string", "null"] },
+        "prefix_sha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "streamReset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "prior_cursor",
+        "requires_snapshot",
+        "dropped_record_ids"
+      ],
+      "properties": {
+        "reason": {
+          "enum": [
+            "source-truncated",
+            "source-replaced",
+            "source-compacted",
+            "cursor-mismatch",
+            "group-changed",
+            "sequence-gap",
+            "prefix-hash-mismatch",
+            "manual"
+          ]
+        },
+        "prior_cursor": {
+          "oneOf": [
+            { "$ref": "#/$defs/streamCursor" },
+            { "type": "null" }
+          ]
+        },
+        "requires_snapshot": { "type": "boolean" },
+        "dropped_record_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "operation": {
+      "oneOf": [
+        { "$ref": "#/$defs/opUpsert" },
+        { "$ref": "#/$defs/opRemove" },
+        { "$ref": "#/$defs/opFinalize" },
+        { "$ref": "#/$defs/opStateChange" },
+        { "$ref": "#/$defs/opDiagnosticAdd" },
+        { "$ref": "#/$defs/opDiagnosticRemove" },
+        { "$ref": "#/$defs/opReset" }
+      ]
+    },
+    "opUpsert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "record"],
+      "properties": {
+        "op": { "const": "upsert" },
+        "record": { "$ref": "#/$defs/streamRecord" }
+      }
+    },
+    "opRemove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "record_id", "reason"],
+      "properties": {
+        "op": { "const": "remove" },
+        "record_id": { "type": "string", "minLength": 1 },
+        "reason": {
+          "enum": ["retracted", "reset", "source-rewrite"]
+        }
+      }
+    },
+    "opFinalize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "provisional_id", "record"],
+      "properties": {
+        "op": { "const": "finalize" },
+        "provisional_id": { "type": "string", "minLength": 1 },
+        "record": { "$ref": "#/$defs/streamRecord" }
+      }
+    },
+    "opStateChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "record_id", "status"],
+      "properties": {
+        "op": { "const": "state_change" },
+        "record_id": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/recordStatus" }
+      }
+    },
+    "opDiagnosticAdd": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "diagnostic"],
+      "properties": {
+        "op": { "const": "diagnostic_add" },
+        "diagnostic": { "$ref": "#/$defs/streamDiagnostic" }
+      }
+    },
+    "opDiagnosticRemove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "diagnostic_key"],
+      "properties": {
+        "op": { "const": "diagnostic_remove" },
+        "diagnostic_key": { "type": "string", "minLength": 1 }
+      }
+    },
+    "opReset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "reset"],
+      "properties": {
+        "op": { "const": "reset" },
+        "reset": { "$ref": "#/$defs/streamReset" }
+      }
+    }
+  }
+}

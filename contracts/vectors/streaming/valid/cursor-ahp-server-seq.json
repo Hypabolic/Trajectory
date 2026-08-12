@@ -1,0 +1,17 @@
+{
+  "schema": "streaming-cursor-v1.schema.json",
+  "instance": {
+    "cursor_version": 1,
+    "source": "ahp",
+    "group_id": "ahp-chat-synthetic",
+    "generation": 1,
+    "position": {
+      "kind": "ahp-server-seq",
+      "next_server_seq": 42,
+      "last_server_seq": 41,
+      "next_byte_offset": 1200
+    },
+    "source_revision": "shape-b-gen-1",
+    "prefix_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}

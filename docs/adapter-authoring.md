@@ -10,6 +10,10 @@ Related:
 - [Normative normalization](../contracts/spec/normalization.md)
 - [Identity](../contracts/spec/identity.md)
 - [Listing](../contracts/spec/listing.md)
+- [Streaming](../contracts/spec/streaming.md) — live session stream wire
+  contract (`trajectory-stream-v1`); product design
+  [live-session-streaming.md](live-session-streaming.md) and slices
+  [live-session-streaming-plan.md](live-session-streaming-plan.md)
 - [Conformance case authoring](../conformance/README.md)
 - [Contributing](contributing.md)
 - [AHP source design](ahp-source-spec.md) — Agent Host Protocol Shape A offline

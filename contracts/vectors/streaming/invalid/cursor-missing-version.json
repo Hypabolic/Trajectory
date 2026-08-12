@@ -1,0 +1,15 @@
+{
+  "schema": "streaming-cursor-v1.schema.json",
+  "instance": {
+    "source": "pi",
+    "group_id": "g",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 0,
+      "pending_byte_length": 0
+    },
+    "source_revision": null,
+    "prefix_sha256": null
+  }
+}

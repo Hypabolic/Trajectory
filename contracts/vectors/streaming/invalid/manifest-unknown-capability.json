@@ -1,0 +1,27 @@
+{
+  "schema": "compatibility-manifest-v1.schema.json",
+  "reason": "Unknown capability names are rejected; stream-* names must use the known vocabulary.",
+  "instance": {
+    "manifest_version": 1,
+    "product": "Trajectory",
+    "contracts": {
+      "normalizer": "0.2.0",
+      "diagnostics": "1",
+      "conformance_protocol": "1"
+    },
+    "public_schemas": [
+      {
+        "id": "hypabolic-trajectory-v1",
+        "version": "1"
+      }
+    ],
+    "capabilities": {
+      "required": ["normalize", "not-a-real-capability"],
+      "optional": []
+    },
+    "implemented": {
+      "sources": ["pi"],
+      "outputs": ["hypabolic-trajectory-v1"]
+    }
+  }
+}

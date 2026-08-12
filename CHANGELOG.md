@@ -5,11 +5,18 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **LS-01 streaming contracts:** normative `contracts/spec/streaming.md` and
+  schemas `trajectory-stream-v1`, `streaming-cursor-v1`, `streaming-delta-v1`,
+  `streaming-case-v1`; compatibility manifest schema allows `stream-*`
+  capability names without claiming them implemented. Schema valid/invalid
+  vectors under `contracts/vectors/streaming/`. Stream engines not implemented
+  yet; no runtime capability claims.
+
 - Documented locked **live session streaming** design (library stream state
   machine, snapshot + delta envelopes, file JSONL + AHP + optional Hermes
   provider, all four runtimes) and delivery plan LS-00…LS-12. Spec:
   `docs/live-session-streaming.md`; plan:
-  `docs/live-session-streaming-plan.md`. Not implemented yet.
+  `docs/live-session-streaming-plan.md`.
 
 ## 0.1.2 — 2026-08-11
 

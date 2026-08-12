@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hypabolic.dev/trajectory/contracts/streaming-cursor-v1.schema.json",
+  "title": "Trajectory stream cursor v1",
+  "description": "Public serializable stream position checkpoint (cursor_version 1). Distinct from listing pagination cursors. Cursor alone is insufficient for resume; pair with re-applied source material.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "cursor_version",
+    "source",
+    "group_id",
+    "generation",
+    "position",
+    "source_revision",
+    "prefix_sha256"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "cursor_version": {
+      "const": 1,
+      "description": "Wire cursor version."
+    },
+    "source": {
+      "$ref": "#/$defs/sourceName"
+    },
+    "group_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Resolved source group for this stream session."
+    },
+    "generation": {
+      "$ref": "#/$defs/uint64",
+      "description": "Increments on every accepted reset / new generation."
+    },
+    "position": {
+      "$ref": "#/$defs/position"
+    },
+    "source_revision": {
+      "type": ["string", "null"],
+      "description": "File generation, host revision token, or null when unknown."
+    },
+    "prefix_sha256": {
+      "oneOf": [
+        { "$ref": "#/$defs/sha256" },
+        { "type": "null" }
+      ],
+      "description": "Optional fingerprint of the committed prefix."
+    }
+  },
+  "$defs": {
+    "sourceName": {
+      "type": "string",
+      "enum": [
+        "pi",
+        "claude-code",
+        "codex",
+        "openclaw",
+        "hermes",
+        "ahp",
+        "grok-build"
+      ]
+    },
+    "int64": {
+      "type": "integer",
+      "minimum": -9223372036854775808,
+      "maximum": 9223372036854775807
+    },
+    "uint64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "nonNegativeInt64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "position": {
+      "oneOf": [
+        { "$ref": "#/$defs/bytePosition" },
+        { "$ref": "#/$defs/ahpServerSeqPosition" },
+        { "$ref": "#/$defs/snapshotRevisionPosition" },
+        { "$ref": "#/$defs/hermesRowPosition" }
+      ]
+    },
+    "bytePosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "next_byte_offset", "pending_byte_length"],
+      "properties": {
+        "kind": { "const": "byte" },
+        "next_byte_offset": {
+          "$ref": "#/$defs/nonNegativeInt64",
+          "description": "Byte offset after the last committed complete record. Never past a half-line or incomplete UTF-8 sequence."
+        },
+        "pending_byte_length": {
+          "$ref": "#/$defs/nonNegativeInt64",
+          "description": "Length of pending incomplete line/UTF-8 bytes held in state (content not embedded)."
+        }
+      }
+    },
+    "ahpServerSeqPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "next_server_seq", "last_server_seq"],
+      "properties": {
+        "kind": { "const": "ahp-server-seq" },
+        "next_server_seq": {
+          "$ref": "#/$defs/int64",
+          "description": "Next expected AHP serverSeq (gap → resync)."
+        },
+        "last_server_seq": {
+          "$ref": "#/$defs/int64",
+          "description": "Last applied AHP serverSeq."
+        },
+        "next_byte_offset": {
+          "$ref": "#/$defs/nonNegativeInt64",
+          "description": "Optional action-log byte provenance."
+        }
+      }
+    },
+    "snapshotRevisionPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "revision"],
+      "properties": {
+        "kind": { "const": "snapshot-revision" },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Host or Shape A snapshot revision token."
+        },
+        "content_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "hermesRowPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "database_generation"],
+      "properties": {
+        "kind": { "const": "hermes-row" },
+        "database_generation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Opaque DB generation / open-token identity from the provider."
+        },
+        "last_row_id": { "$ref": "#/$defs/int64" },
+        "change_token": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

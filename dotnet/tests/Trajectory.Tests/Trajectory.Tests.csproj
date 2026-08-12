@@ -28,6 +28,9 @@
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../../contracts/compatibility.json" Link="Contracts/compatibility.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../../contracts/schemas/*.json" Link="Schemas/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../../contracts/vectors/streaming/**/*"
+          Link="ContractVectors/streaming/%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../../conformance/protocol/*.json" Link="ConformanceProtocol/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

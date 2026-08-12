@@ -1,7 +1,7 @@
 # Live session streaming — product and technical specification
 
-Status: **locked design** (not yet implemented)  
-Contract family: `trajectory-stream-v1` (to be added under `contracts/`)  
+Status: **locked design**; wire contracts landed (LS-01), engines not yet implemented  
+Contract family: `trajectory-stream-v1` under `contracts/`  
 Scope: full feature across all four runtimes — not an MVP cut  
 
 Related:
@@ -9,6 +9,7 @@ Related:
 - [Architecture](architecture.md)
 - [Multi-language plan](multi-language-plan.md)
 - [Adapter authoring](adapter-authoring.md)
+- [Normative streaming contract](../contracts/spec/streaming.md)
 - [Normative normalization](../contracts/spec/normalization.md)
 - [Identity](../contracts/spec/identity.md)
 - [Diagnostics](../contracts/spec/diagnostics.md)

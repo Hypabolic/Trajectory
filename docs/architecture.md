@@ -138,5 +138,7 @@ Delivery slices: [live-session-streaming-plan.md](live-session-streaming-plan.md
 - [Normative normalization](../contracts/spec/normalization.md)
 - [Identity](../contracts/spec/identity.md)
 - [Diagnostics](../contracts/spec/diagnostics.md)
-- [Live session streaming](live-session-streaming.md)
+- [Streaming contract](../contracts/spec/streaming.md)
+- [Live session streaming (product)](live-session-streaming.md)
+- [Live session streaming plan](live-session-streaming-plan.md)
 - [Publishing](publishing.md)
