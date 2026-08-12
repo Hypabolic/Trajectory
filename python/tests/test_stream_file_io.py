@@ -62,16 +62,18 @@ def test_growth_and_incomplete_line(tmp_path: Path) -> None:
     assert u1 is not None
     assert u1.kind == "updated"
     assert u1.snapshot is not None
-    # Session line committed; incomplete user line held at host.
-    assert len(u1.snapshot.records) >= 0
+    # Session meta committed; incomplete user line held at host — not materialized.
+    records_after_partial = len(u1.snapshot.records)
+    assert records_after_partial >= 1  # session meta
+    assert not any(r.record.get("role") == "user" for r in u1.snapshot.records)
 
     path.write_bytes(SESSION_LINE + USER_LINE)
     u2 = fs.poll()
     assert u2 is not None
-    assert u2.kind in ("updated", "unchanged") or u2.kind == "updated"
     assert u2.kind == "updated"
     assert u2.snapshot is not None
-    assert len(u2.snapshot.records) >= 1
+    assert len(u2.snapshot.records) > records_after_partial
+    assert any(r.record.get("role") == "user" for r in u2.snapshot.records)
     # Host errors are not stream diagnostics.
     for d in u2.diagnostics:
         assert "path" not in d.code.lower()
@@ -172,6 +174,40 @@ def test_permission_denied_is_host_error(tmp_path: Path) -> None:
         assert "permission" in ei.value.message.lower() or ei.value.code == "io_error"
     finally:
         os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+
+
+def test_finish_flushes_host_pending(tmp_path: Path) -> None:
+    """Host-held incomplete line must reach core finish (final unterminated commit)."""
+    root = tmp_path / "store"
+    root.mkdir()
+    path = root / "session.jsonl"
+    # Complete session + incomplete user line (no trailing LF).
+    incomplete_user = USER_LINE.rstrip(b"\n")
+    path.write_bytes(SESSION_LINE + incomplete_user)
+
+    fs = FileTrajectoryStream.open(
+        FileStreamOptions(
+            root=root,
+            path=path,
+            source="pi",
+            group_id="stream-file-io-py",
+        )
+    )
+    u0 = fs.poll()
+    assert u0 is not None
+    assert u0.kind == "updated"
+    # Incomplete user held at host edge only (session meta may exist).
+    assert u0.snapshot is not None
+    assert not any(r.record.get("role") == "user" for r in u0.snapshot.records)
+    records_before_finish = len(u0.snapshot.records)
+
+    finished = fs.finish()
+    assert finished.kind in ("updated", "unchanged")
+    assert fs.stream.state.finished is True
+    # Final unterminated user line committed via finish.
+    assert finished.snapshot is not None
+    assert len(finished.snapshot.records) > records_before_finish
+    assert any(r.record.get("role") == "user" for r in finished.snapshot.records)
 
 
 def test_core_streaming_has_no_io_package_import() -> None:

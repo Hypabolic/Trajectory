@@ -174,7 +174,17 @@ class FileTrajectoryStream:
                 time.sleep(wait)
 
     def finish(self) -> StreamUpdate:
-        """Finish the underlying core stream (does not close the file handle)."""
+        """Finish the underlying core stream (does not close the file handle).
+
+        Forwards any host-held incomplete line into core pending first so
+        ``finish`` can commit a final unterminated line (core finish only sees
+        core ``pending_bytes``).
+        """
+        if self._host_pending:
+            self._stream.apply_append(
+                self._host_pending, source_revision=self._source_revision
+            )
+            self._host_pending = b""
         return self._stream.finish()
 
     def close(self) -> None:

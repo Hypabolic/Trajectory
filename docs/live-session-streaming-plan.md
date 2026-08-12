@@ -460,6 +460,7 @@ JSONL append, AHP Shape A/B, and the full stream matrix gate (34 cases /
 68 step goldens; `stream_unsupported_skips: 0` on all four runtimes; no
 `stream-*` capability claims until LS-12).
 
-**LS-09** optional file I/O packages are delivered on tip (see
-`docs/streaming-file-io.md`). Next engineering slice: **LS-10** — optional AHP
-client packages (transport only; fake-host CI) across all four runtimes.
+**LS-09** optional file I/O packages and **LS-10** optional AHP client
+packages are delivered on tip (see `docs/streaming-file-io.md` and
+`docs/ahp-client.md`). Next engineering slice: **LS-11** — sample CLIs that
+compose file I/O and AHP clients across all four runtimes.

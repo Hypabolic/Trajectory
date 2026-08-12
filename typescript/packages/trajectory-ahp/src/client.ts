@@ -258,9 +258,12 @@ export class AhpStreamClient {
       return;
     }
     if (method === "resync") {
-      this.resyncInflight = false;
+      // Keep resyncInflight true until reset + snapshot apply finish so
+      // re-entrant action notifications drop mid-resync.
       if (result !== null && typeof result === "object" && !Array.isArray(result)) {
         this.applyResyncSnapshot(result as JsonObject);
+      } else {
+        this.resyncInflight = false;
       }
     }
   }

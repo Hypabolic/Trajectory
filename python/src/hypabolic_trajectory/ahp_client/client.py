@@ -259,9 +259,12 @@ class AhpStreamClient:
                 self._ingest_subscribe_result(result)
             return
         if method == "resync":
-            self._resync_inflight = False
+            # Keep resync_inflight true until reset + snapshot apply finish so
+            # re-entrant action notifications drop mid-resync.
             if isinstance(result, dict):
                 self._apply_resync_snapshot(result)
+            else:
+                self._resync_inflight = False
             return
 
     def _handle_notification(self, msg: dict[str, Any]) -> None:

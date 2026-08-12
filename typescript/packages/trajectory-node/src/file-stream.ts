@@ -9,6 +9,8 @@ import {
   applyAppend,
   applySnapshot,
   createStream,
+  finishStream,
+  splitCompleteLines as splitCompleteLinesCore,
   type StreamOptions,
   type StreamUpdate,
   type TrajectorySource,
@@ -62,27 +64,17 @@ export interface FileStreamOptions {
   readonly sourceRevision?: string;
 }
 
+/**
+ * Host-edge complete-line split (same framing as core).
+ * Property names `complete`/`pending` match the file-I/O package convention;
+ * core exports `committed`/`pending`.
+ */
 export function splitCompleteLines(data: Uint8Array): {
   complete: Uint8Array;
   pending: Uint8Array;
 } {
-  if (data.length === 0) {
-    return { complete: new Uint8Array(0), pending: new Uint8Array(0) };
-  }
-  let lastLf = -1;
-  for (let i = data.length - 1; i >= 0; i--) {
-    if (data[i] === 0x0a) {
-      lastLf = i;
-      break;
-    }
-  }
-  if (lastLf < 0) {
-    return { complete: new Uint8Array(0), pending: data.slice() };
-  }
-  return {
-    complete: data.slice(0, lastLf + 1),
-    pending: data.slice(lastLf + 1),
-  };
+  const { committed, pending } = splitCompleteLinesCore(data);
+  return { complete: committed, pending };
 }
 
 function isUnderRoot(root: string, path: string): boolean {
@@ -193,6 +185,11 @@ export class FileTrajectoryStream {
     return null;
   }
 
+  /**
+   * Yield non-empty updates until closed or AbortSignal aborts.
+   * Abort/cancel stops the follow loop only; it does not call `finish()`.
+   * Call `finish()` explicitly for end-of-stream (flush host pending + core finish).
+   */
   async *follow(signal?: AbortSignal): AsyncGenerator<StreamUpdate, void, void> {
     const waitMs = Math.max(0, this.#pollInterval * 1000);
     while (!this.#closed && !(signal?.aborted ?? false)) {
@@ -204,6 +201,27 @@ export class FileTrajectoryStream {
         await sleep(waitMs, signal);
       }
     }
+  }
+
+  /**
+   * Finish the underlying core stream. Forwards any host-held incomplete line
+   * into core pending first so finish can commit a final unterminated line.
+   * Distinct from AbortSignal/follow cancellation and from `close()`.
+   */
+  finish(): StreamUpdate {
+    if (this.#hostPending.length > 0) {
+      const result = applyAppend(
+        this.#state,
+        this.#hostPending,
+        undefined,
+        this.#sourceRevision,
+      );
+      this.#state = result.state;
+      this.#hostPending = new Uint8Array(0);
+    }
+    const finished = finishStream(this.#state);
+    this.#state = finished.state;
+    return finished.update;
   }
 
   close(): void {

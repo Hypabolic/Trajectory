@@ -52,15 +52,46 @@ test("file growth and incomplete line", async () => {
   const u1 = await stream.poll();
   assert.ok(u1);
   assert.equal(u1.kind, "updated");
+  // Session meta committed; incomplete user line held at host — not materialized.
+  const recordsAfterPartial = u1.snapshot?.records.length ?? 0;
+  assert.ok(recordsAfterPartial >= 1);
+  assert.ok(!(u1.snapshot?.records ?? []).some((r) => r.record?.role === "user"));
 
   await writeFile(path, SESSION_LINE + USER_LINE);
   const u2 = await stream.poll();
   assert.ok(u2);
   assert.equal(u2.kind, "updated");
-  assert.ok((u2.snapshot?.records.length ?? 0) >= 1);
+  assert.ok((u2.snapshot?.records.length ?? 0) > recordsAfterPartial);
+  assert.ok((u2.snapshot?.records ?? []).some((r) => r.record?.role === "user"));
   for (const d of u2.diagnostics) {
     assert.ok(!d.message.includes(path));
   }
+  stream.close();
+});
+
+test("finish flushes host pending incomplete line", async () => {
+  const root = await tempRoot();
+  const path = join(root, "session.jsonl");
+  const incompleteUser = USER_LINE.trimEnd();
+  await writeFile(path, SESSION_LINE + incompleteUser);
+
+  const stream = FileTrajectoryStream.open({
+    root,
+    path,
+    source: "pi",
+    groupId: "stream-file-io-ts",
+  });
+  const u0 = await stream.poll();
+  assert.ok(u0);
+  assert.equal(u0.kind, "updated");
+  assert.ok(!(u0.snapshot?.records ?? []).some((r) => r.record?.role === "user"));
+  const recordsBeforeFinish = u0.snapshot?.records.length ?? 0;
+
+  const finished = stream.finish();
+  assert.ok(finished.kind === "updated" || finished.kind === "unchanged");
+  assert.equal(stream.state.finished, true);
+  assert.ok((finished.snapshot?.records.length ?? 0) > recordsBeforeFinish);
+  assert.ok((finished.snapshot?.records ?? []).some((r) => r.record?.role === "user"));
   stream.close();
 });
 

@@ -40,17 +40,56 @@ public sealed class StreamingFileIoTests
         var u1 = stream.Poll();
         Assert.NotNull(u1);
         Assert.Equal("updated", u1!.Kind);
+        // Session meta committed; incomplete user line held at host — not materialized.
+        var recordsAfterPartial = u1.Snapshot!.Records.Count;
+        Assert.True(recordsAfterPartial >= 1);
+        Assert.DoesNotContain(u1.Snapshot.Records, static r =>
+            r.Record.TryGetValue("role", out var role) && role?.ToString() == "user");
 
         File.WriteAllBytes(path, SessionLine.Concat(UserLine).ToArray());
         var u2 = stream.Poll();
         Assert.NotNull(u2);
         Assert.Equal("updated", u2!.Kind);
         Assert.NotNull(u2.Snapshot);
-        Assert.True(u2.Snapshot!.Records.Count >= 1);
+        Assert.True(u2.Snapshot!.Records.Count > recordsAfterPartial);
+        Assert.Contains(u2.Snapshot.Records, static r =>
+            r.Record.TryGetValue("role", out var role) && role?.ToString() == "user");
         foreach (var d in u2.Diagnostics)
         {
             Assert.DoesNotContain(path, d.Message, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void Finish_FlushesHostPending()
+    {
+        var root = CreateTempRoot();
+        var path = Path.Combine(root, "session.jsonl");
+        // Complete session + incomplete user line (no trailing LF).
+        var incompleteUser = UserLine.AsSpan(0, UserLine.Length - 1).ToArray();
+        File.WriteAllBytes(path, SessionLine.Concat(incompleteUser).ToArray());
+
+        using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+        {
+            Root = root,
+            Path = path,
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-io-dotnet",
+        });
+
+        var u0 = stream.Poll();
+        Assert.NotNull(u0);
+        Assert.Equal("updated", u0!.Kind);
+        Assert.DoesNotContain(u0.Snapshot!.Records, static r =>
+            r.Record.TryGetValue("role", out var role) && role?.ToString() == "user");
+        var recordsBeforeFinish = u0.Snapshot.Records.Count;
+
+        var finished = stream.Finish();
+        Assert.True(finished.Kind is "updated" or "unchanged");
+        Assert.True(stream.Session.State.Finished);
+        Assert.True(finished.Snapshot!.Records.Count > recordsBeforeFinish);
+        Assert.Contains(finished.Snapshot.Records, static r =>
+            r.Record.TryGetValue("role", out var role) && role?.ToString() == "user");
     }
 
     [Fact]

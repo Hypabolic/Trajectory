@@ -227,9 +227,22 @@ impl FileTrajectoryStream {
 
     /// Finish the underlying core stream.
     ///
+    /// Forwards any host-held incomplete line into core pending first so
+    /// finish can commit a final unterminated line (core finish only sees
+    /// core `pending_bytes`).
+    ///
     /// # Errors
-    /// Propagates core [`TrajectoryError`] from finish.
+    /// Propagates core [`TrajectoryError`] from finish or the pending flush.
     pub fn finish(&mut self) -> Result<StreamUpdate, TrajectoryError> {
+        if !self.host_pending.is_empty() {
+            let pending = std::mem::take(&mut self.host_pending);
+            // Incomplete host bytes become core pending (no complete lines).
+            let _ = self.stream.apply_append(
+                &pending,
+                None,
+                Some(self.source_revision.as_str()),
+            )?;
+        }
         self.stream.finish()
     }
 
@@ -449,16 +462,75 @@ mod tests {
         fs::write(&path, &partial).unwrap();
         let u1 = stream.poll().unwrap().expect("session line");
         assert_eq!(u1.kind, "updated");
+        // Session meta committed; incomplete user line held at host — not materialized.
+        let records_after_partial = u1.snapshot.as_ref().unwrap().records.len();
+        assert!(records_after_partial >= 1);
+        assert!(!u1
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .records
+            .iter()
+            .any(|r| r.record.get("role").and_then(|v| v.as_str()) == Some("user")));
 
         let mut full = SESSION_LINE.to_vec();
         full.extend_from_slice(USER_LINE);
         fs::write(&path, &full).unwrap();
         let u2 = stream.poll().unwrap().expect("user line");
         assert_eq!(u2.kind, "updated");
-        assert!(!u2.snapshot.as_ref().unwrap().records.is_empty());
+        assert!(u2.snapshot.as_ref().unwrap().records.len() > records_after_partial);
+        assert!(u2
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .records
+            .iter()
+            .any(|r| r.record.get("role").and_then(|v| v.as_str()) == Some("user")));
         for d in &u2.diagnostics {
             assert!(!d.message.contains(path.to_string_lossy().as_ref()));
         }
+    }
+
+    #[test]
+    fn finish_flushes_host_pending() {
+        let root = temp_root();
+        let path = root.join("session.jsonl");
+        let mut material = SESSION_LINE.to_vec();
+        // Incomplete user line (no trailing LF).
+        material.extend_from_slice(&USER_LINE[..USER_LINE.len() - 1]);
+        fs::write(&path, &material).unwrap();
+
+        let mut stream = FileTrajectoryStream::open(FileStreamOptions {
+            root: root.clone(),
+            path: path.clone(),
+            source: TrajectorySource::Pi,
+            group_id: Some("stream-file-io-rs".into()),
+            ..Default::default()
+        })
+        .unwrap();
+
+        let u0 = stream.poll().unwrap().expect("first");
+        assert_eq!(u0.kind, "updated");
+        assert!(!u0
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .records
+            .iter()
+            .any(|r| r.record.get("role").and_then(|v| v.as_str()) == Some("user")));
+        let records_before = u0.snapshot.as_ref().unwrap().records.len();
+
+        let finished = stream.finish().expect("finish");
+        assert!(finished.kind == "updated" || finished.kind == "unchanged");
+        assert!(stream.stream().state().finished);
+        assert!(finished.snapshot.as_ref().unwrap().records.len() > records_before);
+        assert!(finished
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .records
+            .iter()
+            .any(|r| r.record.get("role").and_then(|v| v.as_str()) == Some("user")));
     }
 
     #[test]

@@ -274,9 +274,10 @@ struct ClientCore {
 /// Connect → auth (callback) → subscribe → feed core AHP stream apply.
 ///
 /// Uses an inbox/outbox pump so synchronous in-memory duplexes never re-enter
-/// the client while a frame is being handled.
+/// the client while a frame is being handled. Host-initiated frames (push after
+/// `start()`) auto-process via the same pump when no pump is already active.
 pub struct AhpStreamClient {
-    transport: Box<dyn AhpTransport>,
+    transport: Rc<dyn AhpTransport>,
     core: Rc<RefCell<ClientCore>>,
     pumping: Rc<Cell<bool>>,
     inbox: Rc<RefCell<Vec<String>>>,
@@ -314,34 +315,29 @@ impl AhpStreamClient {
         }));
         let pumping = Rc::new(Cell::new(false));
         let inbox = Rc::new(RefCell::new(Vec::new()));
+        let transport: Rc<dyn AhpTransport> = Rc::from(transport);
 
         let inbox_h = Rc::clone(&inbox);
         let pumping_h = Rc::clone(&pumping);
         let core_h = Rc::clone(&core);
-        // We need transport reference in pump — store nothing; pump is called from methods.
+        let transport_h = Rc::clone(&transport);
 
-        let client = Self {
+        // Enqueue inbound frames; when idle, auto-run the same pump loop as
+        // start()/pump() so host push/action/snapshot is handled without a
+        // manual caller pump (parity with other runtimes).
+        transport.set_handler(Some(Box::new(move |raw| {
+            inbox_h.borrow_mut().push(raw.to_owned());
+            if !pumping_h.get() {
+                pump_loop(&transport_h, &pumping_h, &inbox_h, &core_h);
+            }
+        })));
+
+        Self {
             transport,
             core,
             pumping,
             inbox,
-        };
-
-        // Install handler that enqueues inbound frames; if not already pumping,
-        // the sender's pump cycle will drain (client methods always pump).
-        let inbox_hh = Rc::clone(&inbox_h);
-        client.transport.set_handler(Some(Box::new(move |raw| {
-            inbox_hh.borrow_mut().push(raw.to_owned());
-            // If no pump is active, process immediately with a nested pump flag.
-            if !pumping_h.get() {
-                // Nested entry: process inbox only (no outbox send here without transport).
-                // Parent start()/flush will pump fully; for host→client only paths we
-                // mark pumping and process via a side channel — handled in pump_with.
-                let _ = &core_h;
-            }
-        })));
-
-        client
+        }
     }
 
     /// Start initialize/subscribe handshake.
@@ -406,30 +402,42 @@ impl AhpStreamClient {
     }
 
     /// Drain inbox/outbox until idle. Safe for synchronous duplex hosts.
+    ///
+    /// Usually unnecessary: inbound frames auto-pump when the client is idle.
+    /// Safe to call re-entrantly (no-op while a pump is already active).
     pub fn pump(&self) {
-        if self.pumping.get() {
-            return;
-        }
-        self.pumping.set(true);
-        loop {
-            // Process all queued inbound frames.
-            let frames: Vec<String> = self.inbox.borrow_mut().drain(..).collect();
-            for raw in frames {
-                self.core.borrow_mut().on_frame(&raw);
-            }
-            // Flush outbox sends (each send may enqueue more inbox frames).
-            let outbound: Vec<String> = self.core.borrow_mut().outbox.drain(..).collect();
-            if outbound.is_empty() && self.inbox.borrow().is_empty() {
-                break;
-            }
-            for msg in outbound {
-                if self.transport.send(&msg).is_err() {
-                    self.core.borrow_mut().emit_error(ERR_TRANSPORT);
-                }
-            }
-        }
-        self.pumping.set(false);
+        pump_loop(&self.transport, &self.pumping, &self.inbox, &self.core);
     }
+}
+
+/// Shared inbox/outbox drain used by both explicit `pump()` and the transport
+/// handler auto-process path.
+fn pump_loop(
+    transport: &Rc<dyn AhpTransport>,
+    pumping: &Rc<Cell<bool>>,
+    inbox: &Rc<RefCell<Vec<String>>>,
+    core: &Rc<RefCell<ClientCore>>,
+) {
+    if pumping.get() {
+        return;
+    }
+    pumping.set(true);
+    loop {
+        let frames: Vec<String> = inbox.borrow_mut().drain(..).collect();
+        for raw in frames {
+            core.borrow_mut().on_frame(&raw);
+        }
+        let outbound: Vec<String> = core.borrow_mut().outbox.drain(..).collect();
+        if outbound.is_empty() && inbox.borrow().is_empty() {
+            break;
+        }
+        for msg in outbound {
+            if transport.send(&msg).is_err() {
+                core.borrow_mut().emit_error(ERR_TRANSPORT);
+            }
+        }
+    }
+    pumping.set(false);
 }
 
 impl ClientCore {
@@ -536,9 +544,12 @@ impl ClientCore {
                 }
             }
             "resync" => {
-                self.resync_inflight = false;
+                // Keep resync_inflight true until reset + snapshot apply finish
+                // so re-entrant action notifications drop mid-resync.
                 if let Some(Value::Object(r)) = result {
                     self.apply_resync_snapshot(r);
+                } else {
+                    self.resync_inflight = false;
                 }
             }
             _ => {}

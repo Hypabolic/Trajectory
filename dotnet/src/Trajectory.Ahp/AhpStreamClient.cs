@@ -234,9 +234,12 @@ public sealed class AhpStreamClient
                     IngestSubscribeResult(result);
                 break;
             case "resync":
-                _resyncInflight = false;
+                // Keep resyncInflight true until reset + snapshot apply finish so
+                // re-entrant action notifications drop mid-resync.
                 if (result is not null)
                     ApplyResyncSnapshot(result);
+                else
+                    _resyncInflight = false;
                 break;
         }
     }
