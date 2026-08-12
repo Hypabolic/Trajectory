@@ -72,9 +72,10 @@ TIP_CAPABILITIES = [
 ]
 TIP_SLICE = "ML13"
 NORMALIZER_CONTRACT_VERSION = "0.2.0"
-EXPECTED_TIP_CASES = 27
-EXPECTED_TIP_OPERATIONS = 47
-EXPECTED_IDENTITY_GOLDENS = 21
+# 39 batch + 18 stream scaffolds (stream ops skip as unsupported pre-engine).
+EXPECTED_TIP_CASES = 57
+EXPECTED_TIP_OPERATIONS = 84
+EXPECTED_IDENTITY_GOLDENS = 37
 
 # Exhaustive root __all__ (export owner PY-04a → PY-12 pin).
 _EXPECTED_ROOT_ALL = frozenset(

@@ -197,18 +197,172 @@ def scan_privacy(label: str, text: str | None, sentinels: list[str]) -> None:
             )
 
 
+def scan_stream_case_inputs(
+    *,
+    label: str,
+    case_directory: Path,
+    manifest: dict[str, Any],
+    sentinels: list[str],
+) -> None:
+    """Enforce fixture privacy on case materials and inline step inputs.
+
+    Acceptance requires privacy rules on fixture content; materials and
+    inline_utf8 are the primary inputs (not only runner outputs/goldens).
+    case.json is scanned after stripping privacy.forbidden_substrings so the
+    declaration of sentinels itself is not treated as a violation.
+    """
+    # Scan case manifest fields (description, ids, options, …) without the
+    # privacy declaration list that intentionally names the sentinels.
+    case_for_scan = json.loads(json.dumps(manifest))
+    privacy_block = case_for_scan.get("privacy")
+    if isinstance(privacy_block, dict):
+        privacy_block.pop("forbidden_substrings", None)
+        if not privacy_block:
+            case_for_scan.pop("privacy", None)
+    scan_privacy(
+        f"{label}/case.json",
+        json.dumps(case_for_scan, ensure_ascii=False),
+        sentinels,
+    )
+
+    for step in manifest.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        step_id = step.get("id", "?")
+        step_input = step.get("input") or {}
+        if not isinstance(step_input, dict):
+            continue
+        _scan_step_input_materials(
+            label=f"{label}/step:{step_id}",
+            case_directory=case_directory,
+            step_input=step_input,
+            sentinels=sentinels,
+        )
+
+
+def _scan_step_input_materials(
+    *,
+    label: str,
+    case_directory: Path,
+    step_input: dict[str, Any],
+    sentinels: list[str],
+) -> None:
+    material = step_input.get("material")
+    if isinstance(material, str) and material:
+        path = case_directory / material
+        if path.is_file():
+            # Binary materials (utf8-byte-boundary) are scanned as latin-1 so
+            # ASCII privacy sentinels still match without decode failures.
+            scan_privacy(
+                f"{label}/material:{material}",
+                path.read_bytes().decode("latin-1"),
+                sentinels,
+            )
+    inline = step_input.get("inline_utf8")
+    if isinstance(inline, str) and inline:
+        scan_privacy(f"{label}/inline_utf8", inline, sentinels)
+
+    reset = step_input.get("reset")
+    if isinstance(reset, dict):
+        reset_material = reset.get("material")
+        if isinstance(reset_material, str) and reset_material:
+            path = case_directory / reset_material
+            if path.is_file():
+                scan_privacy(
+                    f"{label}/reset.material:{reset_material}",
+                    path.read_bytes().decode("latin-1"),
+                    sentinels,
+                )
+        reset_inline = reset.get("inline_utf8")
+        if isinstance(reset_inline, str) and reset_inline:
+            scan_privacy(f"{label}/reset.inline_utf8", reset_inline, sentinels)
+
+
+def match_key(stream_record: dict[str, Any]) -> str | None:
+    """Normative match key: provisional_id when set non-empty, else record.id.
+
+    See contracts/spec/streaming.md §7.
+    """
+    if not isinstance(stream_record, dict):
+        return None
+    provisional = stream_record.get("provisional_id")
+    if isinstance(provisional, str) and provisional:
+        return provisional
+    body = stream_record.get("record")
+    if isinstance(body, dict):
+        rid = body.get("id")
+        if isinstance(rid, str) and rid:
+            return rid
+    return None
+
+
+def encode_opt_int_for_diagnostic_key(value: Any) -> str:
+    """Encode optional int for diagnostic_key: '-' when absent, else decimal."""
+    if value is None:
+        return "-"
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise AssertionError(
+            f"stream-delta-apply: diagnostic key field must be int or absent, got {value!r}"
+        )
+    return str(value)
+
+
+def diagnostic_key(diagnostic: dict[str, Any]) -> str:
+    """Recompute diagnostic_key: code|input_line|record_index (see streaming.md §7).
+
+    message and count do not participate. Omitted optional ints encode as '-'.
+    """
+    if not isinstance(diagnostic, dict):
+        raise AssertionError("stream-delta-apply: diagnostic must be an object")
+    code = diagnostic.get("code")
+    if not isinstance(code, str) or not code:
+        raise AssertionError("stream-delta-apply: diagnostic.code required for key")
+    if "|" in code:
+        raise AssertionError(
+            "stream-delta-apply: diagnostic.code must not contain '|' "
+            f"(got {code!r})"
+        )
+    # Property omitted vs present: only treat as present when key is set.
+    line_part = (
+        encode_opt_int_for_diagnostic_key(diagnostic["input_line"])
+        if "input_line" in diagnostic
+        else "-"
+    )
+    index_part = (
+        encode_opt_int_for_diagnostic_key(diagnostic["record_index"])
+        if "record_index" in diagnostic
+        else "-"
+    )
+    return f"{code}|{line_part}|{index_part}"
+
+
+def _upsert_record(records: list[dict[str, Any]], entry: dict[str, Any]) -> None:
+    key = match_key(entry)
+    if key is None:
+        raise AssertionError(
+            "stream-delta-apply: upsert record missing match_key "
+            "(provisional_id or record.id)"
+        )
+    for i, existing in enumerate(records):
+        if match_key(existing) == key:
+            records[i] = entry
+            return
+    records.append(entry)
+
+
 def apply_delta_to_snapshot(
     prior_snapshot: dict[str, Any] | None, delta: dict[str, Any]
 ) -> dict[str, Any]:
-    """Apply stream delta operations to a prior snapshot (delta-apply law).
+    """Apply stream delta operations to a prior snapshot (normative delta-apply law).
 
-    Implements the public ordered op set from streaming-delta-v1 sufficiently
-    for conformance checks. Raises AssertionError on unknown ops or shape errors.
+    Implements contracts/spec/streaming.md §7 / streaming-delta-v1:
+    match_key, finalize remove-then-upsert, diagnostic_key de-dupe,
+    no-op remove/state_change misses, revision+complete from delta.
     """
     if prior_snapshot is None:
         records: list[dict[str, Any]] = []
         diagnostics: list[dict[str, Any]] = []
-        base = {
+        base: dict[str, Any] = {
             "schema_id": "trajectory-stream-v1",
             "records": records,
             "diagnostics": diagnostics,
@@ -218,18 +372,13 @@ def apply_delta_to_snapshot(
         records = base.setdefault("records", [])
         diagnostics = base.setdefault("diagnostics", [])
         if not isinstance(records, list) or not isinstance(diagnostics, list):
-            raise AssertionError("stream-delta-apply: snapshot records/diagnostics malformed")
+            raise AssertionError(
+                "stream-delta-apply: snapshot records/diagnostics malformed"
+            )
 
     ops = delta.get("operations")
     if not isinstance(ops, list):
         raise AssertionError("stream-delta-apply: delta.operations must be an array")
-
-    def record_id(entry: dict[str, Any]) -> str | None:
-        rec = entry.get("record") if isinstance(entry.get("record"), dict) else entry
-        if not isinstance(rec, dict):
-            return None
-        rid = rec.get("id")
-        return rid if isinstance(rid, str) else None
 
     for op in ops:
         if not isinstance(op, dict) or "op" not in op:
@@ -239,100 +388,105 @@ def apply_delta_to_snapshot(
             entry = op.get("record")
             if not isinstance(entry, dict):
                 raise AssertionError("stream-delta-apply: upsert requires record")
-            rid = record_id(entry)
-            if rid is None:
-                raise AssertionError("stream-delta-apply: upsert record missing id")
-            replaced = False
-            for i, existing in enumerate(records):
-                if record_id(existing) == rid:
-                    records[i] = entry
-                    replaced = True
-                    break
-            if not replaced:
-                records.append(entry)
+            _upsert_record(records, entry)
+
         elif kind == "remove":
             rid = op.get("record_id")
-            if not isinstance(rid, str):
+            if not isinstance(rid, str) or not rid:
                 raise AssertionError("stream-delta-apply: remove requires record_id")
-            records[:] = [r for r in records if record_id(r) != rid]
+            # No-op if none match (stable relative order of survivors).
+            records[:] = [r for r in records if match_key(r) != rid]
+
         elif kind == "finalize":
-            rid = op.get("record_id")
-            if not isinstance(rid, str):
-                raise AssertionError("stream-delta-apply: finalize requires record_id")
-            found = False
-            for i, existing in enumerate(records):
-                if record_id(existing) == rid:
-                    updated = json.loads(json.dumps(existing))
-                    updated["status"] = "final"
-                    if "finalizes_provisional_id" in op:
-                        updated["finalizes_provisional_id"] = op["finalizes_provisional_id"]
-                    records[i] = updated
-                    found = True
-                    break
-            if not found:
+            provisional_id = op.get("provisional_id")
+            entry = op.get("record")
+            if not isinstance(provisional_id, str) or not provisional_id:
                 raise AssertionError(
-                    f"stream-delta-apply: finalize target {rid!r} not found"
+                    "stream-delta-apply: finalize requires provisional_id"
                 )
+            if not isinstance(entry, dict):
+                raise AssertionError("stream-delta-apply: finalize requires record")
+            # Remove every record keyed by provisional_id, then upsert replacement.
+            records[:] = [
+                r
+                for r in records
+                if not (
+                    (isinstance(r.get("provisional_id"), str)
+                     and r.get("provisional_id") == provisional_id)
+                    or match_key(r) == provisional_id
+                )
+            ]
+            _upsert_record(records, entry)
+
         elif kind == "state_change":
             rid = op.get("record_id")
             status = op.get("status")
-            if not isinstance(rid, str) or not isinstance(status, str):
+            if not isinstance(rid, str) or not rid:
                 raise AssertionError(
-                    "stream-delta-apply: state_change requires record_id and status"
+                    "stream-delta-apply: state_change requires record_id"
                 )
-            found = False
+            if not isinstance(status, str) or not status:
+                raise AssertionError(
+                    "stream-delta-apply: state_change requires status"
+                )
+            # No-op if none match; only status mutates when found.
             for i, existing in enumerate(records):
-                if record_id(existing) == rid:
+                if match_key(existing) == rid:
                     updated = json.loads(json.dumps(existing))
                     updated["status"] = status
                     records[i] = updated
-                    found = True
                     break
-            if not found:
-                raise AssertionError(
-                    f"stream-delta-apply: state_change target {rid!r} not found"
-                )
+
         elif kind == "diagnostic_add":
             diag = op.get("diagnostic")
             if not isinstance(diag, dict):
                 raise AssertionError(
                     "stream-delta-apply: diagnostic_add requires diagnostic"
                 )
+            key = diagnostic_key(diag)
+            # De-dupe + refresh: drop existing same key, then append.
+            diagnostics[:] = [
+                d
+                for d in diagnostics
+                if not (isinstance(d, dict) and diagnostic_key(d) == key)
+            ]
             diagnostics.append(diag)
+
         elif kind == "diagnostic_remove":
-            # Match by code (+ optional message) when full diagnostic not given.
-            code = op.get("code") or (op.get("diagnostic") or {}).get("code")
-            if not isinstance(code, str):
+            dkey = op.get("diagnostic_key")
+            if not isinstance(dkey, str) or not dkey:
                 raise AssertionError(
-                    "stream-delta-apply: diagnostic_remove requires code"
+                    "stream-delta-apply: diagnostic_remove requires diagnostic_key"
                 )
-            message = op.get("message")
-            if message is None and isinstance(op.get("diagnostic"), dict):
-                message = op["diagnostic"].get("message")
-            kept: list[dict[str, Any]] = []
-            removed = False
-            for diag in diagnostics:
-                if diag.get("code") == code and (
-                    message is None or diag.get("message") == message
-                ):
-                    if not removed:
-                        removed = True
-                        continue
-                kept.append(diag)
-            diagnostics[:] = kept
+            # No-op if none match.
+            diagnostics[:] = [
+                d
+                for d in diagnostics
+                if not (isinstance(d, dict) and diagnostic_key(d) == dkey)
+            ]
+
         elif kind == "reset":
+            reset_meta = op.get("reset")
+            if not isinstance(reset_meta, dict):
+                raise AssertionError("stream-delta-apply: reset requires reset object")
             records.clear()
             diagnostics.clear()
-            if "revision" in delta:
-                base["revision"] = delta["revision"]
+            # Install reset metadata on working snapshot for consumers that
+            # surface generation transitions (not required by snapshot schema).
+            base["reset"] = reset_meta
+
         else:
             raise AssertionError(
                 f"stream-delta-apply: unknown delta op {kind!r} "
                 "(comparison mode stub/error)"
             )
 
-    if "revision" in delta:
-        base["revision"] = delta["revision"]
+    # Set revision and complete from D.revision (normative step 3).
+    revision = delta.get("revision")
+    if isinstance(revision, dict):
+        base["revision"] = revision
+        if "complete" in revision:
+            base["complete"] = revision["complete"]
     return base
 
 
@@ -458,6 +612,20 @@ def compare_stream_modes(
                         f"{step_label}: expected fatal_error "
                         f"{expected_meta['fatal_error']!r}, got {code!r}"
                     )
+            if "provisional_ids" in expected_meta:
+                actual_ids = _envelope_provisional_ids(update)
+                if actual_ids != expected_meta["provisional_ids"]:
+                    raise AssertionError(
+                        f"{step_label}: expected provisional_ids "
+                        f"{expected_meta['provisional_ids']!r}, got {actual_ids!r}"
+                    )
+            if "finalized_ids" in expected_meta:
+                actual_ids = _envelope_finalized_ids(update)
+                if actual_ids != expected_meta["finalized_ids"]:
+                    raise AssertionError(
+                        f"{step_label}: expected finalized_ids "
+                        f"{expected_meta['finalized_ids']!r}, got {actual_ids!r}"
+                    )
 
         # Per-mode checks.
         for mode in modes:
@@ -522,10 +690,23 @@ def compare_stream_modes(
                     continue
                 if not isinstance(delta, dict):
                     raise AssertionError(f"{step_label}: delta must be an object")
-                reconstructed = apply_delta_to_snapshot(prior_snapshot, delta)
+                # First revision: session identity (source/group_id) is not
+                # carried on delta ops — seed empty prior from snapshot when
+                # present so equality of those fields is meaningful.
+                seed = prior_snapshot
+                if seed is None and isinstance(snapshot, dict):
+                    seed = {
+                        "schema_id": snapshot.get("schema_id", "trajectory-stream-v1"),
+                        "source": snapshot.get("source"),
+                        "group_id": snapshot.get("group_id"),
+                        "records": [],
+                        "diagnostics": [],
+                        "complete": False,
+                    }
+                reconstructed = apply_delta_to_snapshot(seed, delta)
                 if isinstance(snapshot, dict):
-                    # Compare record/diagnostic identity sets; revision may be
-                    # carried on delta only.
+                    # Normative equality: records, diagnostics, revision,
+                    # source, group_id, complete (streaming.md §7).
                     if _normalize_for_delta_eq(reconstructed) != _normalize_for_delta_eq(
                         snapshot
                     ):
@@ -598,11 +779,33 @@ def compare_stream_modes(
 
 
 def _normalize_for_delta_eq(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """Compare snapshots for delta-apply equality (records + diagnostics)."""
+    """Structural equality fields required by the delta-apply law (streaming.md §7)."""
     return {
         "records": snapshot.get("records") or [],
         "diagnostics": snapshot.get("diagnostics") or [],
+        "revision": snapshot.get("revision"),
+        "source": snapshot.get("source"),
+        "group_id": snapshot.get("group_id"),
+        "complete": snapshot.get("complete"),
     }
+
+
+def _envelope_provisional_ids(update: dict[str, Any]) -> list[Any]:
+    provisional = update.get("provisional")
+    if isinstance(provisional, dict) and isinstance(
+        provisional.get("provisional_ids"), list
+    ):
+        return provisional["provisional_ids"]
+    return []
+
+
+def _envelope_finalized_ids(update: dict[str, Any]) -> list[Any]:
+    provisional = update.get("provisional")
+    if isinstance(provisional, dict) and isinstance(
+        provisional.get("finalized_ids"), list
+    ):
+        return provisional["finalized_ids"]
+    return []
 
 
 def _step_diagnostic_codes(update: dict[str, Any]) -> list[str]:
@@ -717,6 +920,15 @@ def run_stream_case(
     candidates = 0
     skipped = 0
     sentinels = privacy_sentinels(manifest)
+    case_directory = manifest_path.parent
+
+    # Fixture inputs are primary privacy surface — scan before invoking runner.
+    scan_stream_case_inputs(
+        label=case_id,
+        case_directory=case_directory,
+        manifest=manifest,
+        sentinels=sentinels,
+    )
 
     for operation_name in operations:
         label = f"{case_id}/{operation_name}"
@@ -768,7 +980,7 @@ def run_stream_case(
         for step in manifest.get("steps") or []:
             result_rel = (step.get("expected") or {}).get("result")
             if isinstance(result_rel, str):
-                golden = manifest_path.parent / result_rel
+                golden = case_directory / result_rel
                 if golden.exists():
                     scan_privacy(
                         f"{label}/{result_rel}",
