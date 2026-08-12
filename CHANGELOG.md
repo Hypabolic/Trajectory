@@ -5,6 +5,12 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- Documented locked **live session streaming** design (library stream state
+  machine, snapshot + delta envelopes, file JSONL + AHP + optional Hermes
+  provider, all four runtimes) and delivery plan LS-00…LS-12. Spec:
+  `docs/live-session-streaming.md`; plan:
+  `docs/live-session-streaming-plan.md`. Not implemented yet.
+
 ## 0.1.2 — 2026-08-11
 
 Tip release merging `develop` (Grok Build + listing titles) onto `main` (Python + AHP).

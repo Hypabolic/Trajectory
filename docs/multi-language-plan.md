@@ -96,12 +96,28 @@ packaging, conformance, and work-breakdown plan:
 [python-implementation-spec.md](python-implementation-spec.md). Status:
 [python-impl-status.md](python-impl-status.md).
 
+## Post-v1 scheduled: live session streaming
+
+Full-feature library streaming for consumer applications (file JSONL + AHP
+snapshot/action-log + optional Hermes provider; snapshot and delta delivery;
+all four runtimes). Trajectory does not become a daemon; pure algorithm in
+core, optional I/O/clients.
+
+| Doc | Role |
+| --- | --- |
+| [live-session-streaming.md](live-session-streaming.md) | Locked product + technical specification |
+| [live-session-streaming-plan.md](live-session-streaming-plan.md) | Slices LS-00 … LS-12 |
+
+This supersedes the informal “AHP Shape B / live host later” note as a concrete
+roadmap; shipped code remains offline until those slices land and capability
+manifests are updated.
+
 ## Post-v1 ideas (not scheduled)
 
-Further source families, store backends, AHP Shape B / listing / live host, or
-other post-AHP work may be added later as multi-runtime slices with shared
-fixtures. They are not advertised as historical v1 capabilities and must not be
-backfilled into published `0.1.0` notes.
+Further source families, store backends, or other post-streaming work may be
+added later as multi-runtime slices with shared fixtures. They are not
+advertised as historical v1 capabilities and must not be backfilled into
+published `0.1.0` notes.
 
 ## Non-goals (still)
 
