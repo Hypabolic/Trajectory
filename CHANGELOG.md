@@ -13,6 +13,17 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
   in `StreamState`. Shared stream cases expanded (38): batch reorder /
   duplicate / mixed-seq negatives and multi-part provisional growth+finalize.
 
+- **Streaming H2 diagnostic sanitization (all four runtimes):** stream
+  projection never forwards raw normalizer messages. Wire diagnostics keep
+  stable codes plus safe structural fields and a fixed catalog; source-native
+  IDs, paths, and AHP body text cannot leak via snapshot/top-level
+  diagnostics, delta diagnostic ops, or stream errors.
+
+- **Streaming H4 file-host finish flush (all four runtimes):** optional file
+  I/O treats pending flush as transactional — retain the host buffer until
+  core `apply_append` succeeds, propagate non-success updates, and do not
+  call `finish()` after a failed flush.
+
 - **Live session streaming packaging docs:** tip status note for LS-00…LS-12
   shipped vs post-LS-12 remaining work
   (`docs/live-session-streaming-status.md`); plan slice status markers; cross-

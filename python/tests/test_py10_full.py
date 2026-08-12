@@ -286,9 +286,9 @@ def test_stream_verify_matrix_green() -> None:
     )
     summary = json.loads(completed.stdout)
     assert summary["status"] == "success"
-    # 34 streaming cases × stream-sequence; Hermes export path not in corpus yet.
-    assert summary["cases"] == 34
-    assert summary["operations"] == 34
+    # 38 streaming cases × stream-sequence; Hermes export path not in corpus yet.
+    assert summary["cases"] == 38
+    assert summary["operations"] == 38
     assert summary["stream_unsupported_skips"] == 0
 
 

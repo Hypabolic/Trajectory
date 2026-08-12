@@ -355,6 +355,7 @@ fn is_allowed_fixed_error_message(msg: &str) -> bool {
             | "AHP action batch must not mix sequenced and unsequenced envelopes."
             | "AHP action batch must be JSONL envelopes or a JSON array."
             | "AHP action envelope is missing a valid serverSeq."
+            | "reset input requires a StreamResetRequest."
             | "Stream material length exceeds non-negative int64 domain."
             | "Stream cursor serverSeq positions must be non-negative int64 values."
     )

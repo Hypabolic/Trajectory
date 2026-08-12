@@ -8,9 +8,9 @@
 
 **First-ship join (PY-17) green on this branch — ready for a multi-registry ship tag, but not yet tagged or published.**
 
-§11 Definition of Done holds for independence, tip capabilities honesty, full shared verify (100 ops / 73 cases, `stream_unsupported_skips: 0` under LS-08), identity baseline (21 goldens), free-function + `TrajectoryEngine` API, pure OTEL + always-importable `otel` submodule, listing, packaging (two-column pack-smoke + root-anchored sdist artifacts), CI tip gate + OIDC release path, and docs. **Do not retag `0.1.0`.** First public PyPI cut is the **next** synchronized multi-registry tag after existing NuGet/npm/crates `0.1.0`.
+§11 Definition of Done holds for independence, tip capabilities honesty, full shared verify (104 ops / 77 cases, `stream_unsupported_skips: 0` under LS-08), identity baseline (21 goldens), free-function + `TrajectoryEngine` API, pure OTEL + always-importable `otel` submodule, listing, packaging (two-column pack-smoke + root-anchored sdist artifacts), CI tip gate + OIDC release path, and docs. **Do not retag `0.1.0`.** First public PyPI cut is the **next** synchronized multi-registry tag after existing NuGet/npm/crates `0.1.0`.
 
-**Ship-continuation pass (DoD recheck):** pytest green; filtered pi verify **16 ops / 7 cases** green; unfiltered tip **100 ops / 73 cases** green (`stream_unsupported_skips: 0`); identity **21/21**; pack-smoke + tip capabilities honesty OK. Hermes/AHP empty-page listing is **documented policy** (SQLite-free hermes / AHP Phase 3 deferred), not a silent stub. LS-08 stream matrix is in-tree; **LS-09** optional file I/O is in-tree as `hypabolic_trajectory.io` / `[io]` extra (stdlib poll/follow; no capability advertising).
+**Ship-continuation pass (DoD recheck):** pytest green; filtered pi verify **16 ops / 7 cases** green; unfiltered tip **104 ops / 77 cases** green (`stream_unsupported_skips: 0`); identity **21/21**; pack-smoke + tip capabilities honesty OK. Hermes/AHP empty-page listing is **documented policy** (SQLite-free hermes / AHP Phase 3 deferred), not a silent stub. LS-08 stream matrix is in-tree; **LS-09** optional file I/O is in-tree as `hypabolic_trajectory.io` / `[io]` extra (stdlib poll/follow; no capability advertising).
 
 ## What landed (mapped to spec §9)
 
@@ -38,7 +38,7 @@
 | PY-10b-otel | **Done** (runner `project-otel` via free-function `project_otel_genai` + `serialize_projection`; filtered verify green; claim-writer adds `otel-genai-spans-v1`) |
 | PY-10b-* remaining claim expansion | **Done** (tip sources + tip outputs + required capabilities all claimed via PY-10a/PY-10b-* writers; no residual gaps) |
 | PY-10-full | **Done** (all 7 protocol-v1 ops wired; `PROTOCOL_V1_OPERATIONS` pins request schema enum; filtered tip sources×ops verify green; join tests in `test_py10_full.py`) |
-| PY-11 full shared conformance | **Done** (unfiltered tip verify 100 ops / 73 cases green with `stream_unsupported_skips: 0` under LS-08; identity-baseline 21 goldens; tip capabilities equality claim formalized vs compatibility + TS/Rust peers; `test_py11_full_conformance.py`) |
+| PY-11 full shared conformance | **Done** (unfiltered tip verify 104 ops / 77 cases green with `stream_unsupported_skips: 0` under LS-08; identity-baseline 21 goldens; tip capabilities equality claim formalized vs compatibility + TS/Rust peers; `test_py11_full_conformance.py`) |
 | PY-12 TrajectoryEngine ship surface | **Done** (`create_default` tip matrix incl. pure otel; `project` / `add_output_adapter`; duplicate→ValueError; unknown→`unknown_output_schema`; root `__all__`; binding isolation units) |
 | PY-13 sample CLI | **Done** (`python/samples/trajectory_cli` browse/list/show; unpublished; no console script; unit tests) |
 | PY-14a packaging stamp / pack-smoke | Done |
@@ -56,8 +56,8 @@
 - `pytest` under `python/`: **526** green, including **PY-17** §11 join (`test_py17_first_ship_join.py`) + prior PY-08…PY-16 gates.
 - Filtered pi shared verify green: **16 operations / 7 cases** (early runner / progressive path sanity).
 - Filtered shared verify green (full tip sources × all protocol-v1 ops), including via **generator argv**:  
-  `python conformance/verify.py --repository-root . $(python tools/conformance_argv_from_capabilities.py --repository-root .) -- env PYTHONPATH=python/src:python/tools python -m trajectory_conformance` → **100 operations / 73 cases** (`stream_unsupported_skips: 0`).
-- **Bare unfiltered** `verify.py` (tip defaults from compatibility.json) green: **100 operations / 73 cases** with `stream_unsupported_skips: 0` (PY-11 / PY-15b / PY-17 / LS-08 CI; batch + full stream matrix).
+  `python conformance/verify.py --repository-root . $(python tools/conformance_argv_from_capabilities.py --repository-root .) -- env PYTHONPATH=python/src:python/tools python -m trajectory_conformance` → **104 operations / 77 cases** (`stream_unsupported_skips: 0`).
+- **Bare unfiltered** `verify.py` (tip defaults from compatibility.json) green: **104 operations / 77 cases** with `stream_unsupported_skips: 0` (PY-11 / PY-15b / PY-17 / LS-08 CI; batch + full stream matrix).
 - **Identity baseline** `conformance/identity-baseline.sha256` green (21 identity-bearing goldens).
 - **Tip capabilities equality**: Python `runtime-capabilities.json` sources/outputs/capabilities/slice equal tip ML13 + TS/Rust peers (PY-11 claim ceremony; **PY-15b** CI jq + `validate_release_metadata` ship equality).
 - **Pack-smoke** two-column green after PY-17 sdist artifact root-anchoring (`/README.md`, `/LICENSE`, `/pyproject.toml`); sdist/wheel free of `tests/`/`samples/`/`tools/`.

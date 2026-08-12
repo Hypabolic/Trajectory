@@ -313,7 +313,7 @@ shared `hermes-provider-*` stream-sequence corpus still deferred — package-tes
 **Goal:** Complete goldens; parity fixes; no capability advertising yet (or
 draft-only).
 
-**Status: done on tip** (engines + shared goldens + oracle gate; 34 stream
+**Status: done on tip** (engines + shared goldens + oracle gate; 38 stream
 cases; `stream_unsupported_skips: 0` on all four; core `stream-*` claimed at
 LS-12).
 
