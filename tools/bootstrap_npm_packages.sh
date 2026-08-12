@@ -37,6 +37,8 @@ WORKSPACES=(
   @hypabolic/trajectory
   @hypabolic/trajectory-node
   @hypabolic/trajectory-otel
+  @hypabolic/trajectory-ahp
+  @hypabolic/trajectory-hermes
 )
 
 if ! command -v npm >/dev/null 2>&1; then
@@ -53,7 +55,10 @@ fi
 echo "npm user: $(npm whoami)"
 
 if [[ "$SKIP_CHECKS" != true ]]; then
-  python3 tools/assert_release_version.py --repository-root . --version 0.1.0
+  # Use repository VERSION so first-create of new packages (e.g. trajectory-ahp /
+  # trajectory-hermes) can bootstrap at the next tag SemVer, not only 0.1.0.
+  VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+  python3 tools/assert_release_version.py --repository-root . --version "$VERSION"
   python3 tools/validate_release_metadata.py --repository-root .
 fi
 
@@ -72,6 +77,8 @@ mkdir -p artifacts/npm-bootstrap
     --workspace @hypabolic/trajectory \
     --workspace @hypabolic/trajectory-node \
     --workspace @hypabolic/trajectory-otel \
+    --workspace @hypabolic/trajectory-ahp \
+    --workspace @hypabolic/trajectory-hermes \
     --pack-destination ../artifacts/npm-bootstrap
 )
 ls -la artifacts/npm-bootstrap
@@ -113,6 +120,8 @@ Configure Trusted Publishing on npmjs.com for EACH package:
   @hypabolic/trajectory
   @hypabolic/trajectory-node
   @hypabolic/trajectory-otel
+  @hypabolic/trajectory-ahp
+  @hypabolic/trajectory-hermes
 
 Package settings → Trusted Publisher → GitHub Actions:
   Organization or user : Hypabolic

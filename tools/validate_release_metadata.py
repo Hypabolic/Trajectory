@@ -54,6 +54,42 @@ TIP_CAPABILITIES = [
     "stream-ahp-action-log",
 ]
 
+# Allowed optional stream capabilities on package-capabilities.json only.
+ALLOWED_OPTIONAL_STREAM_CAPS = frozenset(
+    {
+        "stream-file-io",
+        "stream-async-iterator",
+        "stream-ahp-client",
+        "stream-hermes-provider",
+    }
+)
+FORBIDDEN_OPTIONAL_STREAM_CAPS = frozenset(
+    {
+        "stream-file-watch",
+        "stream-ahp-list-sessions",
+    }
+)
+
+# Optional stream package-capabilities.json (version lock is via csproj/npm/cargo).
+OPTIONAL_PACKAGE_CAPABILITIES = [
+    # .NET
+    ("dotnet/src/Trajectory.IO/package-capabilities.json", frozenset({"stream-file-io", "stream-async-iterator"})),
+    ("dotnet/src/Trajectory.Ahp/package-capabilities.json", frozenset({"stream-ahp-client"})),
+    ("dotnet/src/Trajectory.Hermes/package-capabilities.json", frozenset({"stream-hermes-provider"})),
+    # TypeScript
+    ("typescript/packages/trajectory-node/package-capabilities.json", frozenset({"stream-file-io", "stream-async-iterator"})),
+    ("typescript/packages/trajectory-ahp/package-capabilities.json", frozenset({"stream-ahp-client"})),
+    ("typescript/packages/trajectory-hermes/package-capabilities.json", frozenset({"stream-hermes-provider"})),
+    # Rust
+    ("rust/crates/hypabolic-trajectory-io/package-capabilities.json", frozenset({"stream-file-io"})),
+    ("rust/crates/hypabolic-trajectory-ahp/package-capabilities.json", frozenset({"stream-ahp-client"})),
+    ("rust/crates/hypabolic-trajectory-hermes/package-capabilities.json", frozenset({"stream-hermes-provider"})),
+    # Python (extras / modules inside the core wheel)
+    ("python/src/hypabolic_trajectory/io/package-capabilities.json", frozenset({"stream-file-io"})),
+    ("python/src/hypabolic_trajectory/ahp_client/package-capabilities.json", frozenset({"stream-ahp-client"})),
+    ("python/src/hypabolic_trajectory/hermes_provider/package-capabilities.json", frozenset({"stream-hermes-provider"})),
+]
+
 
 
 def load_json(path: Path) -> dict:
@@ -137,12 +173,7 @@ def main() -> None:
             raise SystemExit(
                 f"compatibility.json must not claim unimplemented capability {forbidden!r}."
             )
-    for optional_stream in (
-        "stream-file-io",
-        "stream-async-iterator",
-        "stream-ahp-client",
-        "stream-hermes-provider",
-    ):
+    for optional_stream in sorted(ALLOWED_OPTIONAL_STREAM_CAPS):
         if optional_stream in TIP_CAPABILITIES:
             raise SystemExit(
                 f"optional package capability {optional_stream!r} must not be in "
@@ -167,19 +198,36 @@ def main() -> None:
                 f"capability parity (slice={SLICE}, sources={expected_sources}, "
                 f"capabilities={TIP_CAPABILITIES})."
             )
+        # Core manifests must not claim optional package-only stream caps.
+        for cap in manifest.get("capabilities") or []:
+            if cap in ALLOWED_OPTIONAL_STREAM_CAPS or cap in FORBIDDEN_OPTIONAL_STREAM_CAPS:
+                raise SystemExit(
+                    f"{path.relative_to(root)} must not claim optional/unimplemented "
+                    f"stream capability {cap!r}."
+                )
 
     npm_paths = [
         root / "typescript/package.json",
         root / "typescript/packages/trajectory/package.json",
         root / "typescript/packages/trajectory-node/package.json",
         root / "typescript/packages/trajectory-otel/package.json",
+        root / "typescript/packages/trajectory-ahp/package.json",
+        root / "typescript/packages/trajectory-hermes/package.json",
         root / "typescript/packages/trajectory-testing/package.json",
     ]
     for path in npm_paths:
         package = load_json(path)
         if package["version"] != version:
             raise SystemExit(f"{path.relative_to(root)} is not version {version}.")
-    for path in npm_paths[1:4]:
+    # Public publishable npm packages (not testing/cli).
+    for rel in (
+        "typescript/packages/trajectory/package.json",
+        "typescript/packages/trajectory-node/package.json",
+        "typescript/packages/trajectory-otel/package.json",
+        "typescript/packages/trajectory-ahp/package.json",
+        "typescript/packages/trajectory-hermes/package.json",
+    ):
+        path = root / rel
         package = load_json(path)
         if package.get("private", False):
             raise SystemExit(f"{path.relative_to(root)} cannot participate in a preview dry run.")
@@ -190,16 +238,60 @@ def main() -> None:
     core_dependencies = cargo["workspace"].get("dependencies", {})
     if any("opentelemetry" in name.lower() for name in core_dependencies):
         raise SystemExit("The Rust core dependency catalog contains OpenTelemetry.")
+    # Optional stream crates must be workspace members (publish surface).
+    members = cargo.get("workspace", {}).get("members", [])
+    for crate_path in (
+        "crates/hypabolic-trajectory-io",
+        "crates/hypabolic-trajectory-ahp",
+        "crates/hypabolic-trajectory-hermes",
+    ):
+        if crate_path not in members:
+            raise SystemExit(
+                f"Rust workspace members must include optional stream crate {crate_path}."
+            )
 
     projects = [
         root / "dotnet/src/Trajectory/Trajectory.csproj",
         root / "dotnet/src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj",
         root / "dotnet/src/Trajectory.Testing/Trajectory.Testing.csproj",
+        root / "dotnet/src/Trajectory.IO/Trajectory.IO.csproj",
+        root / "dotnet/src/Trajectory.Ahp/Trajectory.Ahp.csproj",
+        root / "dotnet/src/Trajectory.Hermes/Trajectory.Hermes.csproj",
     ]
     for path in projects:
         project_version = ET.parse(path).findtext(".//Version")
         if project_version != version:
             raise SystemExit(f"{path.relative_to(root)} is not version {version}.")
+
+    # Optional package-capabilities.json: must exist and only claim allowed caps.
+    for rel, expected_caps in OPTIONAL_PACKAGE_CAPABILITIES:
+        path = root / rel
+        if not path.is_file():
+            raise SystemExit(f"Missing optional package capabilities: {rel}")
+        caps_doc = load_json(path)
+        claimed = caps_doc.get("capabilities")
+        if not isinstance(claimed, list):
+            raise SystemExit(f"{rel} capabilities must be a list.")
+        claimed_set = frozenset(claimed)
+        if claimed_set != expected_caps:
+            raise SystemExit(
+                f"{rel} capabilities must equal {sorted(expected_caps)} "
+                f"(got {sorted(claimed_set)})."
+            )
+        for cap in claimed:
+            if cap in FORBIDDEN_OPTIONAL_STREAM_CAPS:
+                raise SystemExit(
+                    f"{rel} must not claim unimplemented capability {cap!r}."
+                )
+            if cap not in ALLOWED_OPTIONAL_STREAM_CAPS:
+                raise SystemExit(
+                    f"{rel} claims unknown optional stream capability {cap!r}; "
+                    f"allowed={sorted(ALLOWED_OPTIONAL_STREAM_CAPS)}."
+                )
+            if cap in TIP_CAPABILITIES:
+                raise SystemExit(
+                    f"{rel} must not re-claim core required capability {cap!r}."
+                )
 
     # Python ship release metadata (PY-15b / §5 ship rules).
     # When python/pyproject.toml exists: version lockstep + tip equality for

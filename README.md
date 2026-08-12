@@ -310,7 +310,10 @@ cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- show \
   --source ahp \
   --path conformance/cases/ahp/tool-calls/input.json
 
-# Python (unpublished sample; requires editable install or PYTHONPATH=python/src:python/samples)
+# Python (unpublished sample)
+# Prefer editable install so hypabolic_trajectory resolves without hand-rolled PYTHONPATH:
+python -m pip install -e './python[dev]'
+# (Alternatively: PYTHONPATH=python/src:python/samples …)
 PYTHONPATH=python/samples python -m trajectory_cli list --source pi
 PYTHONPATH=python/samples python -m trajectory_cli show \
   --source pi \
@@ -318,6 +321,7 @@ PYTHONPATH=python/samples python -m trajectory_cli show \
 PYTHONPATH=python/samples python -m trajectory_cli browse
 
 # Stream a fixture once (all four CLIs; default emit snapshot+delta)
+# After editable install above (or PYTHONPATH=python/src:python/samples):
 PYTHONPATH=python/samples python -m trajectory_cli stream \
   --source pi \
   --path conformance/cases/pi/tool-calls/input.jsonl \

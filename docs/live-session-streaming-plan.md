@@ -241,7 +241,8 @@ decode yet beyond framing buffers.
 **Goal:** Optional provider packages; not file-tail.
 
 **Status: done on tip** (core `apply_hermes_export` + optional provider packages
-×4; manifests still omit `stream-hermes-provider` until LS-12).
+×4; `stream-hermes-provider` claimed on those packages only at LS-12;
+shared `hermes-provider-*` stream-sequence corpus still deferred — package-test-gated).
 
 | Area | Deliverable |
 | --- | --- |
@@ -474,4 +475,14 @@ and all four core `runtime-capabilities.json`. Optional package caps
 `stream-hermes-provider`) are claimed only on those packages’
 `package-capabilities.json`. Unimplemented `stream-file-watch` /
 `stream-ahp-list-sessions` are not claimed.
-Next engineering slice: **LS-12** — capability claims and release gate.
+
+**Post-LS-12 next engineering work**
+
+- Registry publish wiring for optional stream packages on the next multi-registry
+  tag (NuGet IO/Ahp/Hermes, npm `trajectory-ahp`/`trajectory-hermes`, crates
+  `io`/`ahp`/`hermes`, Python `[io]`/`[ahp]`/`[hermes]` extras already in the
+  core wheel).
+- Shared `hermes-provider-*` stream-sequence corpus (provider caps are currently
+  **package-test-gated**, not stream-sequence corpus-gated).
+- File-watch (`stream-file-watch`) and AHP `listSessions` (`stream-ahp-list-sessions`)
+  when product-ready — leave unclaimed until then.

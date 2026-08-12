@@ -217,7 +217,10 @@ jobs:
           for project in \
             dotnet/src/Trajectory/Trajectory.csproj \
             dotnet/src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj \
-            dotnet/src/Trajectory.Testing/Trajectory.Testing.csproj
+            dotnet/src/Trajectory.Testing/Trajectory.Testing.csproj \
+            dotnet/src/Trajectory.IO/Trajectory.IO.csproj \
+            dotnet/src/Trajectory.Ahp/Trajectory.Ahp.csproj \
+            dotnet/src/Trajectory.Hermes/Trajectory.Hermes.csproj
           do
             # Stamp via MSBuild as well (matches Hypa /p:Version=)
             dotnet pack "$project" -c Release --no-restore \
@@ -253,6 +256,8 @@ jobs:
             --workspace @hypabolic/trajectory \
             --workspace @hypabolic/trajectory-node \
             --workspace @hypabolic/trajectory-otel \
+            --workspace @hypabolic/trajectory-ahp \
+            --workspace @hypabolic/trajectory-hermes \
             --pack-destination ../artifacts/release/npm
           for package in ../artifacts/release/npm/*.tgz; do
             echo "Packed $package"
@@ -273,19 +278,26 @@ jobs:
           cp rust/target/package/hypabolic-trajectory-"${VERSION}".crate \
             artifacts/release/crates/
 
-          # Otel rewrites its path dep to a crates.io version requirement when
-          # packaging. Cargo refuses to package until that version exists on the
-          # registry (even with --no-verify). First-ever dual publish: skip the
-          # otel artifact here; publish-crates ships core then otel, and may
-          # attach the otel .crate after core is live.
+          # Dependent crates rewrite path deps to crates.io version requirements.
+          # Cargo refuses to package until core exists on the registry
+          # (even with --no-verify). First-ever multi publish: skip dependent
+          # .crate artifacts here; publish-crates ships core then dependents.
+          DEPENDENT_CRATES=(
+            hypabolic-trajectory-opentelemetry
+            hypabolic-trajectory-io
+            hypabolic-trajectory-ahp
+            hypabolic-trajectory-hermes
+          )
           if curl -fsSL "https://crates.io/api/v1/crates/hypabolic-trajectory/${VERSION}" \
                >/dev/null 2>&1; then
-            cargo +stable package --manifest-path rust/Cargo.toml \
-              -p hypabolic-trajectory-opentelemetry --locked --allow-dirty
-            cp rust/target/package/hypabolic-trajectory-opentelemetry-"${VERSION}".crate \
-              artifacts/release/crates/
+            for crate in "${DEPENDENT_CRATES[@]}"; do
+              cargo +stable package --manifest-path rust/Cargo.toml \
+                -p "$crate" --locked --allow-dirty
+              cp "rust/target/package/${crate}-${VERSION}.crate" \
+                artifacts/release/crates/
+            done
           else
-            echo "::notice::hypabolic-trajectory@${VERSION} not on crates.io yet; skipping otel .crate pack (publish job will release both)."
+            echo "::notice::hypabolic-trajectory@${VERSION} not on crates.io yet; skipping dependent .crate pack (publish job will release core + optional crates)."
           fi
 
           for crate in artifacts/release/crates/*.crate; do
@@ -437,7 +449,9 @@ jobs:
           for workspace in \
             @hypabolic/trajectory \
             @hypabolic/trajectory-node \
-            @hypabolic/trajectory-otel
+            @hypabolic/trajectory-otel \
+            @hypabolic/trajectory-ahp \
+            @hypabolic/trajectory-hermes
           do
             echo "Publishing $workspace@${VERSION} (${AUTH})"
             if npm publish --workspace "$workspace" --access public --provenance; then
@@ -508,16 +522,29 @@ jobs:
             return 1
           }
 
-          # Core first; otel depends on it and needs the registry index to catch up.
+          # Core first; dependents need the registry index to catch up.
           publish_one hypabolic-trajectory || exit 1
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            if publish_one hypabolic-trajectory-opentelemetry; then
-              exit 0
+          DEPENDENTS=(
+            hypabolic-trajectory-opentelemetry
+            hypabolic-trajectory-io
+            hypabolic-trajectory-ahp
+            hypabolic-trajectory-hermes
+          )
+          for crate in "${DEPENDENTS[@]}"; do
+            published=false
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if publish_one "$crate"; then
+                published=true
+                break
+              fi
+              echo "${crate} publish attempt ${attempt} failed; waiting for index..."
+              sleep 30
+            done
+            if [[ "$published" != true ]]; then
+              echo "Failed to publish ${crate}@${VERSION}" >&2
+              exit 1
             fi
-            echo "otel publish attempt ${attempt} failed; waiting for index..."
-            sleep 30
           done
-          exit 1
 
   publish-pypi:
     name: Publish PyPI
@@ -605,19 +632,28 @@ jobs:
             echo "- https://www.nuget.org/packages/Hypabolic.Trajectory/${VERSION}"
             echo "- https://www.nuget.org/packages/Hypabolic.Trajectory.OpenTelemetry/${VERSION}"
             echo "- https://www.nuget.org/packages/Hypabolic.Trajectory.Testing/${VERSION}"
+            echo "- https://www.nuget.org/packages/Hypabolic.Trajectory.IO/${VERSION}"
+            echo "- https://www.nuget.org/packages/Hypabolic.Trajectory.Ahp/${VERSION}"
+            echo "- https://www.nuget.org/packages/Hypabolic.Trajectory.Hermes/${VERSION}"
             echo
             echo "**npm** — \`npm i @hypabolic/trajectory@${VERSION}\`"
             echo "- https://www.npmjs.com/package/@hypabolic/trajectory/v/${VERSION}"
             echo "- https://www.npmjs.com/package/@hypabolic/trajectory-node/v/${VERSION}"
             echo "- https://www.npmjs.com/package/@hypabolic/trajectory-otel/v/${VERSION}"
+            echo "- https://www.npmjs.com/package/@hypabolic/trajectory-ahp/v/${VERSION}"
+            echo "- https://www.npmjs.com/package/@hypabolic/trajectory-hermes/v/${VERSION}"
             echo
             echo "**crates.io** — \`cargo add hypabolic-trajectory@${VERSION}\`"
             echo "- https://crates.io/crates/hypabolic-trajectory/${VERSION}"
             echo "- https://crates.io/crates/hypabolic-trajectory-opentelemetry/${VERSION}"
+            echo "- https://crates.io/crates/hypabolic-trajectory-io/${VERSION}"
+            echo "- https://crates.io/crates/hypabolic-trajectory-ahp/${VERSION}"
+            echo "- https://crates.io/crates/hypabolic-trajectory-hermes/${VERSION}"
             echo
             echo "**PyPI** — \`pip install hypabolic-trajectory==${VERSION}\`"
             echo "- https://pypi.org/project/hypabolic-trajectory/${VERSION}/"
             echo "- Optional OTEL SDK: \`pip install 'hypabolic-trajectory[otel]==${VERSION}'\`"
+            echo "- Optional stream extras: \`[io]\` / \`[ahp]\` / \`[hermes]\` (stdlib modules in the same wheel)"
           } > release-body.md
           cat release-body.md
       - name: Create or update GitHub Release

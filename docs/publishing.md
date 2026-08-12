@@ -8,19 +8,19 @@ Trajectory follows the same release model as **Hypabolic/Hypa**:
 
 | Ecosystem | Packages |
 | --- | --- |
-| NuGet | `Hypabolic.Trajectory`, `.OpenTelemetry`, `.Testing` |
-| npm | `@hypabolic/trajectory`, `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
-| crates.io | `hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry` |
-| PyPI | `hypabolic-trajectory` (core includes pure OTEL project + `hypabolic_trajectory.otel`; optional extra `[otel]` for SDK sinks only) |
+| NuGet | `Hypabolic.Trajectory`, `.OpenTelemetry`, `.Testing`, `.IO`, `.Ahp`, `.Hermes` |
+| npm | `@hypabolic/trajectory`, `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel`, `@hypabolic/trajectory-ahp`, `@hypabolic/trajectory-hermes` |
+| crates.io | `hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry`, `hypabolic-trajectory-io`, `hypabolic-trajectory-ahp`, `hypabolic-trajectory-hermes` |
+| PyPI | `hypabolic-trajectory` (core includes pure OTEL project + `hypabolic_trajectory.otel`; optional extras `[otel]` SDK sinks, `[io]` / `[ahp]` / `[hermes]` stream modules — same wheel) |
 
 Cross-ecosystem package map (core vs optional):
 
 | Ecosystem | Core | Optional |
 | --- | --- | --- |
-| .NET | `Hypabolic.Trajectory` | `.OpenTelemetry`, `.Testing` |
-| TypeScript | `@hypabolic/trajectory` | `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
-| Rust | `hypabolic-trajectory` | `hypabolic-trajectory-opentelemetry` |
-| Python | `hypabolic-trajectory` | `[otel]` SDK sinks only |
+| .NET | `Hypabolic.Trajectory` | `.OpenTelemetry`, `.Testing`, `.IO`, `.Ahp`, `.Hermes` |
+| TypeScript | `@hypabolic/trajectory` | `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel`, `@hypabolic/trajectory-ahp`, `@hypabolic/trajectory-hermes` |
+| Rust | `hypabolic-trajectory` | `hypabolic-trajectory-opentelemetry`, `hypabolic-trajectory-io`, `hypabolic-trajectory-ahp`, `hypabolic-trajectory-hermes` |
+| Python | `hypabolic-trajectory` | `[otel]` SDK sinks; `[io]` / `[ahp]` / `[hermes]` stream modules (stdlib) |
 
 ## Create a release (normal path)
 
@@ -112,7 +112,9 @@ The Release job uses `NuGet/login@v1` with `user: hypabolic` and
 ### crates.io Trusted Publishing
 
 On [crates.io](https://crates.io/docs/trusted-publishing), for **each** crate
-(`hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry`):
+(`hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry`,
+`hypabolic-trajectory-io`, `hypabolic-trajectory-ahp`,
+`hypabolic-trajectory-hermes`):
 
 | Field | Value |
 | --- | --- |
@@ -171,6 +173,11 @@ cargo add hypabolic-trajectory@0.1.0
 # Python first ships on the next multi-registry tag (not published at 0.1.0):
 pip install hypabolic-trajectory==<tag-semver>
 pip install 'hypabolic-trajectory[otel]==<tag-semver>'   # optional OpenTelemetry SDK sinks
+# Stream optional packages / extras (next tag; not in published 0.1.0):
+#   NuGet: Hypabolic.Trajectory.IO | .Ahp | .Hermes
+#   npm:   @hypabolic/trajectory-node | trajectory-ahp | trajectory-hermes
+#   crates: hypabolic-trajectory-io | -ahp | -hermes
+#   PyPI:  hypabolic-trajectory[io] | [ahp] | [hermes]
 ```
 
 ## Comparison with Hypa
@@ -196,8 +203,8 @@ pip install 'hypabolic-trajectory[otel]==<tag-semver>'   # optional OpenTelemetr
 | crates already uploaded | Treated as success (same: new features need a new version) |
 | PyPI already published | `skip-existing: true` makes re-run a no-op (same: new features need a new version) |
 | OIDC 404 / NuGet login fail | Match Trusted Publisher: owner `hypabolic`, workflow `release.yml`, env `release` |
-| crates.io OIDC auth fail | Match Trusted Publishing on **both** crates; workflow `release.yml`, env `release` |
-| npm OIDC 404 | Fix Trusted Publisher or bootstrap package once |
+| crates.io OIDC auth fail | Match Trusted Publishing on **all** published crates (core + otel + io/ahp/hermes); workflow `release.yml`, env `release` |
+| npm OIDC 404 | Fix Trusted Publisher or bootstrap package once (including `trajectory-ahp` / `trajectory-hermes`) |
 | PyPI OIDC / pending publisher fail | Match pending publisher: org `Hypabolic`, package `hypabolic-trajectory`, workflow `release.yml`, env `release`; ensure environment protection allows the run |
 
 ## Related

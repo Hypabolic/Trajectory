@@ -28,7 +28,7 @@ Distinguish **published registry packages** from **this repository tip**.
 | Capability slice | `ML13` (historical slice id; AHP is a post-`0.1.0` source addition) |
 | Normalizer contract | `0.2.0` |
 | Implemented sources (tip) | Published set **plus** `ahp` and `grok-build` |
-| AHP scope | Phase 0–1 shipped in-tree on `main`; listing, Shape B action log, and live host are **not** shipped |
+| AHP scope | Batch Shape A + core stream Shape A/B in-tree; optional AHP clients in-tree (fake-host tested); listing and real WebSocket transport still **not** shipped; registry publish still pending next tag |
 | Next registry publish | Tag `v0.1.2` after merge to main when CI is green |
 
 AHP phase truth: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
@@ -127,19 +127,27 @@ After the first multi-registry release:
 
 ### Publish process
 
-- [x] Release workflow packs and can publish NuGet / npm / crates / PyPI.
+- [x] Release workflow packs and can publish NuGet / npm / crates / PyPI,
+      including optional stream packages (`.IO` / `.Ahp` / `.Hermes`,
+      `@hypabolic/trajectory-ahp` / `trajectory-hermes`, crates `-io` / `-ahp` /
+      `-hermes`; Python `[io]`/`[ahp]`/`[hermes]` extras on the core wheel).
 - [x] npm packages bootstrapped under `@hypabolic` (local CLI); OIDC Trusted
-      Publisher configured for steady-state CI publishes.
+      Publisher configured for steady-state CI publishes. **New** names
+      (`trajectory-ahp`, `trajectory-hermes`) still need one-time
+      `./tools/bootstrap_npm_packages.sh --publish` + Trusted Publisher setup
+      before the next tag.
 - [ ] GitHub Environment `release` protection rules as desired.
-- [x] NuGet / npm / crates.io Trusted Publishing (OIDC) for multi-registry Release.
+- [x] NuGet / npm / crates.io Trusted Publishing (OIDC) for multi-registry Release
+      (register Trusted Publishing on **each** new crate/package before first
+      optional-stream ship).
 - [x] PyPI Trusted Publishing path (OIDC pending publisher org `Hypabolic`,
       package `hypabolic-trajectory`) wired in `release.yml` (first live upload
       on the next tag).
 - [x] Public version tag `v0.1.0` published on NuGet / npm / crates (sources
-      through `hermes` only; **no** PyPI `0.1.0`).
+      through `hermes` only; **no** PyPI `0.1.0`; **no** optional stream packages).
 - [ ] Explicit decision to cut the **next** public version tag when ready
-      (required before AHP, Python on PyPI, or other post-`0.1.0` capabilities
-      reach registries).
+      (required before AHP, Python on PyPI, optional stream packages, or other
+      post-`0.1.0` capabilities reach registries).
 
 ### Explicit non-goals for v1
 

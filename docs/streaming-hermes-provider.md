@@ -75,8 +75,25 @@ Wire contract: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md).
 | Without provider package | Core still applies export when caller supplies JSON |
 | Core package graph | No SQLite import in core streaming modules |
 
+### Coverage gate (honest LS-12)
+
+`stream-hermes-provider` is **package-test-gated**, not
+`conformance/cases/streaming/**` stream-sequence corpus-gated:
+
+- Per-runtime unit / provider tests cover snapshot, insert growth, soft-delete
+  reset, and nonnumeric-id behavior for each optional Hermes package.
+- There is **no** shared `hermes-provider-*` (or `hermes-export`) fixture tree
+  under `conformance/cases/streaming/` yet. Product §8 lists those names as the
+  intended future corpus; until they land, do **not** treat the shared stream
+  matrix as proof of provider I/O — only core `apply_hermes_export` path that
+  callers feed with export JSON participates in the shared corpus where
+  applicable.
+- Adding `hermes-provider-*` shared cases is post-LS-12 work (see
+  [live-session-streaming-plan.md](live-session-streaming-plan.md)).
+
 ## Capability advertising
 
 Claim `stream-hermes-provider` only on optional Hermes provider packages
 (`package-capabilities.json`). Core `runtime-capabilities.json` must not list
-it. Unimplemented stream names must not be claimed.
+it. Unimplemented stream names must not be claimed. Provider capability honesty
+rests on package tests until the shared corpus exists.

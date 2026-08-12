@@ -635,7 +635,10 @@ Per-source append sequences: `pi-*`, `claude-code-*`, `codex-*`, `openclaw-*`,
 AHP: `ahp-snapshot-*`, `ahp-action-*` (including sequence gap, foreign channel,
 unknown action, equals-snapshot).
 
-Hermes provider (optional capability): `hermes-provider-*`.
+Hermes provider (optional capability): `hermes-provider-*` (intended shared
+names; **not yet landed** under `conformance/cases/streaming/`). Until that
+corpus ships, `stream-hermes-provider` is **package-test-gated** — see
+[`streaming-hermes-provider.md`](streaming-hermes-provider.md).
 
 ---
 

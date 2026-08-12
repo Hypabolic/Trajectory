@@ -16,7 +16,7 @@ synchronized package version / tag after `v0.1.0` (do not retag or republish
 | **1 (AHP-1)** | Shape A snapshot → IR on .NET / TypeScript / Rust / Python + conformance + CLI | **Shipped in-tree** |
 | **Stream (LS-06)** | Successive Shape A snapshot streaming + provisional `activeTurn` | **In-tree on tip**; core `stream-ahp-snapshot` claimed (LS-12) |
 | **Stream (LS-07)** | Shape B action-log reducer + `apply_ahp_actions` + serverSeq cursor | **In-tree on tip**; core `stream-ahp-action-log` claimed (LS-12) |
-| **2+ remaining** | Export listing, live WebSocket host / optional client packages | **Not shipped** |
+| **2+ remaining** | Export listing + real WebSocket host transport | **Not shipped** (optional client packages are **in-tree** and capability-claimed on package manifests only; fake-host tested) |
 
 Protocol pin: **0.7.0** (`conformance/vendor/ahp/PROTOCOL_VERSION`). Wire source
 name: **`ahp`**. Advertised on this tip in `contracts/compatibility.json` →
