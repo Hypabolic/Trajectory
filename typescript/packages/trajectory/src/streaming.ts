@@ -236,23 +236,38 @@ export function matchKey(streamRecord: StreamRecord | JsonObject): string {
 
 export function diagnosticKey(d: StreamDiagnostic | JsonObject): string {
   const code = String((d as StreamDiagnostic).code ?? (d as JsonObject).code ?? "");
-  const line =
-    "inputLine" in d && (d as StreamDiagnostic).inputLine !== undefined
-      ? String((d as StreamDiagnostic).inputLine)
-      : "input_line" in (d as JsonObject)
-        ? String((d as JsonObject).input_line)
-        : "-";
-  const index =
-    "recordIndex" in d && (d as StreamDiagnostic).recordIndex !== undefined
-      ? String((d as StreamDiagnostic).recordIndex)
-      : "record_index" in (d as JsonObject)
-        ? String((d as JsonObject).record_index)
-        : "-";
-  return `${code}|${line}|${index}`;
+  // Treat missing and null the same: normative '-' sentinel.
+  let line: string | number | null | undefined;
+  if ("inputLine" in d && (d as StreamDiagnostic).inputLine !== undefined) {
+    line = (d as StreamDiagnostic).inputLine;
+  } else if ("input_line" in (d as JsonObject)) {
+    line = (d as JsonObject).input_line as string | number | null | undefined;
+  } else {
+    line = undefined;
+  }
+  let index: string | number | null | undefined;
+  if ("recordIndex" in d && (d as StreamDiagnostic).recordIndex !== undefined) {
+    index = (d as StreamDiagnostic).recordIndex;
+  } else if ("record_index" in (d as JsonObject)) {
+    index = (d as JsonObject).record_index as string | number | null | undefined;
+  } else {
+    index = undefined;
+  }
+  const linePart = line === undefined || line === null ? "-" : String(line);
+  const indexPart = index === undefined || index === null ? "-" : String(index);
+  return `${code}|${linePart}|${indexPart}`;
+}
+
+/** Serialize int64/bigint for wire JSON without precision loss. */
+export function int64ToJson(value: bigint): number | string {
+  if (value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)) {
+    return Number(value);
+  }
+  return value.toString();
 }
 
 function stripBigInt(value: unknown): JsonValue {
-  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "bigint") return int64ToJson(value);
   if (Array.isArray(value)) return value.map(stripBigInt);
   if (value && typeof value === "object") {
     const out: JsonObject = {};
@@ -285,11 +300,11 @@ function diagnosticToDict(d: StreamDiagnostic): JsonObject {
 
 function revisionToDict(r: StreamRevision): JsonObject {
   return {
-    revision: Number(r.revision),
+    revision: int64ToJson(r.revision),
     revision_id: r.revisionId,
     parent_revision_id: r.parentRevisionId,
     complete: r.complete,
-    generation: Number(r.generation),
+    generation: int64ToJson(r.generation),
   };
 }
 
@@ -322,11 +337,11 @@ export function cursorToDict(c: StreamCursor): JsonObject {
     cursor_version: 1,
     source: c.source,
     group_id: c.groupId,
-    generation: Number(c.generation),
+    generation: int64ToJson(c.generation),
     position: {
       kind: "byte",
-      next_byte_offset: Number(c.position.nextByteOffset),
-      pending_byte_length: Number(c.position.pendingByteLength),
+      next_byte_offset: int64ToJson(c.position.nextByteOffset),
+      pending_byte_length: int64ToJson(c.position.pendingByteLength),
     },
     source_revision: c.sourceRevision,
     prefix_sha256: c.prefixSha256,
@@ -334,7 +349,21 @@ export function cursorToDict(c: StreamCursor): JsonObject {
 }
 
 function stableJson(value: unknown): string {
-  return JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? Number(v) : v));
+  return JSON.stringify(value, (_k, v) =>
+    typeof v === "bigint" ? int64ToJson(v) : v,
+  );
+}
+
+/** True when any complete LF-terminated line exceeds maxLineBytes. */
+export function anyLineTooLong(data: Uint8Array, maxLineBytes: bigint): boolean {
+  let start = 0;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] === LF) {
+      if (BigInt(i - start + 1) > maxLineBytes) return true;
+      start = i + 1;
+    }
+  }
+  return false;
 }
 
 export function diffSnapshots(
@@ -650,6 +679,28 @@ export function applySnapshot(
         ),
       };
     }
+    if (state.groupLocked && cursor.groupId !== state.cursor.groupId) {
+      return {
+        state,
+        update: resetRequired(
+          state,
+          "group-changed",
+          "stream_cursor_conflict",
+          "Supplied stream cursor does not match stream state.",
+        ),
+      };
+    }
+    // Domain: non-negative int64 byte positions (streaming-cursor-v1).
+    if (cursor.position.nextByteOffset < 0n || cursor.position.pendingByteLength < 0n) {
+      return {
+        state,
+        update: errorUpdate(
+          state,
+          "invalid_input",
+          "Stream cursor byte positions must be non-negative int64 values.",
+        ),
+      };
+    }
   }
 
   const requireComplete = state.options.requireCompleteLines !== false;
@@ -657,14 +708,45 @@ export function applySnapshot(
     ? splitCompleteLines(material)
     : { committed: material, pending: new Uint8Array(0) };
 
-  if (
-    state.options.maxPendingBytes !== undefined &&
-    BigInt(pending.length) > state.options.maxPendingBytes
-  ) {
-    return {
-      state,
-      update: errorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
-    };
+  if (state.options.maxPendingBytes !== undefined) {
+    if (state.options.maxPendingBytes < 0n) {
+      return {
+        state,
+        update: errorUpdate(
+          state,
+          "invalid_input",
+          "Stream buffer limits must be non-negative int64 values.",
+        ),
+      };
+    }
+    if (BigInt(pending.length) > state.options.maxPendingBytes) {
+      return {
+        state,
+        update: errorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
+      };
+    }
+  }
+
+  if (state.options.maxLineBytes !== undefined) {
+    if (state.options.maxLineBytes < 0n) {
+      return {
+        state,
+        update: errorUpdate(
+          state,
+          "invalid_input",
+          "Stream buffer limits must be non-negative int64 values.",
+        ),
+      };
+    }
+    if (
+      anyLineTooLong(committed, state.options.maxLineBytes) ||
+      BigInt(pending.length) > state.options.maxLineBytes
+    ) {
+      return {
+        state,
+        update: errorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
+      };
+    }
   }
 
   const built = buildRecords(state, committed);
@@ -676,7 +758,10 @@ export function applySnapshot(
     records = records.filter((r) => r.status !== "provisional");
   }
 
-  if (state.snapshot !== null && committed.length < Number(state.cursor.position.nextByteOffset)) {
+  if (
+    state.snapshot !== null &&
+    BigInt(committed.length) < state.cursor.position.nextByteOffset
+  ) {
     return {
       state,
       update: resetRequired(
@@ -847,7 +932,87 @@ export function resetStream(
   if (request.material) {
     return applySnapshot(newState, request.material, request.sourceRevision ?? "", undefined);
   }
-  return { state: newState, update: unchangedUpdate(newState) };
+  // Empty reset with no material → updated empty snapshot of new generation
+  // (parity with Python reset_stream shell semantics).
+  const emptySha = sha256Hex(new Uint8Array(0));
+  const revisionNum = 0n;
+  const revId = revisionId(
+    generation,
+    revisionNum,
+    newState.cursor.source,
+    groupId,
+    emptySha,
+    [],
+  );
+  const revision: StreamRevision = {
+    revision: revisionNum,
+    revisionId: revId,
+    parentRevisionId: null,
+    complete: false,
+    generation,
+  };
+  const snapshot: StreamSnapshot = {
+    schemaId: STREAM_SCHEMA_ID,
+    source: newState.cursor.source,
+    groupId,
+    revision,
+    records: [],
+    diagnostics: [],
+    complete: false,
+  };
+  const dropped = (state.snapshot?.records ?? []).map((r) => String(r.record.id));
+  const resetMeta: StreamReset = {
+    reason: request.reason,
+    priorCursor: request.priorCursor ?? state.cursor,
+    requiresSnapshot: true,
+    droppedRecordIds: dropped,
+  };
+  let delta = diffSnapshots(null, snapshot, revision);
+  delta = {
+    ...delta,
+    operations: [
+      { op: "reset", reset: cursorToDictCompatibleReset(resetMeta) },
+      ...delta.operations,
+    ],
+  };
+  const delivery = state.options.delivery ?? "both";
+  const delivered = applyDelivery(snapshot, delta, delivery);
+  newState.snapshot = snapshot;
+  newState.nextRevision = 1n;
+  newState.cursor = {
+    cursorVersion: 1,
+    source: newState.cursor.source,
+    groupId,
+    generation,
+    position: { kind: "byte", nextByteOffset: 0n, pendingByteLength: 0n },
+    sourceRevision: request.sourceRevision ?? null,
+    prefixSha256: emptySha,
+  };
+  const update: StreamUpdate = {
+    kind: "updated",
+    revision,
+    cursor: newState.cursor,
+    snapshot: delivered.snapshot,
+    delta: delivered.delta,
+    diagnostics: [],
+    provisional: {
+      include: state.options.includeProvisional !== false,
+      provisionalIds: [],
+      finalizedIds: [],
+    },
+    consumed: { completeRecords: 0n, bytes: 0n },
+    reset: resetMeta,
+  };
+  return { state: newState, update };
+}
+
+function cursorToDictCompatibleReset(reset: StreamReset): JsonObject {
+  return {
+    reason: reset.reason,
+    prior_cursor: reset.priorCursor ? cursorToDict(reset.priorCursor) : null,
+    requires_snapshot: reset.requiresSnapshot,
+    dropped_record_ids: [...reset.droppedRecordIds],
+  };
 }
 
 function equalBytes(a: Uint8Array, b: Uint8Array): boolean {

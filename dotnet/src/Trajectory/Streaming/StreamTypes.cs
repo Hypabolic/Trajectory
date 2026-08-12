@@ -121,6 +121,23 @@ public sealed record StreamResetRequest
     public ReadOnlyMemory<byte>? Material { get; init; }
 }
 
+/// <summary>Provisional lifecycle summary on a stream update envelope.</summary>
+public sealed record StreamProvisionalInfo
+{
+    public bool Include { get; init; } = true;
+    public IReadOnlyList<string> ProvisionalIds { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> FinalizedIds { get; init; } = Array.Empty<string>();
+}
+
+/// <summary>Consumed-progress summary on a stream update envelope.</summary>
+public sealed record StreamConsumed
+{
+    public ulong CompleteRecords { get; init; }
+    public ulong Bytes { get; init; }
+    public long? FirstSourcePosition { get; init; }
+    public long? LastSourcePosition { get; init; }
+}
+
 /// <summary>Stream update envelope.</summary>
 public sealed record StreamUpdate
 {
@@ -130,6 +147,8 @@ public sealed record StreamUpdate
     public StreamSnapshot? Snapshot { get; init; }
     public StreamDelta? Delta { get; init; }
     public IReadOnlyList<StreamDiagnostic> Diagnostics { get; init; } = Array.Empty<StreamDiagnostic>();
+    public StreamProvisionalInfo Provisional { get; init; } = new();
+    public StreamConsumed Consumed { get; init; } = new();
     public StreamReset? Reset { get; init; }
     public (string Code, string Message)? Error { get; init; }
 }

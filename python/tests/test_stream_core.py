@@ -177,6 +177,25 @@ def test_reset_installs_new_generation() -> None:
     assert state.cursor.generation == 1
 
 
+def test_diagnostic_key_null_input_line_uses_sentinel() -> None:
+    from hypabolic_trajectory.streaming.delta import diagnostic_key
+
+    assert diagnostic_key({"code": "x", "input_line": None, "record_index": None}) == "x|-|-"
+    assert diagnostic_key({"code": "x"}) == "x|-|-"
+    assert diagnostic_key({"code": "x", "input_line": 3}) == "x|3|-"
+
+
+def test_max_line_bytes_returns_buffer_limit() -> None:
+    state = create_stream(
+        StreamOptions(source="pi", group_id="g", max_line_bytes=4)
+    )
+    state2, update = apply_snapshot(state, b'{"a":1}\n', source_revision="gen-0")
+    assert update.kind == "error"
+    assert update.error is not None
+    assert update.error.code == "stream_buffer_limit"
+    assert state2.cursor.position.next_byte_offset == 0  # type: ignore[union-attr]
+
+
 def test_no_io_imports_in_streaming_modules() -> None:
     """Core stream modules must not import filesystem/network/sqlite."""
     import hypabolic_trajectory.streaming.apply as apply_mod

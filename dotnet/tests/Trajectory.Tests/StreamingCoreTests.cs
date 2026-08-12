@@ -117,5 +117,42 @@ public sealed class StreamingCoreTests
         var update = session.ApplySnapshot(ReadOnlyMemory<byte>.Empty, "gen-0");
         Assert.Equal("updated", update.Kind);
         Assert.Equal("stream-empty-prefix", session.Cursor.GroupId);
+        Assert.True(update.Provisional.Include);
+        Assert.Equal(0UL, update.Consumed.CompleteRecords);
+    }
+
+    [Fact]
+    public void MaxLineBytes_ReturnsStreamBufferLimit()
+    {
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "g",
+            MaxLineBytes = 4,
+        });
+        var material = Encoding.UTF8.GetBytes("{\"a\":1}\n");
+        var (_, update) = TrajectoryStream.ApplySnapshot(state, material, "gen-0");
+        Assert.Equal("error", update.Kind);
+        Assert.Equal("stream_buffer_limit", update.Error!.Value.Code);
+        Assert.Equal("Stream buffer limit exceeded.", update.Error.Value.Message);
+    }
+
+    [Fact]
+    public void CursorMismatch_Atomic()
+    {
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "g",
+        });
+        var (state1, _) = TrajectoryStream.ApplySnapshot(state, ReadOnlyMemory<byte>.Empty, "gen-0");
+        var bad = state1.Cursor with
+        {
+            Position = state1.Cursor.Position with { NextByteOffset = 99 },
+        };
+        var (state2, update) = TrajectoryStream.ApplySnapshot(state1, ReadOnlyMemory<byte>.Empty, "gen-0", bad);
+        Assert.Equal("reset-required", update.Kind);
+        Assert.Equal("cursor-mismatch", update.Reset!.Reason);
+        Assert.Equal(state1.Cursor.Position.NextByteOffset, state2.Cursor.Position.NextByteOffset);
     }
 }

@@ -119,15 +119,60 @@ public static class TrajectoryStream
                     "stream_cursor_conflict",
                     "Supplied stream cursor does not match stream state."));
             }
+
+            if (state.GroupLocked && cursor.GroupId != state.Cursor.GroupId)
+            {
+                return (state, ResetRequired(
+                    state,
+                    "group-changed",
+                    "stream_cursor_conflict",
+                    "Supplied stream cursor does not match stream state."));
+            }
+
+            // Domain: non-negative int64 byte positions (streaming-cursor-v1).
+            if (cursor.Position.NextByteOffset < 0 || cursor.Position.PendingByteLength < 0)
+            {
+                return (state, ErrorUpdate(
+                    state,
+                    "invalid_input",
+                    "Stream cursor byte positions must be non-negative int64 values."));
+            }
         }
 
         var (committed, pending) = state.Options.RequireCompleteLines
             ? SplitCompleteLines(material.Span)
             : (material.ToArray(), Array.Empty<byte>());
 
-        if (state.Options.MaxPendingBytes is long maxPending && pending.LongLength > maxPending)
+        if (state.Options.MaxPendingBytes is long maxPending)
         {
-            return (state, ErrorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."));
+            if (maxPending < 0)
+            {
+                return (state, ErrorUpdate(
+                    state,
+                    "invalid_input",
+                    "Stream buffer limits must be non-negative int64 values."));
+            }
+
+            if (pending.LongLength > maxPending)
+            {
+                return (state, ErrorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."));
+            }
+        }
+
+        if (state.Options.MaxLineBytes is long maxLine)
+        {
+            if (maxLine < 0)
+            {
+                return (state, ErrorUpdate(
+                    state,
+                    "invalid_input",
+                    "Stream buffer limits must be non-negative int64 values."));
+            }
+
+            if (AnyLineTooLong(committed, maxLine) || pending.LongLength > maxLine)
+            {
+                return (state, ErrorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."));
+            }
         }
 
         var built = BuildRecords(state, committed);
@@ -212,6 +257,10 @@ public static class TrajectoryStream
             SourceRevision = sourceRevision,
             PrefixSha256 = effectivePrefixSha,
         };
+        var provisionalIds = records
+            .Where(r => !string.IsNullOrEmpty(r.ProvisionalId))
+            .Select(r => r.ProvisionalId!)
+            .ToArray();
         var update = new StreamUpdate
         {
             Kind = "updated",
@@ -220,6 +269,19 @@ public static class TrajectoryStream
             Snapshot = outSnap,
             Delta = outDelta,
             Diagnostics = diagnostics,
+            Provisional = new StreamProvisionalInfo
+            {
+                Include = state.Options.IncludeProvisional,
+                ProvisionalIds = provisionalIds,
+                FinalizedIds = Array.Empty<string>(),
+            },
+            Consumed = new StreamConsumed
+            {
+                CompleteRecords = (ulong)records.Count,
+                Bytes = (ulong)committed.LongLength,
+                FirstSourcePosition = committed.Length == 0 ? null : 0,
+                LastSourcePosition = committed.Length == 0 ? null : committed.LongLength - 1,
+            },
         };
         newState.Cursor = newCursor;
         newState.Snapshot = snapshot;
@@ -671,6 +733,37 @@ public static class TrajectoryStream
             _ => (snapshot, delta),
         };
 
+    private static StreamProvisionalInfo EmptyProvisional(StreamState state) =>
+        new()
+        {
+            Include = state.Options.IncludeProvisional,
+            ProvisionalIds = Array.Empty<string>(),
+            FinalizedIds = Array.Empty<string>(),
+        };
+
+    private static StreamConsumed EmptyConsumed() => new();
+
+    /// <summary>True when any complete LF-terminated line exceeds <paramref name="maxLineBytes"/>.</summary>
+    internal static bool AnyLineTooLong(ReadOnlySpan<byte> data, long maxLineBytes)
+    {
+        var start = 0;
+        for (var i = 0; i < data.Length; i++)
+        {
+            if (data[i] == (byte)'\n')
+            {
+                var lineLen = i - start + 1L;
+                if (lineLen > maxLineBytes)
+                {
+                    return true;
+                }
+
+                start = i + 1;
+            }
+        }
+
+        return false;
+    }
+
     private static StreamUpdate UnchangedUpdate(StreamState state) =>
         new()
         {
@@ -684,6 +777,8 @@ public static class TrajectoryStream
                 Generation = state.Generation,
             },
             Cursor = state.Cursor,
+            Provisional = EmptyProvisional(state),
+            Consumed = EmptyConsumed(),
         };
 
     private static StreamUpdate ErrorUpdate(StreamState state, string code, string message) =>
@@ -699,6 +794,8 @@ public static class TrajectoryStream
                 Generation = state.Generation,
             },
             Cursor = state.Cursor,
+            Provisional = EmptyProvisional(state),
+            Consumed = EmptyConsumed(),
             Error = (code, message),
         };
 
@@ -723,6 +820,8 @@ public static class TrajectoryStream
             [
                 new StreamDiagnostic { Code = code, Message = message },
             ],
+            Provisional = EmptyProvisional(state),
+            Consumed = EmptyConsumed(),
             Reset = new StreamReset
             {
                 Reason = reason,

@@ -138,8 +138,9 @@ def apply_snapshot(
         return state, _error_update(
             state, code=_STREAM_BUFFER_LIMIT, message=_MSG_BUFFER_LIMIT
         )
-    if opts.max_line_bytes is not None and _any_line_too_long(
-        committed, opts.max_line_bytes
+    if opts.max_line_bytes is not None and (
+        _any_line_too_long(committed, opts.max_line_bytes)
+        or len(pending) > opts.max_line_bytes
     ):
         return state, _error_update(
             state, code=_STREAM_BUFFER_LIMIT, message=_MSG_BUFFER_LIMIT
@@ -701,6 +702,14 @@ def _clone_state(state: StreamState) -> StreamState:
     )
 
 
+_INT64_MIN = -(2**63)
+_INT64_MAX = 2**63 - 1
+
+
+def _is_non_negative_int64(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= _INT64_MAX
+
+
 def _cursor_conflict(
     state: StreamState, cursor: StreamCursor | None
 ) -> StreamUpdate | None:
@@ -723,6 +732,16 @@ def _cursor_conflict(
     if isinstance(cursor.position, BytePosition) and isinstance(
         current.position, BytePosition
     ):
+        # Domain: non-negative int64 byte positions (streaming-cursor-v1).
+        if (
+            not _is_non_negative_int64(cursor.position.next_byte_offset)
+            or not _is_non_negative_int64(cursor.position.pending_byte_length)
+        ):
+            return _error_update(
+                state,
+                code="invalid_input",
+                message="Stream cursor byte positions must be non-negative int64 values.",
+            )
         if cursor.position.next_byte_offset != current.position.next_byte_offset:
             return _reset_required(
                 state,

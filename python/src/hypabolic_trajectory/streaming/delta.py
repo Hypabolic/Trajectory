@@ -47,12 +47,11 @@ def diagnostic_key(diagnostic: StreamDiagnostic | dict[str, Any]) -> str:
     code = diagnostic.get("code")
     if not isinstance(code, str) or not code:
         raise ValueError("diagnostic.code required")
-    line_part = (
-        str(diagnostic["input_line"]) if "input_line" in diagnostic else "-"
-    )
-    index_part = (
-        str(diagnostic["record_index"]) if "record_index" in diagnostic else "-"
-    )
+    # Treat missing and JSON null the same: normative '-' sentinel.
+    line = diagnostic.get("input_line")
+    index = diagnostic.get("record_index")
+    line_part = "-" if line is None else str(line)
+    index_part = "-" if index is None else str(index)
     return f"{code}|{line_part}|{index_part}"
 
 

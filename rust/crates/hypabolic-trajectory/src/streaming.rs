@@ -198,6 +198,30 @@ pub struct StreamReset {
     pub dropped_record_ids: Vec<String>,
 }
 
+/// Provisional lifecycle summary on a stream update envelope.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StreamProvisionalInfo {
+    /// Whether provisional records are included.
+    pub include: bool,
+    /// Provisional ids present in this update's snapshot.
+    pub provisional_ids: Vec<String>,
+    /// Provisional ids finalized in this update.
+    pub finalized_ids: Vec<String>,
+}
+
+/// Consumed-progress summary on a stream update envelope.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StreamConsumed {
+    /// Complete records produced this apply.
+    pub complete_records: u64,
+    /// Bytes of committed material this apply.
+    pub bytes: u64,
+    /// First source byte position (inclusive), when material non-empty.
+    pub first_source_position: Option<i64>,
+    /// Last source byte position (inclusive), when material non-empty.
+    pub last_source_position: Option<i64>,
+}
+
 /// Stream update envelope.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StreamUpdate {
@@ -213,6 +237,10 @@ pub struct StreamUpdate {
     pub delta: Option<StreamDelta>,
     /// Diagnostics.
     pub diagnostics: Vec<StreamDiagnostic>,
+    /// Provisional lifecycle summary.
+    pub provisional: StreamProvisionalInfo,
+    /// Consumed-progress summary.
+    pub consumed: StreamConsumed,
     /// Reset metadata.
     pub reset: Option<StreamReset>,
     /// Error.
@@ -700,6 +728,23 @@ fn revision_id(
     ))
 }
 
+fn empty_provisional(state: &StreamState) -> StreamProvisionalInfo {
+    StreamProvisionalInfo {
+        include: state.options.include_provisional,
+        provisional_ids: vec![],
+        finalized_ids: vec![],
+    }
+}
+
+fn empty_consumed() -> StreamConsumed {
+    StreamConsumed {
+        complete_records: 0,
+        bytes: 0,
+        first_source_position: None,
+        last_source_position: None,
+    }
+}
+
 fn unchanged(state: &StreamState) -> StreamUpdate {
     let revision = state.snapshot.as_ref().map_or_else(
         || StreamRevision {
@@ -718,6 +763,8 @@ fn unchanged(state: &StreamState) -> StreamUpdate {
         snapshot: None,
         delta: None,
         diagnostics: vec![],
+        provisional: empty_provisional(state),
+        consumed: empty_consumed(),
         reset: None,
         error: None,
     }
@@ -757,6 +804,8 @@ fn reset_required(state: &StreamState, reason: &str, code: &str, message: &str) 
             record_index: None,
             count: None,
         }],
+        provisional: empty_provisional(state),
+        consumed: empty_consumed(),
         reset: Some(StreamReset {
             reason: reason.into(),
             prior_cursor: Some(state.cursor.clone()),
@@ -785,22 +834,79 @@ fn error_update(state: &StreamState, code: &str, message: &str) -> StreamUpdate 
         snapshot: None,
         delta: None,
         diagnostics: vec![],
+        provisional: empty_provisional(state),
+        consumed: empty_consumed(),
         reset: None,
         error: Some((code.into(), message.into())),
     }
 }
 
+/// True when any complete LF-terminated line in `data` exceeds `max_line_bytes`.
+fn any_line_too_long(data: &[u8], max_line_bytes: i64) -> bool {
+    let mut start = 0usize;
+    for (i, b) in data.iter().enumerate() {
+        if *b == b'\n' {
+            let line_len = (i - start + 1) as i64;
+            if line_len > max_line_bytes {
+                return true;
+            }
+            start = i + 1;
+        }
+    }
+    false
+}
+
+fn cursor_conflict(state: &StreamState, cursor: Option<&StreamCursor>) -> Option<StreamUpdate> {
+    let cursor = cursor?;
+    if cursor.source != state.cursor.source
+        || cursor.generation != state.cursor.generation
+        || cursor.position.next_byte_offset != state.cursor.position.next_byte_offset
+    {
+        return Some(reset_required(
+            state,
+            "cursor-mismatch",
+            "stream_cursor_conflict",
+            "Supplied stream cursor does not match stream state.",
+        ));
+    }
+    if state.group_locked && cursor.group_id != state.cursor.group_id {
+        return Some(reset_required(
+            state,
+            "group-changed",
+            "stream_cursor_conflict",
+            "Supplied stream cursor does not match stream state.",
+        ));
+    }
+    // Domain: non-negative int64 byte positions (streaming-cursor-v1).
+    if cursor.position.next_byte_offset < 0 || cursor.position.pending_byte_length < 0 {
+        return Some(error_update(
+            state,
+            "invalid_input",
+            "Stream cursor byte positions must be non-negative int64 values.",
+        ));
+    }
+    None
+}
+
 /// Apply a full snapshot of source material.
+///
+/// Optional `cursor` is compared against stream state; mismatch yields
+/// `kind=reset-required` with `reason=cursor-mismatch` and leaves state unchanged.
 pub fn apply_snapshot(
     state: &StreamState,
     material: &[u8],
     source_revision: &str,
+    cursor: Option<&StreamCursor>,
 ) -> Result<(StreamState, StreamUpdate), TrajectoryError> {
     if state.finished {
         return Ok((
             state.clone(),
             error_update(state, "invalid_input", "Stream is already finished."),
         ));
+    }
+
+    if let Some(conflict) = cursor_conflict(state, cursor) {
+        return Ok((state.clone(), conflict));
     }
 
     let (committed, pending) = if state.options.require_complete_lines {
@@ -810,7 +916,36 @@ pub fn apply_snapshot(
     };
 
     if let Some(max) = state.options.max_pending_bytes {
+        if max < 0 {
+            return Ok((
+                state.clone(),
+                error_update(
+                    state,
+                    "invalid_input",
+                    "Stream buffer limits must be non-negative int64 values.",
+                ),
+            ));
+        }
         if pending.len() as i64 > max {
+            return Ok((
+                state.clone(),
+                error_update(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
+            ));
+        }
+    }
+
+    if let Some(max) = state.options.max_line_bytes {
+        if max < 0 {
+            return Ok((
+                state.clone(),
+                error_update(
+                    state,
+                    "invalid_input",
+                    "Stream buffer limits must be non-negative int64 values.",
+                ),
+            ));
+        }
+        if any_line_too_long(&committed, max) || pending.len() as i64 > max {
             return Ok((
                 state.clone(),
                 error_update(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
@@ -824,7 +959,7 @@ pub fn apply_snapshot(
         state.options.group_id.clone()
     };
 
-    let (records, diagnostics, group_id) = if committed.is_empty() {
+    let (mut records, diagnostics, group_id) = if committed.is_empty() {
         (
             Vec::new(),
             Vec::new(),
@@ -887,6 +1022,10 @@ pub fn apply_snapshot(
         (records, diagnostics, trajectory.group_id)
     };
 
+    if !state.options.include_provisional {
+        records.retain(|r| r.status != "provisional");
+    }
+
     if state.snapshot.is_some()
         && (committed.len() as i64) < state.cursor.position.next_byte_offset
     {
@@ -901,14 +1040,12 @@ pub fn apply_snapshot(
         ));
     }
 
-    let empty_sha = sha256("");
     // sha256 of empty string over UTF-8 — use bytes:
     let effective_prefix_sha = if committed.is_empty() {
         sha256_bytes(&[])
     } else {
         sha256_bytes(&committed)
     };
-    let _ = empty_sha;
 
     if state.snapshot.is_some()
         && state.cursor.source_revision.as_deref() == Some(source_revision)
@@ -945,12 +1082,16 @@ pub fn apply_snapshot(
         complete: false,
         generation,
     };
+    let provisional_ids: Vec<String> = records
+        .iter()
+        .filter_map(|r| r.provisional_id.clone())
+        .collect();
     let snapshot = StreamSnapshot {
         schema_id: STREAM_SCHEMA_ID.into(),
         source: new_state.cursor.source.clone(),
         group_id: group_id.clone(),
         revision: revision.clone(),
-        records,
+        records: records.clone(),
         diagnostics: diagnostics.clone(),
         complete: false,
     };
@@ -972,6 +1113,7 @@ pub fn apply_snapshot(
         source_revision: Some(source_revision.into()),
         prefix_sha256: Some(effective_prefix_sha),
     };
+    let committed_len = committed.len() as u64;
     let update = StreamUpdate {
         kind: "updated".into(),
         revision,
@@ -979,6 +1121,21 @@ pub fn apply_snapshot(
         snapshot: out_snapshot,
         delta: out_delta,
         diagnostics,
+        provisional: StreamProvisionalInfo {
+            include: state.options.include_provisional,
+            provisional_ids,
+            finalized_ids: vec![],
+        },
+        consumed: StreamConsumed {
+            complete_records: records.len() as u64,
+            bytes: committed_len,
+            first_source_position: if committed.is_empty() { None } else { Some(0) },
+            last_source_position: if committed.is_empty() {
+                None
+            } else {
+                Some(committed.len() as i64 - 1)
+            },
+        },
         reset: None,
         error: None,
     };
@@ -1016,11 +1173,13 @@ mod tests {
     fn empty_prefix_and_idempotent() {
         let opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-empty-prefix");
         let state = create_stream(opts);
-        let (state, update) = apply_snapshot(&state, b"", "gen-0").unwrap();
+        let (state, update) = apply_snapshot(&state, b"", "gen-0", None).unwrap();
         assert_eq!(update.kind, "updated");
         assert!(update.snapshot.as_ref().unwrap().records.is_empty());
         assert!(update.delta.is_some());
-        let (_, update2) = apply_snapshot(&state, b"", "gen-0").unwrap();
+        assert!(update.provisional.include);
+        assert_eq!(update.consumed.complete_records, 0);
+        let (_, update2) = apply_snapshot(&state, b"", "gen-0", None).unwrap();
         assert_eq!(update2.kind, "unchanged");
     }
 
@@ -1031,10 +1190,10 @@ mod tests {
         let opts = StreamOptions::new(TrajectorySource::Pi)
             .with_group_id("stream-snapshot-delta-equivalence");
         let state = create_stream(opts);
-        let (state, u1) = apply_snapshot(&state, &a, "gen-0").unwrap();
+        let (state, u1) = apply_snapshot(&state, &a, "gen-0", None).unwrap();
         assert_eq!(u1.kind, "updated");
         let prior = snapshot_to_value(u1.snapshot.as_ref().unwrap());
-        let (_, u2) = apply_snapshot(&state, &b, "gen-0").unwrap();
+        let (_, u2) = apply_snapshot(&state, &b, "gen-0", None).unwrap();
         assert_eq!(u2.kind, "updated");
         let delta = delta_to_value(u2.delta.as_ref().unwrap());
         let recon = apply_delta_to_snapshot(Some(&prior), &delta).unwrap();
@@ -1049,9 +1208,9 @@ mod tests {
         let opts =
             StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-expected-group");
         let state = create_stream(opts);
-        let (state, u1) = apply_snapshot(&state, &m1, "gen-0").unwrap();
+        let (state, u1) = apply_snapshot(&state, &m1, "gen-0", None).unwrap();
         assert_eq!(u1.kind, "updated");
-        let (state2, u2) = apply_snapshot(&state, &m2, "gen-0").unwrap();
+        let (state2, u2) = apply_snapshot(&state, &m2, "gen-0", None).unwrap();
         assert_eq!(u2.kind, "reset-required");
         assert_eq!(
             u2.reset.as_ref().unwrap().reason,
@@ -1067,10 +1226,40 @@ mod tests {
         let opts = StreamOptions::new(TrajectorySource::Pi)
             .with_group_id("stream-file-truncate-reset");
         let state = create_stream(opts);
-        let (state, _) = apply_snapshot(&state, &long, "gen-0").unwrap();
-        let (_, u) = apply_snapshot(&state, &short, "gen-0").unwrap();
+        let (state, _) = apply_snapshot(&state, &long, "gen-0", None).unwrap();
+        let (_, u) = apply_snapshot(&state, &short, "gen-0", None).unwrap();
         assert_eq!(u.kind, "reset-required");
         assert_eq!(u.reset.as_ref().unwrap().reason, "source-truncated");
+    }
+
+    #[test]
+    fn cursor_mismatch_atomic() {
+        let opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("g");
+        let state = create_stream(opts);
+        let (state, _) = apply_snapshot(&state, b"", "gen-0", None).unwrap();
+        let mut bad = state.cursor.clone();
+        bad.position.next_byte_offset = 99;
+        let (state2, update) = apply_snapshot(&state, b"", "gen-0", Some(&bad)).unwrap();
+        assert_eq!(update.kind, "reset-required");
+        assert_eq!(update.reset.as_ref().unwrap().reason, "cursor-mismatch");
+        assert_eq!(
+            state2.cursor.position.next_byte_offset,
+            state.cursor.position.next_byte_offset
+        );
+    }
+
+    #[test]
+    fn max_line_bytes_rejected() {
+        let mut opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("g");
+        opts.max_line_bytes = Some(4);
+        let state = create_stream(opts);
+        let material = b"{\"a\":1}\n";
+        let (_, update) = apply_snapshot(&state, material, "gen-0", None).unwrap();
+        assert_eq!(update.kind, "error");
+        assert_eq!(
+            update.error.as_ref().map(|(c, _)| c.as_str()),
+            Some("stream_buffer_limit")
+        );
     }
 
     #[test]

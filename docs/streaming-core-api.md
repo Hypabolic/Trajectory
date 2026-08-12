@@ -22,7 +22,7 @@ Do **not** advertise `stream-*` capabilities in runtime manifests until LS-12.
 
 ```text
 create(options) → StreamState | TrajectoryStream
-apply_snapshot(state, material, source_revision) → (state, StreamUpdate)
+apply_snapshot(state, material, source_revision, cursor?) → (state, StreamUpdate)
 ```
 
 - **`StreamCursor`** — public, serializable committed position (version 1).
@@ -127,7 +127,7 @@ let { state, update } = applySnapshot(
 use hypabolic_trajectory::{StreamOptions, TrajectorySource, apply_snapshot, create_stream};
 
 let state = create_stream(StreamOptions::new(TrajectorySource::Pi).with_group_id("session-1"));
-let (state, update) = apply_snapshot(&state, b"", "gen-0")?;
+let (state, update) = apply_snapshot(&state, b"", "gen-0", None)?;
 ```
 
 ### .NET
