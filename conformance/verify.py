@@ -350,6 +350,42 @@ def _upsert_record(records: list[dict[str, Any]], entry: dict[str, Any]) -> None
     records.append(entry)
 
 
+def assert_delta_base_revision_chain(
+    prior_snapshot: dict[str, Any] | None,
+    delta: dict[str, Any],
+    *,
+    label: str = "stream-delta-apply",
+) -> None:
+    """Validate the delta-apply law precondition (streaming.md §7).
+
+    D.base_revision_id must equal S0.revision.revision_id when the prior
+    snapshot carries a revision id; both must be null for the first revision
+    of a generation (empty / seed prior without revision.revision_id).
+    """
+    prior_revision_id: Any = None
+    if isinstance(prior_snapshot, dict):
+        revision = prior_snapshot.get("revision")
+        if isinstance(revision, dict):
+            prior_revision_id = revision.get("revision_id")
+
+    base_revision_id = delta.get("base_revision_id")
+
+    if prior_revision_id is not None:
+        if base_revision_id != prior_revision_id:
+            raise AssertionError(
+                f"{label}: stream-delta-apply base_revision_id chain broken — "
+                f"delta.base_revision_id={base_revision_id!r} does not equal "
+                f"prior revision.revision_id={prior_revision_id!r}"
+            )
+    else:
+        if base_revision_id is not None:
+            raise AssertionError(
+                f"{label}: stream-delta-apply base_revision_id chain broken — "
+                f"first revision of a generation requires delta.base_revision_id "
+                f"null, got {base_revision_id!r}"
+            )
+
+
 def apply_delta_to_snapshot(
     prior_snapshot: dict[str, Any] | None, delta: dict[str, Any]
 ) -> dict[str, Any]:
@@ -703,6 +739,9 @@ def compare_stream_modes(
                         "diagnostics": [],
                         "complete": False,
                     }
+                # Normative precondition (streaming.md §7): base_revision_id
+                # must chain to prior revision_id (or both null for first rev).
+                assert_delta_base_revision_chain(seed, delta, label=step_label)
                 reconstructed = apply_delta_to_snapshot(seed, delta)
                 if isinstance(snapshot, dict):
                     # Normative equality: records, diagnostics, revision,

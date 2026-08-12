@@ -361,6 +361,144 @@ def test_diagnostic_add_dedupes_by_key() -> None:
     assert result["diagnostics"][0]["count"] == 2
 
 
+def test_base_revision_id_chain_match_and_first_revision() -> None:
+    """Normative §7 precondition: base_revision_id equals prior revision_id (or both null)."""
+    prior = {
+        "schema_id": "trajectory-stream-v1",
+        "source": "pi",
+        "group_id": "g",
+        "revision": {
+            "revision": 1,
+            "revision_id": "rev-1",
+            "parent_revision_id": None,
+            "complete": False,
+            "generation": 0,
+        },
+        "records": [],
+        "diagnostics": [],
+        "complete": False,
+    }
+    delta_ok = {
+        "schema_id": "trajectory-stream-v1",
+        "base_revision_id": "rev-1",
+        "revision": {
+            "revision": 2,
+            "revision_id": "rev-2",
+            "parent_revision_id": "rev-1",
+            "complete": False,
+            "generation": 0,
+        },
+        "operations": [],
+    }
+    # Match: prior tip chains into delta base.
+    verify.assert_delta_base_revision_chain(prior, delta_ok)
+
+    # First revision of a generation: empty/seed prior and null base.
+    seed = {
+        "schema_id": "trajectory-stream-v1",
+        "source": "pi",
+        "group_id": "g",
+        "records": [],
+        "diagnostics": [],
+        "complete": False,
+    }
+    first_delta = {
+        "schema_id": "trajectory-stream-v1",
+        "base_revision_id": None,
+        "revision": {
+            "revision": 0,
+            "revision_id": "rev-0",
+            "parent_revision_id": None,
+            "complete": False,
+            "generation": 0,
+        },
+        "operations": [],
+    }
+    verify.assert_delta_base_revision_chain(seed, first_delta)
+    verify.assert_delta_base_revision_chain(None, first_delta)
+
+    # Explicit null revision_id on prior also requires null base.
+    prior_null_rev = {
+        **seed,
+        "revision": {
+            "revision": 0,
+            "revision_id": None,
+            "parent_revision_id": None,
+            "complete": False,
+            "generation": 0,
+        },
+    }
+    verify.assert_delta_base_revision_chain(prior_null_rev, first_delta)
+
+
+def test_base_revision_id_chain_mismatch_raises() -> None:
+    """Engines that emit an incorrect base_revision_id must fail the chain check."""
+    prior = {
+        "schema_id": "trajectory-stream-v1",
+        "source": "pi",
+        "group_id": "g",
+        "revision": {
+            "revision": 1,
+            "revision_id": "rev-1",
+            "parent_revision_id": None,
+            "complete": False,
+            "generation": 0,
+        },
+        "records": [],
+        "diagnostics": [],
+        "complete": False,
+    }
+    # Wrong base against an established prior tip.
+    delta_wrong_base = {
+        "schema_id": "trajectory-stream-v1",
+        "base_revision_id": "rev-0",
+        "revision": {
+            "revision": 2,
+            "revision_id": "rev-2",
+            "parent_revision_id": "rev-1",
+            "complete": False,
+            "generation": 0,
+        },
+        "operations": [],
+    }
+    with pytest.raises(AssertionError, match="base_revision_id chain broken"):
+        verify.assert_delta_base_revision_chain(
+            prior, delta_wrong_base, label="case/step:s1"
+        )
+
+    # Null base when prior has a revision_id.
+    delta_null_base = dict(delta_wrong_base)
+    delta_null_base["base_revision_id"] = None
+    with pytest.raises(AssertionError, match="base_revision_id chain broken"):
+        verify.assert_delta_base_revision_chain(prior, delta_null_base)
+
+    # Non-null base on first revision (empty prior / seed).
+    first_with_base = {
+        "schema_id": "trajectory-stream-v1",
+        "base_revision_id": "rev-ghost",
+        "revision": {
+            "revision": 0,
+            "revision_id": "rev-0",
+            "parent_revision_id": None,
+            "complete": False,
+            "generation": 0,
+        },
+        "operations": [],
+    }
+    with pytest.raises(AssertionError, match="first revision of a generation"):
+        verify.assert_delta_base_revision_chain(None, first_with_base)
+    seed = {
+        "schema_id": "trajectory-stream-v1",
+        "source": "pi",
+        "group_id": "g",
+        "records": [],
+        "diagnostics": [],
+        "complete": False,
+    }
+    with pytest.raises(AssertionError, match="first revision of a generation"):
+        verify.assert_delta_base_revision_chain(seed, first_with_base)
+
+
 def test_normalize_for_delta_eq_includes_revision_source_group_complete() -> None:
     left = {
         "records": [],
