@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from hypabolic_trajectory.streaming.apply import (
     TrajectoryStream,
+    apply_ahp_actions,
+    apply_ahp_snapshot,
     apply_append,
     apply_snapshot,
     apply_stream,
@@ -24,7 +26,10 @@ from hypabolic_trajectory.streaming.delta import (
 from hypabolic_trajectory.streaming.framing import split_complete_lines
 from hypabolic_trajectory.streaming.types import (
     STREAM_SCHEMA_ID,
+    AhpServerSeqPosition,
     BytePosition,
+    HermesRowPosition,
+    SnapshotRevisionPosition,
     StreamConsumed,
     StreamCursor,
     StreamDelta,
@@ -45,7 +50,10 @@ from hypabolic_trajectory.streaming.types import (
 
 __all__ = [
     "STREAM_SCHEMA_ID",
+    "AhpServerSeqPosition",
     "BytePosition",
+    "HermesRowPosition",
+    "SnapshotRevisionPosition",
     "StreamConsumed",
     "StreamCursor",
     "StreamDelta",
@@ -63,6 +71,8 @@ __all__ = [
     "StreamState",
     "StreamUpdate",
     "TrajectoryStream",
+    "apply_ahp_actions",
+    "apply_ahp_snapshot",
     "apply_append",
     "apply_delta_to_snapshot",
     "apply_snapshot",

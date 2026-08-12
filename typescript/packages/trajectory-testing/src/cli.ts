@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import {
+  applyAhpActions,
+  applyAhpSnapshot,
   applyAppend,
   applySnapshot,
   createStream,
@@ -360,19 +362,46 @@ function parseStreamCursor(raw: Record<string, unknown> | undefined): StreamCurs
     throw new Error("Step cursor requires source and group_id strings.");
   }
   const position = raw.position as Record<string, unknown> | undefined;
-  if (!position || position.kind !== "byte") {
-    throw new Error("Stream engine supports byte cursors only in this slice.");
+  if (!position || typeof position.kind !== "string") {
+    throw new Error("Step cursor position must be an object with kind.");
+  }
+  let pos: StreamCursor["position"];
+  if (position.kind === "byte") {
+    pos = {
+      kind: "byte",
+      nextByteOffset: BigInt(Number(position.next_byte_offset ?? 0)),
+      pendingByteLength: BigInt(Number(position.pending_byte_length ?? 0)),
+    };
+  } else if (position.kind === "ahp-server-seq") {
+    pos = {
+      kind: "ahp-server-seq",
+      nextServerSeq: BigInt(Number(position.next_server_seq ?? 0)),
+      lastServerSeq: BigInt(Number(position.last_server_seq ?? -1)),
+      ...(position.next_byte_offset === undefined
+        ? {}
+        : { nextByteOffset: BigInt(Number(position.next_byte_offset)) }),
+    };
+  } else if (position.kind === "snapshot-revision") {
+    if (typeof position.revision !== "string") {
+      throw new Error("snapshot-revision.revision must be a string.");
+    }
+    pos = {
+      kind: "snapshot-revision",
+      revision: position.revision,
+      contentSha256:
+        typeof position.content_sha256 === "string" ? position.content_sha256 : null,
+    };
+  } else {
+    throw new Error(
+      "Stream cursor position.kind must be byte, ahp-server-seq, or snapshot-revision.",
+    );
   }
   return {
     cursorVersion: 1,
     source: source as TrajectorySource,
     groupId,
     generation: BigInt(Number(raw.generation ?? 0)),
-    position: {
-      kind: "byte",
-      nextByteOffset: BigInt(Number(position.next_byte_offset ?? 0)),
-      pendingByteLength: BigInt(Number(position.pending_byte_length ?? 0)),
-    },
+    position: pos,
     sourceRevision: (raw.source_revision as string | null | undefined) ?? null,
     prefixSha256: (raw.prefix_sha256 as string | null | undefined) ?? null,
   };
@@ -415,7 +444,15 @@ async function applyStreamStep(
     };
     return resetStream(state, request);
   }
-  if (kind === "ahp-actions" || kind === "ahp-snapshot" || kind === "hermes-export") {
+  if (kind === "ahp-snapshot") {
+    const data = await loadStepBytes(caseDirectory, stepInput);
+    return applyAhpSnapshot(state, data, sourceRevision ?? "", cursor);
+  }
+  if (kind === "ahp-actions") {
+    const data = await loadStepBytes(caseDirectory, stepInput);
+    return applyAhpActions(state, data, cursor);
+  }
+  if (kind === "hermes-export") {
     throw new StreamEngineUnsupported(
       `Stream input kind '${kind}' is not implemented in this slice.`,
     );
@@ -435,15 +472,35 @@ function streamStateEquivalent(a: StreamState, b: StreamState): boolean {
   }
   const ca = a.cursor;
   const cb = b.cursor;
-  return (
-    ca.source === cb.source &&
-    ca.groupId === cb.groupId &&
-    ca.generation === cb.generation &&
-    ca.sourceRevision === cb.sourceRevision &&
-    ca.prefixSha256 === cb.prefixSha256 &&
-    ca.position.nextByteOffset === cb.position.nextByteOffset &&
-    ca.position.pendingByteLength === cb.position.pendingByteLength
-  );
+  if (
+    ca.source !== cb.source ||
+    ca.groupId !== cb.groupId ||
+    ca.generation !== cb.generation ||
+    ca.sourceRevision !== cb.sourceRevision ||
+    ca.prefixSha256 !== cb.prefixSha256 ||
+    ca.position.kind !== cb.position.kind
+  ) {
+    return false;
+  }
+  if (ca.position.kind === "byte" && cb.position.kind === "byte") {
+    return (
+      ca.position.nextByteOffset === cb.position.nextByteOffset &&
+      ca.position.pendingByteLength === cb.position.pendingByteLength
+    );
+  }
+  if (ca.position.kind === "ahp-server-seq" && cb.position.kind === "ahp-server-seq") {
+    return (
+      ca.position.nextServerSeq === cb.position.nextServerSeq &&
+      ca.position.lastServerSeq === cb.position.lastServerSeq
+    );
+  }
+  if (ca.position.kind === "snapshot-revision" && cb.position.kind === "snapshot-revision") {
+    return (
+      ca.position.revision === cb.position.revision &&
+      ca.position.contentSha256 === cb.position.contentSha256
+    );
+  }
+  return false;
 }
 
 async function executeStreamSequence(
@@ -453,7 +510,7 @@ async function executeStreamSequence(
   const steps = manifest.steps ?? [];
   for (const step of steps) {
     const kind = step.input?.kind;
-    if (kind === "ahp-actions" || kind === "ahp-snapshot" || kind === "hermes-export") {
+    if (kind === "hermes-export") {
       throw new StreamEngineUnsupported(
         `Stream input kind '${kind}' is not implemented in this slice.`,
       );
@@ -575,10 +632,16 @@ function oracleSnapshotsMatch(
   const oDiags = oracleSnap.diagnostics.map(diagnosticParityKey);
   if (JSON.stringify(aDiags) !== JSON.stringify(oDiags)) return false;
   if (appendSnap.complete !== oracleSnap.complete) return false;
-  return (
-    appendCursor.position.nextByteOffset === oracleCursor.position.nextByteOffset &&
-    appendCursor.prefixSha256 === oracleCursor.prefixSha256
-  );
+  if (appendCursor.prefixSha256 !== oracleCursor.prefixSha256) return false;
+  if (
+    appendCursor.position.kind === "byte" &&
+    oracleCursor.position.kind === "byte"
+  ) {
+    return (
+      appendCursor.position.nextByteOffset === oracleCursor.position.nextByteOffset
+    );
+  }
+  return JSON.stringify(appendCursor.position) === JSON.stringify(oracleCursor.position);
 }
 
 async function executeListing(repositoryRoot: string, manifest: Manifest): Promise<string> {

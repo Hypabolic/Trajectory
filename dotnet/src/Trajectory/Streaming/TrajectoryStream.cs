@@ -1,8 +1,8 @@
 using System.Collections;
 using System.Globalization;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Hypabolic.Trajectory.Adapters.Hypabolic;
 
 namespace Hypabolic.Trajectory.Streaming;
@@ -15,11 +15,19 @@ public static class TrajectoryStream
 {
     public const string SchemaId = "trajectory-stream-v1";
 
+    private const string MsgAhpSourceRequired = "AHP stream apply requires source ahp.";
+    private const string MsgSequenceGap = "AHP action-log serverSeq gap requires snapshot resync.";
+    private const string MsgInvalidAhpActions = "AHP action batch could not be parsed.";
+    private const string MsgInvalidAhpSnapshot = "AHP snapshot material is not valid Shape A JSON.";
+
     public static StreamState Create(StreamOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         var groupId = string.IsNullOrEmpty(options.GroupId) ? "default" : options.GroupId;
         var source = SourceWireName(options.Source);
+        StreamPosition position = options.Source == TrajectorySource.Ahp
+            ? new SnapshotRevisionPosition { Revision = "", ContentSha256 = null }
+            : new BytePosition { NextByteOffset = 0, PendingByteLength = 0 };
         return new StreamState
         {
             Options = options,
@@ -28,7 +36,7 @@ public static class TrajectoryStream
                 Source = source,
                 GroupId = groupId,
                 Generation = 0,
-                Position = new BytePosition { NextByteOffset = 0, PendingByteLength = 0 },
+                Position = position,
                 SourceRevision = null,
                 PrefixSha256 = null,
             },
@@ -169,7 +177,9 @@ public static class TrajectoryStream
             records = records.Where(r => r.Status != "provisional").ToList();
         }
 
-        if (state.Snapshot is not null && committed.LongLength < state.Cursor.Position.NextByteOffset)
+        if (state.Snapshot is not null &&
+            state.Cursor.Position is BytePosition priorByte &&
+            committed.LongLength < priorByte.NextByteOffset)
         {
             var (reason, message) = ShrinkResetReason(state, committed);
             return (state, ResetRequired(
@@ -318,13 +328,14 @@ public static class TrajectoryStream
         // True append replay: same segment re-supplied with the pre-apply cursor.
         // Content equality alone is not enough — successive identical growth segments
         // must both commit after the cursor advances.
-        var preOffset = state.Cursor.Position.NextByteOffset;
+        var preOffset = ByteNextOffset(state.Cursor.Position);
         if (state.LastAppendSegment is not null &&
             state.LastAppendPreOffset is long lastPre &&
             segment.Length == state.LastAppendSegment.Length &&
             segment.Span.SequenceEqual(state.LastAppendSegment) &&
             cursor is not null &&
-            cursor.Position.NextByteOffset == lastPre &&
+            cursor.Position is BytePosition replayPos &&
+            replayPos.NextByteOffset == lastPre &&
             cursor.Source == state.Cursor.Source &&
             cursor.Generation == state.Cursor.Generation &&
             cursor.GroupId == state.Cursor.GroupId)
@@ -370,12 +381,11 @@ public static class TrajectoryStream
             pendingOnly.PendingBytes = newPending;
             pendingOnly.LastAppendSegment = segment.ToArray();
             pendingOnly.LastAppendPreOffset = preOffset;
+            var priorByte = pendingOnly.Cursor.Position as BytePosition
+                ?? new BytePosition { NextByteOffset = 0, PendingByteLength = 0 };
             pendingOnly.Cursor = pendingOnly.Cursor with
             {
-                Position = pendingOnly.Cursor.Position with
-                {
-                    PendingByteLength = newPending.LongLength,
-                },
+                Position = priorByte with { PendingByteLength = newPending.LongLength },
             };
             return (pendingOnly, UnchangedUpdate(pendingOnly));
         }
@@ -397,13 +407,14 @@ public static class TrajectoryStream
         newState.PendingBytes = newPending;
         newState.LastAppendSegment = segment.ToArray();
         newState.LastAppendPreOffset = preOffset;
-        newState.Cursor = newState.Cursor with
+        if (newState.Cursor.Position is BytePosition committedByte)
         {
-            Position = newState.Cursor.Position with
+            newState.Cursor = newState.Cursor with
             {
-                PendingByteLength = newPending.LongLength,
-            },
-        };
+                Position = committedByte with { PendingByteLength = newPending.LongLength },
+            };
+        }
+
         // Always copy patched cursor onto StreamUpdate (updated and unchanged).
         update = update with { Cursor = newState.Cursor };
         if (update.Kind == "updated")
@@ -584,12 +595,20 @@ public static class TrajectoryStream
         newState.GroupLocked = false;
         newState.LastAppendSegment = null;
         newState.LastAppendPreOffset = null;
+        ClearAhpState(newState);
+        StreamPosition resetPos = state.Options.Source == TrajectorySource.Ahp
+            ? new SnapshotRevisionPosition
+            {
+                Revision = request.SourceRevision ?? "",
+                ContentSha256 = null,
+            }
+            : new BytePosition { NextByteOffset = 0, PendingByteLength = 0 };
         newState.Cursor = new StreamCursor
         {
             Source = state.Cursor.Source,
             GroupId = groupId,
             Generation = generation,
-            Position = new BytePosition { NextByteOffset = 0, PendingByteLength = 0 },
+            Position = resetPos,
             SourceRevision = request.SourceRevision,
             PrefixSha256 = null,
         };
@@ -680,7 +699,7 @@ public static class TrajectoryStream
             Source = newState.Cursor.Source,
             GroupId = groupId,
             Generation = generation,
-            Position = new BytePosition { NextByteOffset = 0, PendingByteLength = 0 },
+            Position = resetPos,
             SourceRevision = request.SourceRevision,
             PrefixSha256 = emptySha,
         };
@@ -721,9 +740,15 @@ public static class TrajectoryStream
             "reset" => input.Reset is null
                 ? (state, ErrorUpdate(state, "invalid_input", "reset input requires a StreamResetRequest."))
                 : Reset(state, input.Reset),
-            "ahp-actions" or "ahp-snapshot" => (
+            "ahp-snapshot" => ApplyAhpSnapshot(
                 state,
-                ErrorUpdate(state, "stream_resync_required", "AHP stream apply is not available in this slice.")),
+                input.Data ?? ReadOnlyMemory<byte>.Empty,
+                input.SourceRevision ?? "",
+                input.Cursor),
+            "ahp-actions" => ApplyAhpActions(
+                state,
+                input.Data ?? ReadOnlyMemory<byte>.Empty,
+                input.Cursor),
             "hermes-export" => (
                 state,
                 ErrorUpdate(
@@ -732,6 +757,413 @@ public static class TrajectoryStream
                     "Hermes export stream apply requires an optional provider.")),
             _ => (state, ErrorUpdate(state, "invalid_input", "Stream input kind is not supported for this source.")),
         };
+    }
+
+    /// <summary>LS-06: successive AHP Shape A snapshots with provisional activeTurn.</summary>
+    public static (StreamState State, StreamUpdate Update) ApplyAhpSnapshot(
+        StreamState state,
+        ReadOnlyMemory<byte> material,
+        string sourceRevision,
+        StreamCursor? cursor = null)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        sourceRevision ??= "";
+
+        if (state.Finished)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", "Stream is already finished."));
+        }
+
+        if (state.Options.Source != TrajectorySource.Ahp)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", MsgAhpSourceRequired));
+        }
+
+        if (cursor is not null)
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
+        }
+
+        var contentSha = Sha256Hex(material.Span);
+        // Idempotent duplicate host revision (+ same content fingerprint).
+        if (state.Snapshot is not null &&
+            state.AhpLastSnapshotRevision == sourceRevision &&
+            state.AhpLastContentSha256 == contentSha)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        if (state.Snapshot is not null &&
+            state.Cursor.Position is SnapshotRevisionPosition snapPos &&
+            snapPos.Revision == sourceRevision &&
+            snapPos.ContentSha256 == contentSha)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        var built = BuildAhpRecords(state, material);
+        if (built.Update is not null)
+        {
+            return (state, built.Update);
+        }
+
+        var records = built.Records!;
+        var diagnostics = built.Diagnostics!;
+        var groupId = built.GroupId!;
+        var chatState = built.Chat!;
+        var session = built.Session;
+        var protocolVersion = built.ProtocolVersion;
+
+        if (!state.Options.IncludeProvisional)
+        {
+            records = records.Where(r => r.Status != "provisional").ToList();
+        }
+
+        var newState = Clone(state);
+        newState.GroupLocked = true;
+        var generation = newState.Generation;
+        var parentRevisionId = newState.Snapshot?.Revision.RevisionId;
+        var revisionNum = newState.NextRevision;
+        var recordIds = records
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .Where(s => s.Length > 0)
+            .ToArray();
+        var revisionId = RevisionId(
+            generation,
+            revisionNum,
+            newState.Cursor.Source,
+            groupId,
+            contentSha,
+            recordIds);
+        var revision = new StreamRevision
+        {
+            Revision = revisionNum,
+            RevisionId = revisionId,
+            ParentRevisionId = parentRevisionId,
+            Complete = false,
+            Generation = generation,
+        };
+        var snapshot = new StreamSnapshot
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Revision = revision,
+            Records = records,
+            Diagnostics = diagnostics,
+            Complete = false,
+        };
+        var delta = DiffSnapshots(newState.Snapshot, snapshot, revision);
+        var (outSnap, outDelta) = ApplyDelivery(snapshot, delta, newState.Options.Delivery);
+
+        // Preserve server-seq authority when actions established it; otherwise snapshot-revision.
+        StreamPosition position;
+        if (newState.Cursor.Position is AhpServerSeqPosition || newState.AhpLastServerSeq is not null)
+        {
+            var lastSeq = newState.AhpLastServerSeq ?? -1;
+            position = new AhpServerSeqPosition
+            {
+                NextServerSeq = lastSeq + 1,
+                LastServerSeq = lastSeq,
+            };
+        }
+        else
+        {
+            position = new SnapshotRevisionPosition
+            {
+                Revision = sourceRevision,
+                ContentSha256 = contentSha,
+            };
+        }
+
+        var cursorOut = new StreamCursor
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Generation = generation,
+            Position = position,
+            SourceRevision = sourceRevision,
+            PrefixSha256 = contentSha,
+        };
+        var provisionalIds = records
+            .Where(r => !string.IsNullOrEmpty(r.ProvisionalId))
+            .Select(r => r.ProvisionalId!)
+            .ToArray();
+        var priorProvisional = new HashSet<string>(
+            (state.Snapshot?.Records ?? Array.Empty<StreamRecord>())
+                .Where(r => !string.IsNullOrEmpty(r.ProvisionalId))
+                .Select(r => r.ProvisionalId!),
+            StringComparer.Ordinal);
+        var finalizedIds = priorProvisional
+            .Where(pid => !provisionalIds.Contains(pid, StringComparer.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        var update = new StreamUpdate
+        {
+            Kind = "updated",
+            Revision = revision,
+            Cursor = cursorOut,
+            Snapshot = outSnap,
+            Delta = outDelta,
+            Diagnostics = diagnostics,
+            Provisional = new StreamProvisionalInfo
+            {
+                Include = state.Options.IncludeProvisional,
+                ProvisionalIds = provisionalIds,
+                FinalizedIds = finalizedIds,
+            },
+            Consumed = new StreamConsumed
+            {
+                CompleteRecords = (ulong)records.Count,
+                Bytes = (ulong)material.Length,
+                FirstSourcePosition = material.Length == 0 ? null : 0,
+                LastSourcePosition = material.Length == 0 ? null : material.Length - 1L,
+            },
+        };
+
+        newState.Cursor = cursorOut;
+        newState.Snapshot = snapshot;
+        newState.NextRevision = revisionNum + 1;
+        newState.AhpChatState = chatState;
+        newState.AhpSession = session;
+        newState.AhpProtocolVersion = protocolVersion;
+        newState.AhpTargetChannel = groupId.StartsWith("ahp-chat:", StringComparison.Ordinal)
+            ? groupId
+            : newState.AhpTargetChannel;
+        newState.AhpLastSnapshotRevision = sourceRevision;
+        newState.AhpLastContentSha256 = contentSha;
+        newState.CommittedPrefix = Array.Empty<byte>();
+        newState.PendingBytes = Array.Empty<byte>();
+        newState.LastAppendSegment = null;
+        newState.LastAppendPreOffset = null;
+        return (newState, update);
+    }
+
+    /// <summary>LS-07: AHP Shape B action-log apply with serverSeq cursor.</summary>
+    public static (StreamState State, StreamUpdate Update) ApplyAhpActions(
+        StreamState state,
+        ReadOnlyMemory<byte> data,
+        StreamCursor? cursor = null)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (state.Finished)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", "Stream is already finished."));
+        }
+
+        if (state.Options.Source != TrajectorySource.Ahp)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", MsgAhpSourceRequired));
+        }
+
+        var actionsSha = Sha256Hex(data.Span);
+        var preSeq = state.AhpLastServerSeq;
+
+        // Idempotent true-replay of the same batch (pre-apply cursor or already applied).
+        if (state.LastAhpActionsSha256 is not null &&
+            state.LastAhpActionsSha256 == actionsSha)
+        {
+            if (cursor is null)
+            {
+                return (state, UnchangedUpdate(state));
+            }
+
+            if (cursor.Position is AhpServerSeqPosition seqPos)
+            {
+                if (state.LastAhpActionsPreSeq is not null &&
+                    seqPos.LastServerSeq == state.LastAhpActionsPreSeq.Value)
+                {
+                    return (state, UnchangedUpdate(state));
+                }
+
+                // Post-apply cursor re-supply of the same batch: already committed.
+                if (state.Cursor.Position is AhpServerSeqPosition committedSeq &&
+                    seqPos.LastServerSeq == committedSeq.LastServerSeq)
+                {
+                    return (state, UnchangedUpdate(state));
+                }
+            }
+            else if (cursor.Position is SnapshotRevisionPosition)
+            {
+                // First action batch was applied from a snapshot-revision cursor.
+                if (state.LastAhpActionsPreSeq is null or -1)
+                {
+                    return (state, UnchangedUpdate(state));
+                }
+            }
+        }
+
+        // Cursor checks: only enforce when caller supplies ahp-server-seq that
+        // disagrees with committed authority. Snapshot-revision cursors are ignored
+        // once the stream is on server-seq (upgrade path / double-invoke pre-cursor).
+        if (cursor is not null && cursor.Position is AhpServerSeqPosition)
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
+        }
+        else if (cursor is not null &&
+                 cursor.Position is not (AhpServerSeqPosition or SnapshotRevisionPosition))
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
+        }
+
+        List<JsonObject> envelopes;
+        try
+        {
+            envelopes = AhpReducer.ParseActionBatch(data.Span);
+        }
+        catch (ArgumentException)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", MsgInvalidAhpActions));
+        }
+
+        if (envelopes.Count == 0)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        var target = state.AhpTargetChannel;
+        if (target is null &&
+            state.GroupLocked &&
+            state.Cursor.GroupId.StartsWith("ahp-chat:", StringComparison.Ordinal))
+        {
+            target = state.Cursor.GroupId;
+        }
+
+        // Prefer options group_id as target when first batch and not locked yet.
+        if (target is null &&
+            state.Options.GroupId is { } optGroup &&
+            optGroup.StartsWith("ahp-chat:", StringComparison.Ordinal))
+        {
+            target = optGroup;
+        }
+
+        var gap = AhpReducer.DetectSequenceGap(envelopes, state.AhpLastServerSeq, target);
+        if (gap is not null)
+        {
+            return (state, ResetRequired(
+                state,
+                "sequence-gap",
+                "stream_sequence_gap",
+                MsgSequenceGap));
+        }
+
+        var chatIn = state.AhpChatState ?? AhpReducer.EmptyChatState(target);
+        var reduced = AhpReducer.ReduceAhpActions(
+            chatIn,
+            envelopes,
+            target,
+            state.AhpLastServerSeq);
+
+        var protocol = state.AhpProtocolVersion
+            ?? state.Options.AhpProtocolVersion
+            ?? "0.7.0";
+        var material = AhpReducer.ShapeABytes(reduced.Chat, protocol, state.AhpSession);
+        var rev = reduced.LastServerSeq is not null
+            ? $"seq:{reduced.LastServerSeq}"
+            : state.Cursor.SourceRevision ?? "seq:0";
+
+        // Apply via snapshot path, then rewrite cursor to ahp-server-seq.
+        var snapState = Clone(state);
+        snapState.AhpChatState = reduced.Chat;
+        snapState.AhpLastServerSeq = reduced.LastServerSeq;
+        // Clear snapshot-revision idempotence keys so seq advances always emit.
+        snapState.AhpLastSnapshotRevision = null;
+        snapState.AhpLastContentSha256 = null;
+
+        var (newState, update) = ApplyAhpSnapshot(snapState, material, rev, cursor: null);
+        if (update.Kind is not ("updated" or "unchanged"))
+        {
+            return (state, update);
+        }
+
+        // Merge reducer diagnostics (unknown action / foreign channel).
+        var extra = reduced.Diagnostics
+            .Select(d => new StreamDiagnostic { Code = d.Code, Message = d.Message })
+            .ToList();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var mergedDiags = new List<StreamDiagnostic>();
+        foreach (var d in update.Diagnostics.Concat(extra))
+        {
+            var key = $"{d.Code}|{d.Message}";
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            mergedDiags.Add(d);
+        }
+
+        var lastSeq = reduced.LastServerSeq ?? -1;
+        var seqCursor = new StreamCursor
+        {
+            Source = newState.Cursor.Source,
+            GroupId = newState.Cursor.GroupId,
+            Generation = newState.Cursor.Generation,
+            Position = new AhpServerSeqPosition
+            {
+                NextServerSeq = lastSeq + 1,
+                LastServerSeq = lastSeq,
+                NextByteOffset = data.Length > 0 ? data.Length : null,
+            },
+            SourceRevision = rev,
+            PrefixSha256 = newState.Cursor.PrefixSha256,
+        };
+        newState.Cursor = seqCursor;
+        newState.AhpLastServerSeq = reduced.LastServerSeq;
+        newState.AhpChatState = reduced.Chat;
+        newState.AhpTargetChannel = newState.Cursor.GroupId.StartsWith("ahp-chat:", StringComparison.Ordinal)
+            ? newState.Cursor.GroupId
+            : target;
+        newState.LastAhpActionsSha256 = actionsSha;
+        newState.LastAhpActionsPreSeq = preSeq ?? -1;
+
+        if (update.Kind == "unchanged" && extra.Count == 0)
+        {
+            return (newState, UnchangedUpdate(newState));
+        }
+
+        StreamSnapshot? outSnapshot = update.Snapshot;
+        StreamDelta? outDelta = update.Delta;
+        if (outSnapshot is not null)
+        {
+            var snapWithDiags = outSnapshot with { Diagnostics = mergedDiags };
+            var reDelta = DiffSnapshots(state.Snapshot, snapWithDiags, snapWithDiags.Revision);
+            var delivered = ApplyDelivery(snapWithDiags, reDelta, state.Options.Delivery);
+            outSnapshot = delivered.Snapshot;
+            outDelta = delivered.Delta;
+            newState.Snapshot = snapWithDiags;
+        }
+
+        return (newState, new StreamUpdate
+        {
+            Kind = "updated",
+            Revision = update.Revision,
+            Cursor = seqCursor,
+            Snapshot = outSnapshot,
+            Delta = outDelta,
+            Diagnostics = mergedDiags,
+            Provisional = update.Provisional,
+            Consumed = new StreamConsumed
+            {
+                CompleteRecords = update.Consumed.CompleteRecords,
+                Bytes = (ulong)data.Length,
+                FirstSourcePosition = data.Length == 0 ? null : 0,
+                LastSourcePosition = data.Length == 0 ? null : data.Length - 1L,
+            },
+        });
     }
 
     public static StreamDelta DiffSnapshots(
@@ -1110,6 +1542,221 @@ public static class TrajectoryStream
         }
     }
 
+    private sealed record AhpBuildResult(
+        List<StreamRecord>? Records,
+        List<StreamDiagnostic>? Diagnostics,
+        string? GroupId,
+        JsonObject? Chat,
+        JsonObject? Session,
+        string? ProtocolVersion,
+        StreamUpdate? Update);
+
+    /// <summary>Normalize Shape A material with provisional activeTurn mapping.</summary>
+    private static AhpBuildResult BuildAhpRecords(StreamState state, ReadOnlyMemory<byte> material)
+    {
+        JsonObject root;
+        try
+        {
+            var text = Encoding.UTF8.GetString(material.Span);
+            var node = JsonNode.Parse(text);
+            if (node is not JsonObject obj || obj["chat"] is not JsonObject)
+            {
+                return new AhpBuildResult(
+                    null, null, null, null, null, null,
+                    ErrorUpdate(state, "invalid_input", MsgInvalidAhpSnapshot));
+            }
+
+            root = obj;
+        }
+        catch (Exception ex) when (ex is JsonException or DecoderFallbackException or ArgumentException)
+        {
+            return new AhpBuildResult(
+                null, null, null, null, null, null,
+                ErrorUpdate(state, "invalid_input", MsgInvalidAhpSnapshot));
+        }
+
+        var chat = (JsonObject)root["chat"]!;
+        var session = root["session"] as JsonObject;
+        var protocolVersion = root["ahpProtocolVersion"] is JsonValue pv &&
+                              pv.GetValueKind() == JsonValueKind.String
+            ? pv.GetValue<string>()
+            : null;
+        var activeIds = AhpActiveTurnNativeIds(chat["activeTurn"]);
+
+        // Do not pass stream group_id hint unless locked on a chat URI.
+        string? groupHint = null;
+        if (state.GroupLocked &&
+            state.Cursor.GroupId.StartsWith("ahp-chat:", StringComparison.Ordinal))
+        {
+            groupHint = state.Cursor.GroupId;
+        }
+
+        try
+        {
+            var engine = TrajectoryEngine.CreateDefault();
+            var transcript = Encoding.UTF8.GetString(material.Span);
+            var ir = engine.NormalizeToIR(new NormalizeInput
+            {
+                Source = TrajectorySource.Ahp,
+                Transcript = transcript,
+                SourceContext = new SourceContext
+                {
+                    GroupId = groupHint,
+                    BaseByteOffset = 0,
+                    Partial = true,
+                },
+                Options = state.Options.Normalize,
+            });
+
+            var hyp = engine.Project<HypabolicTrajectoryV1>(ir, OutputSchemaIds.HypabolicTrajectoryV1);
+            var provN = 0;
+            var records = new List<StreamRecord>();
+            foreach (var r in hyp.Records)
+            {
+                var dict = HypabolicRecordToDict(r);
+                var role = dict.TryGetValue("role", out var roleObj) ? roleObj?.ToString() : null;
+                var isProv = role != "meta" && RecordFromActiveTurn(dict, activeIds);
+                if (isProv)
+                {
+                    provN += 1;
+                    records.Add(new StreamRecord
+                    {
+                        Status = "provisional",
+                        Record = dict,
+                        ProvisionalId = $"prov-active-turn-{provN}",
+                    });
+                }
+                else
+                {
+                    records.Add(new StreamRecord
+                    {
+                        Status = "stable",
+                        Record = dict,
+                    });
+                }
+            }
+
+            var diagnostics = ir.Diagnostics
+                .Where(d => d.Code != DiagnosticCodes.AhpActiveTurnOmitted)
+                .Select(d => new StreamDiagnostic
+                {
+                    Code = d.Code,
+                    Message = d.Message,
+                    InputLine = d.InputLine,
+                    RecordIndex = d.RecordIndex,
+                    Count = d.Count,
+                })
+                .ToList();
+
+            return new AhpBuildResult(
+                records,
+                diagnostics,
+                ir.GroupId,
+                (JsonObject)chat.DeepClone(),
+                session is null ? null : (JsonObject)session.DeepClone(),
+                protocolVersion,
+                null);
+        }
+        catch (TrajectoryNormalizationException ex) when (ex.Code == NormalizationErrorCode.SourceGroupConflict)
+        {
+            return new AhpBuildResult(
+                null, null, null, null, null, null,
+                ResetRequired(
+                    state,
+                    "group-changed",
+                    "stream_source_reset",
+                    "Source group changed relative to the active stream."));
+        }
+        catch (TrajectoryNormalizationException ex)
+        {
+            var wire = ex.Code switch
+            {
+                NormalizationErrorCode.InvalidInput => "invalid_input",
+                NormalizationErrorCode.UnknownSource => "unknown_source",
+                NormalizationErrorCode.MissingUserRecords => "missing_user_records",
+                NormalizationErrorCode.MissingAssistantRecords => "missing_assistant_records",
+                NormalizationErrorCode.SourceGroupConflict => "source_group_conflict",
+                NormalizationErrorCode.SourceGroupRequired => "source_group_required",
+                _ => "invalid_input",
+            };
+            return new AhpBuildResult(
+                null, null, null, null, null, null,
+                ErrorUpdate(state, wire, ex.Message));
+        }
+    }
+
+    private static HashSet<string> AhpActiveTurnNativeIds(JsonNode? active)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        if (active is not JsonObject a)
+        {
+            return ids;
+        }
+
+        if (a["id"] is JsonValue idVal &&
+            idVal.GetValueKind() == JsonValueKind.String &&
+            idVal.GetValue<string>() is { Length: > 0 } tid)
+        {
+            ids.Add(tid);
+        }
+
+        if (a["responseParts"] is JsonArray parts)
+        {
+            foreach (var partNode in parts)
+            {
+                if (partNode is not JsonObject part)
+                {
+                    continue;
+                }
+
+                if (part["id"] is JsonValue pid &&
+                    pid.GetValueKind() == JsonValueKind.String &&
+                    pid.GetValue<string>() is { Length: > 0 } partId)
+                {
+                    ids.Add(partId);
+                }
+
+                if (part["toolCall"] is JsonObject tc &&
+                    tc["toolCallId"] is JsonValue tcid &&
+                    tcid.GetValueKind() == JsonValueKind.String &&
+                    tcid.GetValue<string>() is { Length: > 0 } toolCallId)
+                {
+                    ids.Add(toolCallId);
+                }
+            }
+        }
+
+        return ids;
+    }
+
+    private static bool RecordFromActiveTurn(
+        Dictionary<string, object?> record,
+        HashSet<string> activeIds)
+    {
+        if (activeIds.Count == 0)
+        {
+            return false;
+        }
+
+        if (!record.TryGetValue("provenance", out var provObj) ||
+            provObj is not Dictionary<string, object?> prov)
+        {
+            return false;
+        }
+
+        foreach (var key in new[] { "native_record_id", "stable_source_record_id" })
+        {
+            if (prov.TryGetValue(key, out var val) &&
+                val is string s &&
+                activeIds.Contains(s))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Strict UTF-8 decode of each LF-terminated complete line. Invalid lines are
     /// replaced with a non-JSON placeholder so adapters emit <c>invalid_json_line</c>
@@ -1291,7 +1938,36 @@ public static class TrajectoryStream
                 ? null
                 : state.LastAppendSegment.ToArray(),
             LastAppendPreOffset = state.LastAppendPreOffset,
+            AhpChatState = state.AhpChatState is null
+                ? null
+                : (JsonObject)state.AhpChatState.DeepClone(),
+            AhpSession = state.AhpSession is null
+                ? null
+                : (JsonObject)state.AhpSession.DeepClone(),
+            AhpProtocolVersion = state.AhpProtocolVersion,
+            AhpLastServerSeq = state.AhpLastServerSeq,
+            AhpTargetChannel = state.AhpTargetChannel,
+            AhpLastSnapshotRevision = state.AhpLastSnapshotRevision,
+            AhpLastContentSha256 = state.AhpLastContentSha256,
+            LastAhpActionsSha256 = state.LastAhpActionsSha256,
+            LastAhpActionsPreSeq = state.LastAhpActionsPreSeq,
         };
+
+    private static void ClearAhpState(StreamState state)
+    {
+        state.AhpChatState = null;
+        state.AhpSession = null;
+        state.AhpProtocolVersion = null;
+        state.AhpLastServerSeq = null;
+        state.AhpTargetChannel = null;
+        state.AhpLastSnapshotRevision = null;
+        state.AhpLastContentSha256 = null;
+        state.LastAhpActionsSha256 = null;
+        state.LastAhpActionsPreSeq = null;
+    }
+
+    private static long ByteNextOffset(StreamPosition pos) =>
+        pos is BytePosition b ? b.NextByteOffset : 0L;
 
     private static (StreamSnapshot? Snapshot, StreamDelta? Delta) ApplyDelivery(
         StreamSnapshot snapshot,
@@ -1394,15 +2070,52 @@ public static class TrajectoryStream
         // Domain: non-negative int64 byte positions (streaming-cursor-v1).
         // Checked before position equality so out-of-domain offsets are invalid_input,
         // not cursor-mismatch (parity with Python/TS).
-        if (cursor.Position.NextByteOffset < 0 || cursor.Position.PendingByteLength < 0)
+        if (cursor.Position is BytePosition bytePos &&
+            state.Cursor.Position is BytePosition)
         {
-            return ErrorUpdate(
-                state,
-                "invalid_input",
-                "Stream cursor byte positions must be non-negative int64 values.");
+            if (bytePos.NextByteOffset < 0 || bytePos.PendingByteLength < 0)
+            {
+                return ErrorUpdate(
+                    state,
+                    "invalid_input",
+                    "Stream cursor byte positions must be non-negative int64 values.");
+            }
+
+            if (bytePos.NextByteOffset != ((BytePosition)state.Cursor.Position).NextByteOffset)
+            {
+                return ResetRequired(
+                    state,
+                    "cursor-mismatch",
+                    "stream_cursor_conflict",
+                    "Supplied stream cursor does not match stream state.");
+            }
         }
 
-        if (cursor.Position.NextByteOffset != state.Cursor.Position.NextByteOffset)
+        if (cursor.Position is AhpServerSeqPosition ahpPos &&
+            state.Cursor.Position is AhpServerSeqPosition stateAhp)
+        {
+            if (ahpPos.NextServerSeq < 0 || ahpPos.LastServerSeq < 0)
+            {
+                return ErrorUpdate(
+                    state,
+                    "invalid_input",
+                    "Stream cursor serverSeq positions must be non-negative int64 values.");
+            }
+
+            if (ahpPos.LastServerSeq != stateAhp.LastServerSeq ||
+                ahpPos.NextServerSeq != stateAhp.NextServerSeq)
+            {
+                return ResetRequired(
+                    state,
+                    "cursor-mismatch",
+                    "stream_cursor_conflict",
+                    "Supplied stream cursor does not match stream state.");
+            }
+        }
+
+        if (cursor.Position is SnapshotRevisionPosition snapPos &&
+            state.Cursor.Position is SnapshotRevisionPosition stateSnap &&
+            snapPos.Revision != stateSnap.Revision)
         {
             return ResetRequired(
                 state,
@@ -1436,22 +2149,66 @@ public static class TrajectoryStream
             ["dropped_record_ids"] = reset.DroppedRecordIds.ToList(),
         };
 
-    private static Dictionary<string, object?> CursorToDict(StreamCursor c) =>
-        new(StringComparer.Ordinal)
+    private static Dictionary<string, object?> CursorToDict(StreamCursor c)
+    {
+        Dictionary<string, object?> position = c.Position switch
+        {
+            BytePosition b => new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["kind"] = "byte",
+                ["next_byte_offset"] = b.NextByteOffset,
+                ["pending_byte_length"] = b.PendingByteLength,
+            },
+            AhpServerSeqPosition a => BuildAhpSeqPositionDict(a),
+            SnapshotRevisionPosition s => BuildSnapshotRevisionPositionDict(s),
+            _ => new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["kind"] = c.Position.Kind,
+            },
+        };
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["cursor_version"] = c.CursorVersion,
             ["source"] = c.Source,
             ["group_id"] = c.GroupId,
             ["generation"] = c.Generation,
-            ["position"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["kind"] = c.Position.Kind,
-                ["next_byte_offset"] = c.Position.NextByteOffset,
-                ["pending_byte_length"] = c.Position.PendingByteLength,
-            },
+            ["position"] = position,
             ["source_revision"] = c.SourceRevision,
             ["prefix_sha256"] = c.PrefixSha256,
         };
+    }
+
+    private static Dictionary<string, object?> BuildAhpSeqPositionDict(AhpServerSeqPosition a)
+    {
+        var position = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["kind"] = "ahp-server-seq",
+            ["next_server_seq"] = a.NextServerSeq,
+            ["last_server_seq"] = a.LastServerSeq,
+        };
+        if (a.NextByteOffset is not null)
+        {
+            position["next_byte_offset"] = a.NextByteOffset;
+        }
+
+        return position;
+    }
+
+    private static Dictionary<string, object?> BuildSnapshotRevisionPositionDict(
+        SnapshotRevisionPosition s)
+    {
+        var position = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["kind"] = "snapshot-revision",
+            ["revision"] = s.Revision,
+        };
+        if (s.ContentSha256 is not null)
+        {
+            position["content_sha256"] = s.ContentSha256;
+        }
+
+        return position;
+    }
 
     /// <summary>
     /// Classify shorter snapshot material: pure prefix → truncate; non-prefix

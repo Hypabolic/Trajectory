@@ -17,6 +17,9 @@ public sealed class StreamingCoreTests
         return File.ReadAllBytes(path);
     }
 
+    private static BytePosition BytePos(StreamCursor cursor) =>
+        Assert.IsType<BytePosition>(cursor.Position);
+
     [Fact]
     public void EmptyPrefix_ProducesEmptySnapshotAndIdempotentReplay()
     {
@@ -74,11 +77,11 @@ public sealed class StreamingCoreTests
         });
         var (state1, u1) = TrajectoryStream.ApplySnapshot(state, m1, "gen-0");
         Assert.Equal("updated", u1.Kind);
-        var priorOffset = state1.Cursor.Position.NextByteOffset;
+        var priorOffset = BytePos(state1.Cursor).NextByteOffset;
         var (state2, u2) = TrajectoryStream.ApplySnapshot(state1, m2, "gen-0");
         Assert.Equal("reset-required", u2.Kind);
         Assert.Equal("group-changed", u2.Reset!.Reason);
-        Assert.Equal(priorOffset, state2.Cursor.Position.NextByteOffset);
+        Assert.Equal(priorOffset, BytePos(state2.Cursor).NextByteOffset);
     }
 
     [Fact]
@@ -148,12 +151,12 @@ public sealed class StreamingCoreTests
         var (state1, _) = TrajectoryStream.ApplySnapshot(state, ReadOnlyMemory<byte>.Empty, "gen-0");
         var bad = state1.Cursor with
         {
-            Position = state1.Cursor.Position with { NextByteOffset = 99 },
+            Position = BytePos(state1.Cursor) with { NextByteOffset = 99 },
         };
         var (state2, update) = TrajectoryStream.ApplySnapshot(state1, ReadOnlyMemory<byte>.Empty, "gen-0", bad);
         Assert.Equal("reset-required", update.Kind);
         Assert.Equal("cursor-mismatch", update.Reset!.Reason);
-        Assert.Equal(state1.Cursor.Position.NextByteOffset, state2.Cursor.Position.NextByteOffset);
+        Assert.Equal(BytePos(state1.Cursor).NextByteOffset, BytePos(state2.Cursor).NextByteOffset);
     }
 
     [Fact]
@@ -167,12 +170,12 @@ public sealed class StreamingCoreTests
         var (state1, _) = TrajectoryStream.ApplySnapshot(state, ReadOnlyMemory<byte>.Empty, "gen-0");
         var bad = state1.Cursor with
         {
-            Position = state1.Cursor.Position with { NextByteOffset = -1 },
+            Position = BytePos(state1.Cursor) with { NextByteOffset = -1 },
         };
         var (state2, update) = TrajectoryStream.ApplySnapshot(state1, ReadOnlyMemory<byte>.Empty, "gen-0", bad);
         Assert.Equal("error", update.Kind);
         Assert.Equal("invalid_input", update.Error!.Value.Code);
-        Assert.Equal(state1.Cursor.Position.NextByteOffset, state2.Cursor.Position.NextByteOffset);
+        Assert.Equal(BytePos(state1.Cursor).NextByteOffset, BytePos(state2.Cursor).NextByteOffset);
     }
 
     [Fact]
@@ -262,8 +265,8 @@ public sealed class StreamingCoreTests
         });
         var (state1, update) = TrajectoryStream.ApplyAppend(state, incomplete, sourceRevision: "gen-0");
         Assert.Equal("unchanged", update.Kind);
-        Assert.Equal(incomplete.LongLength, state1.Cursor.Position.PendingByteLength);
-        Assert.Equal(incomplete.LongLength, update.Cursor.Position.PendingByteLength);
+        Assert.Equal(incomplete.LongLength, BytePos(state1.Cursor).PendingByteLength);
+        Assert.Equal(incomplete.LongLength, BytePos(update.Cursor).PendingByteLength);
         Assert.Equal(incomplete.Length, state1.PendingBytes.Length);
 
         var partial = ReadFixture("utf8-byte-boundary", "step-partial-utf8.bin");
@@ -275,11 +278,11 @@ public sealed class StreamingCoreTests
         });
         var (state2, u2) = TrajectoryStream.ApplyAppend(state, partial, sourceRevision: "gen-0");
         Assert.Equal("unchanged", u2.Kind);
-        Assert.Equal(partial.LongLength, u2.Cursor.Position.PendingByteLength);
+        Assert.Equal(partial.LongLength, BytePos(u2.Cursor).PendingByteLength);
         var (state3, u3) = TrajectoryStream.ApplyAppend(state2, tail, sourceRevision: "gen-0");
         Assert.Equal("updated", u3.Kind);
-        Assert.Equal(0, u3.Cursor.Position.PendingByteLength);
-        Assert.Equal(0, state3.Cursor.Position.PendingByteLength);
+        Assert.Equal(0, BytePos(u3.Cursor).PendingByteLength);
+        Assert.Equal(0, BytePos(state3.Cursor).PendingByteLength);
     }
 
     [Fact]
@@ -332,7 +335,7 @@ public sealed class StreamingCoreTests
             .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
             .ToArray();
         Assert.Equal(snapIds, appendIds);
-        Assert.Equal(snap.Cursor.Position.NextByteOffset, state2.Cursor.Position.NextByteOffset);
+        Assert.Equal(BytePos(snap.Cursor).NextByteOffset, BytePos(state2.Cursor).NextByteOffset);
         Assert.Equal(snap.Cursor.PrefixSha256, state2.Cursor.PrefixSha256);
     }
 
@@ -348,11 +351,11 @@ public sealed class StreamingCoreTests
         });
         var (state1, u1) = TrajectoryStream.ApplySnapshot(state, original, "gen-0");
         Assert.Equal("updated", u1.Kind);
-        var prior = state1.Cursor.Position.NextByteOffset;
+        var prior = BytePos(state1.Cursor).NextByteOffset;
         var (state2, u2) = TrajectoryStream.ApplySnapshot(state1, compacted, "gen-compact");
         Assert.Equal("reset-required", u2.Kind);
         Assert.Equal("source-compacted", u2.Reset!.Reason);
-        Assert.Equal(prior, state2.Cursor.Position.NextByteOffset);
+        Assert.Equal(prior, BytePos(state2.Cursor).NextByteOffset);
     }
 
     [Fact]
@@ -367,11 +370,11 @@ public sealed class StreamingCoreTests
         });
         var (state1, u1) = TrajectoryStream.ApplySnapshot(state, original, "gen-0");
         Assert.Equal("updated", u1.Kind);
-        var prior = state1.Cursor.Position.NextByteOffset;
+        var prior = BytePos(state1.Cursor).NextByteOffset;
         var (state2, u2) = TrajectoryStream.ApplySnapshot(state1, replaced, "gen-replaced");
         Assert.Equal("reset-required", u2.Kind);
         Assert.Equal("source-replaced", u2.Reset!.Reason);
-        Assert.Equal(prior, state2.Cursor.Position.NextByteOffset);
+        Assert.Equal(prior, BytePos(state2.Cursor).NextByteOffset);
     }
 
     [Fact]
@@ -386,11 +389,11 @@ public sealed class StreamingCoreTests
         var preCursor = state.Cursor;
         var (state1, u1) = TrajectoryStream.ApplyAppend(state, line, sourceRevision: "gen-0");
         Assert.Equal("updated", u1.Kind);
-        var prior = state1.Cursor.Position.NextByteOffset;
+        var prior = BytePos(state1.Cursor).NextByteOffset;
         // True replay requires the pre-apply cursor; content alone is not enough.
         var (state2, u2) = TrajectoryStream.ApplyAppend(state1, line, preCursor, sourceRevision: "gen-0");
         Assert.Equal("unchanged", u2.Kind);
-        Assert.Equal(prior, state2.Cursor.Position.NextByteOffset);
+        Assert.Equal(prior, BytePos(state2.Cursor).NextByteOffset);
     }
 
     [Fact]
@@ -407,7 +410,7 @@ public sealed class StreamingCoreTests
         var (state2, u2) = TrajectoryStream.ApplyAppend(state1, line, sourceRevision: "gen-0");
         Assert.Equal("updated", u2.Kind);
         Assert.Equal(line.Length * 2, state2.CommittedPrefix.Length);
-        Assert.Equal(line.LongLength * 2, state2.Cursor.Position.NextByteOffset);
+        Assert.Equal(line.LongLength * 2, BytePos(state2.Cursor).NextByteOffset);
     }
 
     [Theory]

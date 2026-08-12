@@ -1,8 +1,11 @@
-//! Live session streaming core (LS-03 / LS-04 / LS-05).
+//! Live session streaming core (LS-03 / LS-04 / LS-05 / LS-06 / LS-07).
 //! Pure algorithm: no filesystem watchers, network, or SQLite.
 
 use serde_json::{Map, Value};
 
+use crate::ahp_reducer::{
+    detect_sequence_gap, empty_chat_state, parse_action_batch, reduce_ahp_actions, shape_a_bytes,
+};
 use crate::model::{
     NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError, TrajectorySource,
 };
@@ -11,6 +14,14 @@ use crate::normalize::{
     normalize_openclaw, normalize_pi,
 };
 use crate::projection::{hypabolic_value, sha256};
+
+// Content-safe fixed messages for AHP stream apply.
+const MSG_AHP_SOURCE_REQUIRED: &str = "AHP stream apply requires source ahp.";
+const MSG_SEQUENCE_GAP: &str = "AHP action-log serverSeq gap requires snapshot resync.";
+const MSG_INVALID_AHP_ACTIONS: &str = "AHP action batch could not be parsed.";
+const MSG_INVALID_AHP_SNAPSHOT: &str = "AHP snapshot material is not valid Shape A JSON.";
+const MSG_HERMES_UNSUPPORTED: &str =
+    "Hermes export stream apply requires an optional provider.";
 
 /// Wire schema id for stream snapshots and deltas.
 pub const STREAM_SCHEMA_ID: &str = "trajectory-stream-v1";
@@ -48,6 +59,8 @@ pub struct StreamOptions {
     pub max_pending_bytes: Option<i64>,
     /// Optional line limit.
     pub max_line_bytes: Option<i64>,
+    /// Optional AHP protocol version pin (default 0.7.0 when unset).
+    pub ahp_protocol_version: Option<String>,
 }
 
 impl StreamOptions {
@@ -64,6 +77,7 @@ impl StreamOptions {
             normalize: NormalizeOptions::default(),
             max_pending_bytes: None,
             max_line_bytes: None,
+            ahp_protocol_version: None,
         }
     }
 
@@ -84,6 +98,68 @@ pub struct BytePosition {
     pub pending_byte_length: i64,
 }
 
+/// AHP serverSeq cursor position.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AhpServerSeqPosition {
+    /// Next expected serverSeq.
+    pub next_server_seq: i64,
+    /// Last applied serverSeq.
+    pub last_server_seq: i64,
+    /// Optional batch byte length hint.
+    pub next_byte_offset: Option<i64>,
+}
+
+/// Snapshot-revision cursor position (AHP Shape A).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnapshotRevisionPosition {
+    /// Host revision token.
+    pub revision: String,
+    /// Content fingerprint of the last accepted snapshot.
+    pub content_sha256: Option<String>,
+}
+
+/// Cursor position family (streaming-cursor-v1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamPosition {
+    /// File / JSONL byte offset cursor.
+    Byte(BytePosition),
+    /// AHP action-log serverSeq cursor.
+    AhpServerSeq(AhpServerSeqPosition),
+    /// AHP Shape A snapshot-revision cursor.
+    SnapshotRevision(SnapshotRevisionPosition),
+}
+
+impl StreamPosition {
+    /// Byte position when kind is byte.
+    #[must_use]
+    pub fn as_byte(&self) -> Option<&BytePosition> {
+        match self {
+            Self::Byte(p) => Some(p),
+            _ => None,
+        }
+    }
+
+    /// Mutable byte position when kind is byte.
+    pub fn as_byte_mut(&mut self) -> Option<&mut BytePosition> {
+        match self {
+            Self::Byte(p) => Some(p),
+            _ => None,
+        }
+    }
+
+    /// `next_byte_offset` for byte positions; 0 otherwise.
+    #[must_use]
+    pub fn next_byte_offset(&self) -> i64 {
+        self.as_byte().map_or(0, |p| p.next_byte_offset)
+    }
+
+    /// `pending_byte_length` for byte positions; 0 otherwise.
+    #[must_use]
+    pub fn pending_byte_length(&self) -> i64 {
+        self.as_byte().map_or(0, |p| p.pending_byte_length)
+    }
+}
+
 /// Public stream cursor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamCursor {
@@ -95,8 +171,8 @@ pub struct StreamCursor {
     pub group_id: String,
     /// Generation.
     pub generation: u64,
-    /// Byte position.
-    pub position: BytePosition,
+    /// Position (byte / ahp-server-seq / snapshot-revision).
+    pub position: StreamPosition,
     /// Host source revision.
     pub source_revision: Option<String>,
     /// Prefix fingerprint.
@@ -326,6 +402,24 @@ pub struct StreamState {
     pub last_append_segment: Option<Vec<u8>>,
     /// `next_byte_offset` observed before the last accepted append.
     pub last_append_pre_offset: Option<i64>,
+    /// AHP reduced chat state (LS-06 / LS-07).
+    pub ahp_chat_state: Option<Value>,
+    /// AHP session block carried across snapshot/action applies.
+    pub ahp_session: Option<Value>,
+    /// AHP protocol version from last Shape A material.
+    pub ahp_protocol_version: Option<String>,
+    /// Last applied AHP serverSeq (action-log authority).
+    pub ahp_last_server_seq: Option<i64>,
+    /// Locked AHP chat channel URI.
+    pub ahp_target_channel: Option<String>,
+    /// Last accepted AHP snapshot host revision.
+    pub ahp_last_snapshot_revision: Option<String>,
+    /// Content SHA of last accepted AHP snapshot.
+    pub ahp_last_content_sha256: Option<String>,
+    /// Fingerprint of last accepted AHP action batch.
+    pub last_ahp_actions_sha256: Option<String>,
+    /// `ahp_last_server_seq` before the last accepted action batch.
+    pub last_ahp_actions_pre_seq: Option<i64>,
 }
 
 /// Split complete LF-terminated lines from a pending tail.
@@ -810,16 +904,24 @@ pub fn create_stream(options: StreamOptions) -> StreamState {
         .clone()
         .unwrap_or_else(|| "default".into());
     let source = options.source.wire_name().to_string();
+    let position = if options.source == TrajectorySource::Ahp {
+        StreamPosition::SnapshotRevision(SnapshotRevisionPosition {
+            revision: String::new(),
+            content_sha256: None,
+        })
+    } else {
+        StreamPosition::Byte(BytePosition {
+            next_byte_offset: 0,
+            pending_byte_length: 0,
+        })
+    };
     StreamState {
         cursor: StreamCursor {
             cursor_version: 1,
             source,
             group_id: group_id.clone(),
             generation: 0,
-            position: BytePosition {
-                next_byte_offset: 0,
-                pending_byte_length: 0,
-            },
+            position,
             source_revision: None,
             prefix_sha256: None,
         },
@@ -833,6 +935,15 @@ pub fn create_stream(options: StreamOptions) -> StreamState {
         group_locked: false,
         last_append_segment: None,
         last_append_pre_offset: None,
+        ahp_chat_state: None,
+        ahp_session: None,
+        ahp_protocol_version: None,
+        ahp_last_server_seq: None,
+        ahp_target_channel: None,
+        ahp_last_snapshot_revision: None,
+        ahp_last_content_sha256: None,
+        last_ahp_actions_sha256: None,
+        last_ahp_actions_pre_seq: None,
     }
 }
 
@@ -1032,16 +1143,37 @@ fn reset_to_value(reset: &StreamReset) -> Value {
 }
 
 fn cursor_to_value(c: &StreamCursor) -> Value {
-    let mut pos = Map::new();
-    pos.insert("kind".into(), Value::String("byte".into()));
-    pos.insert(
-        "next_byte_offset".into(),
-        Value::from(c.position.next_byte_offset),
-    );
-    pos.insert(
-        "pending_byte_length".into(),
-        Value::from(c.position.pending_byte_length),
-    );
+    let pos = match &c.position {
+        StreamPosition::Byte(p) => {
+            let mut pos = Map::new();
+            pos.insert("kind".into(), Value::String("byte".into()));
+            pos.insert("next_byte_offset".into(), Value::from(p.next_byte_offset));
+            pos.insert(
+                "pending_byte_length".into(),
+                Value::from(p.pending_byte_length),
+            );
+            pos
+        }
+        StreamPosition::AhpServerSeq(p) => {
+            let mut pos = Map::new();
+            pos.insert("kind".into(), Value::String("ahp-server-seq".into()));
+            pos.insert("next_server_seq".into(), Value::from(p.next_server_seq));
+            pos.insert("last_server_seq".into(), Value::from(p.last_server_seq));
+            if let Some(off) = p.next_byte_offset {
+                pos.insert("next_byte_offset".into(), Value::from(off));
+            }
+            pos
+        }
+        StreamPosition::SnapshotRevision(p) => {
+            let mut pos = Map::new();
+            pos.insert("kind".into(), Value::String("snapshot-revision".into()));
+            pos.insert("revision".into(), Value::String(p.revision.clone()));
+            if let Some(sha) = &p.content_sha256 {
+                pos.insert("content_sha256".into(), Value::String(sha.clone()));
+            }
+            pos
+        }
+    };
     let mut map = Map::new();
     map.insert("cursor_version".into(), Value::from(c.cursor_version));
     map.insert("source".into(), Value::String(c.source.clone()));
@@ -1081,23 +1213,57 @@ fn cursor_conflict(state: &StreamState, cursor: Option<&StreamCursor>) -> Option
             "Supplied stream cursor does not match stream state.",
         ));
     }
-    // Domain: non-negative int64 byte positions (streaming-cursor-v1).
-    // Checked before position equality so out-of-domain offsets are invalid_input,
-    // not cursor-mismatch (parity with Python/TS).
-    if cursor.position.next_byte_offset < 0 || cursor.position.pending_byte_length < 0 {
-        return Some(error_update(
-            state,
-            "invalid_input",
-            "Stream cursor byte positions must be non-negative int64 values.",
-        ));
-    }
-    if cursor.position.next_byte_offset != state.cursor.position.next_byte_offset {
-        return Some(reset_required(
-            state,
-            "cursor-mismatch",
-            "stream_cursor_conflict",
-            "Supplied stream cursor does not match stream state.",
-        ));
+    match (&cursor.position, &state.cursor.position) {
+        (StreamPosition::Byte(cpos), StreamPosition::Byte(spos)) => {
+            // Domain: non-negative int64 byte positions (streaming-cursor-v1).
+            // Checked before position equality so out-of-domain offsets are invalid_input,
+            // not cursor-mismatch (parity with Python/TS).
+            if cpos.next_byte_offset < 0 || cpos.pending_byte_length < 0 {
+                return Some(error_update(
+                    state,
+                    "invalid_input",
+                    "Stream cursor byte positions must be non-negative int64 values.",
+                ));
+            }
+            if cpos.next_byte_offset != spos.next_byte_offset {
+                return Some(reset_required(
+                    state,
+                    "cursor-mismatch",
+                    "stream_cursor_conflict",
+                    "Supplied stream cursor does not match stream state.",
+                ));
+            }
+        }
+        (StreamPosition::AhpServerSeq(cpos), StreamPosition::AhpServerSeq(spos)) => {
+            if cpos.next_server_seq < 0 || cpos.last_server_seq < 0 {
+                return Some(error_update(
+                    state,
+                    "invalid_input",
+                    "Stream cursor serverSeq positions must be non-negative int64 values.",
+                ));
+            }
+            if cpos.last_server_seq != spos.last_server_seq
+                || cpos.next_server_seq != spos.next_server_seq
+            {
+                return Some(reset_required(
+                    state,
+                    "cursor-mismatch",
+                    "stream_cursor_conflict",
+                    "Supplied stream cursor does not match stream state.",
+                ));
+            }
+        }
+        (StreamPosition::SnapshotRevision(cpos), StreamPosition::SnapshotRevision(spos)) => {
+            if cpos.revision != spos.revision {
+                return Some(reset_required(
+                    state,
+                    "cursor-mismatch",
+                    "stream_cursor_conflict",
+                    "Supplied stream cursor does not match stream state.",
+                ));
+            }
+        }
+        _ => {}
     }
     None
 }
@@ -1272,7 +1438,7 @@ pub fn apply_snapshot(
         records.retain(|r| r.status != "provisional");
     }
 
-    if state.snapshot.is_some() && committed_len < state.cursor.position.next_byte_offset {
+    if state.snapshot.is_some() && committed_len < state.cursor.position.next_byte_offset() {
         let (reason, message) = shrink_reset_reason(state, &committed);
         return Ok((
             state.clone(),
@@ -1346,10 +1512,10 @@ pub fn apply_snapshot(
         source: new_state.cursor.source.clone(),
         group_id,
         generation,
-        position: BytePosition {
+        position: StreamPosition::Byte(BytePosition {
             next_byte_offset: committed_len,
             pending_byte_length: pending_len,
-        },
+        }),
         source_revision: Some(source_revision.into()),
         prefix_sha256: Some(effective_prefix_sha),
     };
@@ -1440,14 +1606,14 @@ pub fn apply_append(
     // True append replay: same segment re-supplied with the pre-apply cursor.
     // Content equality alone is not enough — successive identical growth segments
     // must both commit after the cursor advances.
-    let pre_offset = state.cursor.position.next_byte_offset;
+    let pre_offset = state.cursor.position.next_byte_offset();
     if let (Some(last), Some(last_pre)) = (
         state.last_append_segment.as_ref(),
         state.last_append_pre_offset,
     ) {
         if last.as_slice() == segment
             && cursor.is_some_and(|c| {
-                c.position.next_byte_offset == last_pre
+                c.position.next_byte_offset() == last_pre
                     && c.source == state.cursor.source
                     && c.generation == state.cursor.generation
                     && c.group_id == state.cursor.group_id
@@ -1510,7 +1676,9 @@ pub fn apply_append(
         new_state.pending_bytes = new_pending;
         new_state.last_append_segment = Some(segment.to_vec());
         new_state.last_append_pre_offset = Some(pre_offset);
-        new_state.cursor.position.pending_byte_length = pending_len;
+        if let Some(bp) = new_state.cursor.position.as_byte_mut() {
+            bp.pending_byte_length = pending_len;
+        }
         let update = unchanged(&new_state);
         return Ok((new_state, update));
     }
@@ -1532,7 +1700,9 @@ pub fn apply_append(
     new_state.pending_bytes = new_pending;
     new_state.last_append_segment = Some(segment.to_vec());
     new_state.last_append_pre_offset = Some(pre_offset);
-    new_state.cursor.position.pending_byte_length = pending_len;
+    if let Some(bp) = new_state.cursor.position.as_byte_mut() {
+        bp.pending_byte_length = pending_len;
+    }
     // Always copy patched cursor onto StreamUpdate (updated and unchanged).
     update.cursor = new_state.cursor.clone();
     if update.kind == "updated" {
@@ -1579,6 +1749,639 @@ fn is_synthetic_backend_tool_result(record: &Value) -> bool {
     let role = record.get("role").and_then(Value::as_str);
     let content = record.get("content").and_then(Value::as_str);
     matches!((role, content), (Some("tool"), Some(c)) if c.starts_with("[backend "))
+}
+
+/// Apply a successive AHP Shape A snapshot (LS-06).
+///
+/// Cursor family: snapshot-revision (or ahp-server-seq when action authority
+/// already established). activeTurn records are provisional with stable ids
+/// `prov-active-turn-{n}`.
+pub fn apply_ahp_snapshot(
+    state: &StreamState,
+    material: &[u8],
+    source_revision: &str,
+    cursor: Option<&StreamCursor>,
+) -> Result<(StreamState, StreamUpdate), TrajectoryError> {
+    if state.finished {
+        return Ok((
+            state.clone(),
+            error_update(state, "invalid_input", "Stream is already finished."),
+        ));
+    }
+    if state.options.source != TrajectorySource::Ahp {
+        return Ok((
+            state.clone(),
+            error_update(state, "invalid_input", MSG_AHP_SOURCE_REQUIRED),
+        ));
+    }
+    if let Some(conflict) = cursor_conflict(state, cursor) {
+        return Ok((state.clone(), conflict));
+    }
+
+    let content_sha = sha256_bytes(material);
+    // Idempotent duplicate host revision (+ same content fingerprint).
+    if state.snapshot.is_some()
+        && state.ahp_last_snapshot_revision.as_deref() == Some(source_revision)
+        && state.ahp_last_content_sha256.as_deref() == Some(content_sha.as_str())
+    {
+        return Ok((state.clone(), unchanged(state)));
+    }
+    if state.snapshot.is_some() {
+        if let StreamPosition::SnapshotRevision(pos) = &state.cursor.position {
+            if pos.revision == source_revision
+                && pos.content_sha256.as_deref() == Some(content_sha.as_str())
+            {
+                return Ok((state.clone(), unchanged(state)));
+            }
+        }
+    }
+
+    let built = match build_ahp_records(state, material) {
+        Ok(b) => b,
+        Err(update) => return Ok((state.clone(), update)),
+    };
+    let mut records = built.records;
+    let diagnostics = built.diagnostics;
+    let group_id = built.group_id;
+    let chat_state = built.chat;
+    let session = built.session;
+    let protocol_version = built.protocol_version;
+
+    if !state.options.include_provisional {
+        records.retain(|r| r.status != "provisional");
+    }
+
+    let mut new_state = state.clone();
+    new_state.group_locked = true;
+    let generation = new_state.generation;
+    let parent_revision_id = new_state
+        .snapshot
+        .as_ref()
+        .map(|s| s.revision.revision_id.clone());
+    let revision_num = new_state.next_revision;
+    let record_ids: Vec<String> = records
+        .iter()
+        .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    let rev_id = revision_id(
+        generation,
+        revision_num,
+        new_state.cursor.source.as_str(),
+        &group_id,
+        &content_sha,
+        &record_ids,
+    );
+    let revision = StreamRevision {
+        revision: revision_num,
+        revision_id: rev_id,
+        parent_revision_id,
+        complete: false,
+        generation,
+    };
+    let snapshot = StreamSnapshot {
+        schema_id: STREAM_SCHEMA_ID.into(),
+        source: new_state.cursor.source.clone(),
+        group_id: group_id.clone(),
+        revision: revision.clone(),
+        records: records.clone(),
+        diagnostics: diagnostics.clone(),
+        complete: false,
+    };
+    let delta = diff_snapshots(new_state.snapshot.as_ref(), &snapshot, &revision);
+    let (out_snapshot, out_delta) = match new_state.options.delivery {
+        StreamDelivery::Both => (Some(snapshot.clone()), Some(delta)),
+        StreamDelivery::Snapshot => (Some(snapshot.clone()), None),
+        StreamDelivery::Delta => (None, Some(delta)),
+    };
+
+    // Preserve server-seq authority when actions established it.
+    let position = if matches!(
+        new_state.cursor.position,
+        StreamPosition::AhpServerSeq(_)
+    ) || new_state.ahp_last_server_seq.is_some()
+    {
+        let last_seq = new_state.ahp_last_server_seq.unwrap_or(-1);
+        StreamPosition::AhpServerSeq(AhpServerSeqPosition {
+            next_server_seq: last_seq + 1,
+            last_server_seq: last_seq,
+            next_byte_offset: None,
+        })
+    } else {
+        StreamPosition::SnapshotRevision(SnapshotRevisionPosition {
+            revision: source_revision.into(),
+            content_sha256: Some(content_sha.clone()),
+        })
+    };
+
+    let cursor_out = StreamCursor {
+        cursor_version: 1,
+        source: new_state.cursor.source.clone(),
+        group_id: group_id.clone(),
+        generation,
+        position,
+        source_revision: Some(source_revision.into()),
+        prefix_sha256: Some(content_sha.clone()),
+    };
+    let provisional_ids: Vec<String> = records
+        .iter()
+        .filter_map(|r| r.provisional_id.clone())
+        .collect();
+    let prior_provisional: std::collections::BTreeSet<String> = state
+        .snapshot
+        .as_ref()
+        .map(|s| {
+            s.records
+                .iter()
+                .filter_map(|r| r.provisional_id.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut finalized_ids: Vec<String> = prior_provisional
+        .into_iter()
+        .filter(|pid| !provisional_ids.contains(pid))
+        .collect();
+    finalized_ids.sort();
+
+    let material_len = material.len() as i64;
+    let update = StreamUpdate {
+        kind: "updated".into(),
+        revision,
+        cursor: cursor_out.clone(),
+        snapshot: out_snapshot,
+        delta: out_delta,
+        diagnostics,
+        provisional: StreamProvisionalInfo {
+            include: state.options.include_provisional,
+            provisional_ids,
+            finalized_ids,
+        },
+        consumed: StreamConsumed {
+            complete_records: records.len() as u64,
+            bytes: material.len() as u64,
+            first_source_position: if material.is_empty() {
+                None
+            } else {
+                Some(0)
+            },
+            last_source_position: if material.is_empty() {
+                None
+            } else {
+                Some(material_len - 1)
+            },
+        },
+        reset: None,
+        error: None,
+    };
+
+    new_state.cursor = cursor_out;
+    new_state.snapshot = Some(snapshot);
+    new_state.next_revision = revision_num + 1;
+    new_state.ahp_chat_state = Some(chat_state);
+    new_state.ahp_session = session;
+    new_state.ahp_protocol_version = protocol_version;
+    if group_id.starts_with("ahp-chat:") {
+        new_state.ahp_target_channel = Some(group_id);
+    }
+    new_state.ahp_last_snapshot_revision = Some(source_revision.into());
+    new_state.ahp_last_content_sha256 = Some(content_sha);
+    new_state.committed_prefix.clear();
+    new_state.pending_bytes.clear();
+    new_state.last_append_segment = None;
+    new_state.last_append_pre_offset = None;
+    Ok((new_state, update))
+}
+
+/// Apply an AHP Shape B action-log batch (LS-07).
+///
+/// Cursor authority is `serverSeq`. Gaps never silently advance the cursor
+/// (`reset-required` / `sequence-gap`). Unknown actions → content-safe
+/// diagnostic; foreign channels are ignored.
+pub fn apply_ahp_actions(
+    state: &StreamState,
+    data: &[u8],
+    cursor: Option<&StreamCursor>,
+) -> Result<(StreamState, StreamUpdate), TrajectoryError> {
+    if state.finished {
+        return Ok((
+            state.clone(),
+            error_update(state, "invalid_input", "Stream is already finished."),
+        ));
+    }
+    if state.options.source != TrajectorySource::Ahp {
+        return Ok((
+            state.clone(),
+            error_update(state, "invalid_input", MSG_AHP_SOURCE_REQUIRED),
+        ));
+    }
+
+    let actions_sha = sha256_bytes(data);
+    let pre_seq = state.ahp_last_server_seq;
+
+    // Idempotent true-replay of the same batch.
+    if state.last_ahp_actions_sha256.as_deref() == Some(actions_sha.as_str()) {
+        if cursor.is_none() {
+            return Ok((state.clone(), unchanged(state)));
+        }
+        if let Some(c) = cursor {
+            match &c.position {
+                StreamPosition::AhpServerSeq(pos) => {
+                    if state.last_ahp_actions_pre_seq == Some(pos.last_server_seq) {
+                        return Ok((state.clone(), unchanged(state)));
+                    }
+                    if let StreamPosition::AhpServerSeq(cur) = &state.cursor.position {
+                        if pos.last_server_seq == cur.last_server_seq {
+                            return Ok((state.clone(), unchanged(state)));
+                        }
+                    }
+                }
+                StreamPosition::SnapshotRevision(_) => {
+                    if matches!(state.last_ahp_actions_pre_seq, None | Some(-1)) {
+                        return Ok((state.clone(), unchanged(state)));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Cursor checks: only enforce when caller supplies ahp-server-seq.
+    if let Some(c) = cursor {
+        if matches!(c.position, StreamPosition::AhpServerSeq(_)) {
+            if let Some(conflict) = cursor_conflict(state, Some(c)) {
+                return Ok((state.clone(), conflict));
+            }
+        } else if !matches!(
+            c.position,
+            StreamPosition::AhpServerSeq(_) | StreamPosition::SnapshotRevision(_)
+        ) {
+            if let Some(conflict) = cursor_conflict(state, Some(c)) {
+                return Ok((state.clone(), conflict));
+            }
+        }
+    }
+
+    let envelopes = match parse_action_batch(data) {
+        Ok(e) => e,
+        Err(_) => {
+            return Ok((
+                state.clone(),
+                error_update(state, "invalid_input", MSG_INVALID_AHP_ACTIONS),
+            ));
+        }
+    };
+    if envelopes.is_empty() {
+        return Ok((state.clone(), unchanged(state)));
+    }
+
+    let mut target = state.ahp_target_channel.clone();
+    if target.is_none() && state.group_locked && state.cursor.group_id.starts_with("ahp-chat:") {
+        target = Some(state.cursor.group_id.clone());
+    }
+
+    if detect_sequence_gap(
+        &envelopes,
+        state.ahp_last_server_seq,
+        target.as_deref(),
+    )
+    .is_some()
+    {
+        return Ok((
+            state.clone(),
+            reset_required(
+                state,
+                "sequence-gap",
+                "stream_sequence_gap",
+                MSG_SEQUENCE_GAP,
+            ),
+        ));
+    }
+
+    let chat_in = state
+        .ahp_chat_state
+        .clone()
+        .unwrap_or_else(|| empty_chat_state(target.as_deref()));
+    let reduced = reduce_ahp_actions(
+        Some(&chat_in),
+        &envelopes,
+        target.as_deref(),
+        state.ahp_last_server_seq,
+    );
+
+    let protocol = state
+        .ahp_protocol_version
+        .clone()
+        .or_else(|| state.options.ahp_protocol_version.clone())
+        .unwrap_or_else(|| "0.7.0".into());
+    let material = shape_a_bytes(
+        &reduced.chat,
+        &protocol,
+        state.ahp_session.as_ref(),
+    );
+    let rev = if let Some(seq) = reduced.last_server_seq {
+        format!("seq:{seq}")
+    } else {
+        state
+            .cursor
+            .source_revision
+            .clone()
+            .unwrap_or_else(|| "seq:0".into())
+    };
+
+    let mut snap_state = state.clone();
+    snap_state.ahp_chat_state = Some(reduced.chat.clone());
+    snap_state.ahp_last_server_seq = reduced.last_server_seq;
+    snap_state.ahp_last_snapshot_revision = None;
+    snap_state.ahp_last_content_sha256 = None;
+
+    let (mut new_state, update) = apply_ahp_snapshot(&snap_state, &material, &rev, None)?;
+    if update.kind != "updated" && update.kind != "unchanged" {
+        return Ok((state.clone(), update));
+    }
+
+    // Merge reducer diagnostics (unknown action / foreign channel).
+    let mut seen = std::collections::BTreeSet::new();
+    let mut diagnostics: Vec<StreamDiagnostic> = Vec::new();
+    for d in &update.diagnostics {
+        let key = (d.code.clone(), d.message.clone());
+        if seen.insert(key) {
+            diagnostics.push(d.clone());
+        }
+    }
+    for (code, message) in &reduced.diagnostics {
+        let key = (code.clone(), message.clone());
+        if seen.insert(key) {
+            diagnostics.push(StreamDiagnostic {
+                code: code.clone(),
+                message: message.clone(),
+                input_line: None,
+                record_index: None,
+                count: None,
+            });
+        }
+    }
+    let extra_count = reduced.diagnostics.len();
+
+    let last_seq = reduced.last_server_seq.unwrap_or(-1);
+    let data_len = data.len() as i64;
+    let seq_cursor = StreamCursor {
+        cursor_version: 1,
+        source: new_state.cursor.source.clone(),
+        group_id: new_state.cursor.group_id.clone(),
+        generation: new_state.cursor.generation,
+        position: StreamPosition::AhpServerSeq(AhpServerSeqPosition {
+            next_server_seq: last_seq + 1,
+            last_server_seq: last_seq,
+            next_byte_offset: if data.is_empty() {
+                None
+            } else {
+                Some(data_len)
+            },
+        }),
+        source_revision: Some(rev),
+        prefix_sha256: new_state.cursor.prefix_sha256.clone(),
+    };
+    new_state.cursor = seq_cursor.clone();
+    new_state.ahp_last_server_seq = reduced.last_server_seq;
+    new_state.ahp_chat_state = Some(reduced.chat);
+    new_state.ahp_target_channel = if new_state.cursor.group_id.starts_with("ahp-chat:") {
+        Some(new_state.cursor.group_id.clone())
+    } else {
+        target
+    };
+    new_state.last_ahp_actions_sha256 = Some(actions_sha);
+    new_state.last_ahp_actions_pre_seq = Some(pre_seq.unwrap_or(-1));
+
+    if update.kind == "unchanged" && extra_count == 0 {
+        let update = unchanged(&new_state);
+        return Ok((new_state, update));
+    }
+
+    let (out_snapshot, out_delta) = if let Some(snap) = &update.snapshot {
+        if diagnostics != snap.diagnostics {
+            let mut snap2 = snap.clone();
+            snap2.diagnostics = diagnostics.clone();
+            let delta = diff_snapshots(state.snapshot.as_ref(), &snap2, &snap2.revision);
+            let delivered = match state.options.delivery {
+                StreamDelivery::Both => (Some(snap2.clone()), Some(delta)),
+                StreamDelivery::Snapshot => (Some(snap2.clone()), None),
+                StreamDelivery::Delta => (None, Some(delta)),
+            };
+            new_state.snapshot = Some(snap2);
+            delivered
+        } else {
+            (update.snapshot.clone(), update.delta.clone())
+        }
+    } else {
+        (update.snapshot.clone(), update.delta.clone())
+    };
+
+    if let Some(snap) = new_state.snapshot.as_mut() {
+        snap.diagnostics = diagnostics.clone();
+    }
+
+    let final_update = StreamUpdate {
+        kind: "updated".into(),
+        revision: update.revision,
+        cursor: seq_cursor,
+        snapshot: out_snapshot,
+        delta: out_delta,
+        diagnostics,
+        provisional: update.provisional,
+        consumed: StreamConsumed {
+            complete_records: update.consumed.complete_records,
+            bytes: data.len() as u64,
+            first_source_position: if data.is_empty() { None } else { Some(0) },
+            last_source_position: if data.is_empty() {
+                None
+            } else {
+                Some(data_len - 1)
+            },
+        },
+        reset: None,
+        error: None,
+    };
+    Ok((new_state, final_update))
+}
+
+struct AhpBuilt {
+    records: Vec<StreamRecord>,
+    diagnostics: Vec<StreamDiagnostic>,
+    group_id: String,
+    chat: Value,
+    session: Option<Value>,
+    protocol_version: Option<String>,
+}
+
+fn build_ahp_records(
+    state: &StreamState,
+    material: &[u8],
+) -> Result<AhpBuilt, StreamUpdate> {
+    let root: Value = match serde_json::from_slice(material) {
+        Ok(v) => v,
+        Err(_) => {
+            return Err(error_update(
+                state,
+                "invalid_input",
+                MSG_INVALID_AHP_SNAPSHOT,
+            ));
+        }
+    };
+    let root_obj = match root.as_object() {
+        Some(o) if o.get("chat").is_some_and(Value::is_object) => o,
+        _ => {
+            return Err(error_update(
+                state,
+                "invalid_input",
+                MSG_INVALID_AHP_SNAPSHOT,
+            ));
+        }
+    };
+    let chat = root_obj.get("chat").cloned().unwrap_or(Value::Null);
+    let session = root_obj
+        .get("session")
+        .filter(|s| s.is_object())
+        .cloned();
+    let protocol_version = root_obj
+        .get("ahpProtocolVersion")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let active_ids = ahp_active_turn_native_ids(chat.get("activeTurn"));
+
+    // Do not pass stream group_id hint: native chat.resource is authority.
+    // After lock, verify native group matches locked stream group.
+    let group_hint = if state.group_locked && state.cursor.group_id.starts_with("ahp-chat:") {
+        Some(state.cursor.group_id.as_str())
+    } else {
+        None
+    };
+
+    let request = NormalizeRequest {
+        transcript: material,
+        source_context: SourceContext {
+            group_id: group_hint,
+            base_byte_offset: 0,
+            partial: true,
+            include_encrypted_reasoning: false,
+        },
+        options: state.options.normalize,
+    };
+    let trajectory = match normalize_ahp(request) {
+        Ok(t) => t,
+        Err(err) if err.code == "source_group_conflict" => {
+            return Err(reset_required(
+                state,
+                "group-changed",
+                "stream_source_reset",
+                "Source group changed relative to the active stream.",
+            ));
+        }
+        Err(err) => {
+            return Err(error_update(state, &err.code, &err.message));
+        }
+    };
+    let hyp = match hypabolic_value(&trajectory) {
+        Ok(v) => v,
+        Err(err) => return Err(error_update(state, &err.code, &err.message)),
+    };
+    let raw_records = hyp
+        .get("records")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut records = Vec::new();
+    let mut prov_n = 0u32;
+    for r in raw_records {
+        let role = r.get("role").and_then(Value::as_str);
+        let is_prov = role != Some("meta") && record_from_active_turn(&r, &active_ids);
+        let (status, provisional_id) = if is_prov {
+            prov_n += 1;
+            (
+                "provisional".to_string(),
+                Some(format!("prov-active-turn-{prov_n}")),
+            )
+        } else {
+            ("stable".to_string(), None)
+        };
+        records.push(StreamRecord {
+            status,
+            record: r,
+            provisional_id,
+            replaces_provisional_id: None,
+            finalizes_provisional_id: None,
+        });
+    }
+    let diagnostics: Vec<StreamDiagnostic> = trajectory
+        .diagnostics
+        .iter()
+        .filter(|d| d.code != "ahp_active_turn_omitted")
+        .map(|d| StreamDiagnostic {
+            code: d.code.clone(),
+            message: d.message.clone(),
+            input_line: d.input_line.map(|n| n as i64),
+            record_index: d.record_index.map(|n| n as i64),
+            count: d.count.map(|n| n as i64),
+        })
+        .collect();
+    Ok(AhpBuilt {
+        records,
+        diagnostics,
+        group_id: trajectory.group_id,
+        chat,
+        session,
+        protocol_version,
+    })
+}
+
+fn ahp_active_turn_native_ids(active: Option<&Value>) -> std::collections::BTreeSet<String> {
+    let mut ids = std::collections::BTreeSet::new();
+    let Some(active) = active.and_then(Value::as_object) else {
+        return ids;
+    };
+    if let Some(tid) = active.get("id").and_then(Value::as_str) {
+        if !tid.is_empty() {
+            ids.insert(tid.to_string());
+        }
+    }
+    if let Some(parts) = active.get("responseParts").and_then(Value::as_array) {
+        for part in parts {
+            let Some(part) = part.as_object() else {
+                continue;
+            };
+            if let Some(pid) = part.get("id").and_then(Value::as_str) {
+                if !pid.is_empty() {
+                    ids.insert(pid.to_string());
+                }
+            }
+            if let Some(tc) = part.get("toolCall").and_then(Value::as_object) {
+                if let Some(tcid) = tc.get("toolCallId").and_then(Value::as_str) {
+                    if !tcid.is_empty() {
+                        ids.insert(tcid.to_string());
+                    }
+                }
+            }
+        }
+    }
+    ids
+}
+
+fn record_from_active_turn(
+    record: &Value,
+    active_ids: &std::collections::BTreeSet<String>,
+) -> bool {
+    if active_ids.is_empty() {
+        return false;
+    }
+    let Some(prov) = record.get("provenance").and_then(Value::as_object) else {
+        return false;
+    };
+    for key in ["native_record_id", "stable_source_record_id"] {
+        if let Some(val) = prov.get(key).and_then(Value::as_str) {
+            if active_ids.contains(val) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// End-of-stream: optionally commit final unterminated line; finalize records.
@@ -1695,10 +2498,10 @@ pub fn finish_stream(
         source: new_state.cursor.source.clone(),
         group_id: snapshot.group_id.clone(),
         generation,
-        position: BytePosition {
+        position: StreamPosition::Byte(BytePosition {
             next_byte_offset: material_len,
             pending_byte_length: 0,
-        },
+        }),
         source_revision: new_state.cursor.source_revision.clone(),
         prefix_sha256: Some(if new_state.committed_prefix.is_empty() {
             sha256_bytes(&[])
@@ -1755,15 +2558,32 @@ pub fn reset_stream(
     new_state.group_locked = false;
     new_state.last_append_segment = None;
     new_state.last_append_pre_offset = None;
+    new_state.ahp_chat_state = None;
+    new_state.ahp_session = None;
+    new_state.ahp_protocol_version = None;
+    new_state.ahp_last_server_seq = None;
+    new_state.ahp_target_channel = None;
+    new_state.ahp_last_snapshot_revision = None;
+    new_state.ahp_last_content_sha256 = None;
+    new_state.last_ahp_actions_sha256 = None;
+    new_state.last_ahp_actions_pre_seq = None;
+    let position = if state.options.source == TrajectorySource::Ahp {
+        StreamPosition::SnapshotRevision(SnapshotRevisionPosition {
+            revision: request.source_revision.clone().unwrap_or_default(),
+            content_sha256: None,
+        })
+    } else {
+        StreamPosition::Byte(BytePosition {
+            next_byte_offset: 0,
+            pending_byte_length: 0,
+        })
+    };
     new_state.cursor = StreamCursor {
         cursor_version: 1,
         source: state.cursor.source.clone(),
         group_id: group_id.clone(),
         generation,
-        position: BytePosition {
-            next_byte_offset: 0,
-            pending_byte_length: 0,
-        },
+        position,
         source_revision: request.source_revision.clone(),
         prefix_sha256: None,
     };
@@ -1851,15 +2671,23 @@ pub fn reset_stream(
     };
     new_state.snapshot = Some(snapshot);
     new_state.next_revision = 1;
+    let empty_position = if state.options.source == TrajectorySource::Ahp {
+        StreamPosition::SnapshotRevision(SnapshotRevisionPosition {
+            revision: request.source_revision.clone().unwrap_or_default(),
+            content_sha256: None,
+        })
+    } else {
+        StreamPosition::Byte(BytePosition {
+            next_byte_offset: 0,
+            pending_byte_length: 0,
+        })
+    };
     new_state.cursor = StreamCursor {
         cursor_version: 1,
         source: new_state.cursor.source.clone(),
         group_id,
         generation,
-        position: BytePosition {
-            next_byte_offset: 0,
-            pending_byte_length: 0,
-        },
+        position: empty_position,
         source_revision: request.source_revision.clone(),
         prefix_sha256: Some(empty_sha),
     };
@@ -1910,21 +2738,20 @@ pub fn apply_stream(
             };
             reset_stream(state, request)
         }
-        StreamInputKind::AhpActions | StreamInputKind::AhpSnapshot => Ok((
-            state.clone(),
-            error_update(
-                state,
-                "stream_resync_required",
-                "AHP stream apply is not available in this slice.",
-            ),
-        )),
+        StreamInputKind::AhpSnapshot => apply_ahp_snapshot(
+            state,
+            input.data.as_deref().unwrap_or(&[]),
+            input.source_revision.as_deref().unwrap_or(""),
+            input.cursor.as_ref(),
+        ),
+        StreamInputKind::AhpActions => apply_ahp_actions(
+            state,
+            input.data.as_deref().unwrap_or(&[]),
+            input.cursor.as_ref(),
+        ),
         StreamInputKind::HermesExport => Ok((
             state.clone(),
-            error_update(
-                state,
-                "stream_resync_required",
-                "Hermes export stream apply requires an optional provider.",
-            ),
+            error_update(state, "stream_resync_required", MSG_HERMES_UNSUPPORTED),
         )),
     }
 }
@@ -1964,6 +2791,29 @@ impl TrajectoryStream {
         cursor: Option<&StreamCursor>,
     ) -> Result<StreamUpdate, TrajectoryError> {
         let (state, update) = apply_snapshot(&self.state, material, source_revision, cursor)?;
+        self.state = state;
+        Ok(update)
+    }
+
+    /// Apply an AHP Shape A snapshot (LS-06).
+    pub fn apply_ahp_snapshot(
+        &mut self,
+        material: &[u8],
+        source_revision: &str,
+        cursor: Option<&StreamCursor>,
+    ) -> Result<StreamUpdate, TrajectoryError> {
+        let (state, update) = apply_ahp_snapshot(&self.state, material, source_revision, cursor)?;
+        self.state = state;
+        Ok(update)
+    }
+
+    /// Apply an AHP Shape B action-log batch (LS-07).
+    pub fn apply_ahp_actions(
+        &mut self,
+        data: &[u8],
+        cursor: Option<&StreamCursor>,
+    ) -> Result<StreamUpdate, TrajectoryError> {
+        let (state, update) = apply_ahp_actions(&self.state, data, cursor)?;
         self.state = state;
         Ok(update)
     }
@@ -2072,8 +2922,8 @@ mod tests {
             "group-changed"
         );
         assert_eq!(
-            state2.cursor.position.next_byte_offset,
-            state.cursor.position.next_byte_offset
+            state2.cursor.position.next_byte_offset(),
+            state.cursor.position.next_byte_offset()
         );
 
         let long = read_case("file-truncate-reset", "step-long.jsonl");
@@ -2093,13 +2943,13 @@ mod tests {
         let state = create_stream(opts);
         let (state, _) = apply_snapshot(&state, b"", "gen-0", None).unwrap();
         let mut bad = state.cursor.clone();
-        bad.position.next_byte_offset = 99;
+        bad.position.as_byte_mut().unwrap().next_byte_offset = 99;
         let (state2, update) = apply_snapshot(&state, b"", "gen-0", Some(&bad)).unwrap();
         assert_eq!(update.kind, "reset-required");
         assert_eq!(update.reset.as_ref().unwrap().reason, "cursor-mismatch");
         assert_eq!(
-            state2.cursor.position.next_byte_offset,
-            state.cursor.position.next_byte_offset
+            state2.cursor.position.next_byte_offset(),
+            state.cursor.position.next_byte_offset()
         );
     }
 
@@ -2109,7 +2959,7 @@ mod tests {
         let state = create_stream(opts);
         let (state, _) = apply_snapshot(&state, b"", "gen-0", None).unwrap();
         let mut bad = state.cursor.clone();
-        bad.position.next_byte_offset = -1;
+        bad.position.as_byte_mut().unwrap().next_byte_offset = -1;
         let (state2, update) = apply_snapshot(&state, b"", "gen-0", Some(&bad)).unwrap();
         assert_eq!(update.kind, "error");
         assert_eq!(
@@ -2117,8 +2967,8 @@ mod tests {
             Some("invalid_input")
         );
         assert_eq!(
-            state2.cursor.position.next_byte_offset,
-            state.cursor.position.next_byte_offset
+            state2.cursor.position.next_byte_offset(),
+            state.cursor.position.next_byte_offset()
         );
     }
 
@@ -2200,11 +3050,11 @@ mod tests {
         let (state, update) = apply_append(&state, &incomplete, None, Some("gen-0")).unwrap();
         assert_eq!(update.kind, "unchanged");
         assert_eq!(
-            state.cursor.position.pending_byte_length,
+            state.cursor.position.pending_byte_length(),
             incomplete.len() as i64
         );
         assert_eq!(
-            update.cursor.position.pending_byte_length,
+            update.cursor.position.pending_byte_length(),
             incomplete.len() as i64
         );
         assert_eq!(state.pending_bytes, incomplete);
@@ -2217,13 +3067,13 @@ mod tests {
         let (state, update) = apply_append(&state, &partial, None, Some("gen-0")).unwrap();
         assert_eq!(update.kind, "unchanged");
         assert_eq!(
-            update.cursor.position.pending_byte_length,
+            update.cursor.position.pending_byte_length(),
             partial.len() as i64
         );
         let (state, update) = apply_append(&state, &tail, None, Some("gen-0")).unwrap();
         assert_eq!(update.kind, "updated");
-        assert_eq!(update.cursor.position.pending_byte_length, 0);
-        assert_eq!(state.cursor.position.pending_byte_length, 0);
+        assert_eq!(update.cursor.position.pending_byte_length(), 0);
+        assert_eq!(state.cursor.position.pending_byte_length(), 0);
     }
 
     #[test]
@@ -2275,8 +3125,8 @@ mod tests {
             .collect();
         assert_eq!(append_ids, snap_ids);
         assert_eq!(
-            state.cursor.position.next_byte_offset,
-            snap.cursor.position.next_byte_offset
+            state.cursor.position.next_byte_offset(),
+            snap.cursor.position.next_byte_offset()
         );
         assert_eq!(state.cursor.prefix_sha256, snap.cursor.prefix_sha256);
     }
@@ -2290,14 +3140,14 @@ mod tests {
         let state = create_stream(opts);
         let (state, u1) = apply_snapshot(&state, &original, "gen-0", None).unwrap();
         assert_eq!(u1.kind, "updated");
-        let prior = state.cursor.position.next_byte_offset;
+        let prior = state.cursor.position.next_byte_offset();
         let (state2, u2) = apply_snapshot(&state, &replaced, "gen-replaced", None).unwrap();
         assert_eq!(u2.kind, "reset-required");
         assert_eq!(
             u2.reset.as_ref().map(|r| r.reason.as_str()),
             Some("source-replaced")
         );
-        assert_eq!(state2.cursor.position.next_byte_offset, prior);
+        assert_eq!(state2.cursor.position.next_byte_offset(), prior);
     }
 
     #[test]
@@ -2309,12 +3159,12 @@ mod tests {
         let pre_cursor = state.cursor.clone();
         let (state, u1) = apply_append(&state, &line, None, Some("gen-0")).unwrap();
         assert_eq!(u1.kind, "updated");
-        let prior = state.cursor.position.next_byte_offset;
+        let prior = state.cursor.position.next_byte_offset();
         // True replay requires the pre-apply cursor; content alone is not enough.
         let (state2, u2) =
             apply_append(&state, &line, Some(&pre_cursor), Some("gen-0")).unwrap();
         assert_eq!(u2.kind, "unchanged");
-        assert_eq!(state2.cursor.position.next_byte_offset, prior);
+        assert_eq!(state2.cursor.position.next_byte_offset(), prior);
     }
 
     #[test]
@@ -2329,7 +3179,7 @@ mod tests {
         assert_eq!(u2.kind, "updated");
         assert_eq!(state2.committed_prefix.len(), line.len() * 2);
         assert_eq!(
-            state2.cursor.position.next_byte_offset,
+            state2.cursor.position.next_byte_offset(),
             (line.len() * 2) as i64
         );
     }
@@ -2343,14 +3193,79 @@ mod tests {
         let state = create_stream(opts);
         let (state, u1) = apply_snapshot(&state, &original, "gen-0", None).unwrap();
         assert_eq!(u1.kind, "updated");
-        let prior = state.cursor.position.next_byte_offset;
+        let prior = state.cursor.position.next_byte_offset();
         let (state2, u2) = apply_snapshot(&state, &compacted, "gen-compact", None).unwrap();
         assert_eq!(u2.kind, "reset-required");
         assert_eq!(
             u2.reset.as_ref().map(|r| r.reason.as_str()),
             Some("source-compacted")
         );
-        assert_eq!(state2.cursor.position.next_byte_offset, prior);
+        assert_eq!(state2.cursor.position.next_byte_offset(), prior);
+    }
+
+    #[test]
+    fn ahp_snapshot_active_turn_provisional() {
+        let material = read_case("ahp-snapshot-active-turn", "step-active.json");
+        let mut opts = StreamOptions::new(TrajectorySource::Ahp)
+            .with_group_id("ahp-chat:/00000000-0000-4000-8000-0000000000b1");
+        opts.ahp_protocol_version = Some("0.7.0".into());
+        let state = create_stream(opts);
+        assert!(matches!(
+            state.cursor.position,
+            StreamPosition::SnapshotRevision(_)
+        ));
+        let (state, update) =
+            apply_ahp_snapshot(&state, &material, "ahp-rev-1", None).unwrap();
+        assert_eq!(update.kind, "updated");
+        let snap = update.snapshot.as_ref().unwrap();
+        let provisional: Vec<_> = snap
+            .records
+            .iter()
+            .filter(|r| r.status == "provisional")
+            .collect();
+        assert!(!provisional.is_empty());
+        assert_eq!(
+            provisional[0].provisional_id.as_deref(),
+            Some("prov-active-turn-1")
+        );
+        let (_, update2) = apply_ahp_snapshot(&state, &material, "ahp-rev-1", None).unwrap();
+        assert_eq!(update2.kind, "unchanged");
+    }
+
+    #[test]
+    fn ahp_actions_turn_flow() {
+        let actions = read_case("ahp-action-turn-flow", "step-actions.jsonl");
+        let mut opts = StreamOptions::new(TrajectorySource::Ahp)
+            .with_group_id("ahp-chat:/00000000-0000-4000-8000-0000000000c1");
+        opts.ahp_protocol_version = Some("0.7.0".into());
+        let state = create_stream(opts);
+        let (state, update) = apply_ahp_actions(&state, &actions, None).unwrap();
+        assert_eq!(update.kind, "updated");
+        assert!(matches!(
+            state.cursor.position,
+            StreamPosition::AhpServerSeq(ref p) if p.last_server_seq == 5
+        ));
+        let records = update.snapshot.as_ref().unwrap().records.len();
+        assert!(records >= 1);
+        let (_, update2) = apply_ahp_actions(&state, &actions, None).unwrap();
+        assert_eq!(update2.kind, "unchanged");
+    }
+
+    #[test]
+    fn ahp_actions_sequence_gap() {
+        let baseline = read_case("ahp-action-sequence-gap", "step-baseline.jsonl");
+        let gap = read_case("ahp-action-sequence-gap", "step-gap.jsonl");
+        let mut opts = StreamOptions::new(TrajectorySource::Ahp)
+            .with_group_id("ahp-chat:/00000000-0000-4000-8000-0000000000c1");
+        opts.ahp_protocol_version = Some("0.7.0".into());
+        let state = create_stream(opts);
+        let (state, u1) = apply_ahp_actions(&state, &baseline, None).unwrap();
+        assert_eq!(u1.kind, "updated");
+        let prior_seq = state.ahp_last_server_seq;
+        let (state2, u2) = apply_ahp_actions(&state, &gap, None).unwrap();
+        assert_eq!(u2.kind, "reset-required");
+        assert_eq!(u2.reset.as_ref().unwrap().reason, "sequence-gap");
+        assert_eq!(state2.ahp_last_server_seq, prior_seq);
     }
 
     #[test]

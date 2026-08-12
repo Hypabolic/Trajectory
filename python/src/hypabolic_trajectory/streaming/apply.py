@@ -16,11 +16,20 @@ from hypabolic_trajectory.errors import (
 from hypabolic_trajectory.identity import sha256_hex
 from hypabolic_trajectory.normalize.core import normalize_to_ir, resolve_source
 from hypabolic_trajectory.project.core import project_hypabolic
+from hypabolic_trajectory.streaming.ahp_reducer import (
+    detect_sequence_gap,
+    empty_chat_state,
+    parse_action_batch,
+    reduce_ahp_actions,
+    shape_a_bytes,
+)
 from hypabolic_trajectory.streaming.delta import diff_snapshots
 from hypabolic_trajectory.streaming.framing import append_framed, split_complete_lines
 from hypabolic_trajectory.streaming.types import (
     STREAM_SCHEMA_ID,
+    AhpServerSeqPosition,
     BytePosition,
+    SnapshotRevisionPosition,
     StreamConsumed,
     StreamCursor,
     StreamDelta,
@@ -47,15 +56,19 @@ _MSG_SOURCE_COMPACTED = "Source material was compacted relative to the committed
 _MSG_SOURCE_REPLACED = "Source material was replaced relative to the committed cursor."
 _MSG_PREFIX_MISMATCH = "Committed prefix hash does not match supplied material."
 _MSG_UNSUPPORTED_INPUT = "Stream input kind is not supported for this source."
-_MSG_AHP_UNSUPPORTED = "AHP stream apply is not available in this slice."
+_MSG_AHP_SOURCE_REQUIRED = "AHP stream apply requires source ahp."
 _MSG_HERMES_UNSUPPORTED = "Hermes export stream apply requires an optional provider."
 _MSG_FINISHED = "Stream is already finished."
 _MSG_INVALID_SOURCE = "Unknown or invalid stream source."
+_MSG_SEQUENCE_GAP = "AHP action-log serverSeq gap requires snapshot resync."
+_MSG_INVALID_AHP_ACTIONS = "AHP action batch could not be parsed."
+_MSG_INVALID_AHP_SNAPSHOT = "AHP snapshot material is not valid Shape A JSON."
 
 _STREAM_BUFFER_LIMIT = "stream_buffer_limit"
 _STREAM_CURSOR_CONFLICT = "stream_cursor_conflict"
 _STREAM_SOURCE_RESET = "stream_source_reset"
 _STREAM_RESYNC_REQUIRED = "stream_resync_required"
+_STREAM_SEQUENCE_GAP = "stream_sequence_gap"
 _DIAG_BACKEND_TOOL_SYNTH = "backend_tool_result_synthesized"
 _BACKEND_SYNTH_PREFIX = "[backend "
 
@@ -64,11 +77,15 @@ def create_stream(options: StreamOptions) -> StreamState:
     """Create a new pure stream state (generation 0, empty cursor)."""
     source = resolve_source(options.source)
     group_id = options.group_id if options.group_id else "default"
+    if source == TrajectorySource.AHP:
+        position: Any = SnapshotRevisionPosition(revision="", content_sha256=None)
+    else:
+        position = BytePosition(next_byte_offset=0, pending_byte_length=0)
     cursor = StreamCursor(
         source=source.value,
         group_id=group_id,
         generation=0,
-        position=BytePosition(next_byte_offset=0, pending_byte_length=0),
+        position=position,
         source_revision=None,
         prefix_sha256=None,
     )
@@ -101,10 +118,15 @@ def apply_stream(state: StreamState, input: StreamInput) -> tuple[StreamState, S
                 message="reset input requires a StreamResetRequest.",
             )
         return reset_stream(state, input.reset)
-    if input.kind in {"ahp-actions", "ahp-snapshot"}:
-        return state, _error_update(
-            state, code=_STREAM_RESYNC_REQUIRED, message=_MSG_AHP_UNSUPPORTED
+    if input.kind == "ahp-snapshot":
+        return apply_ahp_snapshot(
+            state,
+            input.data,
+            source_revision=input.source_revision or "",
+            cursor=input.cursor,
         )
+    if input.kind == "ahp-actions":
+        return apply_ahp_actions(state, input.data, cursor=input.cursor)
     if input.kind == "hermes-export":
         return state, _error_update(
             state, code=_STREAM_RESYNC_REQUIRED, message=_MSG_HERMES_UNSUPPORTED
@@ -279,6 +301,415 @@ def apply_snapshot(
     # Snapshot replaces committed material; clear append-replay fingerprint.
     new_state.last_append_segment = None
     new_state.last_append_pre_offset = None
+    return new_state, update
+
+
+def apply_ahp_snapshot(
+    state: StreamState,
+    material: bytes,
+    *,
+    source_revision: str,
+    cursor: StreamCursor | None = None,
+) -> tuple[StreamState, StreamUpdate]:
+    """Apply a successive AHP Shape A snapshot (LS-06).
+
+    Cursor family: snapshot-revision. activeTurn records are provisional with
+    stable provisional ids ``prov-active-turn-{n}``.
+    """
+    if type(material) is not bytes:
+        raise TypeError("material must be bytes")
+    if state.finished:
+        return state, _error_update(state, code="invalid_input", message=_MSG_FINISHED)
+
+    source = resolve_source(state.options.source)
+    if source != TrajectorySource.AHP:
+        return state, _error_update(
+            state, code="invalid_input", message=_MSG_AHP_SOURCE_REQUIRED
+        )
+
+    conflict = _cursor_conflict(state, cursor)
+    if conflict is not None:
+        return state, conflict
+
+    content_sha = sha256_hex(material)
+    # Idempotent duplicate host revision (+ same content fingerprint).
+    if (
+        state.snapshot is not None
+        and state.ahp_last_snapshot_revision == source_revision
+        and state.ahp_last_content_sha256 == content_sha
+    ):
+        return state, _unchanged_update(state)
+    if (
+        state.snapshot is not None
+        and isinstance(state.cursor.position, SnapshotRevisionPosition)
+        and state.cursor.position.revision == source_revision
+        and state.cursor.position.content_sha256 == content_sha
+    ):
+        return state, _unchanged_update(state)
+
+    built = _build_ahp_records(state, material)
+    if isinstance(built, StreamUpdate):
+        return state, built
+    records, diagnostics, group_id, chat_state, session, protocol_version = built
+
+    if not state.options.include_provisional:
+        records = tuple(r for r in records if r.status != "provisional")
+
+    new_state = _clone_state(state)
+    new_state.group_locked = True
+    generation = new_state.generation
+    parent_revision_id = (
+        new_state.snapshot.revision.revision_id
+        if new_state.snapshot is not None
+        else None
+    )
+    revision_num = new_state.next_revision
+    revision_id = _revision_id(
+        generation=generation,
+        revision=revision_num,
+        source=new_state.cursor.source,
+        group_id=group_id,
+        prefix_sha=content_sha,
+        record_ids=tuple(r.record["id"] for r in records),
+    )
+    revision = StreamRevision(
+        revision=revision_num,
+        revision_id=revision_id,
+        parent_revision_id=parent_revision_id,
+        complete=False,
+        generation=generation,
+    )
+    snapshot = StreamSnapshot(
+        source=new_state.cursor.source,
+        group_id=group_id,
+        revision=revision,
+        records=records,
+        diagnostics=diagnostics,
+        complete=False,
+    )
+    delta = diff_snapshots(new_state.snapshot, snapshot, revision=revision)
+    out_snapshot, out_delta = _apply_delivery(snapshot, delta, state.options.delivery)
+
+    # Preserve server-seq authority when actions established it; otherwise
+    # snapshot-revision cursor.
+    if isinstance(new_state.cursor.position, AhpServerSeqPosition) or (
+        new_state.ahp_last_server_seq is not None
+    ):
+        last_seq = (
+            new_state.ahp_last_server_seq
+            if new_state.ahp_last_server_seq is not None
+            else -1
+        )
+        position: Any = AhpServerSeqPosition(
+            next_server_seq=last_seq + 1,
+            last_server_seq=last_seq,
+        )
+    else:
+        position = SnapshotRevisionPosition(
+            revision=source_revision,
+            content_sha256=content_sha,
+        )
+
+    cursor_out = StreamCursor(
+        source=new_state.cursor.source,
+        group_id=group_id,
+        generation=generation,
+        position=position,
+        source_revision=source_revision,
+        prefix_sha256=content_sha,
+    )
+    provisional_ids = tuple(
+        r.provisional_id for r in records if r.provisional_id is not None
+    )
+    prior_provisional = {
+        r.provisional_id
+        for r in (state.snapshot.records if state.snapshot else ())
+        if r.provisional_id
+    }
+    finalized_ids = tuple(
+        sorted(
+            pid
+            for pid in prior_provisional
+            if pid not in set(provisional_ids)
+        )
+    )
+    update = StreamUpdate(
+        kind="updated",
+        revision=revision,
+        cursor=cursor_out,
+        snapshot=out_snapshot,
+        delta=out_delta,
+        diagnostics=diagnostics,
+        provisional=StreamProvisionalInfo(
+            include=state.options.include_provisional,
+            provisional_ids=provisional_ids,
+            finalized_ids=finalized_ids,
+        ),
+        consumed=StreamConsumed(
+            complete_records=len(records),
+            bytes=len(material),
+            first_source_position=0 if material else None,
+            last_source_position=(len(material) - 1) if material else None,
+        ),
+    )
+
+    new_state.cursor = cursor_out
+    new_state.snapshot = snapshot
+    new_state.next_revision = revision_num + 1
+    new_state.ahp_chat_state = chat_state
+    new_state.ahp_session = session
+    new_state.ahp_protocol_version = protocol_version
+    new_state.ahp_target_channel = (
+        group_id if isinstance(group_id, str) and group_id.startswith("ahp-chat:") else new_state.ahp_target_channel
+    )
+    new_state.ahp_last_snapshot_revision = source_revision
+    new_state.ahp_last_content_sha256 = content_sha
+    # Snapshot material is not a JSONL prefix.
+    new_state.committed_prefix = bytearray()
+    new_state.pending_bytes = bytearray()
+    new_state.last_append_segment = None
+    new_state.last_append_pre_offset = None
+    return new_state, update
+
+
+def apply_ahp_actions(
+    state: StreamState,
+    data: bytes,
+    *,
+    cursor: StreamCursor | None = None,
+) -> tuple[StreamState, StreamUpdate]:
+    """Apply an AHP Shape B action-log batch (LS-07).
+
+    Cursor authority is ``serverSeq``. Gaps never silently advance the cursor
+    (``reset-required`` / ``sequence-gap``). Unknown actions → content-safe
+    diagnostic; foreign channels are ignored.
+    """
+    if type(data) is not bytes:
+        raise TypeError("data must be bytes")
+    if state.finished:
+        return state, _error_update(state, code="invalid_input", message=_MSG_FINISHED)
+
+    source = resolve_source(state.options.source)
+    if source != TrajectorySource.AHP:
+        return state, _error_update(
+            state, code="invalid_input", message=_MSG_AHP_SOURCE_REQUIRED
+        )
+
+    actions_sha = sha256_hex(data)
+    pre_seq = state.ahp_last_server_seq
+
+    # Idempotent true-replay of the same batch (pre-apply cursor or already applied).
+    if (
+        state.last_ahp_actions_sha256 is not None
+        and state.last_ahp_actions_sha256 == actions_sha
+    ):
+        if cursor is None:
+            return state, _unchanged_update(state)
+        if isinstance(cursor.position, AhpServerSeqPosition):
+            if (
+                state.last_ahp_actions_pre_seq is not None
+                and cursor.position.last_server_seq == state.last_ahp_actions_pre_seq
+            ):
+                return state, _unchanged_update(state)
+            # Post-apply cursor re-supply of the same batch: already committed.
+            if (
+                isinstance(state.cursor.position, AhpServerSeqPosition)
+                and cursor.position.last_server_seq == state.cursor.position.last_server_seq
+            ):
+                return state, _unchanged_update(state)
+        elif isinstance(cursor.position, SnapshotRevisionPosition):
+            # First action batch was applied from a snapshot-revision cursor.
+            if state.last_ahp_actions_pre_seq in (None, -1):
+                return state, _unchanged_update(state)
+
+    # Cursor checks: only enforce when caller supplies ahp-server-seq that
+    # disagrees with committed authority. Snapshot-revision cursors are ignored
+    # once the stream is on server-seq (upgrade path / double-invoke pre-cursor).
+    if cursor is not None and isinstance(cursor.position, AhpServerSeqPosition):
+        conflict = _cursor_conflict(state, cursor)
+        if conflict is not None:
+            return state, conflict
+    elif cursor is not None and not isinstance(
+        cursor.position, (AhpServerSeqPosition, SnapshotRevisionPosition)
+    ):
+        conflict = _cursor_conflict(state, cursor)
+        if conflict is not None:
+            return state, conflict
+
+    try:
+        envelopes = parse_action_batch(data)
+    except (ValueError, UnicodeDecodeError):
+        return state, _error_update(
+            state, code="invalid_input", message=_MSG_INVALID_AHP_ACTIONS
+        )
+
+    if not envelopes:
+        return state, _unchanged_update(state)
+
+    target = state.ahp_target_channel
+    if target is None and state.group_locked and isinstance(state.cursor.group_id, str):
+        if state.cursor.group_id.startswith("ahp-chat:"):
+            target = state.cursor.group_id
+
+    gap = detect_sequence_gap(
+        envelopes,
+        last_server_seq=state.ahp_last_server_seq,
+        target_channel=target,
+    )
+    if gap is not None:
+        return state, _reset_required(
+            state,
+            reason="sequence-gap",
+            diagnostic_code=_STREAM_SEQUENCE_GAP,
+        )
+
+    chat_in = state.ahp_chat_state
+    if chat_in is None:
+        chat_in = empty_chat_state(resource=target)
+
+    reduced, new_last_seq, reduce_diags, applied = reduce_ahp_actions(
+        chat_in,
+        envelopes,
+        target_channel=target,
+        last_server_seq=state.ahp_last_server_seq,
+    )
+
+    if not applied and new_last_seq == state.ahp_last_server_seq:
+        # Pure foreign/unknown/already-applied batch with no state change.
+        # Still surface reduce diagnostics on an unchanged outcome only when
+        # there is no visible change — return unchanged.
+        if not reduce_diags:
+            return state, _unchanged_update(state)
+
+    protocol = (
+        state.ahp_protocol_version
+        or state.options.ahp_protocol_version
+        or "0.7.0"
+    )
+    material = shape_a_bytes(
+        reduced,
+        protocol_version=protocol,
+        session=state.ahp_session,
+    )
+    # Source revision for action-driven snapshots is seq-authoritative.
+    if new_last_seq is not None:
+        rev = f"seq:{new_last_seq}"
+    else:
+        rev = state.cursor.source_revision or "seq:0"
+
+    # Apply via snapshot path, then rewrite cursor to ahp-server-seq.
+    snap_state = _clone_state(state)
+    snap_state.ahp_chat_state = reduced
+    snap_state.ahp_last_server_seq = new_last_seq
+    # Clear snapshot-revision idempotence keys so seq advances always emit.
+    snap_state.ahp_last_snapshot_revision = None
+    snap_state.ahp_last_content_sha256 = None
+
+    new_state, update = apply_ahp_snapshot(
+        snap_state,
+        material,
+        source_revision=rev,
+        cursor=None,
+    )
+    if update.kind not in {"updated", "unchanged"}:
+        return state, update
+
+    # Merge reducer diagnostics (unknown action / foreign channel).
+    extra = tuple(
+        StreamDiagnostic(code=d["code"], message=d["message"]) for d in reduce_diags
+    )
+    # Deduplicate by code+message for stable envelopes.
+    seen: set[tuple[str, str]] = set()
+    merged_diags: list[StreamDiagnostic] = []
+    for d in list(update.diagnostics) + list(extra):
+        key = (d.code, d.message)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged_diags.append(d)
+    diagnostics = tuple(merged_diags)
+
+    last_seq = new_last_seq if new_last_seq is not None else -1
+    seq_cursor = StreamCursor(
+        source=new_state.cursor.source,
+        group_id=new_state.cursor.group_id,
+        generation=new_state.cursor.generation,
+        position=AhpServerSeqPosition(
+            next_server_seq=last_seq + 1,
+            last_server_seq=last_seq,
+            next_byte_offset=len(data) if data else None,
+        ),
+        source_revision=rev,
+        prefix_sha256=new_state.cursor.prefix_sha256,
+    )
+    new_state.cursor = seq_cursor
+    new_state.ahp_last_server_seq = new_last_seq
+    new_state.ahp_chat_state = reduced
+    new_state.ahp_target_channel = (
+        new_state.cursor.group_id
+        if new_state.cursor.group_id.startswith("ahp-chat:")
+        else target
+    )
+    new_state.last_ahp_actions_sha256 = actions_sha
+    new_state.last_ahp_actions_pre_seq = pre_seq if pre_seq is not None else -1
+
+    if update.kind == "unchanged" and not extra:
+        return new_state, _unchanged_update(new_state)
+
+    # Rebuild update with seq cursor and merged diagnostics.
+    snap = update.snapshot
+    if snap is not None and diagnostics != snap.diagnostics:
+        snap = StreamSnapshot(
+            source=snap.source,
+            group_id=snap.group_id,
+            revision=snap.revision,
+            records=snap.records,
+            diagnostics=diagnostics,
+            complete=snap.complete,
+        )
+        # Re-diff so diagnostic ops appear.
+        delta = diff_snapshots(state.snapshot, snap, revision=snap.revision)
+        out_snapshot, out_delta = _apply_delivery(
+            snap, delta, state.options.delivery
+        )
+    else:
+        out_snapshot, out_delta = update.snapshot, update.delta
+
+    if update.kind == "unchanged" and extra:
+        # Diagnostics-only change: still emit updated when diagnostics appear.
+        # Fall through with a synthetic updated if we have a snapshot.
+        if new_state.snapshot is None:
+            return new_state, _unchanged_update(new_state)
+
+    update = StreamUpdate(
+        kind="updated" if update.kind == "updated" or extra else update.kind,
+        revision=update.revision if update.kind != "unchanged" else (
+            new_state.snapshot.revision if new_state.snapshot else update.revision
+        ),
+        cursor=seq_cursor,
+        snapshot=out_snapshot if update.kind == "updated" or extra else update.snapshot,
+        delta=out_delta if update.kind == "updated" or extra else update.delta,
+        diagnostics=diagnostics if update.kind == "updated" or extra else (),
+        provisional=update.provisional,
+        consumed=StreamConsumed(
+            complete_records=update.consumed.complete_records,
+            bytes=len(data),
+            first_source_position=0 if data else None,
+            last_source_position=(len(data) - 1) if data else None,
+        ),
+        reset=update.reset,
+        error=update.error,
+    )
+    if update.kind == "updated" and new_state.snapshot is not None:
+        # Keep internal snapshot diagnostics aligned.
+        new_state.snapshot = StreamSnapshot(
+            source=new_state.snapshot.source,
+            group_id=new_state.snapshot.group_id,
+            revision=new_state.snapshot.revision,
+            records=new_state.snapshot.records,
+            diagnostics=diagnostics,
+            complete=new_state.snapshot.complete,
+        )
     return new_state, update
 
 
@@ -591,12 +1022,26 @@ def reset_stream(
     new_state.group_locked = False
     new_state.last_append_segment = None
     new_state.last_append_pre_offset = None
+    new_state.ahp_chat_state = None
+    new_state.ahp_session = None
+    new_state.ahp_protocol_version = None
+    new_state.ahp_last_server_seq = None
+    new_state.ahp_target_channel = None
+    new_state.ahp_last_snapshot_revision = None
+    new_state.ahp_last_content_sha256 = None
+    new_state.last_ahp_actions_sha256 = None
+    new_state.last_ahp_actions_pre_seq = None
     group_id = state.options.group_id or state.cursor.group_id
+    source = resolve_source(state.options.source)
+    if source == TrajectorySource.AHP:
+        pos: Any = SnapshotRevisionPosition(revision=request.source_revision or "", content_sha256=None)
+    else:
+        pos = BytePosition(next_byte_offset=0, pending_byte_length=0)
     new_state.cursor = StreamCursor(
         source=state.cursor.source,
         group_id=group_id,
         generation=generation,
-        position=BytePosition(next_byte_offset=0, pending_byte_length=0),
+        position=pos,
         source_revision=request.source_revision,
         prefix_sha256=None,
     )
@@ -750,6 +1195,27 @@ class TrajectoryStream:
         )
         return update
 
+    def apply_ahp_snapshot(
+        self,
+        data: bytes,
+        *,
+        source_revision: str,
+        cursor: StreamCursor | None = None,
+    ) -> StreamUpdate:
+        self._state, update = apply_ahp_snapshot(
+            self._state, data, source_revision=source_revision, cursor=cursor
+        )
+        return update
+
+    def apply_ahp_actions(
+        self,
+        data: bytes,
+        *,
+        cursor: StreamCursor | None = None,
+    ) -> StreamUpdate:
+        self._state, update = apply_ahp_actions(self._state, data, cursor=cursor)
+        return update
+
     def finish(self) -> StreamUpdate:
         self._state, update = finish_stream(self._state)
         return update
@@ -769,6 +1235,8 @@ class TrajectoryStream:
 
 
 def _clone_state(state: StreamState) -> StreamState:
+    import copy
+
     return StreamState(
         options=state.options,
         cursor=state.cursor,
@@ -781,6 +1249,15 @@ def _clone_state(state: StreamState) -> StreamState:
         group_locked=state.group_locked,
         last_append_segment=state.last_append_segment,
         last_append_pre_offset=state.last_append_pre_offset,
+        ahp_chat_state=copy.deepcopy(state.ahp_chat_state),
+        ahp_session=copy.deepcopy(state.ahp_session),
+        ahp_protocol_version=state.ahp_protocol_version,
+        ahp_last_server_seq=state.ahp_last_server_seq,
+        ahp_target_channel=state.ahp_target_channel,
+        ahp_last_snapshot_revision=state.ahp_last_snapshot_revision,
+        ahp_last_content_sha256=state.ahp_last_content_sha256,
+        last_ahp_actions_sha256=state.last_ahp_actions_sha256,
+        last_ahp_actions_pre_seq=state.last_ahp_actions_pre_seq,
     )
 
 
@@ -841,7 +1318,208 @@ def _cursor_conflict(
                 reason="cursor-mismatch",
                 diagnostic_code=_STREAM_CURSOR_CONFLICT,
             )
+    # AHP server-seq cursor
+    if isinstance(cursor.position, AhpServerSeqPosition) and isinstance(
+        current.position, AhpServerSeqPosition
+    ):
+        if (
+            not _is_non_negative_int64(cursor.position.next_server_seq)
+            or not _is_non_negative_int64(cursor.position.last_server_seq)
+        ):
+            return _error_update(
+                state,
+                code="invalid_input",
+                message="Stream cursor serverSeq positions must be non-negative int64 values.",
+            )
+        if (
+            cursor.position.last_server_seq != current.position.last_server_seq
+            or cursor.position.next_server_seq != current.position.next_server_seq
+        ):
+            return _reset_required(
+                state,
+                reason="cursor-mismatch",
+                diagnostic_code=_STREAM_CURSOR_CONFLICT,
+            )
+    # Snapshot-revision cursor
+    if isinstance(cursor.position, SnapshotRevisionPosition) and isinstance(
+        current.position, SnapshotRevisionPosition
+    ):
+        if cursor.position.revision != current.position.revision:
+            return _reset_required(
+                state,
+                reason="cursor-mismatch",
+                diagnostic_code=_STREAM_CURSOR_CONFLICT,
+            )
+    # Kind mismatch after stream is live (both have committed positions of different families)
+    if (
+        state.snapshot is not None
+        and type(cursor.position) is not type(current.position)
+        and not (
+            # Allow first AHP actions after snapshot-revision (upgrade to server-seq)
+            isinstance(current.position, SnapshotRevisionPosition)
+            and isinstance(cursor.position, AhpServerSeqPosition)
+        )
+        and not (
+            isinstance(current.position, BytePosition)
+            and current.position.next_byte_offset == 0
+        )
+    ):
+        # Different families on a live stream: treat as cursor mismatch when
+        # both sides are AHP-ish and disagree, otherwise ignore kind when the
+        # caller omits a matching cursor (cursor is optional on snapshot).
+        if isinstance(cursor.position, (AhpServerSeqPosition, SnapshotRevisionPosition)) and isinstance(
+            current.position, (AhpServerSeqPosition, SnapshotRevisionPosition)
+        ):
+            # snapshot-revision → server-seq is an allowed upgrade path
+            if not (
+                isinstance(current.position, SnapshotRevisionPosition)
+                and isinstance(cursor.position, AhpServerSeqPosition)
+            ):
+                return _reset_required(
+                    state,
+                    reason="cursor-mismatch",
+                    diagnostic_code=_STREAM_CURSOR_CONFLICT,
+                )
     return None
+
+
+def _build_ahp_records(
+    state: StreamState, material: bytes
+) -> (
+    tuple[
+        tuple[StreamRecord, ...],
+        tuple[StreamDiagnostic, ...],
+        str,
+        dict[str, Any] | None,
+        dict[str, Any] | None,
+        str | None,
+    ]
+    | StreamUpdate
+):
+    """Normalize Shape A material with provisional activeTurn mapping."""
+    import json
+
+    try:
+        root = json.loads(material.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError):
+        return _error_update(
+            state, code="invalid_input", message=_MSG_INVALID_AHP_SNAPSHOT
+        )
+    if not isinstance(root, dict) or not isinstance(root.get("chat"), dict):
+        return _error_update(
+            state, code="invalid_input", message=_MSG_INVALID_AHP_SNAPSHOT
+        )
+
+    chat = root["chat"]
+    session_raw = root.get("session")
+    session = session_raw if isinstance(session_raw, dict) else None
+    protocol = root.get("ahpProtocolVersion")
+    protocol_version = protocol if isinstance(protocol, str) else None
+
+    active = chat.get("activeTurn")
+    active_native_ids = _ahp_active_turn_native_ids(active)
+
+    # Do not pass stream group_id hint: native chat.resource is authority.
+    # After lock, verify native group matches locked stream group.
+    group_hint = None
+    if state.group_locked and isinstance(state.cursor.group_id, str):
+        if state.cursor.group_id.startswith("ahp-chat:"):
+            group_hint = state.cursor.group_id
+
+    try:
+        ir_full = normalize_to_ir(
+            NormalizeRequest(
+                source=TrajectorySource.AHP,
+                transcript=material,
+                source_context=SourceContext(
+                    group_id=group_hint,
+                    base_byte_offset=0,
+                    partial=True,
+                ),
+                options=state.options.normalize,
+            )
+        )
+    except TrajectoryError as err:
+        if err.code == FATAL_SOURCE_GROUP_CONFLICT:
+            return _reset_required(
+                state,
+                reason="group-changed",
+                diagnostic_code=_STREAM_SOURCE_RESET,
+            )
+        return _error_update(state, code=err.code, message=err.message)
+
+    hyp = project_hypabolic(ir_full)
+    raw_records = hyp.get("records") or []
+    built: list[StreamRecord] = []
+    prov_n = 0
+    for r in raw_records:
+        if not isinstance(r, dict):
+            continue
+        role = r.get("role")
+        is_prov = role != "meta" and _record_from_active_turn(r, active_native_ids)
+        provisional_id: str | None = None
+        status = "stable"
+        if is_prov:
+            prov_n += 1
+            status = "provisional"
+            provisional_id = f"prov-active-turn-{prov_n}"
+        built.append(
+            StreamRecord(
+                status=status,  # type: ignore[arg-type]
+                record=dict(r),
+                provisional_id=provisional_id,
+            )
+        )
+    records = tuple(built)
+    diagnostics = tuple(
+        StreamDiagnostic(
+            code=d.code,
+            message=d.message,
+            input_line=d.input_line,
+            record_index=d.record_index,
+            count=d.count,
+        )
+        for d in ir_full.diagnostics
+        if d.code != "ahp_active_turn_omitted"
+    )
+    return records, diagnostics, ir_full.group_id, chat, session, protocol_version
+
+
+def _ahp_active_turn_native_ids(active: Any) -> set[str]:
+    """Collect native ids belonging to ChatState.activeTurn."""
+    if not isinstance(active, dict):
+        return set()
+    ids: set[str] = set()
+    tid = active.get("id")
+    if isinstance(tid, str) and tid:
+        ids.add(tid)
+    parts = active.get("responseParts")
+    if isinstance(parts, list):
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            pid = part.get("id")
+            if isinstance(pid, str) and pid:
+                ids.add(pid)
+            tc = part.get("toolCall")
+            if isinstance(tc, dict):
+                tcid = tc.get("toolCallId")
+                if isinstance(tcid, str) and tcid:
+                    ids.add(tcid)
+    return ids
+
+
+def _record_from_active_turn(record: dict[str, Any], active_ids: set[str]) -> bool:
+    if not active_ids:
+        return False
+    prov = record.get("provenance")
+    if not isinstance(prov, dict):
+        return False
+    for key in ("native_record_id", "stable_source_record_id"):
+        val = prov.get(key)
+        if isinstance(val, str) and val in active_ids:
+            return True
+    return False
 
 
 def _build_records_from_prefix(
@@ -1066,6 +1744,7 @@ def _reset_required(
             "prefix-hash-mismatch": _MSG_PREFIX_MISMATCH,
             "group-changed": _MSG_GROUP_CHANGED,
             "cursor-mismatch": _MSG_CURSOR_CONFLICT,
+            "sequence-gap": _MSG_SEQUENCE_GAP,
         }.get(reason, _MSG_SOURCE_TRUNCATED),
     )
     return StreamUpdate(

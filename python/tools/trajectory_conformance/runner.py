@@ -46,6 +46,8 @@ from hypabolic_trajectory import (
     ToolArgumentBounds,
     ToolResultBounds,
     TrajectoryError,
+    apply_ahp_actions,
+    apply_ahp_snapshot,
     apply_append,
     apply_snapshot,
     create_stream,
@@ -64,7 +66,9 @@ from hypabolic_trajectory import (
 from hypabolic_trajectory.diagnostics import Diagnostic
 from hypabolic_trajectory.dto import TrajectoryListing, TrajectoryListingPage
 from hypabolic_trajectory.streaming.types import (
+    AhpServerSeqPosition,
     BytePosition,
+    SnapshotRevisionPosition,
     StreamCursor,
     StreamDiagnostic,
     StreamRecord,
@@ -679,27 +683,57 @@ def _parse_stream_cursor(raw: Mapping[str, Any] | None) -> StreamCursor | None:
     pos_raw = raw.get("position")
     if type(pos_raw) is not dict:
         raise ProtocolError("Step cursor position must be an object.")
-    if pos_raw.get("kind") != "byte":
-        raise ProtocolError("Stream engine supports byte cursors only in this slice.")
-    next_off = pos_raw.get("next_byte_offset", 0)
-    pending_len = pos_raw.get("pending_byte_length", 0)
-    if type(next_off) is not int or isinstance(next_off, bool) or next_off < 0:
-        raise ProtocolError("next_byte_offset must be a non-negative integer.")
-    if type(pending_len) is not int or isinstance(pending_len, bool) or pending_len < 0:
-        raise ProtocolError("pending_byte_length must be a non-negative integer.")
+    kind = pos_raw.get("kind")
     source_revision = raw.get("source_revision")
     if source_revision is not None and type(source_revision) is not str:
         raise ProtocolError("source_revision must be a string or null.")
     prefix_sha256 = raw.get("prefix_sha256")
     if prefix_sha256 is not None and type(prefix_sha256) is not str:
         raise ProtocolError("prefix_sha256 must be a string or null.")
+    if kind == "byte":
+        next_off = pos_raw.get("next_byte_offset", 0)
+        pending_len = pos_raw.get("pending_byte_length", 0)
+        if type(next_off) is not int or isinstance(next_off, bool) or next_off < 0:
+            raise ProtocolError("next_byte_offset must be a non-negative integer.")
+        if type(pending_len) is not int or isinstance(pending_len, bool) or pending_len < 0:
+            raise ProtocolError("pending_byte_length must be a non-negative integer.")
+        position: BytePosition | AhpServerSeqPosition | SnapshotRevisionPosition = (
+            BytePosition(next_byte_offset=next_off, pending_byte_length=pending_len)
+        )
+    elif kind == "ahp-server-seq":
+        next_seq = pos_raw.get("next_server_seq", 0)
+        last_seq = pos_raw.get("last_server_seq", -1)
+        if type(next_seq) is not int or isinstance(next_seq, bool) or next_seq < 0:
+            raise ProtocolError("next_server_seq must be a non-negative integer.")
+        if type(last_seq) is not int or isinstance(last_seq, bool):
+            raise ProtocolError("last_server_seq must be an integer.")
+        nbo = pos_raw.get("next_byte_offset")
+        if nbo is not None and (
+            type(nbo) is not int or isinstance(nbo, bool) or nbo < 0
+        ):
+            raise ProtocolError("next_byte_offset must be a non-negative integer.")
+        position = AhpServerSeqPosition(
+            next_server_seq=next_seq,
+            last_server_seq=last_seq,
+            next_byte_offset=nbo,
+        )
+    elif kind == "snapshot-revision":
+        rev = pos_raw.get("revision")
+        if type(rev) is not str:
+            raise ProtocolError("snapshot-revision.revision must be a string.")
+        csha = pos_raw.get("content_sha256")
+        if csha is not None and type(csha) is not str:
+            raise ProtocolError("content_sha256 must be a string or null.")
+        position = SnapshotRevisionPosition(revision=rev, content_sha256=csha)
+    else:
+        raise ProtocolError(
+            "Stream cursor position.kind must be byte, ahp-server-seq, or snapshot-revision."
+        )
     return StreamCursor(
         source=source,
         group_id=group_id,
         generation=generation,
-        position=BytePosition(
-            next_byte_offset=next_off, pending_byte_length=pending_len
-        ),
+        position=position,
         source_revision=source_revision,
         prefix_sha256=prefix_sha256,
     )
@@ -818,8 +852,19 @@ def _apply_step(
                 material=material,
             ),
         )
-    if kind in {"ahp-actions", "ahp-snapshot", "hermes-export"}:
-        # LS-06/LS-07/provider — not in LS-05 engine.
+    if kind == "ahp-snapshot":
+        data = _load_step_bytes(case_directory, step_input)
+        return apply_ahp_snapshot(
+            state,
+            data,
+            source_revision=source_revision or "",
+            cursor=cursor,
+        )
+    if kind == "ahp-actions":
+        data = _load_step_bytes(case_directory, step_input)
+        return apply_ahp_actions(state, data, cursor=cursor)
+    if kind == "hermes-export":
+        # Optional provider — not in LS-06/07 core.
         raise _StreamEngineUnsupported(
             f"Stream input kind '{kind}' is not implemented in this slice."
         )
@@ -857,7 +902,18 @@ def _stream_state_equivalent(a: StreamState, b: StreamState) -> bool:
             pa.next_byte_offset == pb.next_byte_offset
             and pa.pending_byte_length == pb.pending_byte_length
         )
-    return True
+    if isinstance(pa, AhpServerSeqPosition) and isinstance(pb, AhpServerSeqPosition):
+        return (
+            pa.next_server_seq == pb.next_server_seq
+            and pa.last_server_seq == pb.last_server_seq
+        )
+    if isinstance(pa, SnapshotRevisionPosition) and isinstance(
+        pb, SnapshotRevisionPosition
+    ):
+        return (
+            pa.revision == pb.revision and pa.content_sha256 == pb.content_sha256
+        )
+    return False
 
 
 def _stream_record_parity_key(rec: StreamRecord) -> tuple[Any, ...]:
@@ -1009,7 +1065,7 @@ def execute_stream_sequence(
     if type(steps) is not list or len(steps) == 0:
         raise ProtocolError("Stream sequence requires non-empty steps[].")
 
-    # Defer AHP/Hermes until those slices land.
+    # Hermes provider streaming remains optional (not LS-06/07 core).
     for step in steps:
         if type(step) is not dict:
             raise ProtocolError("Each step must be an object.")
@@ -1017,7 +1073,7 @@ def execute_stream_sequence(
         if type(step_input) is not dict:
             raise ProtocolError("Each step requires an input object.")
         kind = step_input.get("kind")
-        if kind in {"ahp-actions", "ahp-snapshot", "hermes-export"}:
+        if kind == "hermes-export":
             raise _StreamEngineUnsupported(
                 f"Stream input kind '{kind}' is not implemented in this slice."
             )

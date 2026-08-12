@@ -18,6 +18,14 @@ import {
   type JsonValue,
   type TrajectoryIR,
 } from "./internal.js";
+import {
+  detectSequenceGap,
+  emptyChatState,
+  parseActionBatch,
+  reduceAhpActions,
+  shapeABytes,
+  type ChatState,
+} from "./ahp-reducer.js";
 import { projectHypabolic } from "./projections.js";
 
 function normalizeToIR(request: {
@@ -65,12 +73,27 @@ export interface BytePosition {
   readonly pendingByteLength: bigint;
 }
 
+export interface AhpServerSeqPosition {
+  readonly kind: "ahp-server-seq";
+  readonly nextServerSeq: bigint;
+  readonly lastServerSeq: bigint;
+  readonly nextByteOffset?: bigint;
+}
+
+export interface SnapshotRevisionPosition {
+  readonly kind: "snapshot-revision";
+  readonly revision: string;
+  readonly contentSha256?: string | null;
+}
+
+export type StreamPosition = BytePosition | AhpServerSeqPosition | SnapshotRevisionPosition;
+
 export interface StreamCursor {
   readonly cursorVersion: 1;
   readonly source: TrajectorySource;
   readonly groupId: string;
   readonly generation: bigint;
-  readonly position: BytePosition;
+  readonly position: StreamPosition;
   readonly sourceRevision: string | null;
   readonly prefixSha256: string | null;
 }
@@ -187,6 +210,16 @@ export interface StreamState {
    */
   lastAppendSegment: Uint8Array | null;
   lastAppendPreOffset: bigint | null;
+  /** AHP stream state (LS-06 / LS-07). */
+  ahpChatState: ChatState | null;
+  ahpSession: ChatState | null;
+  ahpProtocolVersion: string | null;
+  ahpLastServerSeq: number | null;
+  ahpTargetChannel: string | null;
+  ahpLastSnapshotRevision: string | null;
+  ahpLastContentSha256: string | null;
+  lastAhpActionsSha256: string | null;
+  lastAhpActionsPreSeq: number | null;
 }
 
 export type StreamInputKind =
@@ -212,9 +245,12 @@ const INT64_MAX = 0x7fffffffffffffffn;
 const MSG_BUFFER_LIMIT_DOMAIN = "Stream buffer limits must be non-negative int64 values.";
 const MSG_CURSOR_DOMAIN = "Stream cursor byte positions must be non-negative int64 values.";
 const MSG_MATERIAL_DOMAIN = "Stream material length exceeds non-negative int64 domain.";
-const MSG_AHP_UNSUPPORTED = "AHP stream apply is not available in this slice.";
+const MSG_AHP_SOURCE_REQUIRED = "AHP stream apply requires source ahp.";
 const MSG_HERMES_UNSUPPORTED = "Hermes export stream apply requires an optional provider.";
 const MSG_UNSUPPORTED_INPUT = "Stream input kind is not supported for this source.";
+const MSG_SEQUENCE_GAP = "AHP action-log serverSeq gap requires snapshot resync.";
+const MSG_INVALID_AHP_ACTIONS = "AHP action batch could not be parsed.";
+const MSG_INVALID_AHP_SNAPSHOT = "AHP snapshot material is not valid Shape A JSON.";
 
 function isNonNegativeInt64(value: bigint): boolean {
   return value >= 0n && value <= INT64_MAX;
@@ -354,16 +390,37 @@ export function deltaToDict(d: StreamDelta): JsonObject {
 }
 
 export function cursorToDict(c: StreamCursor): JsonObject {
+  let position: JsonObject;
+  if (c.position.kind === "byte") {
+    position = {
+      kind: "byte",
+      next_byte_offset: int64ToJson(c.position.nextByteOffset),
+      pending_byte_length: int64ToJson(c.position.pendingByteLength),
+    };
+  } else if (c.position.kind === "ahp-server-seq") {
+    position = {
+      kind: "ahp-server-seq",
+      next_server_seq: int64ToJson(c.position.nextServerSeq),
+      last_server_seq: int64ToJson(c.position.lastServerSeq),
+    };
+    if (c.position.nextByteOffset !== undefined) {
+      position.next_byte_offset = int64ToJson(c.position.nextByteOffset);
+    }
+  } else {
+    position = {
+      kind: "snapshot-revision",
+      revision: c.position.revision,
+    };
+    if (c.position.contentSha256 != null) {
+      position.content_sha256 = c.position.contentSha256;
+    }
+  }
   return {
     cursor_version: 1,
     source: c.source,
     group_id: c.groupId,
     generation: int64ToJson(c.generation),
-    position: {
-      kind: "byte",
-      next_byte_offset: int64ToJson(c.position.nextByteOffset),
-      pending_byte_length: int64ToJson(c.position.pendingByteLength),
-    },
+    position,
     source_revision: c.sourceRevision,
     prefix_sha256: c.prefixSha256,
   };
@@ -555,6 +612,19 @@ function cloneState(state: StreamState): StreamState {
       ? null
       : state.lastAppendSegment.slice(),
     lastAppendPreOffset: state.lastAppendPreOffset,
+    ahpChatState: state.ahpChatState
+      ? (JSON.parse(JSON.stringify(state.ahpChatState)) as ChatState)
+      : null,
+    ahpSession: state.ahpSession
+      ? (JSON.parse(JSON.stringify(state.ahpSession)) as ChatState)
+      : null,
+    ahpProtocolVersion: state.ahpProtocolVersion,
+    ahpLastServerSeq: state.ahpLastServerSeq,
+    ahpTargetChannel: state.ahpTargetChannel,
+    ahpLastSnapshotRevision: state.ahpLastSnapshotRevision,
+    ahpLastContentSha256: state.ahpLastContentSha256,
+    lastAhpActionsSha256: state.lastAhpActionsSha256,
+    lastAhpActionsPreSeq: state.lastAhpActionsPreSeq,
   };
 }
 
@@ -643,6 +713,10 @@ function resetRequired(
 
 export function createStream(options: StreamOptions): StreamState {
   const groupId = options.groupId ?? "default";
+  const position: StreamPosition =
+    options.source === "ahp"
+      ? { kind: "snapshot-revision", revision: "", contentSha256: null }
+      : { kind: "byte", nextByteOffset: 0n, pendingByteLength: 0n };
   return {
     options,
     cursor: {
@@ -650,7 +724,7 @@ export function createStream(options: StreamOptions): StreamState {
       source: options.source,
       groupId,
       generation: 0n,
-      position: { kind: "byte", nextByteOffset: 0n, pendingByteLength: 0n },
+      position,
       sourceRevision: null,
       prefixSha256: null,
     },
@@ -663,6 +737,15 @@ export function createStream(options: StreamOptions): StreamState {
     groupLocked: false,
     lastAppendSegment: null,
     lastAppendPreOffset: null,
+    ahpChatState: null,
+    ahpSession: null,
+    ahpProtocolVersion: null,
+    ahpLastServerSeq: null,
+    ahpTargetChannel: null,
+    ahpLastSnapshotRevision: null,
+    ahpLastContentSha256: null,
+    lastAhpActionsSha256: null,
+    lastAhpActionsPreSeq: null,
   };
 }
 
@@ -757,13 +840,53 @@ function cursorConflict(state: StreamState, cursor: StreamCursor | undefined): S
       "Supplied stream cursor does not match stream state.",
     );
   }
-  if (
-    !isNonNegativeInt64(cursor.position.nextByteOffset) ||
-    !isNonNegativeInt64(cursor.position.pendingByteLength)
-  ) {
-    return errorUpdate(state, "invalid_input", MSG_CURSOR_DOMAIN);
+  if (cursor.position.kind === "byte" && state.cursor.position.kind === "byte") {
+    if (
+      !isNonNegativeInt64(cursor.position.nextByteOffset) ||
+      !isNonNegativeInt64(cursor.position.pendingByteLength)
+    ) {
+      return errorUpdate(state, "invalid_input", MSG_CURSOR_DOMAIN);
+    }
+    if (cursor.position.nextByteOffset !== state.cursor.position.nextByteOffset) {
+      return resetRequired(
+        state,
+        "cursor-mismatch",
+        "stream_cursor_conflict",
+        "Supplied stream cursor does not match stream state.",
+      );
+    }
   }
-  if (cursor.position.nextByteOffset !== state.cursor.position.nextByteOffset) {
+  if (
+    cursor.position.kind === "ahp-server-seq" &&
+    state.cursor.position.kind === "ahp-server-seq"
+  ) {
+    if (
+      !isNonNegativeInt64(cursor.position.nextServerSeq) ||
+      !isNonNegativeInt64(cursor.position.lastServerSeq)
+    ) {
+      return errorUpdate(
+        state,
+        "invalid_input",
+        "Stream cursor serverSeq positions must be non-negative int64 values.",
+      );
+    }
+    if (
+      cursor.position.lastServerSeq !== state.cursor.position.lastServerSeq ||
+      cursor.position.nextServerSeq !== state.cursor.position.nextServerSeq
+    ) {
+      return resetRequired(
+        state,
+        "cursor-mismatch",
+        "stream_cursor_conflict",
+        "Supplied stream cursor does not match stream state.",
+      );
+    }
+  }
+  if (
+    cursor.position.kind === "snapshot-revision" &&
+    state.cursor.position.kind === "snapshot-revision" &&
+    cursor.position.revision !== state.cursor.position.revision
+  ) {
     return resetRequired(
       state,
       "cursor-mismatch",
@@ -772,6 +895,10 @@ function cursorConflict(state: StreamState, cursor: StreamCursor | undefined): S
     );
   }
   return null;
+}
+
+function byteNextOffset(pos: StreamPosition): bigint {
+  return pos.kind === "byte" ? pos.nextByteOffset : 0n;
 }
 
 export function applySnapshot(
@@ -845,7 +972,7 @@ export function applySnapshot(
 
   if (
     state.snapshot !== null &&
-    BigInt(committed.length) < state.cursor.position.nextByteOffset
+    BigInt(committed.length) < byteNextOffset(state.cursor.position)
   ) {
     const { reason, message } = shrinkResetReason(state, committed);
     return {
@@ -981,12 +1108,13 @@ export function applyAppend(
   // True append replay: same segment re-supplied with the pre-apply cursor.
   // Content equality alone is not enough — successive identical growth segments
   // must both commit after the cursor advances.
-  const preOffset = state.cursor.position.nextByteOffset;
+  const preOffset = byteNextOffset(state.cursor.position);
   if (
     state.lastAppendSegment !== null &&
     state.lastAppendPreOffset !== null &&
     equalBytes(segment, state.lastAppendSegment) &&
     cursor !== undefined &&
+    cursor.position.kind === "byte" &&
     cursor.position.nextByteOffset === state.lastAppendPreOffset &&
     cursor.source === state.cursor.source &&
     cursor.generation === state.cursor.generation &&
@@ -1051,7 +1179,7 @@ export function applyAppend(
       ...newState.cursor,
       position: {
         kind: "byte",
-        nextByteOffset: newState.cursor.position.nextByteOffset,
+        nextByteOffset: byteNextOffset(newState.cursor.position),
         pendingByteLength: BigInt(newPending.length),
       },
     };
@@ -1081,7 +1209,7 @@ export function applyAppend(
     ...result.state.cursor,
     position: {
       kind: "byte",
-      nextByteOffset: result.state.cursor.position.nextByteOffset,
+      nextByteOffset: byteNextOffset(result.state.cursor.position),
       pendingByteLength: BigInt(newPending.length),
     },
   };
@@ -1145,6 +1273,431 @@ function isSyntheticBackendToolResult(record: JsonObject): boolean {
   );
 }
 
+function activeTurnNativeIds(active: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (!active || typeof active !== "object" || Array.isArray(active)) return ids;
+  const a = active as Record<string, unknown>;
+  if (typeof a.id === "string" && a.id) ids.add(a.id);
+  if (Array.isArray(a.responseParts)) {
+    for (const part of a.responseParts) {
+      if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+      const p = part as Record<string, unknown>;
+      if (typeof p.id === "string" && p.id) ids.add(p.id);
+      const tc = p.toolCall;
+      if (tc && typeof tc === "object" && !Array.isArray(tc)) {
+        const id = (tc as Record<string, unknown>).toolCallId;
+        if (typeof id === "string" && id) ids.add(id);
+      }
+    }
+  }
+  return ids;
+}
+
+function recordFromActiveTurn(record: JsonObject, activeIds: Set<string>): boolean {
+  if (activeIds.size === 0) return false;
+  const prov = record.provenance;
+  if (!prov || typeof prov !== "object" || Array.isArray(prov)) return false;
+  const p = prov as Record<string, unknown>;
+  for (const key of ["native_record_id", "stable_source_record_id"]) {
+    const val = p[key];
+    if (typeof val === "string" && activeIds.has(val)) return true;
+  }
+  return false;
+}
+
+function buildAhpRecords(
+  state: StreamState,
+  material: Uint8Array,
+):
+  | {
+      records: StreamRecord[];
+      diagnostics: StreamDiagnostic[];
+      groupId: string;
+      chat: ChatState;
+      session: ChatState | null;
+      protocolVersion: string | null;
+    }
+  | StreamUpdate {
+  let root: Record<string, unknown>;
+  try {
+    root = JSON.parse(new TextDecoder().decode(material)) as Record<string, unknown>;
+  } catch {
+    return errorUpdate(state, "invalid_input", MSG_INVALID_AHP_SNAPSHOT);
+  }
+  if (!root || typeof root !== "object" || !root.chat || typeof root.chat !== "object") {
+    return errorUpdate(state, "invalid_input", MSG_INVALID_AHP_SNAPSHOT);
+  }
+  const chat = root.chat as ChatState;
+  const session =
+    root.session && typeof root.session === "object" && !Array.isArray(root.session)
+      ? (root.session as ChatState)
+      : null;
+  const protocolVersion =
+    typeof root.ahpProtocolVersion === "string" ? root.ahpProtocolVersion : null;
+  const activeIds = activeTurnNativeIds(chat.activeTurn);
+
+  let groupHint: string | undefined;
+  if (state.groupLocked && state.cursor.groupId.startsWith("ahp-chat:")) {
+    groupHint = state.cursor.groupId;
+  }
+
+  try {
+    const ir = normalizeToIR({
+      source: "ahp",
+      transcriptBytes: material,
+      sourceContext: {
+        ...(groupHint !== undefined ? { groupId: groupHint } : {}),
+        baseByteOffset: 0n,
+        partial: true,
+      },
+      ...(state.options.normalize !== undefined ? { options: state.options.normalize } : {}),
+    });
+    const hyp = projectHypabolic(ir);
+    const rawRecords = (hyp.records as JsonObject[]) ?? [];
+    let provN = 0;
+    const records: StreamRecord[] = [];
+    for (const r of rawRecords) {
+      const isProv = r.role !== "meta" && recordFromActiveTurn(r, activeIds);
+      if (isProv) {
+        provN += 1;
+        records.push({
+          status: "provisional",
+          record: r,
+          provisionalId: `prov-active-turn-${provN}`,
+        });
+      } else {
+        records.push({ status: "stable", record: r });
+      }
+    }
+    const diagnostics: StreamDiagnostic[] = ir.diagnostics
+      .filter((d) => d.code !== "ahp_active_turn_omitted")
+      .map((d) => ({
+        code: d.code,
+        message: d.message,
+        ...(d.inputLine === undefined ? {} : { inputLine: d.inputLine }),
+        ...(d.recordIndex === undefined ? {} : { recordIndex: d.recordIndex }),
+        ...(d.count === undefined ? {} : { count: d.count }),
+      }));
+    return {
+      records,
+      diagnostics,
+      groupId: ir.groupId,
+      chat,
+      session,
+      protocolVersion,
+    };
+  } catch (err) {
+    if (err instanceof TrajectoryNormalizationError) {
+      if (err.code === "source_group_conflict") {
+        return resetRequired(
+          state,
+          "group-changed",
+          "stream_source_reset",
+          "Source group changed relative to the active stream.",
+        );
+      }
+      return errorUpdate(state, err.code, err.message);
+    }
+    throw err;
+  }
+}
+
+/** LS-06: successive AHP Shape A snapshots with provisional activeTurn. */
+export function applyAhpSnapshot(
+  state: StreamState,
+  material: Uint8Array,
+  sourceRevision: string,
+  cursor?: StreamCursor,
+): { state: StreamState; update: StreamUpdate } {
+  if (state.finished) {
+    return { state, update: errorUpdate(state, "invalid_input", "Stream is already finished.") };
+  }
+  if (state.options.source !== "ahp") {
+    return { state, update: errorUpdate(state, "invalid_input", MSG_AHP_SOURCE_REQUIRED) };
+  }
+  const conflict = cursorConflict(state, cursor);
+  if (conflict) return { state, update: conflict };
+
+  const contentSha = sha256Hex(material);
+  if (
+    state.snapshot !== null &&
+    state.ahpLastSnapshotRevision === sourceRevision &&
+    state.ahpLastContentSha256 === contentSha
+  ) {
+    return { state, update: unchangedUpdate(state) };
+  }
+
+  const built = buildAhpRecords(state, material);
+  if ("kind" in built) return { state, update: built };
+  let { records, diagnostics, groupId, chat, session, protocolVersion } = built;
+  if (state.options.includeProvisional === false) {
+    records = records.filter((r) => r.status !== "provisional");
+  }
+
+  const newState = cloneState(state);
+  newState.groupLocked = true;
+  const generation = newState.generation;
+  const parentRevisionId = newState.snapshot?.revision.revisionId ?? null;
+  const revisionNum = newState.nextRevision;
+  const revId = revisionId(
+    generation,
+    revisionNum,
+    newState.cursor.source,
+    groupId,
+    contentSha,
+    records.map((r) => String(r.record.id)),
+  );
+  const revision: StreamRevision = {
+    revision: revisionNum,
+    revisionId: revId,
+    parentRevisionId,
+    complete: false,
+    generation,
+  };
+  const snapshot: StreamSnapshot = {
+    schemaId: STREAM_SCHEMA_ID,
+    source: newState.cursor.source,
+    groupId,
+    revision,
+    records,
+    diagnostics,
+    complete: false,
+  };
+  const delta = diffSnapshots(newState.snapshot, snapshot, revision);
+  const delivery = state.options.delivery ?? "both";
+  const delivered = applyDelivery(snapshot, delta, delivery);
+
+  const position: StreamPosition =
+    newState.ahpLastServerSeq !== null || newState.cursor.position.kind === "ahp-server-seq"
+      ? {
+          kind: "ahp-server-seq",
+          nextServerSeq: BigInt((newState.ahpLastServerSeq ?? -1) + 1),
+          lastServerSeq: BigInt(newState.ahpLastServerSeq ?? -1),
+        }
+      : {
+          kind: "snapshot-revision",
+          revision: sourceRevision,
+          contentSha256: contentSha,
+        };
+
+  const cursorOut: StreamCursor = {
+    cursorVersion: 1,
+    source: newState.cursor.source,
+    groupId,
+    generation,
+    position,
+    sourceRevision,
+    prefixSha256: contentSha,
+  };
+  const provisionalIds = records
+    .map((r) => r.provisionalId)
+    .filter((x): x is string => typeof x === "string");
+  const priorProv = new Set(
+    (state.snapshot?.records ?? [])
+      .map((r) => r.provisionalId)
+      .filter((x): x is string => typeof x === "string"),
+  );
+  const finalizedIds = [...priorProv].filter((p) => !provisionalIds.includes(p)).sort();
+
+  const update: StreamUpdate = {
+    kind: "updated",
+    revision,
+    cursor: cursorOut,
+    snapshot: delivered.snapshot,
+    delta: delivered.delta,
+    diagnostics,
+    provisional: {
+      include: state.options.includeProvisional !== false,
+      provisionalIds,
+      finalizedIds,
+    },
+    consumed: {
+      completeRecords: BigInt(records.length),
+      bytes: BigInt(material.length),
+      ...(material.length > 0
+        ? {
+            firstSourcePosition: 0n,
+            lastSourcePosition: BigInt(material.length - 1),
+          }
+        : {}),
+    },
+  };
+
+  newState.cursor = cursorOut;
+  newState.snapshot = snapshot;
+  newState.nextRevision = revisionNum + 1n;
+  newState.ahpChatState = chat;
+  newState.ahpSession = session;
+  newState.ahpProtocolVersion = protocolVersion;
+  newState.ahpTargetChannel = groupId.startsWith("ahp-chat:")
+    ? groupId
+    : newState.ahpTargetChannel;
+  newState.ahpLastSnapshotRevision = sourceRevision;
+  newState.ahpLastContentSha256 = contentSha;
+  newState.committedPrefix = new Uint8Array(0);
+  newState.pendingBytes = new Uint8Array(0);
+  newState.lastAppendSegment = null;
+  newState.lastAppendPreOffset = null;
+  return { state: newState, update };
+}
+
+/** LS-07: AHP Shape B action-log apply with serverSeq cursor. */
+export function applyAhpActions(
+  state: StreamState,
+  data: Uint8Array,
+  cursor?: StreamCursor,
+): { state: StreamState; update: StreamUpdate } {
+  if (state.finished) {
+    return { state, update: errorUpdate(state, "invalid_input", "Stream is already finished.") };
+  }
+  if (state.options.source !== "ahp") {
+    return { state, update: errorUpdate(state, "invalid_input", MSG_AHP_SOURCE_REQUIRED) };
+  }
+
+  const actionsSha = sha256Hex(data);
+  const preSeq = state.ahpLastServerSeq;
+
+  if (state.lastAhpActionsSha256 !== null && state.lastAhpActionsSha256 === actionsSha) {
+    if (cursor === undefined) return { state, update: unchangedUpdate(state) };
+    if (cursor.position.kind === "ahp-server-seq") {
+      if (
+        state.lastAhpActionsPreSeq !== null &&
+        Number(cursor.position.lastServerSeq) === state.lastAhpActionsPreSeq
+      ) {
+        return { state, update: unchangedUpdate(state) };
+      }
+      if (
+        state.cursor.position.kind === "ahp-server-seq" &&
+        cursor.position.lastServerSeq === state.cursor.position.lastServerSeq
+      ) {
+        return { state, update: unchangedUpdate(state) };
+      }
+    } else if (cursor.position.kind === "snapshot-revision") {
+      if (state.lastAhpActionsPreSeq === null || state.lastAhpActionsPreSeq === -1) {
+        return { state, update: unchangedUpdate(state) };
+      }
+    }
+  }
+
+  if (cursor !== undefined && cursor.position.kind === "ahp-server-seq") {
+    const conflict = cursorConflict(state, cursor);
+    if (conflict) return { state, update: conflict };
+  }
+
+  let envelopes: Record<string, import("./ahp-reducer.js").Json>[];
+  try {
+    envelopes = parseActionBatch(data);
+  } catch {
+    return { state, update: errorUpdate(state, "invalid_input", MSG_INVALID_AHP_ACTIONS) };
+  }
+  if (envelopes.length === 0) return { state, update: unchangedUpdate(state) };
+
+  let target = state.ahpTargetChannel;
+  if (target === null && state.groupLocked && state.cursor.groupId.startsWith("ahp-chat:")) {
+    target = state.cursor.groupId;
+  }
+
+  const gap = detectSequenceGap(envelopes, state.ahpLastServerSeq, target);
+  if (gap !== null) {
+    return {
+      state,
+      update: resetRequired(state, "sequence-gap", "stream_sequence_gap", MSG_SEQUENCE_GAP),
+    };
+  }
+
+  const chatIn = state.ahpChatState ?? emptyChatState(target);
+  const reduced = reduceAhpActions(chatIn, envelopes, target, state.ahpLastServerSeq);
+  const protocol =
+    state.ahpProtocolVersion ?? "0.7.0";
+  const material = shapeABytes(reduced.chat, protocol, state.ahpSession);
+  const rev =
+    reduced.lastServerSeq !== null ? `seq:${reduced.lastServerSeq}` : state.cursor.sourceRevision ?? "seq:0";
+
+  const snapState = cloneState(state);
+  snapState.ahpChatState = reduced.chat;
+  snapState.ahpLastServerSeq = reduced.lastServerSeq;
+  snapState.ahpLastSnapshotRevision = null;
+  snapState.ahpLastContentSha256 = null;
+
+  const { state: newState, update } = applyAhpSnapshot(snapState, material, rev, undefined);
+  if (update.kind !== "updated" && update.kind !== "unchanged") {
+    return { state, update };
+  }
+
+  const extra = reduced.diagnostics.map((d) => ({ code: d.code, message: d.message }));
+  const seen = new Set<string>();
+  const diagnostics: StreamDiagnostic[] = [];
+  for (const d of [...update.diagnostics, ...extra]) {
+    const key = `${d.code}|${d.message}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    diagnostics.push(d);
+  }
+
+  const lastSeq = reduced.lastServerSeq ?? -1;
+  const seqCursor: StreamCursor = {
+    cursorVersion: 1,
+    source: newState.cursor.source,
+    groupId: newState.cursor.groupId,
+    generation: newState.cursor.generation,
+    position: {
+      kind: "ahp-server-seq",
+      nextServerSeq: BigInt(lastSeq + 1),
+      lastServerSeq: BigInt(lastSeq),
+      nextByteOffset: BigInt(data.length),
+    },
+    sourceRevision: rev,
+    prefixSha256: newState.cursor.prefixSha256,
+  };
+  newState.cursor = seqCursor;
+  newState.ahpLastServerSeq = reduced.lastServerSeq;
+  newState.ahpChatState = reduced.chat;
+  newState.ahpTargetChannel = newState.cursor.groupId.startsWith("ahp-chat:")
+    ? newState.cursor.groupId
+    : target;
+  newState.lastAhpActionsSha256 = actionsSha;
+  newState.lastAhpActionsPreSeq = preSeq ?? -1;
+
+  if (update.kind === "unchanged" && extra.length === 0) {
+    return { state: newState, update: unchangedUpdate(newState) };
+  }
+
+  let outSnapshot = update.snapshot;
+  let outDelta = update.delta;
+  if (outSnapshot && diagnostics !== outSnapshot.diagnostics) {
+    const snap: StreamSnapshot = {
+      ...outSnapshot,
+      diagnostics,
+    };
+    const delta = diffSnapshots(state.snapshot, snap, snap.revision);
+    const delivery = state.options.delivery ?? "both";
+    const delivered = applyDelivery(snap, delta, delivery);
+    outSnapshot = delivered.snapshot;
+    outDelta = delivered.delta;
+    newState.snapshot = snap;
+  }
+
+  return {
+    state: newState,
+    update: {
+      kind: "updated",
+      revision: update.revision,
+      cursor: seqCursor,
+      snapshot: outSnapshot,
+      delta: outDelta,
+      diagnostics,
+      provisional: update.provisional,
+      consumed: {
+        completeRecords: update.consumed.completeRecords,
+        bytes: BigInt(data.length),
+        ...(data.length > 0
+          ? { firstSourcePosition: 0n, lastSourcePosition: BigInt(data.length - 1) }
+          : {}),
+      },
+    },
+  };
+}
+
 export function applyStream(
   state: StreamState,
   input: StreamInput,
@@ -1167,8 +1720,11 @@ export function applyStream(
     }
     return resetStream(state, input.reset);
   }
-  if (input.kind === "ahp-actions" || input.kind === "ahp-snapshot") {
-    return { state, update: errorUpdate(state, "stream_resync_required", MSG_AHP_UNSUPPORTED) };
+  if (input.kind === "ahp-snapshot") {
+    return applyAhpSnapshot(state, input.data ?? new Uint8Array(0), input.sourceRevision ?? "", input.cursor);
+  }
+  if (input.kind === "ahp-actions") {
+    return applyAhpActions(state, input.data ?? new Uint8Array(0), input.cursor);
   }
   if (input.kind === "hermes-export") {
     return { state, update: errorUpdate(state, "stream_resync_required", MSG_HERMES_UNSUPPORTED) };
@@ -1325,12 +1881,29 @@ export function resetStream(
   newState.groupLocked = false;
   newState.lastAppendSegment = null;
   newState.lastAppendPreOffset = null;
+  newState.ahpChatState = null;
+  newState.ahpSession = null;
+  newState.ahpProtocolVersion = null;
+  newState.ahpLastServerSeq = null;
+  newState.ahpTargetChannel = null;
+  newState.ahpLastSnapshotRevision = null;
+  newState.ahpLastContentSha256 = null;
+  newState.lastAhpActionsSha256 = null;
+  newState.lastAhpActionsPreSeq = null;
+  const resetPosition: StreamPosition =
+    state.options.source === "ahp"
+      ? {
+          kind: "snapshot-revision",
+          revision: request.sourceRevision ?? "",
+          contentSha256: null,
+        }
+      : { kind: "byte", nextByteOffset: 0n, pendingByteLength: 0n };
   newState.cursor = {
     cursorVersion: 1,
     source: state.cursor.source,
     groupId,
     generation,
-    position: { kind: "byte", nextByteOffset: 0n, pendingByteLength: 0n },
+    position: resetPosition,
     sourceRevision: request.sourceRevision ?? null,
     prefixSha256: null,
   };

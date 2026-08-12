@@ -371,13 +371,13 @@ test("applyAppend enforces maxPendingBytes and maxLineBytes", () => {
   assert.equal(result.update.error?.code, "stream_buffer_limit");
 });
 
-test("applyStream ahp/hermes kinds return stream_resync_required", () => {
+test("applyStream ahp on non-ahp source is invalid; hermes unsupported", () => {
   const state = createStream({ source: "pi", groupId: "g" });
   for (const kind of ["ahp-actions", "ahp-snapshot"]) {
-    const { update } = applyStream(state, { kind });
+    const { update } = applyStream(state, { kind, data: new Uint8Array(0) });
     assert.equal(update.kind, "error");
-    assert.equal(update.error?.code, "stream_resync_required");
-    assert.match(update.error?.message ?? "", /AHP stream apply/);
+    assert.equal(update.error?.code, "invalid_input");
+    assert.match(update.error?.message ?? "", /source ahp/);
   }
   const hermes = applyStream(state, { kind: "hermes-export" });
   assert.equal(hermes.update.kind, "error");

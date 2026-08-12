@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
 
 namespace Hypabolic.Trajectory.Streaming;
 
@@ -22,14 +22,39 @@ public sealed record StreamOptions
     public NormalizeOptions? Normalize { get; init; }
     public long? MaxPendingBytes { get; init; }
     public long? MaxLineBytes { get; init; }
+    /// <summary>Pinned AHP protocol version for Shape B → Shape A materialization (default 0.7.0).</summary>
+    public string? AhpProtocolVersion { get; init; }
 }
 
-/// <summary>Byte cursor position (cursor_version 1).</summary>
-public sealed record BytePosition
+/// <summary>Discriminated stream cursor position (cursor_version 1).</summary>
+public abstract record StreamPosition
 {
-    public string Kind { get; init; } = "byte";
+    public abstract string Kind { get; }
+}
+
+/// <summary>Byte cursor position for file JSONL sources.</summary>
+public sealed record BytePosition : StreamPosition
+{
+    public override string Kind => "byte";
     public long NextByteOffset { get; init; }
     public long PendingByteLength { get; init; }
+}
+
+/// <summary>AHP serverSeq cursor position (Shape B action-log authority).</summary>
+public sealed record AhpServerSeqPosition : StreamPosition
+{
+    public override string Kind => "ahp-server-seq";
+    public long NextServerSeq { get; init; }
+    public long LastServerSeq { get; init; }
+    public long? NextByteOffset { get; init; }
+}
+
+/// <summary>AHP snapshot-revision cursor position (Shape A snapshot authority).</summary>
+public sealed record SnapshotRevisionPosition : StreamPosition
+{
+    public override string Kind => "snapshot-revision";
+    public required string Revision { get; init; }
+    public string? ContentSha256 { get; init; }
 }
 
 /// <summary>Public serializable stream position checkpoint.</summary>
@@ -39,7 +64,7 @@ public sealed record StreamCursor
     public required string Source { get; init; }
     public required string GroupId { get; init; }
     public ulong Generation { get; init; }
-    public required BytePosition Position { get; init; }
+    public required StreamPosition Position { get; init; }
     public string? SourceRevision { get; init; }
     public string? PrefixSha256 { get; init; }
 }
@@ -185,4 +210,15 @@ public sealed class StreamState
     /// </summary>
     public byte[]? LastAppendSegment { get; set; }
     public long? LastAppendPreOffset { get; set; }
+
+    // ---- AHP stream state (LS-06 / LS-07) ----
+    public JsonObject? AhpChatState { get; set; }
+    public JsonObject? AhpSession { get; set; }
+    public string? AhpProtocolVersion { get; set; }
+    public long? AhpLastServerSeq { get; set; }
+    public string? AhpTargetChannel { get; set; }
+    public string? AhpLastSnapshotRevision { get; set; }
+    public string? AhpLastContentSha256 { get; set; }
+    public string? LastAhpActionsSha256 { get; set; }
+    public long? LastAhpActionsPreSeq { get; set; }
 }

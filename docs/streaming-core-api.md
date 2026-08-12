@@ -1,7 +1,8 @@
-# Streaming core API (LS-03 / LS-04 / LS-05)
+# Streaming core API (LS-03 / LS-04 / LS-05 / LS-06 / LS-07)
 
 Pure library surface for live session streaming. Callers own I/O and scheduling;
-core owns framing, state, snapshot + append apply, stable-id diff, and cursors.
+core owns framing, state, snapshot + append apply, AHP snapshot/action-log
+apply, stable-id diff, and cursors.
 
 Normative contracts: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md),
 product design: [`live-session-streaming.md`](live-session-streaming.md).
@@ -24,6 +25,8 @@ Do **not** advertise `stream-*` capabilities in runtime manifests until LS-12.
 create(options) → StreamState | TrajectoryStream
 apply_snapshot(state, material, source_revision, cursor?) → (state, StreamUpdate)
 apply_append(state, segment, cursor?, source_revision?) → (state, StreamUpdate)
+apply_ahp_snapshot(state, shape_a_bytes, source_revision, cursor?) → (state, StreamUpdate)
+apply_ahp_actions(state, action_batch, cursor?) → (state, StreamUpdate)
 ```
 
 - **`StreamCursor`** — public, serializable committed position (version 1).
@@ -108,10 +111,15 @@ JSON lines, or group/native ids. Operational codes:
 `stream_source_reset`, `stream_cursor_conflict`, `stream_buffer_limit`,
 `stream_sequence_gap`, `stream_resync_required`.
 
+## AHP streaming (LS-06 / LS-07)
+
+See [`ahp-action-streaming.md`](ahp-action-streaming.md) for Shape A successive
+snapshots, Shape B reducer, provisional `activeTurn`, and serverSeq gaps.
+
 ## Not in this slice
 
-- AHP Shape A/B streaming (LS-06 / LS-07)
 - File I/O packages (LS-09)
+- Optional AHP network clients (LS-10)
 - Capability advertising (LS-12)
 
 ## Idiomatic entry points

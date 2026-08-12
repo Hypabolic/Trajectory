@@ -1,13 +1,12 @@
 {
   "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
   "case_version": 1,
-  "id": "streaming/provisional-to-stable",
-  "description": "AHP activeTurn provisional message becomes stable across successive Shape A snapshots.",
+  "id": "streaming/ahp-snapshot-growth",
+  "description": "Successive AHP Shape A snapshots grow from provisional activeTurn to completed turns.",
   "source": "ahp",
   "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000b1",
   "required_capabilities": [
     "stream-core",
-    "stream-apply-snapshot",
     "stream-ahp-snapshot",
     "stream-provisional-records",
     "stream-full-snapshot",
@@ -25,10 +24,10 @@
   },
   "steps": [
     {
-      "id": "snapshot-with-provisional",
+      "id": "snapshot-1",
       "input": {
         "kind": "ahp-snapshot",
-        "material": "step-provisional.json",
+        "material": "step-1.json",
         "source_revision": "ahp-rev-1"
       },
       "expected": {
@@ -39,10 +38,10 @@
       "double_invoke": true
     },
     {
-      "id": "snapshot-stable",
+      "id": "snapshot-2",
       "input": {
         "kind": "ahp-snapshot",
-        "material": "step-stable.json",
+        "material": "step-2.json",
         "source_revision": "ahp-rev-2"
       },
       "expected": {

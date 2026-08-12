@@ -32,6 +32,8 @@ public static class DiagnosticCodes
     public const string AhpReasoningOmitted = "ahp_reasoning_omitted";
     public const string AhpSystemAsAssistant = "ahp_system_as_assistant";
     public const string AhpUnresolvedContentRef = "ahp_unresolved_content_ref";
+    public const string AhpUnknownAction = "ahp_unknown_action";
+    public const string AhpForeignChannel = "ahp_foreign_channel";
     public const string ImageContentDropped = "image_content_dropped";
     public const string BackendToolResultSynthesized = "backend_tool_result_synthesized";
     public const string EncryptedReasoningIncluded = "encrypted_reasoning_included";

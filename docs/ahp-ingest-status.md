@@ -13,8 +13,10 @@ synchronized package version / tag after `v0.1.0` (do not retag or republish
 | Phase | Scope | Status |
 | --- | --- | --- |
 | **0 (AHP-0)** | Spec freeze, export schema, vendor pin, synthetic fixtures | **Shipped in-tree** |
-| **1 (AHP-1)** | Shape A snapshot → IR on .NET / TypeScript / Rust + conformance + CLI | **Shipped in-tree** |
-| **2+** | Shape B action-log reduce, export listing, live host | **Not shipped** |
+| **1 (AHP-1)** | Shape A snapshot → IR on .NET / TypeScript / Rust / Python + conformance + CLI | **Shipped in-tree** |
+| **Stream (LS-06)** | Successive Shape A snapshot streaming + provisional `activeTurn` | **In-tree on tip** (core algorithm; not capability-advertised until LS-12) |
+| **Stream (LS-07)** | Shape B action-log reducer + `apply_ahp_actions` + serverSeq cursor | **In-tree on tip** (core algorithm; not capability-advertised until LS-12) |
+| **2+ remaining** | Export listing, live WebSocket host / optional client packages | **Not shipped** |
 
 Protocol pin: **0.7.0** (`conformance/vendor/ahp/PROTOCOL_VERSION`). Wire source
 name: **`ahp`**. Advertised on this tip in `contracts/compatibility.json` →
@@ -97,17 +99,34 @@ python3 tools/validate_release_metadata.py --repository-root .
 
 ---
 
-## Known gaps vs Shape B / live
+## Streaming (LS-06 / LS-07) — in-tree algorithm
+
+Core pure APIs (no network):
+
+- `apply_ahp_snapshot` — successive Shape A; provisional `activeTurn`;
+  snapshot-revision cursor
+- `apply_ahp_actions` — Shape B reducer; serverSeq cursor; gaps → resync
+
+Docs: [`ahp-action-streaming.md`](ahp-action-streaming.md).  
+Fixtures: `conformance/cases/streaming/ahp-snapshot-*`,
+`conformance/cases/streaming/ahp-action-*`,
+`conformance/cases/streaming/provisional-to-stable`.
+
+Do **not** mark `stream-ahp-snapshot` / `stream-ahp-action-log` implemented in
+runtime capability manifests until LS-12 acceptance (full matrix green on all
+four runtimes). Optional AHP **client** packages remain deferred.
+
+## Known gaps vs listing / live host
 
 | Area | Gap |
 | --- | --- |
-| **Shape B** action log | No `input.jsonl` reduce path; no official reducer parity; no action-log fixtures |
-| **Live host** | No WebSocket / JSON-RPC client in core; no subscribe-and-export package |
+| **Live host client** | No WebSocket / JSON-RPC client in core; no subscribe-and-export package |
 | **Listing** | Phase 3 — no export-directory discoverer; listers are empty stubs |
 | **Multi-chat unpack** | Combined session export helper deferred (one chat per normalize) |
-| **Partial / streaming** | No action-log prefix partial-mode cases |
-| **Extra goldens** | Spec lists `ahp/reasoning`, `ahp/action-log-replay`, `ahp/partial-prefix`, `ahp/list-export` — not landed |
+| **Official reducer parity** | Trajectory ships a **minimal complete** chat reducer subset, not a vendored copy of every AHP client fixture |
+| **Extra batch goldens** | Spec lists `ahp/reasoning`, `ahp/list-export` — not all landed |
 | **Real-world export path** | Synthetic fixtures only; capture path from VS Code / AHPX still doc-only |
+| **Capability advertising** | Stream AHP caps wait for LS-12 |
 
-Phase 1 is intentionally **offline snapshot ingest only**. Do not advertise live
-or action-log support until those phases land.
+Offline Shape A normalize remains the batch path. Streaming is layered on top
+via stream apply APIs; batch goldens stay green.

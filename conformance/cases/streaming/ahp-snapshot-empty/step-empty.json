@@ -1,0 +1,21 @@
+{
+  "ahpProtocolVersion": "0.7.0",
+  "chat": {
+    "resource": "ahp-chat:/00000000-0000-4000-8000-0000000000e0",
+    "title": "Synthetic empty chat",
+    "status": 1,
+    "activity": "",
+    "modifiedAt": "2026-03-15T12:00:00.000Z",
+    "origin": { "kind": "user" },
+    "workingDirectories": ["file:///workspace/demo"],
+    "turns": [],
+    "activeTurn": null
+  },
+  "session": {
+    "provider": "synthetic-provider",
+    "title": "Synthetic empty session",
+    "status": 1,
+    "resource": "ahp-session:/00000000-0000-4000-8000-0000000000s0",
+    "workingDirectories": ["file:///workspace/demo"]
+  }
+}

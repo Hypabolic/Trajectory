@@ -1,17 +1,14 @@
 {
   "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
   "case_version": 1,
-  "id": "streaming/provisional-to-stable",
-  "description": "AHP activeTurn provisional message becomes stable across successive Shape A snapshots.",
+  "id": "streaming/ahp-action-sequence-gap",
+  "description": "AHP action-log serverSeq gap returns reset-required without advancing the cursor.",
   "source": "ahp",
-  "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000b1",
+  "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000c1",
   "required_capabilities": [
     "stream-core",
-    "stream-apply-snapshot",
-    "stream-ahp-snapshot",
-    "stream-provisional-records",
-    "stream-full-snapshot",
-    "stream-record-delta",
+    "stream-ahp-action-log",
+    "stream-reset",
     "stream-cursor-v1"
   ],
   "options": {
@@ -25,38 +22,34 @@
   },
   "steps": [
     {
-      "id": "snapshot-with-provisional",
+      "id": "baseline",
       "input": {
-        "kind": "ahp-snapshot",
-        "material": "step-provisional.json",
-        "source_revision": "ahp-rev-1"
-      },
-      "expected": {
-        "update_kind": "updated",
-        "complete": false,
-        "provisional_ids": ["prov-active-turn-1"]
-      },
-      "double_invoke": true
-    },
-    {
-      "id": "snapshot-stable",
-      "input": {
-        "kind": "ahp-snapshot",
-        "material": "step-stable.json",
-        "source_revision": "ahp-rev-2"
+        "kind": "ahp-actions",
+        "material": "step-baseline.jsonl"
       },
       "expected": {
         "update_kind": "updated",
         "complete": false
       },
       "double_invoke": true
+    },
+    {
+      "id": "gap",
+      "input": {
+        "kind": "ahp-actions",
+        "material": "step-gap.jsonl"
+      },
+      "expected": {
+        "update_kind": "reset-required",
+        "reset_reason": "sequence-gap"
+      },
+      "double_invoke": true
     }
   ],
   "comparison": [
     "stream-json-exact",
-    "stream-delta-apply",
-    "stream-idempotence",
-    "stream-cursor-exact"
+    "stream-cursor-exact",
+    "stream-idempotence"
   ],
   "privacy": {
     "forbidden_substrings": [

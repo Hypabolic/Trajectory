@@ -29,13 +29,13 @@ test("TypeScript runner passes every advertised shared operation deterministical
     ],
     { encoding: "utf8" },
   );
-  // 39 batch + 25 stream cases; AHP stream fixture still unsupported (LS-06).
+  // Batch + stream cases including LS-06/07 AHP snapshot/action-log fixtures.
   assert.deepEqual(JSON.parse(output), {
     protocol_version: "1",
     status: "success",
-    cases: 65,
-    operations: 92,
-    stream_unsupported_skips: 1,
+    cases: 73,
+    operations: 100,
+    stream_unsupported_skips: 0,
   });
 });
 

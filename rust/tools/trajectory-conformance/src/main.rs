@@ -8,16 +8,16 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::DateTime;
 use hypabolic_trajectory::{
-    BytePosition, ListingOptions, NormalizeOptions, NormalizeRequest, SourceContext, StreamCursor,
-    StreamDelivery, StreamOptions, StreamResetRequest, StreamSnapshot, StreamState, StreamUpdate,
-    TrajectoryError,
-    TrajectorySource, TruncationStrategy, apply_append, apply_snapshot, create_stream,
-    finish_stream, list_ahp_trajectories, list_claude_code_trajectories, list_codex_trajectories,
-    list_grok_build_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
-    list_pi_trajectories, normalize_ahp, normalize_claude_code, normalize_codex,
-    normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi, project_canonical,
-    project_hypabolic, project_letta, project_minimal_jsonl, project_openai,
-    project_opentelemetry, reset_stream, update_to_value,
+    AhpServerSeqPosition, BytePosition, ListingOptions, NormalizeOptions, NormalizeRequest,
+    SnapshotRevisionPosition, SourceContext, StreamCursor, StreamDelivery, StreamOptions,
+    StreamPosition, StreamResetRequest, StreamSnapshot, StreamState, StreamUpdate, TrajectoryError,
+    TrajectorySource, TruncationStrategy, apply_ahp_actions, apply_ahp_snapshot, apply_append,
+    apply_snapshot, create_stream, finish_stream, list_ahp_trajectories,
+    list_claude_code_trajectories, list_codex_trajectories, list_grok_build_trajectories,
+    list_hermes_trajectories, list_openclaw_trajectories, list_pi_trajectories, normalize_ahp,
+    normalize_claude_code, normalize_codex, normalize_grok_build, normalize_hermes,
+    normalize_openclaw, normalize_pi, project_canonical, project_hypabolic, project_letta,
+    project_minimal_jsonl, project_openai, project_opentelemetry, reset_stream, update_to_value,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -350,6 +350,9 @@ fn stream_options_from_manifest(manifest: &Manifest) -> Result<StreamOptions, St
                 opts.max_line_bytes = Some(v);
             }
         }
+        if let Some(Value::String(v)) = map.get("ahp_protocol_version") {
+            opts.ahp_protocol_version = Some(v.clone());
+        }
     }
     Ok(opts)
 }
@@ -392,23 +395,54 @@ fn parse_stream_cursor(raw: Option<&Value>) -> Result<Option<StreamCursor>, Stre
         .get("generation")
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    let position = map
+    let position_obj = map
         .get("position")
         .and_then(Value::as_object)
         .ok_or_else(|| StreamEngineError::Protocol("cursor.position required.".into()))?;
-    if position.get("kind").and_then(Value::as_str) != Some("byte") {
-        return Err(StreamEngineError::Protocol(
-            "Stream engine supports byte cursors only in this slice.".into(),
-        ));
-    }
-    let next_byte_offset = position
-        .get("next_byte_offset")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    let pending_byte_length = position
-        .get("pending_byte_length")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
+    let kind = position_obj
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or_else(|| StreamEngineError::Protocol("cursor.position.kind required.".into()))?;
+    let position = match kind {
+        "byte" => StreamPosition::Byte(BytePosition {
+            next_byte_offset: position_obj
+                .get("next_byte_offset")
+                .and_then(Value::as_i64)
+                .unwrap_or(0),
+            pending_byte_length: position_obj
+                .get("pending_byte_length")
+                .and_then(Value::as_i64)
+                .unwrap_or(0),
+        }),
+        "ahp-server-seq" => StreamPosition::AhpServerSeq(AhpServerSeqPosition {
+            next_server_seq: position_obj
+                .get("next_server_seq")
+                .and_then(Value::as_i64)
+                .unwrap_or(0),
+            last_server_seq: position_obj
+                .get("last_server_seq")
+                .and_then(Value::as_i64)
+                .unwrap_or(0),
+            next_byte_offset: position_obj
+                .get("next_byte_offset")
+                .and_then(Value::as_i64),
+        }),
+        "snapshot-revision" => StreamPosition::SnapshotRevision(SnapshotRevisionPosition {
+            revision: position_obj
+                .get("revision")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            content_sha256: position_obj
+                .get("content_sha256")
+                .and_then(|v| v.as_str().map(str::to_string)),
+        }),
+        other => {
+            return Err(StreamEngineError::Protocol(format!(
+                "Unsupported stream cursor position kind '{other}'."
+            )));
+        }
+    };
     let source_revision = map
         .get("source_revision")
         .and_then(|v| v.as_str().map(str::to_string));
@@ -420,10 +454,7 @@ fn parse_stream_cursor(raw: Option<&Value>) -> Result<Option<StreamCursor>, Stre
         source,
         group_id,
         generation,
-        position: BytePosition {
-            next_byte_offset,
-            pending_byte_length,
-        },
+        position,
         source_revision,
         prefix_sha256,
     }))
@@ -489,8 +520,22 @@ fn apply_stream_step(
             };
             reset_stream(state, &request).map_err(StreamEngineError::Fatal)
         }
-        "ahp-actions" | "ahp-snapshot" | "hermes-export" => Err(StreamEngineError::Unsupported(
-            format!("Stream input kind '{kind}' is not implemented in this slice."),
+        "ahp-snapshot" => {
+            let data = load_step_bytes(case_directory, step_input)?;
+            apply_ahp_snapshot(
+                state,
+                &data,
+                source_revision.unwrap_or(""),
+                cursor.as_ref(),
+            )
+            .map_err(StreamEngineError::Fatal)
+        }
+        "ahp-actions" => {
+            let data = load_step_bytes(case_directory, step_input)?;
+            apply_ahp_actions(state, &data, cursor.as_ref()).map_err(StreamEngineError::Fatal)
+        }
+        "hermes-export" => Err(StreamEngineError::Unsupported(
+            "Stream input kind 'hermes-export' is not implemented in this slice.".into(),
         )),
         other => Err(StreamEngineError::Protocol(format!(
             "Unsupported stream input kind '{other}'."
@@ -508,8 +553,10 @@ fn stream_state_equivalent(a: &StreamState, b: &StreamState) -> bool {
         && a.cursor.generation == b.cursor.generation
         && a.cursor.source_revision == b.cursor.source_revision
         && a.cursor.prefix_sha256 == b.cursor.prefix_sha256
-        && a.cursor.position.next_byte_offset == b.cursor.position.next_byte_offset
-        && a.cursor.position.pending_byte_length == b.cursor.position.pending_byte_length
+        && a.cursor.position == b.cursor.position
+        && a.ahp_last_server_seq == b.ahp_last_server_seq
+        && a.ahp_last_snapshot_revision == b.ahp_last_snapshot_revision
+        && a.ahp_last_content_sha256 == b.ahp_last_content_sha256
 }
 
 fn execute_stream_sequence(
@@ -526,7 +573,7 @@ fn execute_stream_sequence(
             .and_then(|i| i.get("kind"))
             .and_then(Value::as_str)
         {
-            if matches!(kind, "ahp-actions" | "ahp-snapshot" | "hermes-export") {
+            if kind == "hermes-export" {
                 return Err(StreamEngineError::Unsupported(format!(
                     "Stream input kind '{kind}' is not implemented in this slice."
                 )));
@@ -668,7 +715,8 @@ fn oracle_snapshots_match(
             if a.complete != o.complete {
                 return false;
             }
-            append_cursor.position.next_byte_offset == oracle_cursor.position.next_byte_offset
+            append_cursor.position.next_byte_offset()
+                == oracle_cursor.position.next_byte_offset()
                 && append_cursor.prefix_sha256 == oracle_cursor.prefix_sha256
         }
         _ => false,

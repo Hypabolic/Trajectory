@@ -322,7 +322,7 @@ internal static class ConformanceProgram
             }
 
             var kind = kindEl.GetString();
-            if (kind is "ahp-actions" or "ahp-snapshot" or "hermes-export")
+            if (kind is "hermes-export")
             {
                 throw new StreamEngineUnsupportedException(
                     $"Stream input kind '{kind}' is not implemented in this slice.");
@@ -347,8 +347,9 @@ internal static class ConformanceProgram
             {
                 StreamState after;
                 StreamUpdate update2;
-                // Append true-replay: re-supply with the cursor that governed the first apply.
-                if (RequiredString(stepInput, "kind") == "append-bytes" &&
+                // True-replay: re-supply with the cursor that governed the first apply.
+                var stepKind = RequiredString(stepInput, "kind");
+                if (stepKind == "append-bytes" &&
                     update.Kind is "updated" or "unchanged")
                 {
                     var replayCursor = ParseStreamCursor(stepInput) ?? preCursor;
@@ -362,6 +363,8 @@ internal static class ConformanceProgram
                 }
                 else
                 {
+                    // AHP steps: re-apply as written (fingerprint idempotence when
+                    // the step omits a cursor). Append alone uses pre-apply cursor.
                     (after, update2) = await ApplyStreamStepAsync(state, caseDirectory, stepInput);
                 }
 
@@ -485,7 +488,7 @@ internal static class ConformanceProgram
             return false;
         }
 
-        return appendCursor.Position.NextByteOffset == oracleCursor.Position.NextByteOffset &&
+        return PositionsEqual(appendCursor.Position, oracleCursor.Position) &&
             appendCursor.PrefixSha256 == oracleCursor.PrefixSha256;
     }
 
@@ -624,6 +627,12 @@ internal static class ConformanceProgram
             opts = opts with { MaxLineBytes = mlb.GetInt64() };
         }
 
+        if (options.TryGetProperty("ahp_protocol_version", out var apv) &&
+            apv.ValueKind == JsonValueKind.String)
+        {
+            opts = opts with { AhpProtocolVersion = apv.GetString() };
+        }
+
         return opts;
     }
 
@@ -656,19 +665,10 @@ internal static class ConformanceProgram
         }
 
         var position = cursor.GetProperty("position");
-        if (OptionalString(position, "kind") != "byte")
+        var kind = OptionalString(position, "kind") ?? "byte";
+        StreamPosition streamPosition = kind switch
         {
-            throw new ProtocolException("Stream engine supports byte cursors only in this slice.");
-        }
-
-        return new StreamCursor
-        {
-            Source = RequiredString(cursor, "source"),
-            GroupId = RequiredString(cursor, "group_id"),
-            Generation = cursor.TryGetProperty("generation", out var gen)
-                ? gen.GetUInt64()
-                : 0,
-            Position = new BytePosition
+            "byte" => new BytePosition
             {
                 NextByteOffset = position.TryGetProperty("next_byte_offset", out var nbo)
                     ? nbo.GetInt64()
@@ -677,6 +677,34 @@ internal static class ConformanceProgram
                     ? pbl.GetInt64()
                     : 0,
             },
+            "ahp-server-seq" => new AhpServerSeqPosition
+            {
+                NextServerSeq = position.TryGetProperty("next_server_seq", out var nss)
+                    ? nss.GetInt64()
+                    : 0,
+                LastServerSeq = position.TryGetProperty("last_server_seq", out var lss)
+                    ? lss.GetInt64()
+                    : 0,
+                NextByteOffset = position.TryGetProperty("next_byte_offset", out var abo)
+                    ? abo.GetInt64()
+                    : null,
+            },
+            "snapshot-revision" => new SnapshotRevisionPosition
+            {
+                Revision = OptionalString(position, "revision") ?? "",
+                ContentSha256 = OptionalString(position, "content_sha256"),
+            },
+            _ => throw new ProtocolException($"Unsupported stream cursor position kind '{kind}'."),
+        };
+
+        return new StreamCursor
+        {
+            Source = RequiredString(cursor, "source"),
+            GroupId = RequiredString(cursor, "group_id"),
+            Generation = cursor.TryGetProperty("generation", out var gen)
+                ? gen.GetUInt64()
+                : 0,
+            Position = streamPosition,
             SourceRevision = OptionalString(cursor, "source_revision"),
             PrefixSha256 = OptionalString(cursor, "prefix_sha256"),
         };
@@ -702,9 +730,18 @@ internal static class ConformanceProgram
                 await LoadStepBytesAsync(caseDirectory, stepInput),
                 sourceRevision ?? "",
                 cursor),
+            "ahp-snapshot" => TrajectoryStream.ApplyAhpSnapshot(
+                state,
+                await LoadStepBytesAsync(caseDirectory, stepInput),
+                sourceRevision ?? "",
+                cursor),
+            "ahp-actions" => TrajectoryStream.ApplyAhpActions(
+                state,
+                await LoadStepBytesAsync(caseDirectory, stepInput),
+                cursor),
             "finish" => TrajectoryStream.Finish(state),
             "reset" => await ApplyResetStepAsync(state, caseDirectory, stepInput),
-            "ahp-actions" or "ahp-snapshot" or "hermes-export" =>
+            "hermes-export" =>
                 throw new StreamEngineUnsupportedException(
                     $"Stream input kind '{kind}' is not implemented in this slice."),
             _ => throw new ProtocolException($"Unsupported stream input kind '{kind}'."),
@@ -750,8 +787,26 @@ internal static class ConformanceProgram
         a.Cursor.Generation == b.Cursor.Generation &&
         a.Cursor.SourceRevision == b.Cursor.SourceRevision &&
         a.Cursor.PrefixSha256 == b.Cursor.PrefixSha256 &&
-        a.Cursor.Position.NextByteOffset == b.Cursor.Position.NextByteOffset &&
-        a.Cursor.Position.PendingByteLength == b.Cursor.Position.PendingByteLength;
+        PositionsEqual(a.Cursor.Position, b.Cursor.Position) &&
+        a.AhpLastServerSeq == b.AhpLastServerSeq &&
+        a.AhpLastSnapshotRevision == b.AhpLastSnapshotRevision &&
+        a.AhpLastContentSha256 == b.AhpLastContentSha256;
+
+    private static bool PositionsEqual(StreamPosition a, StreamPosition b) =>
+        (a, b) switch
+        {
+            (BytePosition ba, BytePosition bb) =>
+                ba.NextByteOffset == bb.NextByteOffset &&
+                ba.PendingByteLength == bb.PendingByteLength,
+            (AhpServerSeqPosition aa, AhpServerSeqPosition ab) =>
+                aa.NextServerSeq == ab.NextServerSeq &&
+                aa.LastServerSeq == ab.LastServerSeq &&
+                aa.NextByteOffset == ab.NextByteOffset,
+            (SnapshotRevisionPosition sa, SnapshotRevisionPosition sb) =>
+                sa.Revision == sb.Revision &&
+                sa.ContentSha256 == sb.ContentSha256,
+            _ => false,
+        };
 
     private static SourceContext ReadSourceContext(JsonElement element) => new()
     {

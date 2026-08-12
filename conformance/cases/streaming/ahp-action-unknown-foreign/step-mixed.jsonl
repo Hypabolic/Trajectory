@@ -1,0 +1,3 @@
+{"channel":"ahp-chat:/00000000-0000-4000-8000-0000000000c1","serverSeq":2,"origin":{"kind":"server"},"action":{"type":"chat/notARealAction","payload":"ignored"}}
+{"channel":"ahp-session:/00000000-0000-4000-8000-0000000000s1","serverSeq":100,"origin":{"kind":"server"},"action":{"type":"session/ready"}}
+{"channel":"ahp-chat:/00000000-0000-4000-8000-0000000000other","serverSeq":3,"origin":{"kind":"server"},"action":{"type":"chat/activityChanged","activity":"foreign"}}

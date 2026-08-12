@@ -1,6 +1,6 @@
 # Live session streaming — product and technical specification
 
-Status: **locked design**; wire contracts landed (LS-01); core stream state + snapshot + append (LS-03–LS-05) landed; AHP/I/O/capability advertising remain later slices  
+Status: **locked design**; wire contracts landed (LS-01); core stream state + snapshot + append (LS-03–LS-05) landed; AHP snapshot + action-log (LS-06–LS-07) in-tree on tip; I/O/capability advertising remain later slices  
 Contract family: `trajectory-stream-v1` under `contracts/`  
 Scope: full feature across all four runtimes — not an MVP cut  
 

@@ -1,0 +1,2 @@
+{"channel":"ahp-chat:/00000000-0000-4000-8000-0000000000c1","serverSeq":1,"origin":{"kind":"server"},"action":{"type":"chat/turnStarted","turnId":"turn-gap-1","startedAt":"2026-03-15T12:00:00.000Z","message":{"text":"Hello","origin":{"kind":"user"}}}}
+{"channel":"ahp-chat:/00000000-0000-4000-8000-0000000000c1","serverSeq":2,"origin":{"kind":"server"},"action":{"type":"chat/turnComplete","turnId":"turn-gap-1","duration":10}}

@@ -1,7 +1,10 @@
 # Source: Agent Host Protocol (`ahp`)
 
 Contract version: AHP source decode `0.1.0` (Phase 1 — Shape A snapshot decode
-on .NET, TypeScript, and Rust).
+on all four runtimes). Streaming Shape A successive snapshots + Shape B
+action-log reduce are specified under [streaming.md](../streaming.md) and
+implemented as core stream apply APIs (LS-06 / LS-07); capability advertising
+waits for LS-12.
 
 Wire source name: **`ahp`** (no aliases on the wire).
 
@@ -90,13 +93,17 @@ Preferred offline export. Conformance cases under
 
 `native_container` for conformance: `ahp-export-snapshot-v1`.
 
-### 3.2 Shape B — Action log (deferred)
+### 3.2 Shape B — Action log (stream path: LS-07)
 
 One JSON object per line: `ActionEnvelope` or bare action with optional
-envelope fields, ordered by `serverSeq` ascending. Adapter reduces the
-target chat channel into ChatState, then decodes as Shape A.
+envelope fields, ordered by `serverSeq` ascending. The **stream** core reduces
+the target chat channel into ChatState (minimal complete reducer), then decodes
+as Shape A. Batch one-shot normalize may still accept only Shape A.
 
-Not required for Phase 0–1. Spec hooks only; no fixtures yet.
+Streaming details: serverSeq cursor, gaps → resync, unknown actions /
+foreign channels — see [streaming.md](../streaming.md) and
+[`docs/ahp-action-streaming.md`](../../../docs/ahp-action-streaming.md).
+Conformance fixtures under `conformance/cases/streaming/ahp-action-*`.
 
 ### 3.3 Shape C — Combined multi-chat export (deferred)
 

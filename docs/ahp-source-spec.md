@@ -1,8 +1,9 @@
 # Spec: Agent Host Protocol (AHP) support in Trajectory
 
-Status: **Phase 0–1 complete** (AHP-0 contracts + AHP-1 Shape A snapshot decode
-on .NET, TypeScript, and Rust). See [ahp-ingest-status.md](ahp-ingest-status.md)
-for what shipped and how to re-run tests.  
+Status: **Phase 0–1 complete** (offline Shape A); **LS-06/LS-07 streaming
+in-tree** (Shape A successive snapshots + Shape B action-log reducer in core).
+See [ahp-ingest-status.md](ahp-ingest-status.md) and
+[ahp-action-streaming.md](ahp-action-streaming.md).  
 Target product slice: post-v1 source family  
 AHP reference: [microsoft.github.io/agent-host-protocol](https://microsoft.github.io/agent-host-protocol/)  
 AHP schemas: [github.com/microsoft/agent-host-protocol/schema](https://github.com/microsoft/agent-host-protocol/tree/main/schema)  
@@ -10,11 +11,12 @@ Pinned protocol family: **0.7.x** (vendor pin `conformance/vendor/ahp/PROTOCOL_V
 
 **Phase 0 (AHP-0):** `contracts/spec/sources/ahp.md`, export schema, vendor pin,
 synthetic fixtures.  
-**Phase 1 (AHP-1):** Shape A snapshot decoder → IR on all three runtimes,
+**Phase 1 (AHP-1):** Shape A snapshot decoder → IR on all four runtimes,
 shared conformance goldens, wire source `ahp` in runners/CLIs, and
 `compatibility.json` → `implemented.sources`.  
-**Not yet (Phase 2+):** action-log reduce (Shape B), live WebSocket host, export
-listing.
+**Streaming (LS-06 / LS-07):** `apply_ahp_snapshot` + core Shape B reducer /
+`apply_ahp_actions` (no network). Capability advertising deferred to LS-12.  
+**Not yet:** live WebSocket host / optional client packages, export listing.
 
 Related Trajectory docs:
 

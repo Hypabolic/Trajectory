@@ -105,11 +105,16 @@ from hypabolic_trajectory.api import (
 )
 from hypabolic_trajectory.engine import TrajectoryEngine
 from hypabolic_trajectory.streaming import (
+    AhpServerSeqPosition,
+    BytePosition,
+    SnapshotRevisionPosition,
     StreamCursor,
     StreamOptions,
     StreamState,
     StreamUpdate,
     TrajectoryStream,
+    apply_ahp_actions,
+    apply_ahp_snapshot,
     apply_append,
     apply_delta_to_snapshot,
     apply_snapshot,
@@ -203,12 +208,17 @@ __all__ = [
     "ModelInvocation",
     "ModelTokenUsage",
     "WorkflowInvocation",
-    # Streaming (LS-03 / LS-04)
+    # Streaming (LS-03 / LS-04 / LS-06 / LS-07)
+    "AhpServerSeqPosition",
+    "BytePosition",
+    "SnapshotRevisionPosition",
     "StreamCursor",
     "StreamOptions",
     "StreamState",
     "StreamUpdate",
     "TrajectoryStream",
+    "apply_ahp_actions",
+    "apply_ahp_snapshot",
     "apply_append",
     "apply_delta_to_snapshot",
     "apply_snapshot",

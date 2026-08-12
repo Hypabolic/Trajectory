@@ -5,6 +5,17 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **LS-06 / LS-07 AHP stream snapshot and action-log (core, all four runtimes):**
+  pure `apply_ahp_snapshot` (successive Shape A, provisional `activeTurn`,
+  snapshot-revision cursor) and `apply_ahp_actions` (Shape B minimal complete
+  reducer, serverSeq cursor, gaps → `reset-required` / `sequence-gap`, unknown
+  actions / foreign channels as content-safe diagnostics). Shared fixtures under
+  `conformance/cases/streaming/ahp-snapshot-*`, `ahp-action-*`, and
+  `provisional-to-stable`. Docs: `docs/ahp-action-streaming.md` plus updates to
+  `ahp-source-spec`, `ahp-ingest-status`, `streaming-core-api`. Protocol pin
+  remains vendor `0.7.0`. No WebSocket/JSON-RPC client in core. **Do not**
+  advertise `stream-ahp-snapshot` / `stream-ahp-action-log` until LS-12.
+
 - **LS-02 stream conformance protocol & fixture skeleton:** protocol ops
   (`stream-sequence` / `stream-replay` plus reserved per-step apply ops) on
   request-v1; `conformance/verify.py` branches batch vs multi-step stream cases
@@ -69,10 +80,10 @@ retag or republish `0.1.0`.
   identity, cancel-safe tool mapping (including `toolCall.error.message`), and
   shared conformance cases `ahp/tool-calls`, `ahp/multi-turn`, and
   `ahp/cancelled-turn`.
-- **Deferred (not shipped):** AHP Shape B action-log reduce, export-directory
-  listing (Phase 3 empty stubs only), multi-chat unpack, and live host /
-  WebSocket clients. See `docs/ahp-ingest-status.md` and
-  `docs/ahp-source-spec.md`.
+- **Deferred at 0.1.1 (later tip work):** AHP Shape B action-log reduce (now
+  LS-07 core on tip), export-directory listing (Phase 3 empty stubs only),
+  multi-chat unpack, and live host / WebSocket clients. See
+  `docs/ahp-ingest-status.md` and `docs/ahp-source-spec.md`.
 
 ## 0.1.0 — 2026-07-01
 

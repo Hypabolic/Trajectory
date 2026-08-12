@@ -382,3 +382,14 @@ class StreamState:
     # True replay requires re-supply with that pre-apply cursor (not content alone).
     last_append_segment: bytes | None = None
     last_append_pre_offset: int | None = None
+    # AHP stream state (LS-06 / LS-07). Not a wire format.
+    ahp_chat_state: dict[str, Any] | None = None
+    ahp_session: dict[str, Any] | None = None
+    ahp_protocol_version: str | None = None
+    ahp_last_server_seq: int | None = None
+    ahp_target_channel: str | None = None
+    ahp_last_snapshot_revision: str | None = None
+    ahp_last_content_sha256: str | None = None
+    # Last accepted action batch fingerprint for idempotent replay.
+    last_ahp_actions_sha256: str | None = None
+    last_ahp_actions_pre_seq: int | None = None
