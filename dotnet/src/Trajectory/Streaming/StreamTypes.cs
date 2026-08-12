@@ -1,0 +1,149 @@
+using System.Text.Json.Serialization;
+
+namespace Hypabolic.Trajectory.Streaming;
+
+/// <summary>Delivery preference for stream updates. Default is both snapshot and delta.</summary>
+public enum StreamDelivery
+{
+    Both = 0,
+    Snapshot = 1,
+    Delta = 2,
+}
+
+/// <summary>Public stream options (pure core; no I/O).</summary>
+public sealed record StreamOptions
+{
+    public required TrajectorySource Source { get; init; }
+    public string? GroupId { get; init; }
+    public StreamDelivery Delivery { get; init; } = StreamDelivery.Both;
+    public bool IncludeProvisional { get; init; } = true;
+    public bool RequireCompleteLines { get; init; } = true;
+    public bool FinalizeOnClose { get; init; } = true;
+    public NormalizeOptions? Normalize { get; init; }
+    public long? MaxPendingBytes { get; init; }
+    public long? MaxLineBytes { get; init; }
+}
+
+/// <summary>Byte cursor position (cursor_version 1).</summary>
+public sealed record BytePosition
+{
+    public string Kind { get; init; } = "byte";
+    public long NextByteOffset { get; init; }
+    public long PendingByteLength { get; init; }
+}
+
+/// <summary>Public serializable stream position checkpoint.</summary>
+public sealed record StreamCursor
+{
+    public int CursorVersion { get; init; } = 1;
+    public required string Source { get; init; }
+    public required string GroupId { get; init; }
+    public ulong Generation { get; init; }
+    public required BytePosition Position { get; init; }
+    public string? SourceRevision { get; init; }
+    public string? PrefixSha256 { get; init; }
+}
+
+/// <summary>Stream-local revision metadata.</summary>
+public sealed record StreamRevision
+{
+    public ulong Revision { get; init; }
+    public required string RevisionId { get; init; }
+    public string? ParentRevisionId { get; init; }
+    public bool Complete { get; init; }
+    public ulong Generation { get; init; }
+}
+
+/// <summary>Content-safe stream diagnostic (snake_case wire fields).</summary>
+public sealed record StreamDiagnostic
+{
+    public required string Code { get; init; }
+    public required string Message { get; init; }
+    public int? InputLine { get; init; }
+    public int? RecordIndex { get; init; }
+    public int? Count { get; init; }
+}
+
+/// <summary>Stream record with lifecycle status.</summary>
+public sealed record StreamRecord
+{
+    public required string Status { get; init; }
+    public required Dictionary<string, object?> Record { get; init; }
+    public string? ProvisionalId { get; init; }
+    public string? ReplacesProvisionalId { get; init; }
+    public string? FinalizesProvisionalId { get; init; }
+}
+
+/// <summary>Full stream snapshot.</summary>
+public sealed record StreamSnapshot
+{
+    public string SchemaId { get; init; } = "trajectory-stream-v1";
+    public required string Source { get; init; }
+    public required string GroupId { get; init; }
+    public required StreamRevision Revision { get; init; }
+    public required IReadOnlyList<StreamRecord> Records { get; init; }
+    public required IReadOnlyList<StreamDiagnostic> Diagnostics { get; init; }
+    public bool Complete { get; init; }
+}
+
+/// <summary>One delta operation.</summary>
+public sealed record StreamDeltaOperation
+{
+    public required string Op { get; init; }
+    public Dictionary<string, object?> Payload { get; init; } = new(StringComparer.Ordinal);
+}
+
+/// <summary>Ordered stream delta.</summary>
+public sealed record StreamDelta
+{
+    public string SchemaId { get; init; } = "trajectory-stream-v1";
+    public string? BaseRevisionId { get; init; }
+    public required StreamRevision Revision { get; init; }
+    public required IReadOnlyList<StreamDeltaOperation> Operations { get; init; }
+}
+
+/// <summary>Reset metadata on reset-required results.</summary>
+public sealed record StreamReset
+{
+    public required string Reason { get; init; }
+    public StreamCursor? PriorCursor { get; init; }
+    public bool RequiresSnapshot { get; init; }
+    public IReadOnlyList<string> DroppedRecordIds { get; init; } = Array.Empty<string>();
+}
+
+/// <summary>Caller reset request.</summary>
+public sealed record StreamResetRequest
+{
+    public required string Reason { get; init; }
+    public ulong? Generation { get; init; }
+    public string? SourceRevision { get; init; }
+    public StreamCursor? PriorCursor { get; init; }
+    public ReadOnlyMemory<byte>? Material { get; init; }
+}
+
+/// <summary>Stream update envelope.</summary>
+public sealed record StreamUpdate
+{
+    public required string Kind { get; init; }
+    public required StreamRevision Revision { get; init; }
+    public required StreamCursor Cursor { get; init; }
+    public StreamSnapshot? Snapshot { get; init; }
+    public StreamDelta? Delta { get; init; }
+    public IReadOnlyList<StreamDiagnostic> Diagnostics { get; init; } = Array.Empty<StreamDiagnostic>();
+    public StreamReset? Reset { get; init; }
+    public (string Code, string Message)? Error { get; init; }
+}
+
+/// <summary>Runtime-local stream state (not a wire format).</summary>
+public sealed class StreamState
+{
+    public required StreamOptions Options { get; init; }
+    public StreamCursor Cursor { get; set; } = null!;
+    public byte[] PendingBytes { get; set; } = Array.Empty<byte>();
+    public byte[] CommittedPrefix { get; set; } = Array.Empty<byte>();
+    public StreamSnapshot? Snapshot { get; set; }
+    public ulong Generation { get; set; }
+    public ulong NextRevision { get; set; }
+    public bool Finished { get; set; }
+    public bool GroupLocked { get; set; }
+}

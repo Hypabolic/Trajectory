@@ -131,6 +131,30 @@ export {
   writeSerializedProjection,
 };
 
+export {
+  STREAM_SCHEMA_ID,
+  TrajectoryStream,
+  applyDeltaToSnapshot,
+  applySnapshot,
+  applyStream,
+  createStream,
+  cursorToDict,
+  deltaToDict,
+  diagnosticKey,
+  diffSnapshots,
+  matchKey,
+  snapshotToDict,
+  splitCompleteLines,
+  type BytePosition,
+  type StreamCursor,
+  type StreamDelta,
+  type StreamOptions,
+  type StreamRecord,
+  type StreamSnapshot,
+  type StreamState,
+  type StreamUpdate,
+} from "./streaming.js";
+
 export class TrajectoryEngine {
   readonly #outputs = new Map<string, OutputProjector>();
 
