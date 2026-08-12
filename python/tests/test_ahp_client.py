@@ -13,6 +13,7 @@ from hypabolic_trajectory.ahp_client import (
     FakeAhpHostScript,
     InMemoryAhpTransportPair,
 )
+from hypabolic_trajectory.ahp_client.protocol import encode_notification
 from hypabolic_trajectory.streaming.types import AhpServerSeqPosition
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -215,6 +216,87 @@ def test_backpressure() -> None:
             }
         )
     assert any(e.kind == "backpressure" for e in events)
+    client.cancel()
+
+
+def test_resume_after_backpressure_flushes_buffer() -> None:
+    pair = InMemoryAhpTransportPair()
+    host = FakeAhpHost(
+        transport=pair.host,
+        script=FakeAhpHostScript(initial_snapshot=_shape_a_empty()),
+        chat_channel=CHAT,
+    )
+    events: list[AhpClientEvent] = []
+    client = AhpStreamClient(
+        transport=pair.client,
+        options=AhpClientOptions(chat_channel=CHAT, max_buffered_actions=8),
+        on_event=events.append,
+    )
+    client.start()
+    client.set_paused_for_test(True)
+    for i in range(3):
+        host.push_action(
+            {
+                "channel": CHAT,
+                "serverSeq": 1 + i,
+                "origin": {"kind": "server"},
+                "action": {"type": "chat/activityChanged", "activity": "thinking"},
+            }
+        )
+    updates_before = sum(1 for e in events if e.kind == "stream-update")
+    client.resume()
+    updates_after = sum(1 for e in events if e.kind == "stream-update")
+    assert updates_after > updates_before
+    host.push_action(
+        {
+            "channel": CHAT,
+            "serverSeq": 4,
+            "origin": {"kind": "server"},
+            "action": {"type": "chat/activityChanged", "activity": "idle"},
+        }
+    )
+    assert isinstance(client.cursor.position, AhpServerSeqPosition)
+    assert client.cursor.position.last_server_seq >= 3
+    client.cancel()
+
+
+def test_foreign_channel_action_notification_ignored() -> None:
+    pair = InMemoryAhpTransportPair()
+    host = FakeAhpHost(
+        transport=pair.host,
+        script=FakeAhpHostScript(initial_snapshot=_shape_a_empty()),
+        chat_channel=CHAT,
+    )
+    events: list[AhpClientEvent] = []
+    client = AhpStreamClient(
+        transport=pair.client,
+        options=AhpClientOptions(chat_channel=CHAT),
+        on_event=events.append,
+    )
+    client.start()
+    updates_before = sum(1 for e in events if e.kind == "stream-update")
+    gen_before = client.cursor.generation
+    foreign = "ahp-chat:/ffffffff-ffff-4fff-8fff-ffffffffffff"
+    host.transport.send(
+        encode_notification(
+            "action",
+            {
+                "channel": foreign,
+                "envelope": {
+                    "channel": foreign,
+                    "serverSeq": 99,
+                    "origin": {"kind": "server"},
+                    "action": {
+                        "type": "chat/activityChanged",
+                        "activity": "foreign",
+                    },
+                },
+            },
+        )
+    )
+    updates_after = sum(1 for e in events if e.kind == "stream-update")
+    assert updates_after == updates_before
+    assert client.cursor.generation == gen_before
     client.cancel()
 
 

@@ -280,13 +280,25 @@ class AhpStreamClient:
             self._begin_auth(challenge=params if params else None)
             return
         if method in {"action", "channel/action"}:
+            if not self._notification_channel_ok(params):
+                return
             envelope = params.get("envelope") if "envelope" in params else params
             if isinstance(envelope, dict) and "action" in envelope:
                 self._buffer_action(envelope)
             return
         if method in {"snapshot", "channel/snapshot"}:
+            if not self._notification_channel_ok(params):
+                return
             self._apply_host_snapshot(params)
             return
+
+    def _notification_channel_ok(self, params: dict[str, Any]) -> bool:
+        """Ignore action/snapshot noise for a channel we did not subscribe to."""
+        channel = params.get("channel")
+        if not isinstance(channel, str):
+            # Protocol requires channel on notifications; treat missing as foreign noise.
+            return False
+        return channel == self.options.chat_channel
 
     def _begin_auth(self, challenge: dict[str, Any] | None) -> None:
         self.on_event(

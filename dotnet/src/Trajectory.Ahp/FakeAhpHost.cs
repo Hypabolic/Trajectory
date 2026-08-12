@@ -60,6 +60,9 @@ public sealed class FakeAhpHost
             ["snapshot"] = snapshot.DeepClone(),
         }));
 
+    /// <summary>Push a raw JSON-RPC frame (CI only; foreign-channel filter tests).</summary>
+    public void PushRaw(string raw) => _transport.Send(raw);
+
     private void OnFrame(string raw)
     {
         if (_closed) return;

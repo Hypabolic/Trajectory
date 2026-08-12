@@ -279,6 +279,7 @@ export class AhpStreamClient {
       return;
     }
     if (method === "action" || method === "channel/action") {
+      if (!this.notificationChannelOk(params)) return;
       const envelope =
         "envelope" in params &&
         params.envelope !== null &&
@@ -290,8 +291,19 @@ export class AhpStreamClient {
       return;
     }
     if (method === "snapshot" || method === "channel/snapshot") {
+      if (!this.notificationChannelOk(params)) return;
       this.applyHostSnapshot(params);
     }
+  }
+
+  /** Ignore action/snapshot noise for a channel we did not subscribe to. */
+  private notificationChannelOk(params: JsonObject): boolean {
+    const channel = params.channel;
+    if (typeof channel !== "string") {
+      // Protocol requires channel on notifications; treat missing as foreign noise.
+      return false;
+    }
+    return channel === this.options.chatChannel;
   }
 
   private beginAuth(challenge: JsonObject | null): void {

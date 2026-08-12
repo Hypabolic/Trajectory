@@ -255,13 +255,29 @@ public sealed class AhpStreamClient
         }
         if (method is "action" or "channel/action")
         {
+            if (!NotificationChannelOk(parameters))
+                return;
             var envelope = parameters["envelope"] as JsonObject ?? parameters;
             if (envelope.ContainsKey("action"))
                 BufferAction(envelope);
             return;
         }
         if (method is "snapshot" or "channel/snapshot")
+        {
+            if (!NotificationChannelOk(parameters))
+                return;
             ApplyHostSnapshot(parameters);
+        }
+    }
+
+    /// <summary>Ignore action/snapshot noise for a channel we did not subscribe to.</summary>
+    private bool NotificationChannelOk(JsonObject parameters)
+    {
+        var channel = parameters["channel"]?.GetValue<string>();
+        // Protocol requires channel on notifications; treat missing as foreign noise.
+        if (channel is null)
+            return false;
+        return channel == _options.ChatChannel;
     }
 
     private void BeginAuth(JsonObject? challenge)

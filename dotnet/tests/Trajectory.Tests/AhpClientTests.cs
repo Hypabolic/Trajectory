@@ -194,6 +194,92 @@ public sealed class AhpClientTests
     }
 
     [Fact]
+    public void Resume_after_backpressure_flushes_buffer()
+    {
+        var pair = new InMemoryAhpTransportPair();
+        var host = new FakeAhpHost(
+            pair.Host,
+            new FakeAhpHostScript { InitialSnapshot = EmptySnapshot() },
+            Chat);
+        var events = new List<AhpClientEvent>();
+        var client = new AhpStreamClient(
+            pair.Client,
+            new AhpClientOptions { ChatChannel = Chat, MaxBufferedActions = 8 },
+            events.Add);
+        client.Start();
+        client.SetPausedForTest(true);
+        for (var i = 0; i < 3; i++)
+        {
+            host.PushAction(new JsonObject
+            {
+                ["channel"] = Chat,
+                ["serverSeq"] = 1 + i,
+                ["origin"] = new JsonObject { ["kind"] = "server" },
+                ["action"] = new JsonObject
+                {
+                    ["type"] = "chat/activityChanged",
+                    ["activity"] = "thinking",
+                },
+            });
+        }
+        var updatesBefore = events.Count(e => e.Kind == AhpClientEventKind.StreamUpdate);
+        client.Resume();
+        var updatesAfter = events.Count(e => e.Kind == AhpClientEventKind.StreamUpdate);
+        Assert.True(updatesAfter > updatesBefore, "resume must flush buffered actions into core");
+        host.PushAction(new JsonObject
+        {
+            ["channel"] = Chat,
+            ["serverSeq"] = 4,
+            ["origin"] = new JsonObject { ["kind"] = "server" },
+            ["action"] = new JsonObject
+            {
+                ["type"] = "chat/activityChanged",
+                ["activity"] = "idle",
+            },
+        });
+        Assert.IsType<AhpServerSeqPosition>(client.Cursor.Position);
+        Assert.True(((AhpServerSeqPosition)client.Cursor.Position).LastServerSeq >= 3);
+        client.Cancel();
+    }
+
+    [Fact]
+    public void Foreign_channel_action_notification_ignored()
+    {
+        var pair = new InMemoryAhpTransportPair();
+        var host = new FakeAhpHost(
+            pair.Host,
+            new FakeAhpHostScript { InitialSnapshot = EmptySnapshot() },
+            Chat);
+        var events = new List<AhpClientEvent>();
+        var client = new AhpStreamClient(
+            pair.Client,
+            new AhpClientOptions { ChatChannel = Chat },
+            events.Add);
+        client.Start();
+        var updatesBefore = events.Count(e => e.Kind == AhpClientEventKind.StreamUpdate);
+        var genBefore = client.Cursor.Generation;
+        host.PushRaw(AhpProtocol.EncodeNotification("action", new JsonObject
+        {
+            ["channel"] = "ahp-chat:/ffffffff-ffff-4fff-8fff-ffffffffffff",
+            ["envelope"] = new JsonObject
+            {
+                ["channel"] = "ahp-chat:/ffffffff-ffff-4fff-8fff-ffffffffffff",
+                ["serverSeq"] = 99,
+                ["origin"] = new JsonObject { ["kind"] = "server" },
+                ["action"] = new JsonObject
+                {
+                    ["type"] = "chat/activityChanged",
+                    ["activity"] = "foreign",
+                },
+            },
+        }));
+        var updatesAfter = events.Count(e => e.Kind == AhpClientEventKind.StreamUpdate);
+        Assert.Equal(updatesBefore, updatesAfter);
+        Assert.Equal(genBefore, client.Cursor.Generation);
+        client.Cancel();
+    }
+
+    [Fact]
     public void Cancel_keeps_cursor()
     {
         var pair = new InMemoryAhpTransportPair();

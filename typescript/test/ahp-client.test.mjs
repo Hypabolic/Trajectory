@@ -11,6 +11,7 @@ import {
   AhpStreamClient,
   FakeAhpHost,
   InMemoryAhpTransportPair,
+  encodeNotification,
 } from "@hypabolic/trajectory-ahp";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -220,6 +221,78 @@ test("backpressure", () => {
     });
   }
   assert.ok(events.some((e) => e.kind === "backpressure"));
+  client.cancel();
+});
+
+test("resume after backpressure flushes buffer", () => {
+  const pair = new InMemoryAhpTransportPair();
+  const host = new FakeAhpHost(
+    pair.host,
+    { initialSnapshot: emptySnapshot() },
+    CHAT,
+  );
+  const events = [];
+  const client = new AhpStreamClient(
+    pair.client,
+    { chatChannel: CHAT, maxBufferedActions: 8 },
+    (e) => events.push(e),
+  );
+  client.start();
+  client.setPausedForTest(true);
+  for (let i = 0; i < 3; i++) {
+    host.pushAction({
+      channel: CHAT,
+      serverSeq: 1 + i,
+      origin: { kind: "server" },
+      action: { type: "chat/activityChanged", activity: "thinking" },
+    });
+  }
+  const updatesBefore = events.filter((e) => e.kind === "stream-update").length;
+  client.resume();
+  const updatesAfter = events.filter((e) => e.kind === "stream-update").length;
+  assert.ok(updatesAfter > updatesBefore, "resume must flush buffered actions");
+  host.pushAction({
+    channel: CHAT,
+    serverSeq: 4,
+    origin: { kind: "server" },
+    action: { type: "chat/activityChanged", activity: "idle" },
+  });
+  assert.equal(client.cursor.position.kind, "ahp-server-seq");
+  assert.ok(client.cursor.position.lastServerSeq >= 3n);
+  client.cancel();
+});
+
+test("foreign channel action notification ignored", () => {
+  const pair = new InMemoryAhpTransportPair();
+  const host = new FakeAhpHost(
+    pair.host,
+    { initialSnapshot: emptySnapshot() },
+    CHAT,
+  );
+  const events = [];
+  const client = new AhpStreamClient(
+    pair.client,
+    { chatChannel: CHAT },
+    (e) => events.push(e),
+  );
+  client.start();
+  const updatesBefore = events.filter((e) => e.kind === "stream-update").length;
+  const genBefore = client.cursor.generation;
+  const foreign = "ahp-chat:/ffffffff-ffff-4fff-8fff-ffffffffffff";
+  host.transport.send(
+    encodeNotification("action", {
+      channel: foreign,
+      envelope: {
+        channel: foreign,
+        serverSeq: 99,
+        origin: { kind: "server" },
+        action: { type: "chat/activityChanged", activity: "foreign" },
+      },
+    }),
+  );
+  const updatesAfter = events.filter((e) => e.kind === "stream-update").length;
+  assert.equal(updatesAfter, updatesBefore);
+  assert.equal(client.cursor.generation, genBefore);
   client.cancel();
 });
 

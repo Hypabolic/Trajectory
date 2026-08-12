@@ -23,6 +23,7 @@ export {
   ERR_RESYNC_REQUIRED,
   ERR_TRANSPORT,
   PROTOCOL_VERSION,
+  encodeNotification,
   safeErrorMessage,
 } from "./protocol.js";
 export {

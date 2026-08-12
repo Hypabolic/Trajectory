@@ -444,6 +444,13 @@ impl AhpStreamClient {
         self.core.borrow_mut().paused = paused;
     }
 
+    /// Clear backpressure pause and flush any buffered actions (parity with peers).
+    pub fn resume(&self) {
+        let mut core = self.core.borrow_mut();
+        core.paused = false;
+        core.flush_actions();
+    }
+
     /// Drain inbox/outbox until idle. Safe for synchronous duplex hosts.
     ///
     /// Usually unnecessary: inbound frames auto-pump when the client is idle.
@@ -615,6 +622,9 @@ impl ClientCore {
                 });
             }
             "action" | "channel/action" => {
+                if !self.notification_channel_ok(&params) {
+                    return;
+                }
                 let envelope = params
                     .get("envelope")
                     .cloned()
@@ -624,9 +634,21 @@ impl ClientCore {
                 }
             }
             "snapshot" | "channel/snapshot" => {
+                if !self.notification_channel_ok(&params) {
+                    return;
+                }
                 self.apply_host_snapshot(&params);
             }
             _ => {}
+        }
+    }
+
+    /// Drop action/snapshot noise whose params.channel is not the subscribed chat.
+    fn notification_channel_ok(&self, params: &Map<String, Value>) -> bool {
+        match params.get("channel").and_then(Value::as_str) {
+            Some(ch) => ch == self.options.chat_channel,
+            // Protocol requires channel on notifications; treat missing as foreign noise.
+            None => false,
         }
     }
 
@@ -1047,6 +1069,11 @@ impl FakeAhpHost {
         }
     }
 
+    /// Push a raw JSON-RPC frame (CI only; used for foreign-channel filter tests).
+    pub fn push_raw(&self, raw: &str) {
+        let _ = self.transport.send(raw);
+    }
+
     /// Close host.
     pub fn close(&self) {
         self.closed.set(true);
@@ -1323,6 +1350,182 @@ mod tests {
                     .iter()
                     .any(|e| e.kind == AhpClientEventKind::Backpressure)
             );
+        }
+        client.cancel();
+    }
+
+    #[test]
+    fn resume_after_backpressure_flushes_buffer() {
+        let pair = InMemoryAhpTransportPair::new();
+        let mut script = FakeAhpHostScript::new();
+        script.initial_snapshot = Some(empty_snapshot());
+        let host = FakeAhpHost::new(pair.host, script, CHAT);
+        let mut opts = AhpClientOptions::new(CHAT);
+        opts.max_buffered_actions = 8;
+        let (client, events) = collect_client(pair.client, opts);
+        client.start();
+        client.set_paused_for_test(true);
+        for i in 0..3 {
+            host.push_action(json_obj(&[
+                ("channel", Value::String(CHAT.into())),
+                ("serverSeq", Value::Number((1 + i).into())),
+                (
+                    "origin",
+                    json_obj(&[("kind", Value::String("server".into()))]),
+                ),
+                (
+                    "action",
+                    json_obj(&[
+                        ("type", Value::String("chat/activityChanged".into())),
+                        ("activity", Value::String("thinking".into())),
+                    ]),
+                ),
+            ]));
+        }
+        client.pump();
+        let updates_before = events
+            .borrow()
+            .iter()
+            .filter(|e| e.kind == AhpClientEventKind::StreamUpdate)
+            .count();
+        // Production recovery path: resume clears pause and flushes buffered actions.
+        client.resume();
+        client.pump();
+        let updates_after = events
+            .borrow()
+            .iter()
+            .filter(|e| e.kind == AhpClientEventKind::StreamUpdate)
+            .count();
+        assert!(
+            updates_after > updates_before,
+            "resume must flush buffered actions into core"
+        );
+        // Further pushes after resume must apply (paused must stay false).
+        host.push_action(json_obj(&[
+            ("channel", Value::String(CHAT.into())),
+            ("serverSeq", Value::Number(4.into())),
+            (
+                "origin",
+                json_obj(&[("kind", Value::String("server".into()))]),
+            ),
+            (
+                "action",
+                json_obj(&[
+                    ("type", Value::String("chat/activityChanged".into())),
+                    ("activity", Value::String("idle".into())),
+                ]),
+            ),
+        ]));
+        client.pump();
+        match client.cursor().position {
+            StreamPosition::AhpServerSeq(ref p) => assert!(p.last_server_seq >= 3),
+            _ => panic!("expected ahp-server-seq after resume"),
+        }
+        client.cancel();
+    }
+
+    #[test]
+    fn duplicate_action_replay_does_not_crash() {
+        let pair = InMemoryAhpTransportPair::new();
+        let actions = load_actions("ahp-action-turn-flow", "step-actions.jsonl");
+        let mut script = FakeAhpHostScript::new();
+        script.initial_actions = actions.clone();
+        let host = FakeAhpHost::new(pair.host, script, CHAT);
+        let (client, events) = collect_client(pair.client, AhpClientOptions::new(CHAT));
+        client.start();
+        host.push_actions(&actions);
+        client.pump();
+        {
+            let events = events.borrow();
+            let updates: Vec<_> = events
+                .iter()
+                .filter(|e| e.kind == AhpClientEventKind::StreamUpdate)
+                .collect();
+            assert!(!updates.is_empty());
+            for e in &updates {
+                let kind = e.update.as_ref().map(|u| u.kind.as_str()).unwrap_or("");
+                assert!(
+                    kind == "updated"
+                        || kind == "unchanged"
+                        || kind == "reset-required"
+                        || kind == "error",
+                    "unexpected update kind {kind}"
+                );
+            }
+            assert!(!events.iter().any(|e| e.kind == AhpClientEventKind::Error));
+        }
+        client.cancel();
+    }
+
+    #[test]
+    fn foreign_channel_action_notification_ignored() {
+        let pair = InMemoryAhpTransportPair::new();
+        let mut script = FakeAhpHostScript::new();
+        script.initial_snapshot = Some(empty_snapshot());
+        let host = FakeAhpHost::new(pair.host, script, CHAT);
+        let (client, events) = collect_client(pair.client, AhpClientOptions::new(CHAT));
+        client.start();
+        let updates_before = events
+            .borrow()
+            .iter()
+            .filter(|e| e.kind == AhpClientEventKind::StreamUpdate)
+            .count();
+        let cur_before = client.cursor();
+        // Raw foreign-channel notification (not via host.push_action which pins chat).
+        let foreign = Value::Object(Map::from_iter([
+            ("jsonrpc".into(), Value::String("2.0".into())),
+            ("method".into(), Value::String("action".into())),
+            (
+                "params".into(),
+                json_obj(&[
+                    (
+                        "channel",
+                        Value::String("ahp-chat:/ffffffff-ffff-4fff-8fff-ffffffffffff".into()),
+                    ),
+                    (
+                        "envelope",
+                        json_obj(&[
+                            (
+                                "channel",
+                                Value::String(
+                                    "ahp-chat:/ffffffff-ffff-4fff-8fff-ffffffffffff".into(),
+                                ),
+                            ),
+                            ("serverSeq", Value::Number(99.into())),
+                            (
+                                "origin",
+                                json_obj(&[("kind", Value::String("server".into()))]),
+                            ),
+                            (
+                                "action",
+                                json_obj(&[
+                                    ("type", Value::String("chat/activityChanged".into())),
+                                    ("activity", Value::String("foreign".into())),
+                                ]),
+                            ),
+                        ]),
+                    ),
+                ]),
+            ),
+        ]));
+        // Deliver through the same duplex as host pushes.
+        host.push_raw(&foreign.to_string());
+        client.pump();
+        let updates_after = events
+            .borrow()
+            .iter()
+            .filter(|e| e.kind == AhpClientEventKind::StreamUpdate)
+            .count();
+        assert_eq!(
+            updates_after, updates_before,
+            "foreign-channel action must not produce stream updates"
+        );
+        assert_eq!(client.cursor().generation, cur_before.generation);
+        match (&client.cursor().position, &cur_before.position) {
+            (StreamPosition::AhpServerSeq(a), StreamPosition::AhpServerSeq(b)) => {
+                assert_eq!(a.last_server_seq, b.last_server_seq);
+            }
+            _ => {}
         }
         client.cancel();
     }

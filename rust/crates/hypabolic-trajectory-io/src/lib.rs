@@ -435,17 +435,47 @@ fn map_io_error(err: std::io::Error, path: &Path) -> HostError {
 
 fn canonicalize_or_abs(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| {
-        if path.is_absolute() {
+        let abs = if path.is_absolute() {
             path.to_path_buf()
         } else {
             std::env::current_dir()
                 .map(|cwd| cwd.join(path))
                 .unwrap_or_else(|_| path.to_path_buf())
-        }
+        };
+        // Canonicalize fails for non-existent paths; still collapse ".." / "." so
+        // Path::starts_with cannot treat {root}/../outside as under root (LS-09).
+        normalize_lexically(&abs)
     })
 }
 
+/// Collapse `.` / `..` without touching the filesystem (parity with GetFullPath / path.resolve).
+fn normalize_lexically(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out: Vec<Component<'_>> = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => {
+                out.push(component);
+            }
+            Component::CurDir => {}
+            Component::ParentDir => match out.last() {
+                Some(Component::Normal(_)) => {
+                    out.pop();
+                }
+                // Already at root/prefix: drop `..` (absolute paths cannot escape).
+                Some(Component::RootDir) | Some(Component::Prefix(_)) => {}
+                // Relative path that still needs a leading `..`.
+                Some(Component::ParentDir) | None => out.push(Component::ParentDir),
+                Some(Component::CurDir) => unreachable!("CurDir is never retained"),
+            },
+            Component::Normal(_) => out.push(component),
+        }
+    }
+    out.iter().collect()
+}
+
 fn is_under_root(root: &Path, path: &Path) -> bool {
+    // Both inputs must already be absolute + lexically normalized (or canonicalized).
     path.starts_with(root)
 }
 
@@ -636,6 +666,47 @@ mod tests {
         .unwrap_err();
         assert_eq!(err.code, HOST_PATH_OUTSIDE_ROOT);
         assert_eq!(err.message, MSG_PATH_OUTSIDE_ROOT);
+    }
+
+    #[test]
+    fn non_existent_path_with_dotdot_outside_root_is_host_error() {
+        // Non-existent intermediate segment so canonicalize fails; fallback must still
+        // reject {root}/missing/../../outside via lexical normalize (LS-09).
+        let root = temp_root();
+        let outside = root
+            .join("does-not-exist")
+            .join("..")
+            .join("..")
+            .join(format!(
+                "traj-io-escape-{}.jsonl",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+        let err = FileTrajectoryStream::open(FileStreamOptions {
+            root,
+            path: outside,
+            source: TrajectorySource::Pi,
+            ..Default::default()
+        })
+        .unwrap_err();
+        assert_eq!(err.code, HOST_PATH_OUTSIDE_ROOT);
+        assert_eq!(err.message, MSG_PATH_OUTSIDE_ROOT);
+    }
+
+    #[test]
+    fn normalize_lexically_collapses_parent_dirs() {
+        let root = PathBuf::from("/tmp/explicit-root");
+        let escaped = root.join("sub").join("..").join("..").join("outside.jsonl");
+        let normalized = normalize_lexically(&escaped);
+        assert!(!is_under_root(&root, &normalized));
+        assert_eq!(normalized, PathBuf::from("/tmp/outside.jsonl"));
+
+        let inside = root.join("a").join("..").join("b.jsonl");
+        let normalized_in = normalize_lexically(&inside);
+        assert!(is_under_root(&root, &normalized_in));
+        assert_eq!(normalized_in, root.join("b.jsonl"));
     }
 
     #[test]
