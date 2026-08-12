@@ -34,7 +34,8 @@
       "expected": {
         "update_kind": "updated",
         "record_count": 0,
-        "complete": false
+        "complete": false,
+        "result": "expected.snapshot-empty.json"
       },
       "double_invoke": true
     },
@@ -47,7 +48,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-session-line.json"
       },
       "double_invoke": true
     }

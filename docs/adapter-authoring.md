@@ -164,6 +164,55 @@ Only after goldens pass on all claiming runtimes:
 - README output list
 - package release notes
 
+## Live session streaming — definition of done
+
+Streaming is a **separate** surface from one-shot normalize/list. Normative
+wire: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md). Product
+locks and package boundaries:
+[live-session-streaming.md](live-session-streaming.md). Delivery slices:
+[live-session-streaming-plan.md](live-session-streaming-plan.md).
+
+### Core algorithm DoD (LS-08 matrix gate)
+
+A stream engine change is **done** for the core packages only when:
+
+1. **All four cores** (.NET, TypeScript, Rust, Python) implement the same
+   observable ops: `create`, `apply_snapshot`, `apply_append`,
+   `apply_ahp_snapshot`, `apply_ahp_actions`, `finish`, `reset` (Hermes export
+   stream remains optional / capability-gated).
+2. Shared fixtures under `conformance/cases/streaming/**` pass
+   `stream-sequence` on every runtime with **zero** `unsupported` skips for
+   implemented input kinds.
+3. **Append ≡ prefix oracle** (`stream-oracle-parity` /
+   `oracle.append_equals_prefix`) holds on every file-JSONL growth case that
+   declares it; AHP action ≡ independent Shape A when
+   `oracle.action_equals_snapshot` is set.
+4. **Delta-apply law** holds (`stream-delta-apply`): applying `delta` to the
+   prior snapshot yields the new snapshot.
+5. Per-step `expected.result` goldens (when present) match via
+   `stream-json-exact` on all four runners (structural JSON equality).
+6. Stream diagnostics stay content-safe (no paths, secrets, or raw lines).
+7. **Batch** normalize/list conformance remains green and identity baseline
+   unchanged.
+8. Core packages gain **no** FS watcher, network, or SQLite dependencies.
+
+### Capability advertising (LS-12 only)
+
+Do **not** set `stream-*` names true in `runtime-capabilities.json` or claim
+them in `compatibility.json` until LS-12 (optional I/O packages, optional AHP
+clients, sample CLIs, and the full release gate). Engines may be complete in
+core while manifests still omit stream capabilities.
+
+### Extending a source for streaming
+
+1. Keep batch identity formulas stable under normalizer contract `0.2.0`.
+2. Ensure complete-line framing never emits partial JSONL as records.
+3. Document compaction/truncation → `reset-required` reasons in the source
+   spec.
+4. Add or extend `conformance/cases/streaming/<source>-…` sequences with
+   `stream-oracle-parity` when append is supported.
+5. Land goldens only after four-runtime review — never CI auto-accept.
+
 ## .NET registration sketch
 
 See the full examples in

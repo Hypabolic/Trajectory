@@ -1,0 +1,117 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "ecbcdb9918276952f92a52e576be52fa1f1d8c507893860b75f3c30d1b1b877e",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000e0",
+    "generation": 0,
+    "position": {
+      "kind": "snapshot-revision",
+      "revision": "ahp-rev-0",
+      "content_sha256": "ba66b0bf7814160b4d9f7c1d5160063ad73a753cf8875912a3d38571b50e75e9"
+    },
+    "source_revision": "ahp-rev-0",
+    "prefix_sha256": "ba66b0bf7814160b4d9f7c1d5160063ad73a753cf8875912a3d38571b50e75e9"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000e0",
+    "revision": {
+      "revision": 0,
+      "revision_id": "ecbcdb9918276952f92a52e576be52fa1f1d8c507893860b75f3c30d1b1b877e",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "221c2038726841b8fe06a9edc030ca782874d3c45d45dd19362d37e372f2bacd",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "ahp",
+          "cwd": "/workspace/demo",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "f59b3b07eb5db0af11a1466667eaf7a42c476685443678c89bb4f1e6dac2279d",
+            "record_sha256": "f59b7a442ee54c74a526293a1a227c8351ccee0d21b51b1db11aa3ca328707a7"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "ecbcdb9918276952f92a52e576be52fa1f1d8c507893860b75f3c30d1b1b877e",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "221c2038726841b8fe06a9edc030ca782874d3c45d45dd19362d37e372f2bacd",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "ahp",
+            "cwd": "/workspace/demo",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "f59b3b07eb5db0af11a1466667eaf7a42c476685443678c89bb4f1e6dac2279d",
+              "record_sha256": "f59b7a442ee54c74a526293a1a227c8351ccee0d21b51b1db11aa3ca328707a7"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 1,
+    "bytes": 604,
+    "first_source_position": 0,
+    "last_source_position": 603
+  }
+}

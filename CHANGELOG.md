@@ -5,6 +5,16 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **LS-08 full stream matrix gate (all four runtimes):** complete shared
+  `conformance/cases/streaming/**` corpus with per-step `expected.result`
+  goldens; `stream-oracle-parity` expanded across file-JSONL growth/reset cases;
+  TypeScript provenance parity with peers (omit synthetic `source_sequence: 0`
+  for Claude/Codex/Grok; surface Codex `cli_version` on provenance); oracle
+  null-snapshot ≡ empty incomplete snapshot for pure-pending; docs DoD in
+  `adapter-authoring.md`, `release-readiness.md`, `multi-language-plan.md`.
+  Batch normalize/list still green. **Do not** advertise `stream-*` capabilities
+  until LS-12.
+
 - **LS-06 / LS-07 AHP stream snapshot and action-log (core, all four runtimes):**
   pure `apply_ahp_snapshot` (successive Shape A, provisional `activeTurn`,
   snapshot-revision cursor) and `apply_ahp_actions` (Shape B minimal complete

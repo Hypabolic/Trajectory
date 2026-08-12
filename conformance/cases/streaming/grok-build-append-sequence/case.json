@@ -32,7 +32,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-system.json"
       },
       "double_invoke": true
     },
@@ -45,7 +46,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-user.json"
       },
       "double_invoke": true
     },
@@ -58,7 +60,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-assistant.json"
       },
       "double_invoke": true
     }

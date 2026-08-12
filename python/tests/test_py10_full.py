@@ -239,8 +239,8 @@ def test_filtered_verify_full_protocol_v1_tip_surface_green() -> None:
     assert summary["operations"] == 66
 
 
-def test_stream_verify_skips_unsupported() -> None:
-    """LS-02: stream fixtures run and skip cleanly while engines are absent."""
+def test_stream_verify_matrix_green() -> None:
+    """LS-08: full stream corpus green (engines landed; no capability claims yet)."""
     cmd: list[str] = [
         PYTHON,
         str(ROOT / "conformance" / "verify.py"),
@@ -266,9 +266,10 @@ def test_stream_verify_skips_unsupported() -> None:
     )
     summary = json.loads(completed.stdout)
     assert summary["status"] == "success"
-    assert summary["cases"] == 24
-    assert summary["operations"] == 24
-    assert summary["stream_unsupported_skips"] == 24
+    # 34 streaming cases × stream-sequence; Hermes export path not in corpus yet.
+    assert summary["cases"] == 34
+    assert summary["operations"] == 34
+    assert summary["stream_unsupported_skips"] == 0
 
 
 def test_progressive_capabilities_cover_tip_ops_surface() -> None:

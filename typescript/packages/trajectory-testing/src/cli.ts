@@ -671,14 +671,16 @@ function oracleSnapshotsMatch(
   appendCursor: StreamCursor,
   oracleCursor: StreamCursor,
 ): boolean {
-  if (!appendSnap || !oracleSnap) return !appendSnap && !oracleSnap;
-  const aKeys = appendSnap.records.map(recordParityKey);
-  const oKeys = oracleSnap.records.map(recordParityKey);
+  // Missing snapshot (never updated — pure pending) ≡ empty incomplete snapshot.
+  const aRecords = appendSnap?.records ?? [];
+  const oRecords = oracleSnap?.records ?? [];
+  const aKeys = aRecords.map(recordParityKey);
+  const oKeys = oRecords.map(recordParityKey);
   if (JSON.stringify(aKeys) !== JSON.stringify(oKeys)) return false;
-  const aDiags = appendSnap.diagnostics.map(diagnosticParityKey);
-  const oDiags = oracleSnap.diagnostics.map(diagnosticParityKey);
+  const aDiags = (appendSnap?.diagnostics ?? []).map(diagnosticParityKey);
+  const oDiags = (oracleSnap?.diagnostics ?? []).map(diagnosticParityKey);
   if (JSON.stringify(aDiags) !== JSON.stringify(oDiags)) return false;
-  if (appendSnap.complete !== oracleSnap.complete) return false;
+  if ((appendSnap?.complete ?? false) !== (oracleSnap?.complete ?? false)) return false;
   if (appendCursor.prefixSha256 !== oracleCursor.prefixSha256) return false;
   if (
     appendCursor.position.kind === "byte" &&

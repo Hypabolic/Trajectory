@@ -89,9 +89,9 @@ TIP_SLICE = "ML13"
 NORMALIZER_CONTRACT_VERSION = "0.2.0"
 
 # Current tip case inventory under unfiltered verify (all declared pairs).
-# 39 batch + 24 stream scaffolds (stream ops skip as unsupported pre-engine / pre LS-12 caps).
-EXPECTED_TIP_CASES = 65
-EXPECTED_TIP_OPERATIONS = 92
+# 39 batch + 34 stream cases (LS-08 matrix; stream engines green, no stream-* caps).
+EXPECTED_TIP_CASES = 73
+EXPECTED_TIP_OPERATIONS = 100
 
 
 def _load_json(path: Path) -> dict:

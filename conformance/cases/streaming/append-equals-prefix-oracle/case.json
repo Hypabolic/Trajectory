@@ -34,7 +34,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-chunk-1.json"
       },
       "double_invoke": true
     },
@@ -47,7 +48,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-chunk-2.json"
       },
       "double_invoke": true
     }

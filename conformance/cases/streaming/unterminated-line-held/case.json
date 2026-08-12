@@ -31,7 +31,8 @@
       "expected": {
         "update_kind": "unchanged",
         "record_count": 0,
-        "complete": false
+        "complete": false,
+        "result": "expected.append-incomplete.json"
       },
       "double_invoke": true
     }

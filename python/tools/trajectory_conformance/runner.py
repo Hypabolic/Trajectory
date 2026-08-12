@@ -941,18 +941,33 @@ def _oracle_snapshots_match(
     append_cursor: StreamCursor,
     oracle_cursor: StreamCursor,
 ) -> bool:
-    """Full snapshot/status/diagnostics/cursor parity for prefix-oracle equality."""
-    if append_snap is None or oracle_snap is None:
-        return append_snap is None and oracle_snap is None
-    append_keys = [_stream_record_parity_key(r) for r in append_snap.records]
-    oracle_keys = [_stream_record_parity_key(r) for r in oracle_snap.records]
+    """Full snapshot/status/diagnostics/cursor parity for prefix-oracle equality.
+
+    A missing stream snapshot (never updated — e.g. pure pending bytes held) is
+    treated as an empty incomplete snapshot so it can match a fresh prefix
+    re-normalize of an empty committed prefix.
+    """
+    append_records = () if append_snap is None else append_snap.records
+    oracle_records = () if oracle_snap is None else oracle_snap.records
+    append_keys = [_stream_record_parity_key(r) for r in append_records]
+    oracle_keys = [_stream_record_parity_key(r) for r in oracle_records]
     if append_keys != oracle_keys:
         return False
-    append_diags = [_stream_diagnostic_parity_key(d) for d in append_snap.diagnostics]
-    oracle_diags = [_stream_diagnostic_parity_key(d) for d in oracle_snap.diagnostics]
+    append_diags = (
+        ()
+        if append_snap is None
+        else tuple(_stream_diagnostic_parity_key(d) for d in append_snap.diagnostics)
+    )
+    oracle_diags = (
+        ()
+        if oracle_snap is None
+        else tuple(_stream_diagnostic_parity_key(d) for d in oracle_snap.diagnostics)
+    )
     if append_diags != oracle_diags:
         return False
-    if append_snap.complete != oracle_snap.complete:
+    append_complete = False if append_snap is None else append_snap.complete
+    oracle_complete = False if oracle_snap is None else oracle_snap.complete
+    if append_complete != oracle_complete:
         return False
     if isinstance(append_cursor.position, BytePosition) and isinstance(
         oracle_cursor.position, BytePosition

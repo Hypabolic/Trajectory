@@ -221,6 +221,7 @@ function hypabolicRecord(record: IRRecord): JsonObject {
     component_type_ordinal: record.provenance.componentTypeOrdinal,
   };
   if (record.provenance.nativeRecordId !== undefined) provenance.native_record_id = record.provenance.nativeRecordId;
+  if (record.provenance.producerVersion !== undefined) provenance.producer_version = record.provenance.producerVersion;
   if (record.provenance.sourceSequence !== undefined) provenance.source_sequence = record.provenance.sourceSequence;
   if (record.provenance.sourceOffset !== undefined) provenance.source_offset = record.provenance.sourceOffset;
   if (record.provenance.sourceAnchorKind !== undefined) provenance.source_anchor_kind = record.provenance.sourceAnchorKind;

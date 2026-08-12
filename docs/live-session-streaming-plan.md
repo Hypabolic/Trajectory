@@ -262,10 +262,13 @@ decode yet beyond framing buffers.
 **Goal:** Complete goldens; parity fixes; no capability advertising yet (or
 draft-only).
 
+**Status: done on tip** (engines + shared goldens + oracle gate; manifests still
+omit `stream-*` until LS-12).
+
 | Area | Deliverable |
 | --- | --- |
 | Tests | Entire `conformance/cases/streaming/**` green on .NET, TS, Rust, Python |
-| Code | Fix drift; enable `stream-oracle-parity` everywhere |
+| Code | Fix drift; enable `stream-oracle-parity` on file-JSONL growth/reset + AHP action≡snapshot |
 | Docs | Definition of done in `adapter-authoring.md`, `release-readiness.md`, `multi-language-plan.md` |
 
 **Acceptance**

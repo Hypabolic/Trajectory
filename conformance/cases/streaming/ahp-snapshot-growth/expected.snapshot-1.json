@@ -1,0 +1,241 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "266ceaf3f786744dc802c7574cb33eac8dabd363322d6e01ee71b2791d53338e",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000b1",
+    "generation": 0,
+    "position": {
+      "kind": "snapshot-revision",
+      "revision": "ahp-rev-1",
+      "content_sha256": "a055e4e5fd47823f87bff2bd8865e37b8549ed49a35f898e1c2123d8cf4cd120"
+    },
+    "source_revision": "ahp-rev-1",
+    "prefix_sha256": "a055e4e5fd47823f87bff2bd8865e37b8549ed49a35f898e1c2123d8cf4cd120"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000b1",
+    "revision": {
+      "revision": 0,
+      "revision_id": "266ceaf3f786744dc802c7574cb33eac8dabd363322d6e01ee71b2791d53338e",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "df1fdac06f53017611d2b3e52e8fa18e2a0c53c78042041ffb92f9f0f843ad59",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "ahp",
+          "cwd": "/workspace/demo",
+          "model": "synthetic-model-1",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "555b0bc1d8f81eca5dba68517f69a1a6c4bd79809d4658794c723516113e49a2",
+            "record_sha256": "bb7d3f6743c6f38889772d6e56cec3e145d2d5b7d84f9bd83377a66eab43f7a6"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "8fb8a8dea1e0d95932eb7f1f346b71dd60737cbcd79efa7fa7816909b24b2c41",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-03-15T12:00:00.000Z",
+          "timestamp": "2026-03-15T12:00:00.000Z",
+          "content": "Hello",
+          "provenance": {
+            "stable_source_record_id": "turn-00000000-0000-4000-8000-0000000000u1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-03-15T12:00:00.000Z|00000000000000000000|turn-00000000-0000-4000-8000-0000000000u1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "turn-00000000-0000-4000-8000-0000000000u1",
+            "source_sequence": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "22617902a401406bbbd5d82c49da07eb742bb8173445a71278645c4c3bae4713",
+            "record_sha256": "c93fac19a288157e6802f82ab0ae2949390a2e0facbedb7d1bcd9f87f2c79032"
+          }
+        }
+      },
+      {
+        "status": "provisional",
+        "record": {
+          "id": "1061829086b1750fd528283d4b7fdf38ccd02f0181064b34ac99a4d20ec54352",
+          "kind": "message",
+          "role": "assistant",
+          "order": 1,
+          "source_timestamp": "2026-03-15T12:00:05.000Z",
+          "timestamp": "2026-03-15T12:00:05.000Z",
+          "content": "Working",
+          "provenance": {
+            "stable_source_record_id": "part-md-active-1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-03-15T12:00:05.000Z|00000000000000000000|part-md-active-1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "part-md-active-1",
+            "source_sequence": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "2b79dfe8e8f675ff5d010e1d8bf311949d26c1f42e754a10458ffb651a084b08",
+            "record_sha256": "3f552bf750dc258a5ec82c6f586b34d69f87d4e7a07eaa52dea77aea0d756443"
+          }
+        },
+        "provisional_id": "prov-active-turn-1"
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "266ceaf3f786744dc802c7574cb33eac8dabd363322d6e01ee71b2791d53338e",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "df1fdac06f53017611d2b3e52e8fa18e2a0c53c78042041ffb92f9f0f843ad59",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "ahp",
+            "cwd": "/workspace/demo",
+            "model": "synthetic-model-1",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "555b0bc1d8f81eca5dba68517f69a1a6c4bd79809d4658794c723516113e49a2",
+              "record_sha256": "bb7d3f6743c6f38889772d6e56cec3e145d2d5b7d84f9bd83377a66eab43f7a6"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "8fb8a8dea1e0d95932eb7f1f346b71dd60737cbcd79efa7fa7816909b24b2c41",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": "2026-03-15T12:00:00.000Z",
+            "timestamp": "2026-03-15T12:00:00.000Z",
+            "content": "Hello",
+            "provenance": {
+              "stable_source_record_id": "turn-00000000-0000-4000-8000-0000000000u1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-03-15T12:00:00.000Z|00000000000000000000|turn-00000000-0000-4000-8000-0000000000u1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "turn-00000000-0000-4000-8000-0000000000u1",
+              "source_sequence": 0,
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "22617902a401406bbbd5d82c49da07eb742bb8173445a71278645c4c3bae4713",
+              "record_sha256": "c93fac19a288157e6802f82ab0ae2949390a2e0facbedb7d1bcd9f87f2c79032"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "provisional",
+          "record": {
+            "id": "1061829086b1750fd528283d4b7fdf38ccd02f0181064b34ac99a4d20ec54352",
+            "kind": "message",
+            "role": "assistant",
+            "order": 1,
+            "source_timestamp": "2026-03-15T12:00:05.000Z",
+            "timestamp": "2026-03-15T12:00:05.000Z",
+            "content": "Working",
+            "provenance": {
+              "stable_source_record_id": "part-md-active-1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-03-15T12:00:05.000Z|00000000000000000000|part-md-active-1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "part-md-active-1",
+              "source_sequence": 0,
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "2b79dfe8e8f675ff5d010e1d8bf311949d26c1f42e754a10458ffb651a084b08",
+              "record_sha256": "3f552bf750dc258a5ec82c6f586b34d69f87d4e7a07eaa52dea77aea0d756443"
+            }
+          },
+          "provisional_id": "prov-active-turn-1"
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [
+      "prov-active-turn-1"
+    ],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 3,
+    "bytes": 1638,
+    "first_source_position": 0,
+    "last_source_position": 1637
+  }
+}

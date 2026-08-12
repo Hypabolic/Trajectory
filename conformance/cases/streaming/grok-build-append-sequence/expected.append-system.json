@@ -1,0 +1,190 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "4733be9f5bb4bdcdd3b9a5c3046cc323236c22e59b58cd6435838ce1f0165671",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "grok-build",
+    "group_id": "stream-grok-build-append-sequence",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 50,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "5db9f5a50beecfcd2cbb1dfd815edc2e73fb993097543d851e81d1ad9d1d8a2c"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "grok-build",
+    "group_id": "stream-grok-build-append-sequence",
+    "revision": {
+      "revision": 0,
+      "revision_id": "4733be9f5bb4bdcdd3b9a5c3046cc323236c22e59b58cd6435838ce1f0165671",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "871196201b9448cc498f1e2941ee5631a85697d6693244c121b6e1e0941c5034",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "grok-build",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "52db9a8d0e8ebe4f777d65036248947429438854c31966db419234973efffb91",
+            "record_sha256": "4fc077f4eb522c9850edd24be6161c226681968a2b409fb58ddaad71d9de35da"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "75961c0afef5d73f337b648b6e8dc10680c288f9fd6899e04d0674a5089fef75",
+          "kind": "message",
+          "role": "meta",
+          "order": 0,
+          "source_timestamp": null,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "content": "You are Grok Build.",
+          "provenance": {
+            "stable_source_record_id": "0213d10c24cddd3bdc25fedf1afb12540b600724993f6be07efbf951782747bc",
+            "source_identity_kind": "location",
+            "source_order_id": "1|0000-00-00T00:00:00.001Z|00000000000000000000|0213d10c24cddd3bdc25fedf1afb12540b600724993f6be07efbf951782747bc",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "3c92875eddcc297b6a11ebff9e665b578ca707231f9884584f551912d4f7ed35",
+            "record_sha256": "b1456c5a475b41662fa08f0d58efe7617aa41a3d9ee3808a752dc36e7f4cb1c5"
+          }
+        }
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "timestamps_synthesized",
+        "message": "Synthesized timestamps for 1 normalized records.",
+        "count": 1
+      }
+    ],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "4733be9f5bb4bdcdd3b9a5c3046cc323236c22e59b58cd6435838ce1f0165671",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "871196201b9448cc498f1e2941ee5631a85697d6693244c121b6e1e0941c5034",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "grok-build",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "52db9a8d0e8ebe4f777d65036248947429438854c31966db419234973efffb91",
+              "record_sha256": "4fc077f4eb522c9850edd24be6161c226681968a2b409fb58ddaad71d9de35da"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "75961c0afef5d73f337b648b6e8dc10680c288f9fd6899e04d0674a5089fef75",
+            "kind": "message",
+            "role": "meta",
+            "order": 0,
+            "source_timestamp": null,
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "content": "You are Grok Build.",
+            "provenance": {
+              "stable_source_record_id": "0213d10c24cddd3bdc25fedf1afb12540b600724993f6be07efbf951782747bc",
+              "source_identity_kind": "location",
+              "source_order_id": "1|0000-00-00T00:00:00.001Z|00000000000000000000|0213d10c24cddd3bdc25fedf1afb12540b600724993f6be07efbf951782747bc",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "3c92875eddcc297b6a11ebff9e665b578ca707231f9884584f551912d4f7ed35",
+              "record_sha256": "b1456c5a475b41662fa08f0d58efe7617aa41a3d9ee3808a752dc36e7f4cb1c5"
+            }
+          }
+        }
+      },
+      {
+        "op": "diagnostic_add",
+        "diagnostic": {
+          "code": "timestamps_synthesized",
+          "message": "Synthesized timestamps for 1 normalized records.",
+          "count": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "timestamps_synthesized",
+      "message": "Synthesized timestamps for 1 normalized records.",
+      "count": 1
+    }
+  ],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 2,
+    "bytes": 50,
+    "first_source_position": 0,
+    "last_source_position": 49
+  }
+}

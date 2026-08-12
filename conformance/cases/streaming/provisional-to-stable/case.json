@@ -34,7 +34,10 @@
       "expected": {
         "update_kind": "updated",
         "complete": false,
-        "provisional_ids": ["prov-active-turn-1"]
+        "provisional_ids": [
+          "prov-active-turn-1"
+        ],
+        "result": "expected.snapshot-with-provisional.json"
       },
       "double_invoke": true
     },
@@ -48,7 +51,10 @@
       "expected": {
         "update_kind": "updated",
         "complete": false,
-        "finalized_ids": ["prov-active-turn-1"]
+        "finalized_ids": [
+          "prov-active-turn-1"
+        ],
+        "result": "expected.snapshot-stable.json"
       },
       "double_invoke": true
     }

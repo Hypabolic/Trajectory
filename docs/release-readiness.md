@@ -147,3 +147,32 @@ After the first multi-registry release:
 - Cloud ingestion, tenancy, or hosted storage
 - Identical public APIs across languages
 - A stable serialized internal IR
+
+## Live session streaming (post-v1; LS-08 matrix)
+
+Core stream engines are **in-tree on tip** (file JSONL append/snapshot, AHP
+snapshot + action-log, delta+snapshot delivery). They are **not** yet
+advertised in runtime capability manifests (`stream-*` claims are LS-12).
+
+### Stream matrix definition of done (LS-08)
+
+| Gate | Requirement |
+| --- | --- |
+| Corpus | Entire `conformance/cases/streaming/**` green on .NET, TypeScript, Rust, Python |
+| Oracle | Append path ≡ prefix re-normalize (`stream-oracle-parity`); AHP action ≡ Shape A when declared |
+| Goldens | Per-step `expected.result` stream-json-exact goldens are shared authority |
+| Batch | Existing normalize/list conformance + identity baseline remain green |
+| Privacy | Stream diagnostics/fixtures obey the same sanitization rules as batch |
+| Capabilities | Do **not** claim `stream-*` in manifests until LS-12 (optional I/O + clients + CLIs) |
+| Core purity | No FS watchers, network, or SQLite in core packages |
+
+Operator verify (stream filter only):
+
+```bash
+python3 conformance/verify.py --repository-root . --operation stream-sequence -- \
+  <runtime-stream-capable-runner>
+```
+
+Product + slice plan: [live-session-streaming.md](live-session-streaming.md),
+[live-session-streaming-plan.md](live-session-streaming-plan.md). Adapter
+authoring stream DoD: [adapter-authoring.md](adapter-authoring.md#live-session-streaming--definition-of-done).

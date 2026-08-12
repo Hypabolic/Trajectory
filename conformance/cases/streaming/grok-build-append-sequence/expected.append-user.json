@@ -1,0 +1,189 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 1,
+    "revision_id": "c1b96ce71e87f5ff4d83b6791c42b14773966d3340860e5324101d2afb891e1d",
+    "parent_revision_id": "4733be9f5bb4bdcdd3b9a5c3046cc323236c22e59b58cd6435838ce1f0165671",
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "grok-build",
+    "group_id": "stream-grok-build-append-sequence",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 131,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "46f4ffed819bab4f2e620a4f0af305269d17dfbeb1a18d9fe23e7f079b9f1264"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "grok-build",
+    "group_id": "stream-grok-build-append-sequence",
+    "revision": {
+      "revision": 1,
+      "revision_id": "c1b96ce71e87f5ff4d83b6791c42b14773966d3340860e5324101d2afb891e1d",
+      "parent_revision_id": "4733be9f5bb4bdcdd3b9a5c3046cc323236c22e59b58cd6435838ce1f0165671",
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "871196201b9448cc498f1e2941ee5631a85697d6693244c121b6e1e0941c5034",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "grok-build",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "52db9a8d0e8ebe4f777d65036248947429438854c31966db419234973efffb91",
+            "record_sha256": "4fc077f4eb522c9850edd24be6161c226681968a2b409fb58ddaad71d9de35da"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "75961c0afef5d73f337b648b6e8dc10680c288f9fd6899e04d0674a5089fef75",
+          "kind": "message",
+          "role": "meta",
+          "order": 0,
+          "source_timestamp": null,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "content": "You are Grok Build.",
+          "provenance": {
+            "stable_source_record_id": "0213d10c24cddd3bdc25fedf1afb12540b600724993f6be07efbf951782747bc",
+            "source_identity_kind": "location",
+            "source_order_id": "1|0000-00-00T00:00:00.001Z|00000000000000000000|0213d10c24cddd3bdc25fedf1afb12540b600724993f6be07efbf951782747bc",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "3c92875eddcc297b6a11ebff9e665b578ca707231f9884584f551912d4f7ed35",
+            "record_sha256": "b1456c5a475b41662fa08f0d58efe7617aa41a3d9ee3808a752dc36e7f4cb1c5"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "7590a578d7c565abf61cc2c7f31f9f01da56b2be1e0264a93fb9649a28b00058",
+          "kind": "message",
+          "role": "user",
+          "order": 1,
+          "source_timestamp": null,
+          "timestamp": "2026-01-01T00:00:15.000Z",
+          "content": "hello grok",
+          "provenance": {
+            "stable_source_record_id": "b93db274c8f2f04e7b0b7dffdb625071e2fb288aa3d8869501272b60e9062b01",
+            "source_identity_kind": "location",
+            "source_order_id": "1|0000-00-00T00:00:00.001Z|00000000000000000000|b93db274c8f2f04e7b0b7dffdb625071e2fb288aa3d8869501272b60e9062b01",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "source_offset": 50,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "daa98cec4dc17367230c0747f42430f2dee6a38746f74e13fbdcf9244379af16",
+            "record_sha256": "cd57cc33d5c57a9c61cbb2abe5fbeafcb4a5bfcf8ad188343a8b36097deb11b7"
+          }
+        }
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "timestamps_synthesized",
+        "message": "Synthesized timestamps for 2 normalized records.",
+        "count": 2
+      }
+    ],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "4733be9f5bb4bdcdd3b9a5c3046cc323236c22e59b58cd6435838ce1f0165671",
+    "revision": {
+      "revision": 1,
+      "revision_id": "c1b96ce71e87f5ff4d83b6791c42b14773966d3340860e5324101d2afb891e1d",
+      "parent_revision_id": "4733be9f5bb4bdcdd3b9a5c3046cc323236c22e59b58cd6435838ce1f0165671",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "7590a578d7c565abf61cc2c7f31f9f01da56b2be1e0264a93fb9649a28b00058",
+            "kind": "message",
+            "role": "user",
+            "order": 1,
+            "source_timestamp": null,
+            "timestamp": "2026-01-01T00:00:15.000Z",
+            "content": "hello grok",
+            "provenance": {
+              "stable_source_record_id": "b93db274c8f2f04e7b0b7dffdb625071e2fb288aa3d8869501272b60e9062b01",
+              "source_identity_kind": "location",
+              "source_order_id": "1|0000-00-00T00:00:00.001Z|00000000000000000000|b93db274c8f2f04e7b0b7dffdb625071e2fb288aa3d8869501272b60e9062b01",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "source_offset": 50,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "daa98cec4dc17367230c0747f42430f2dee6a38746f74e13fbdcf9244379af16",
+              "record_sha256": "cd57cc33d5c57a9c61cbb2abe5fbeafcb4a5bfcf8ad188343a8b36097deb11b7"
+            }
+          }
+        }
+      },
+      {
+        "op": "diagnostic_add",
+        "diagnostic": {
+          "code": "timestamps_synthesized",
+          "message": "Synthesized timestamps for 2 normalized records.",
+          "count": 2
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "timestamps_synthesized",
+      "message": "Synthesized timestamps for 2 normalized records.",
+      "count": 2
+    }
+  ],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 3,
+    "bytes": 81,
+    "first_source_position": 50,
+    "last_source_position": 130
+  }
+}

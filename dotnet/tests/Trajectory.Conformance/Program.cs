@@ -524,20 +524,18 @@ internal static class ConformanceProgram
         StreamCursor appendCursor,
         StreamCursor oracleCursor)
     {
-        if (appendSnap is null || oracleSnap is null)
-        {
-            return appendSnap is null && oracleSnap is null;
-        }
-
-        if (appendSnap.Records.Count != oracleSnap.Records.Count)
+        // Missing snapshot (never updated — pure pending) ≡ empty incomplete snapshot.
+        var aRecords = appendSnap?.Records ?? Array.Empty<StreamRecord>();
+        var oRecords = oracleSnap?.Records ?? Array.Empty<StreamRecord>();
+        if (aRecords.Count != oRecords.Count)
         {
             return false;
         }
 
-        for (var i = 0; i < appendSnap.Records.Count; i++)
+        for (var i = 0; i < aRecords.Count; i++)
         {
-            var a = appendSnap.Records[i];
-            var o = oracleSnap.Records[i];
+            var a = aRecords[i];
+            var o = oRecords[i];
             var aId = a.Record.TryGetValue("id", out var aid) ? aid?.ToString() ?? "" : "";
             var oId = o.Record.TryGetValue("id", out var oid) ? oid?.ToString() ?? "" : "";
             if (aId != oId ||
@@ -550,15 +548,17 @@ internal static class ConformanceProgram
             }
         }
 
-        if (appendSnap.Diagnostics.Count != oracleSnap.Diagnostics.Count)
+        var aDiags = appendSnap?.Diagnostics ?? Array.Empty<StreamDiagnostic>();
+        var oDiags = oracleSnap?.Diagnostics ?? Array.Empty<StreamDiagnostic>();
+        if (aDiags.Count != oDiags.Count)
         {
             return false;
         }
 
-        for (var i = 0; i < appendSnap.Diagnostics.Count; i++)
+        for (var i = 0; i < aDiags.Count; i++)
         {
-            var a = appendSnap.Diagnostics[i];
-            var o = oracleSnap.Diagnostics[i];
+            var a = aDiags[i];
+            var o = oDiags[i];
             if (a.Code != o.Code ||
                 a.Message != o.Message ||
                 a.InputLine != o.InputLine ||
@@ -569,7 +569,9 @@ internal static class ConformanceProgram
             }
         }
 
-        if (appendSnap.Complete != oracleSnap.Complete)
+        var aComplete = appendSnap?.Complete ?? false;
+        var oComplete = oracleSnap?.Complete ?? false;
+        if (aComplete != oComplete)
         {
             return false;
         }

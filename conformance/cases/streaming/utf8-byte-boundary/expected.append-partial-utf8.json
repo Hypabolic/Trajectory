@@ -1,0 +1,35 @@
+{
+  "kind": "unchanged",
+  "revision": {
+    "revision": 0,
+    "revision_id": "unchanged",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-utf8-byte-boundary",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 0,
+      "pending_byte_length": 125
+    },
+    "source_revision": null,
+    "prefix_sha256": null
+  },
+  "snapshot": null,
+  "delta": null,
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 0,
+    "bytes": 0
+  }
+}

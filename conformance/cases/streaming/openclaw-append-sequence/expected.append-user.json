@@ -1,0 +1,149 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 1,
+    "revision_id": "15e9af945dd47215338fa50bea6ca12e2e001ac95ebfb4ee50248b9c78716718",
+    "parent_revision_id": "0ef4c28ff126bf86802a1c818e88341589dae49a5e182a87f6b687d3d40ce88e",
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "openclaw",
+    "group_id": "stream-openclaw-append",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 293,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "8f9e3315f3b2fb4326b092631e81b3eea7651d68d0556036c9f43445daabbbba"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "openclaw",
+    "group_id": "stream-openclaw-append",
+    "revision": {
+      "revision": 1,
+      "revision_id": "15e9af945dd47215338fa50bea6ca12e2e001ac95ebfb4ee50248b9c78716718",
+      "parent_revision_id": "0ef4c28ff126bf86802a1c818e88341589dae49a5e182a87f6b687d3d40ce88e",
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "66bb315f80f897e8903bb0a5af3afc5894517256d63ec10a0130b337e11c81d3",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "openclaw",
+          "cwd": "/home/user/workspace",
+          "producer_version": "7",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "ac0ff2289ad0ca6aa38f98c366cbffdda8f3b02f68429f9a9796241f5708ef32",
+            "record_sha256": "dd2315a11284fa84c2ddcfb2ec64c84b4abfca8158440a83b4b5a23e2f978fb4"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "36c1b83f58279c4c3ec52c15c2bbbc833ef22db50fec69e5493f619222577d19",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-07-05T09:00:01.000Z",
+          "timestamp": "2026-07-05T09:00:01.000Z",
+          "content": "hello openclaw",
+          "provenance": {
+            "stable_source_record_id": "oc-1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-07-05T09:00:01.000Z|00000000000000000001|oc-1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "oc-1",
+            "source_sequence": 1,
+            "source_offset": 129,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "0a632e3b818e9f3454ad7a8500f194de212db76aabba67b89f781ac58eca3e4c",
+            "record_sha256": "97f1fee20f357067b79e5b866c5b4c9df82f1d4017b3fd99f61af9e5df951f1d"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "0ef4c28ff126bf86802a1c818e88341589dae49a5e182a87f6b687d3d40ce88e",
+    "revision": {
+      "revision": 1,
+      "revision_id": "15e9af945dd47215338fa50bea6ca12e2e001ac95ebfb4ee50248b9c78716718",
+      "parent_revision_id": "0ef4c28ff126bf86802a1c818e88341589dae49a5e182a87f6b687d3d40ce88e",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "36c1b83f58279c4c3ec52c15c2bbbc833ef22db50fec69e5493f619222577d19",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": "2026-07-05T09:00:01.000Z",
+            "timestamp": "2026-07-05T09:00:01.000Z",
+            "content": "hello openclaw",
+            "provenance": {
+              "stable_source_record_id": "oc-1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-07-05T09:00:01.000Z|00000000000000000001|oc-1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "oc-1",
+              "source_sequence": 1,
+              "source_offset": 129,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "0a632e3b818e9f3454ad7a8500f194de212db76aabba67b89f781ac58eca3e4c",
+              "record_sha256": "97f1fee20f357067b79e5b866c5b4c9df82f1d4017b3fd99f61af9e5df951f1d"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 2,
+    "bytes": 164,
+    "first_source_position": 129,
+    "last_source_position": 292
+  }
+}

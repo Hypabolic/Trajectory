@@ -1,0 +1,35 @@
+{
+  "kind": "unchanged",
+  "revision": {
+    "revision": 0,
+    "revision_id": "87b41d629226cdbd906fbda0d3d44faed4ff069ef73c601587c16bb24bb0f9d2",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-duplicate-input-idempotent",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 135,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "e5cc1cbd1a7c498fedd73169fbad1c0a79efde8350edec6a7ad6cd02388f3db9"
+  },
+  "snapshot": null,
+  "delta": null,
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 0,
+    "bytes": 0
+  }
+}

@@ -750,46 +750,55 @@ fn oracle_snapshots_match(
     append_cursor: &StreamCursor,
     oracle_cursor: &StreamCursor,
 ) -> bool {
-    match (append_snap, oracle_snap) {
-        (None, None) => true,
-        (Some(a), Some(o)) => {
-            if a.records.len() != o.records.len() {
-                return false;
-            }
-            for (ar, or) in a.records.iter().zip(o.records.iter()) {
-                let aid = ar.record.get("id").and_then(Value::as_str).unwrap_or("");
-                let oid = or.record.get("id").and_then(Value::as_str).unwrap_or("");
-                if aid != oid
-                    || ar.status != or.status
-                    || ar.provisional_id != or.provisional_id
-                    || ar.replaces_provisional_id != or.replaces_provisional_id
-                    || ar.finalizes_provisional_id != or.finalizes_provisional_id
-                {
-                    return false;
-                }
-            }
-            if a.diagnostics.len() != o.diagnostics.len() {
-                return false;
-            }
-            for (ad, od) in a.diagnostics.iter().zip(o.diagnostics.iter()) {
-                if ad.code != od.code
-                    || ad.message != od.message
-                    || ad.input_line != od.input_line
-                    || ad.record_index != od.record_index
-                    || ad.count != od.count
-                {
-                    return false;
-                }
-            }
-            if a.complete != o.complete {
-                return false;
-            }
-            append_cursor.position.next_byte_offset()
-                == oracle_cursor.position.next_byte_offset()
-                && append_cursor.prefix_sha256 == oracle_cursor.prefix_sha256
-        }
-        _ => false,
+    // Missing snapshot (never updated — pure pending) ≡ empty incomplete snapshot.
+    let a_len = append_snap.map(|s| s.records.len()).unwrap_or(0);
+    let o_len = oracle_snap.map(|s| s.records.len()).unwrap_or(0);
+    if a_len != o_len {
+        return false;
     }
+    if let (Some(a), Some(o)) = (append_snap, oracle_snap) {
+        for (ar, or) in a.records.iter().zip(o.records.iter()) {
+            let aid = ar.record.get("id").and_then(Value::as_str).unwrap_or("");
+            let oid = or.record.get("id").and_then(Value::as_str).unwrap_or("");
+            if aid != oid
+                || ar.status != or.status
+                || ar.provisional_id != or.provisional_id
+                || ar.replaces_provisional_id != or.replaces_provisional_id
+                || ar.finalizes_provisional_id != or.finalizes_provisional_id
+            {
+                return false;
+            }
+        }
+        if a.diagnostics.len() != o.diagnostics.len() {
+            return false;
+        }
+        for (ad, od) in a.diagnostics.iter().zip(o.diagnostics.iter()) {
+            if ad.code != od.code
+                || ad.message != od.message
+                || ad.input_line != od.input_line
+                || ad.record_index != od.record_index
+                || ad.count != od.count
+            {
+                return false;
+            }
+        }
+    } else if a_len != 0 || o_len != 0 {
+        return false;
+    } else {
+        // Both empty (one or both missing): diagnostics must also be empty.
+        let a_d = append_snap.map(|s| s.diagnostics.len()).unwrap_or(0);
+        let o_d = oracle_snap.map(|s| s.diagnostics.len()).unwrap_or(0);
+        if a_d != 0 || o_d != 0 {
+            return false;
+        }
+    }
+    let a_complete = append_snap.map(|s| s.complete).unwrap_or(false);
+    let o_complete = oracle_snap.map(|s| s.complete).unwrap_or(false);
+    if a_complete != o_complete {
+        return false;
+    }
+    append_cursor.position.next_byte_offset() == oracle_cursor.position.next_byte_offset()
+        && append_cursor.prefix_sha256 == oracle_cursor.prefix_sha256
 }
 
 fn execute(

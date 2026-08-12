@@ -29,7 +29,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.baseline.json"
       },
       "double_invoke": true
     },
@@ -41,7 +42,8 @@
       },
       "expected": {
         "update_kind": "reset-required",
-        "reset_reason": "sequence-gap"
+        "reset_reason": "sequence-gap",
+        "result": "expected.gap.json"
       },
       "double_invoke": true
     }

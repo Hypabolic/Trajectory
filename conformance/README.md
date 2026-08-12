@@ -35,28 +35,29 @@ Protocol:
 
 - Request operation `stream-sequence` (or synonym `stream-replay`) runs the
   entire step list in one runner process. Per-step library ops
-  (`stream-apply-append`, …) are also in the protocol enum; until stream
-  engines land they return `status: "unsupported"`.
+  (`stream-apply-append`, …) remain in the protocol enum for dedicated harnesses.
 - Response status may be `success`, `fatal-error`, `protocol-error`, or
-  `unsupported`. `unsupported` is a valid pre-engine outcome and is skipped
-  (not failed) by `verify.py`.
+  `unsupported`. `unsupported` is skipped (not failed) by `verify.py` for
+  optional paths (e.g. Hermes export until a provider lands). Core file JSONL
+  + AHP cases must return `success` on all four runners (LS-08).
 - Runners double-invoke each step when `double_invoke` is true (default) and
-  report `idempotent: true` in the step result once engines land.
+  report `idempotent: true` in the step result.
 
 Stream comparison modes (from `contracts/spec/streaming.md`):
 
 | Mode | Checks |
 | --- | --- |
-| `stream-json-exact` | Per-step `StreamUpdate` vs optional golden (`expected.result`) |
+| `stream-json-exact` | Per-step `StreamUpdate` vs golden (`expected.result`) |
 | `stream-cursor-exact` | Cursor fields vs golden cursor |
 | `stream-delta-apply` | Applying delta to prior snapshot yields new snapshot |
 | `stream-diagnostics-by-step` | `expected.diagnostic_codes` per step |
 | `stream-idempotence` | Double-apply parity (`idempotent: true`) |
 | `stream-oracle-parity` | Append path equals prefix re-normalize, or AHP action path equals independent Shape A snapshot (`case.oracle`) |
 
-Goldens under each step’s `expected.result` are filled as engines land
-(LS-04+). Scaffold cases ship **inputs first**; missing goldens do not fail
-while the runner returns `unsupported`.
+**LS-08:** per-step `expected.result` goldens are checked in for the full
+streaming corpus. `stream-oracle-parity` is enabled on file-JSONL growth and
+reset cases (and AHP action≡snapshot where materials exist). Do **not** claim
+`stream-*` capabilities in runtime manifests until LS-12.
 
 Privacy: every stream case should list `privacy.forbidden_substrings` (plus
 defaults in `verify.py`). Diagnostics, errors, and goldens are scanned.
@@ -79,13 +80,15 @@ defaults in `verify.py`). Diagnostics, errors, and goldens are scanned.
 1. Add `cases/streaming/<name>/case.json` conforming to `streaming-case-v1`.
 2. Prefer synthetic `inline_utf8` for tiny steps; use `material` relative paths
    for multi-line JSONL / AHP JSON.
-3. Declare `required_capabilities` with the `stream-*` names the case needs.
-   Cases skip until runtimes claim those capabilities (LS-12).
-4. List comparison modes and optional `oracle` / `privacy` blocks.
-5. Leave `expected.result` goldens out until an engine produces a reviewed
-   candidate under `artifacts/conformance-candidates/`.
-6. Run `python3 conformance/verify.py …` with a stream-capable runner (or any
-   of the four runners in unsupported mode) to confirm protocol wiring.
+3. Declare `required_capabilities` with the `stream-*` names the case needs
+   (capability advertising is LS-12; engines still execute the cases today).
+4. List comparison modes including `stream-oracle-parity` when append or AHP
+   action≡snapshot applies; set `oracle` flags accordingly.
+5. Produce `expected.<step-id>.json` goldens from a trusted runner, review by
+   hand, check in, and wire `expected.result`. Candidates may land under
+   `artifacts/conformance-candidates/` during review.
+6. Run `python3 conformance/verify.py --operation stream-sequence -- <runner>`
+   on **all four** runtimes before merging.
 
 Implementation-specific parser/unit fixtures belong under that runtime, not
 here. Shared cases are copied directly into runtime test output only for test

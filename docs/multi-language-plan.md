@@ -108,9 +108,29 @@ core, optional I/O/clients.
 | [live-session-streaming.md](live-session-streaming.md) | Locked product + technical specification |
 | [live-session-streaming-plan.md](live-session-streaming-plan.md) | Slices LS-00 … LS-12 |
 
+| Slice | Outcome | Status |
+| --- | --- | --- |
+| LS-00 … LS-02 | Product freeze, contracts/schemas, stream conformance protocol + fixtures | **In-tree** |
+| LS-03 … LS-05 | Stream state/cursor, snapshot apply + delta, JSONL append (×4) | **In-tree** |
+| LS-06 … LS-07 | AHP Shape A snapshot stream + Shape B action-log reducer in core (×4) | **In-tree** |
+| **LS-08** | **Full stream matrix gate** — shared `conformance/cases/streaming/**` green on all four runtimes; per-step goldens; append ≡ prefix oracle; batch still green; **no** `stream-*` capability claims | **In-tree on tip** |
+| LS-09 … LS-11 | Optional file I/O packages, optional AHP clients, sample CLIs | Scheduled |
+| LS-12 | Capability advertising + release gate | Blocked on LS-09–11 |
+
+### LS-08 definition of done (core matrix)
+
+- One shared corpus under `conformance/cases/streaming/` is authority (no
+  runtime-private stream goldens).
+- `python3 conformance/verify.py --operation stream-sequence -- <runner>` is
+  green for .NET, TypeScript, Rust, and Python with
+  `stream_unsupported_skips: 0` for the landed input kinds.
+- `stream-oracle-parity` / `append_equals_prefix` covers file-JSONL growth
+  cases; `action_equals_snapshot` covers AHP action≡snapshot.
+- Batch tip verify and identity baseline remain green.
+- `runtime-capabilities.json` still omits `stream-*` until LS-12.
+
 This supersedes the informal “AHP Shape B / live host later” note as a concrete
-roadmap; shipped code remains offline until those slices land and capability
-manifests are updated.
+roadmap; optional I/O/clients and capability advertising remain later slices.
 
 ## Post-v1 ideas (not scheduled)
 

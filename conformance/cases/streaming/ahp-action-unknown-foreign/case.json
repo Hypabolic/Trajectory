@@ -28,7 +28,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.baseline.json"
       },
       "double_invoke": true
     },
@@ -40,7 +41,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.unknown-and-foreign.json"
       },
       "double_invoke": true
     }

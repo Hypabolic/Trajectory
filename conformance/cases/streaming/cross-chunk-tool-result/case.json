@@ -32,7 +32,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-tool-call-chunk.json"
       },
       "double_invoke": true
     },
@@ -45,7 +46,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-tool-result-chunk.json"
       },
       "double_invoke": true
     }
@@ -57,7 +59,8 @@
     "stream-oracle-parity"
   ],
   "oracle": {
-    "append_equals_prefix": true
+    "append_equals_prefix": true,
+    "prefix_re_normalize": true
   },
   "privacy": {
     "forbidden_substrings": [

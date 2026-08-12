@@ -31,7 +31,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-line.json"
       },
       "double_invoke": true
     },
@@ -57,7 +58,8 @@
       },
       "expected": {
         "update_kind": "unchanged",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-line-replay.json"
       },
       "double_invoke": true
     }
@@ -65,7 +67,8 @@
   "comparison": [
     "stream-json-exact",
     "stream-idempotence",
-    "stream-cursor-exact"
+    "stream-cursor-exact",
+    "stream-oracle-parity"
   ],
   "privacy": {
     "forbidden_substrings": [
@@ -74,5 +77,9 @@
       "sk-live-",
       "auth.json"
     ]
+  },
+  "oracle": {
+    "append_equals_prefix": true,
+    "prefix_re_normalize": true
   }
 }

@@ -32,7 +32,8 @@
       "expected": {
         "update_kind": "updated",
         "complete": false,
-        "cursor_position_kind": "byte"
+        "cursor_position_kind": "byte",
+        "result": "expected.snapshot-base.json"
       },
       "double_invoke": true
     },
@@ -58,7 +59,8 @@
       },
       "expected": {
         "update_kind": "reset-required",
-        "reset_reason": "cursor-mismatch"
+        "reset_reason": "cursor-mismatch",
+        "result": "expected.append-bad-cursor.json"
       },
       "double_invoke": true
     }
@@ -66,7 +68,8 @@
   "comparison": [
     "stream-json-exact",
     "stream-cursor-exact",
-    "stream-idempotence"
+    "stream-idempotence",
+    "stream-oracle-parity"
   ],
   "privacy": {
     "forbidden_substrings": [
@@ -75,5 +78,9 @@
       "sk-live-",
       "auth.json"
     ]
+  },
+  "oracle": {
+    "append_equals_prefix": true,
+    "prefix_re_normalize": true
   }
 }

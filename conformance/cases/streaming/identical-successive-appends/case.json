@@ -33,7 +33,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-first.json"
       },
       "double_invoke": true
     },
@@ -46,7 +47,8 @@
       },
       "expected": {
         "update_kind": "updated",
-        "complete": false
+        "complete": false,
+        "result": "expected.append-second-identical.json"
       },
       "double_invoke": true
     }

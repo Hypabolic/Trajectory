@@ -1,0 +1,177 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 1,
+    "revision_id": "8f93f06748999a16d283126fa32f15aaf07a7c8a8827509ff02c86b345f114bb",
+    "parent_revision_id": "16f54d0e7005ad11891650196b1ba8d33e99d5ffad29990681aa27f8ec49ae57",
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-snapshot-delta-equivalence",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 446,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "f394dde7f81dc69215d101ae04f86dc690752945cce345c0fa0c1c91af0bda2d"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "pi",
+    "group_id": "stream-snapshot-delta-equivalence",
+    "revision": {
+      "revision": 1,
+      "revision_id": "8f93f06748999a16d283126fa32f15aaf07a7c8a8827509ff02c86b345f114bb",
+      "parent_revision_id": "16f54d0e7005ad11891650196b1ba8d33e99d5ffad29990681aa27f8ec49ae57",
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "7dc583b8b25775e904ab701f3ee72fa74dee465004f7a44114b48867306e21e1",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "pi",
+          "cwd": "/workspace/demo",
+          "producer_version": "3",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "1388ada6b0d0cd9a4b29e993627fa273947e11fc5330ca4ad770723cea66e013",
+            "record_sha256": "e1b8c4833a9305e86a6b952171b82f196d8cbe19517d45f6f6ae027a41ce20d5"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "e847ba838d26f94d9d3dd074cfedfaab550c355560d4e9377b4e45a91a5b40a9",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-01-01T00:00:01.000Z",
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "content": "a",
+          "provenance": {
+            "stable_source_record_id": "msg-eq-1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-01-01T00:00:01.000Z|00000000000000000001|msg-eq-1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "msg-eq-1",
+            "source_sequence": 1,
+            "source_offset": 135,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "d4445b371499992e4b7efaecc228ebaa976bc79dcfd14f0eec5c323d53f57607",
+            "record_sha256": "8a69805fc1f7058138df43afb43f5182b382fb588904c0a5059624b37a484175"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "e155fb2f4c387b6c527452632e06acd4856100b8090885e6af0119b7df6b3aed",
+          "kind": "message",
+          "role": "assistant",
+          "order": 1,
+          "source_timestamp": "2026-01-01T00:00:02.000Z",
+          "timestamp": "2026-01-01T00:00:02.000Z",
+          "content": "b",
+          "provenance": {
+            "stable_source_record_id": "msg-eq-2",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-01-01T00:00:02.000Z|00000000000000000002|msg-eq-2",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "msg-eq-2",
+            "source_sequence": 2,
+            "source_offset": 288,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "978a4ff3a48b579b51336f2d41a274b0060a918cf44e5f2f7a71e973dc72b68c",
+            "record_sha256": "51dcc0343428c569b117e8f4688029672bf4baabbb71c069b2a658ead15bdd81"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "16f54d0e7005ad11891650196b1ba8d33e99d5ffad29990681aa27f8ec49ae57",
+    "revision": {
+      "revision": 1,
+      "revision_id": "8f93f06748999a16d283126fa32f15aaf07a7c8a8827509ff02c86b345f114bb",
+      "parent_revision_id": "16f54d0e7005ad11891650196b1ba8d33e99d5ffad29990681aa27f8ec49ae57",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "e155fb2f4c387b6c527452632e06acd4856100b8090885e6af0119b7df6b3aed",
+            "kind": "message",
+            "role": "assistant",
+            "order": 1,
+            "source_timestamp": "2026-01-01T00:00:02.000Z",
+            "timestamp": "2026-01-01T00:00:02.000Z",
+            "content": "b",
+            "provenance": {
+              "stable_source_record_id": "msg-eq-2",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-01-01T00:00:02.000Z|00000000000000000002|msg-eq-2",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "msg-eq-2",
+              "source_sequence": 2,
+              "source_offset": 288,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "978a4ff3a48b579b51336f2d41a274b0060a918cf44e5f2f7a71e973dc72b68c",
+              "record_sha256": "51dcc0343428c569b117e8f4688029672bf4baabbb71c069b2a658ead15bdd81"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 3,
+    "bytes": 446,
+    "first_source_position": 0,
+    "last_source_position": 445
+  }
+}

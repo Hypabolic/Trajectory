@@ -1,0 +1,174 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "cdae8424f983d67604c64488e3f82257d8928e4f175e9d82638d83b84cd44d45",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-utf8-byte-boundary",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 131,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "521b78b6896603d5402fc3d3c6bb63e7e3ec26ff1f671370807645a11230c54a"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "pi",
+    "group_id": "stream-utf8-byte-boundary",
+    "revision": {
+      "revision": 0,
+      "revision_id": "cdae8424f983d67604c64488e3f82257d8928e4f175e9d82638d83b84cd44d45",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "e38f6bfad3b9ccaf0dc2ba79ac0e9f759490b0b3b602a66a34c8c091b1406f1b",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "pi",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "e59870288b68a2a79cc0e47e0bb3b46e1f9431e6b9b8ad7d9f0b0446fb235b39",
+            "record_sha256": "1a9529b1a68fd57532c62225fb57f4de431e5efdb52155dc22b5900b5265f680"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "ca2ba2296e7f188d9d42abe57c51b567b7f22b3a4a69ba992e08f9051030f238",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-01-01T00:00:00.000Z",
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "content": "price €42",
+          "provenance": {
+            "stable_source_record_id": "utf8-boundary-1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-01-01T00:00:00.000Z|00000000000000000000|utf8-boundary-1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "utf8-boundary-1",
+            "source_sequence": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "1e44886e85adf01c95c4dab436770a51f4a79c0c681bc67bc2ad9d8677208b52",
+            "record_sha256": "dc1950c9df1b6f5077f1bafa124de9a70b4722ec2ca02109159bf6ef9325c13a"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "cdae8424f983d67604c64488e3f82257d8928e4f175e9d82638d83b84cd44d45",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "e38f6bfad3b9ccaf0dc2ba79ac0e9f759490b0b3b602a66a34c8c091b1406f1b",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "pi",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "e59870288b68a2a79cc0e47e0bb3b46e1f9431e6b9b8ad7d9f0b0446fb235b39",
+              "record_sha256": "1a9529b1a68fd57532c62225fb57f4de431e5efdb52155dc22b5900b5265f680"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "ca2ba2296e7f188d9d42abe57c51b567b7f22b3a4a69ba992e08f9051030f238",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": "2026-01-01T00:00:00.000Z",
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "content": "price €42",
+            "provenance": {
+              "stable_source_record_id": "utf8-boundary-1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-01-01T00:00:00.000Z|00000000000000000000|utf8-boundary-1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "utf8-boundary-1",
+              "source_sequence": 0,
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "1e44886e85adf01c95c4dab436770a51f4a79c0c681bc67bc2ad9d8677208b52",
+              "record_sha256": "dc1950c9df1b6f5077f1bafa124de9a70b4722ec2ca02109159bf6ef9325c13a"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 2,
+    "bytes": 131,
+    "first_source_position": 0,
+    "last_source_position": 130
+  }
+}

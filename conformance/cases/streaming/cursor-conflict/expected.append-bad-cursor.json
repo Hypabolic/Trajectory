@@ -1,0 +1,60 @@
+{
+  "kind": "reset-required",
+  "revision": {
+    "revision": 0,
+    "revision_id": "c932e90d8a3ec3f61e4143277418b9f1448759c13dfbefd49e6b014430ee6028",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-cursor-conflict",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 124,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "22e7ab13edd53ae3aae403575f1c3901ad3c37103f78c761d68de230080a2d1d"
+  },
+  "snapshot": null,
+  "delta": null,
+  "diagnostics": [
+    {
+      "code": "stream_cursor_conflict",
+      "message": "Supplied stream cursor does not match stream state."
+    }
+  ],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 0,
+    "bytes": 0
+  },
+  "reset": {
+    "reason": "cursor-mismatch",
+    "prior_cursor": {
+      "cursor_version": 1,
+      "source": "pi",
+      "group_id": "stream-cursor-conflict",
+      "generation": 0,
+      "position": {
+        "kind": "byte",
+        "next_byte_offset": 124,
+        "pending_byte_length": 0
+      },
+      "source_revision": "gen-0",
+      "prefix_sha256": "22e7ab13edd53ae3aae403575f1c3901ad3c37103f78c761d68de230080a2d1d"
+    },
+    "requires_snapshot": true,
+    "dropped_record_ids": [
+      "2182f2ac7a57fc25d29bbc80a15db0582e657333297f7e349e5b59a57c813086"
+    ]
+  }
+}

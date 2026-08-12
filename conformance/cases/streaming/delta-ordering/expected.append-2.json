@@ -1,0 +1,149 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 1,
+    "revision_id": "c7ff42cf9e0d9738cc81301c65aed34b64ca2a402eec74f85f9473ad6939aeec",
+    "parent_revision_id": "cf5648356e8152f32d4a214778cb226220fb22467dfb93d0949283085861339e",
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-delta-ordering",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 276,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "98aafad8a5b1dacf435a99dcba765442324e110295032a9cd2692ee76968e715"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "pi",
+    "group_id": "stream-delta-ordering",
+    "revision": {
+      "revision": 1,
+      "revision_id": "c7ff42cf9e0d9738cc81301c65aed34b64ca2a402eec74f85f9473ad6939aeec",
+      "parent_revision_id": "cf5648356e8152f32d4a214778cb226220fb22467dfb93d0949283085861339e",
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "37b69f1c820b84e0c5e4bbeb125e66482410cedad0bc41b98967aff66f1753e7",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "pi",
+          "cwd": "/workspace/demo",
+          "producer_version": "3",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "1388ada6b0d0cd9a4b29e993627fa273947e11fc5330ca4ad770723cea66e013",
+            "record_sha256": "e1b8c4833a9305e86a6b952171b82f196d8cbe19517d45f6f6ae027a41ce20d5"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "0933a929fd05b809b729cf79053ccf572d4c93fd5c34e7dd2a0bf370fb75483d",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-01-01T00:00:01.000Z",
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "content": "one",
+          "provenance": {
+            "stable_source_record_id": "msg-d1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-01-01T00:00:01.000Z|00000000000000000001|msg-d1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "msg-d1",
+            "source_sequence": 1,
+            "source_offset": 123,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "5824d24d53af4b6cede3ccb20c30709d230eb736a05822cf9a88873b23e72ddd",
+            "record_sha256": "4d4cb8d1356be6f21f3fa198b2b221892cc429244f9bdb858389883c2048fef3"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "cf5648356e8152f32d4a214778cb226220fb22467dfb93d0949283085861339e",
+    "revision": {
+      "revision": 1,
+      "revision_id": "c7ff42cf9e0d9738cc81301c65aed34b64ca2a402eec74f85f9473ad6939aeec",
+      "parent_revision_id": "cf5648356e8152f32d4a214778cb226220fb22467dfb93d0949283085861339e",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "0933a929fd05b809b729cf79053ccf572d4c93fd5c34e7dd2a0bf370fb75483d",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": "2026-01-01T00:00:01.000Z",
+            "timestamp": "2026-01-01T00:00:01.000Z",
+            "content": "one",
+            "provenance": {
+              "stable_source_record_id": "msg-d1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-01-01T00:00:01.000Z|00000000000000000001|msg-d1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "msg-d1",
+              "source_sequence": 1,
+              "source_offset": 123,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "5824d24d53af4b6cede3ccb20c30709d230eb736a05822cf9a88873b23e72ddd",
+              "record_sha256": "4d4cb8d1356be6f21f3fa198b2b221892cc429244f9bdb858389883c2048fef3"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 2,
+    "bytes": 153,
+    "first_source_position": 123,
+    "last_source_position": 275
+  }
+}

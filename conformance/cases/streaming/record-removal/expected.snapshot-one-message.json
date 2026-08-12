@@ -1,0 +1,154 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 1,
+    "revision_id": "8d74103c3af9695973901f85f70de440327d898b80a3ebeace554484fc549124",
+    "parent_revision_id": "0bf391c8362271f3b3d9dba53ba451b8c108f7b08d0138ff521c0c0fecd17988",
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-record-removal",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 467,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "a98d04276209d4a8d9e0c289015f75ce69b0dab030452d0b6e6e8196b56acb5b"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "pi",
+    "group_id": "stream-record-removal",
+    "revision": {
+      "revision": 1,
+      "revision_id": "8d74103c3af9695973901f85f70de440327d898b80a3ebeace554484fc549124",
+      "parent_revision_id": "0bf391c8362271f3b3d9dba53ba451b8c108f7b08d0138ff521c0c0fecd17988",
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "3651045a276b3e37491db6228f0ca6556812b9a7de3bca813b3640ee9221dad1",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "pi",
+          "cwd": "/workspace/demo",
+          "producer_version": "3",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "1388ada6b0d0cd9a4b29e993627fa273947e11fc5330ca4ad770723cea66e013",
+            "record_sha256": "e1b8c4833a9305e86a6b952171b82f196d8cbe19517d45f6f6ae027a41ce20d5"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "3304e8e3a77a1579d0d4b77feac0bfdc884bd1eb1d4a54ae579120a74989562f",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-01-01T00:00:01.000Z",
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "content": "keep me (only survivor after source rewrite of the transcript prefix) xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "provenance": {
+            "stable_source_record_id": "msg-keep",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-01-01T00:00:01.000Z|00000000000000000001|msg-keep",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "msg-keep",
+            "source_sequence": 1,
+            "source_offset": 123,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "b88c6037667b40e4f9d00dcfb220283d38891815b0cb4600e2deea9476474e3f",
+            "record_sha256": "b457b63645db8300b37dcb9e1487a873ecf20adf9eb42f59a33d02315f57b7de"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "0bf391c8362271f3b3d9dba53ba451b8c108f7b08d0138ff521c0c0fecd17988",
+    "revision": {
+      "revision": 1,
+      "revision_id": "8d74103c3af9695973901f85f70de440327d898b80a3ebeace554484fc549124",
+      "parent_revision_id": "0bf391c8362271f3b3d9dba53ba451b8c108f7b08d0138ff521c0c0fecd17988",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "remove",
+        "record_id": "ee980c43a92ac96bf588693032604c5f39579ae6468f3507796a241f4b8015db",
+        "reason": "source-rewrite"
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "3304e8e3a77a1579d0d4b77feac0bfdc884bd1eb1d4a54ae579120a74989562f",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": "2026-01-01T00:00:01.000Z",
+            "timestamp": "2026-01-01T00:00:01.000Z",
+            "content": "keep me (only survivor after source rewrite of the transcript prefix) xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "provenance": {
+              "stable_source_record_id": "msg-keep",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-01-01T00:00:01.000Z|00000000000000000001|msg-keep",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "msg-keep",
+              "source_sequence": 1,
+              "source_offset": 123,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "b88c6037667b40e4f9d00dcfb220283d38891815b0cb4600e2deea9476474e3f",
+              "record_sha256": "b457b63645db8300b37dcb9e1487a873ecf20adf9eb42f59a33d02315f57b7de"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 2,
+    "bytes": 467,
+    "first_source_position": 0,
+    "last_source_position": 466
+  }
+}

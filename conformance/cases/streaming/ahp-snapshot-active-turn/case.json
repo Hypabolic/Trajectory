@@ -33,7 +33,10 @@
       "expected": {
         "update_kind": "updated",
         "complete": false,
-        "provisional_ids": ["prov-active-turn-1"]
+        "provisional_ids": [
+          "prov-active-turn-1"
+        ],
+        "result": "expected.with-active-turn.json"
       },
       "double_invoke": true
     }

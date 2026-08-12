@@ -1,0 +1,116 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "cee0e2082e3fb62b4802da4c29f6b7ebc6266351878e6684d6c93ddad04b74d2",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000c1",
+    "generation": 0,
+    "position": {
+      "kind": "ahp-server-seq",
+      "next_server_seq": 2,
+      "last_server_seq": 1,
+      "next_byte_offset": 161
+    },
+    "source_revision": "seq:1",
+    "prefix_sha256": "318c158ec3e0e965c79e5a47bf0a2bc1c6fefe91fd2f39f597800190d8f42497"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000c1",
+    "revision": {
+      "revision": 0,
+      "revision_id": "cee0e2082e3fb62b4802da4c29f6b7ebc6266351878e6684d6c93ddad04b74d2",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "95698fddfe34f9537adc1dc78996f0378e1ede8ca6c6f7ca499a2b24d27979b6",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "ahp",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "22dca960ae1241a3bddc7559aa8284e2b42a9035353275d51cb21e33d476ed17",
+            "record_sha256": "917fab4774704f857f0ec94bff5fc356b21bff85f4279d4c5f7a3fe026b90ae3"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "cee0e2082e3fb62b4802da4c29f6b7ebc6266351878e6684d6c93ddad04b74d2",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "95698fddfe34f9537adc1dc78996f0378e1ede8ca6c6f7ca499a2b24d27979b6",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "ahp",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "22dca960ae1241a3bddc7559aa8284e2b42a9035353275d51cb21e33d476ed17",
+              "record_sha256": "917fab4774704f857f0ec94bff5fc356b21bff85f4279d4c5f7a3fe026b90ae3"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 1,
+    "bytes": 161,
+    "first_source_position": 0,
+    "last_source_position": 160
+  }
+}
