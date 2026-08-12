@@ -120,7 +120,7 @@ four runtimes). Optional AHP **client** packages remain deferred.
 
 | Area | Gap |
 | --- | --- |
-| **Live host client** | No WebSocket / JSON-RPC client in core; no subscribe-and-export package |
+| **Live host client** | Optional packages (LS-10): transport-only clients with auth callback + fake-host tests; **not** in core; not capability-advertised until LS-12 |
 | **Listing** | Phase 3 — no export-directory discoverer; listers are empty stubs |
 | **Multi-chat unpack** | Combined session export helper deferred (one chat per normalize) |
 | **Official reducer parity** | Trajectory ships a **minimal complete** chat reducer subset, not a vendored copy of every AHP client fixture |

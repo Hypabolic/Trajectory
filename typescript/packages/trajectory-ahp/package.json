@@ -1,0 +1,37 @@
+{
+  "name": "@hypabolic/trajectory-ahp",
+  "version": "0.1.2",
+  "description": "Optional AHP live-host client for Hypabolic Trajectory (transport only; auth via callback)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hypabolic/Trajectory.git",
+    "directory": "typescript/packages/trajectory-ahp"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@hypabolic/trajectory": "0.1.2"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "tsc --build --clean tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "author": "Hypabolic"
+}

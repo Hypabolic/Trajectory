@@ -5,6 +5,16 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **LS-10 optional AHP client packages (all four ecosystems):** transport-only
+  live-host clients (`Hypabolic.Trajectory.Ahp`, `@hypabolic/trajectory-ahp`,
+  `hypabolic-trajectory-ahp`, `hypabolic_trajectory.ahp_client`) with injected
+  transport, auth callback, subscribe/snapshot/action feed into core
+  `apply_ahp_*`, auto-resync on sequence gap, cancel, and backpressure.
+  Fake-host CI tests cover gap, replay, cancel, backpressure, and auth failure.
+  Auth never appears in stream snapshots/deltas/diagnostics. Docs:
+  `docs/ahp-client.md`. Not imported by core by default; **do not** advertise
+  `stream-ahp-client` until LS-12.
+
 - **LS-09 optional file I/O packages (all four ecosystems):** path poll/follow
   helpers that feed only complete-line material into core `apply_snapshot` /
   `apply_append`. Packages: `Hypabolic.Trajectory.IO`,

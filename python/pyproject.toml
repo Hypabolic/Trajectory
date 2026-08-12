@@ -22,6 +22,8 @@ otel = [
 ]
 # LS-09 file I/O uses stdlib only; extra marks install intent for optional surface.
 io = []
+# LS-10 AHP client uses stdlib only (`hypabolic_trajectory.ahp_client`).
+ahp = []
 dev = [
   "pytest>=8.0",
   "jsonschema>=4.0",
