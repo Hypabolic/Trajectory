@@ -1,0 +1,58 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/empty-prefix",
+  "description": "Empty committed prefix yields an empty stream snapshot (records: []).",
+  "source": "pi",
+  "group_id": "stream-empty-prefix",
+  "required_capabilities": [
+    "stream-core",
+    "stream-apply-snapshot",
+    "stream-full-snapshot",
+    "stream-record-delta",
+    "stream-cursor-v1",
+    "stream-file-jsonl"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required"
+  },
+  "steps": [
+    {
+      "id": "snapshot-empty",
+      "input": {
+        "kind": "snapshot-bytes",
+        "inline_utf8": "",
+        "source_revision": "gen-0"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "record_count": 0,
+        "complete": false
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-cursor-exact",
+    "stream-delta-apply",
+    "stream-idempotence"
+  ],
+  "oracle": {
+    "prefix_re_normalize": true,
+    "append_equals_prefix": true
+  },
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  }
+}

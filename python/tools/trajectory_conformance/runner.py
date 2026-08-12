@@ -1,19 +1,25 @@
-"""Protocol v1 conformance runner (PY-10-full).
+"""Protocol v1 conformance runner (PY-10-full + LS-02 stream protocol).
 
 Implements the full protocol-v1 surface:
 
 - Normative preamble, response templates, case→NormalizeRequest mapping
 - Free-function normalize/project ops for all six output schemas
 - Full §7 listing-runner algorithm (``list-trajectories`` + ``$ROOT`` rewrite)
+- Stream sequence ops (``stream-sequence`` / ``stream-replay`` / apply ops):
+  accepted by the protocol; return ``status=unsupported`` until stream engines
+  land (LS-04+).
 
 Protocol v1 operations (request-v1.schema.json enum — all wired):
 
 - ``normalize-letta`` / ``normalize-canonical`` / ``normalize-hypabolic``
 - ``project-openai`` / ``project-minimal-jsonl`` / ``project-otel``
 - ``list-trajectories``
+- ``stream-sequence`` / ``stream-replay`` / stream-apply-* / ``stream-finish`` /
+  ``stream-reset`` (unsupported until stream engine)
 
 Authority:
   - docs/python-implementation-spec.md §7 + §9 PY-10-full
+  - docs/live-session-streaming-plan.md LS-02
   - conformance/protocol/request-v1.schema.json
   - conformance/protocol/response-v1.schema.json
   - peer runners (dotnet Program.cs, typescript cli.ts, rust main.rs)
@@ -54,8 +60,8 @@ from hypabolic_trajectory.dto import TrajectoryListing, TrajectoryListingPage
 
 PROTOCOL_VERSION: Final[str] = "1"
 
-# Full protocol-v1 operation set (must match request-v1.schema.json enum).
-PROTOCOL_V1_OPERATIONS: Final[frozenset[str]] = frozenset(
+# Batch protocol-v1 operation set (normalize/list).
+PROTOCOL_BATCH_OPERATIONS: Final[frozenset[str]] = frozenset(
     {
         "normalize-letta",
         "normalize-canonical",
@@ -65,6 +71,25 @@ PROTOCOL_V1_OPERATIONS: Final[frozenset[str]] = frozenset(
         "project-otel",
         "list-trajectories",
     }
+)
+
+# LS-02 stream protocol ops (engines return unsupported until LS-04+).
+PROTOCOL_STREAM_OPERATIONS: Final[frozenset[str]] = frozenset(
+    {
+        "stream-sequence",
+        "stream-replay",
+        "stream-apply-append",
+        "stream-apply-snapshot",
+        "stream-apply-ahp-actions",
+        "stream-apply-ahp-snapshot",
+        "stream-finish",
+        "stream-reset",
+    }
+)
+
+# Full protocol-v1 operation set (must match request-v1.schema.json enum).
+PROTOCOL_V1_OPERATIONS: Final[frozenset[str]] = (
+    PROTOCOL_BATCH_OPERATIONS | PROTOCOL_STREAM_OPERATIONS
 )
 
 # Normalize/project ops share the case→NormalizeRequest + free-function path.
@@ -354,6 +379,25 @@ def protocol_error_response(
     }
 
 
+def unsupported_response(
+    case: str,
+    operation: str,
+    *,
+    code: str = "capability_unsupported",
+    message: str = "Stream engine is not implemented yet.",
+) -> dict[str, Any]:
+    """Stream op accepted by protocol but engine not yet available (LS-02)."""
+    return {
+        "protocol_version": PROTOCOL_VERSION,
+        "case": case,
+        "operation": operation,
+        "status": "unsupported",
+        "output_text": None,
+        "diagnostics": [],
+        "fatal_error": {"code": code, "message": message},
+    }
+
+
 def emit_response(response: Mapping[str, Any]) -> None:
     """Write exactly one compact JSON object to stdout (no trailing commentary)."""
     sys.stdout.write(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
@@ -611,6 +655,16 @@ def execute(request: Mapping[str, str]) -> dict[str, Any]:
     operation = request["operation"]
 
     case_directory, manifest = load_case_manifest(repository_root, case_id)
+
+    # LS-02: multi-step stream cases — engine lands LS-04+.
+    if operation in PROTOCOL_STREAM_OPERATIONS:
+        steps = manifest.get("steps")
+        if type(steps) is not list or len(steps) == 0:
+            raise ProtocolError(
+                f"Stream operation '{operation}' requires a streaming case "
+                "with steps[]."
+            )
+        return unsupported_response(case_id, operation)
 
     operations = manifest.get("operation")
     if type(operations) is not dict:

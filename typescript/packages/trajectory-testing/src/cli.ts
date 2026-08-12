@@ -43,22 +43,34 @@ interface Request {
 interface Manifest {
   id: string;
   source: string;
-  transcript: string;
-  operation: Record<string, unknown>;
+  transcript?: string;
+  operation?: Record<string, unknown>;
+  steps?: unknown[];
   store?: string;
   listing?: { limit?: number; all_pages?: boolean };
-  source_context: {
+  source_context?: {
     group_id?: string;
     base_byte_offset?: number;
     partial?: boolean;
     include_encrypted_reasoning?: boolean | string;
   };
-  bounds: {
+  bounds?: {
     tool_arguments?: { max_characters?: number | null };
     tool_results?: { max_characters?: number | null; strategy?: "head" | "head-tail" };
   };
-  filters: { tool_results?: "include" | "omit" };
+  filters?: { tool_results?: "include" | "omit" };
 }
+
+const STREAM_OPERATIONS = new Set([
+  "stream-sequence",
+  "stream-replay",
+  "stream-apply-append",
+  "stream-apply-snapshot",
+  "stream-apply-ahp-actions",
+  "stream-apply-ahp-snapshot",
+  "stream-finish",
+  "stream-reset",
+]);
 
 try {
   const request = await readRequest();
@@ -106,11 +118,33 @@ async function execute(request: Request): Promise<unknown> {
   const caseDirectory = safeResolve(casesRoot, request.case);
   const manifest = JSON.parse(await readFile(join(caseDirectory, "case.json"), "utf8")) as Manifest;
   if (manifest.id !== request.case) throw new Error("The requested case does not match its manifest ID.");
-  if (!(request.operation in manifest.operation)) {
-    throw new Error(`Case '${request.case}' does not declare operation '${request.operation}'.`);
-  }
   if (!["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"].includes(manifest.source)) {
     throw new Error(`TypeScript does not support source '${manifest.source}'.`);
+  }
+
+  // LS-02: multi-step stream cases — engine lands LS-04+.
+  if (STREAM_OPERATIONS.has(request.operation)) {
+    if (!Array.isArray(manifest.steps) || manifest.steps.length === 0) {
+      throw new Error(
+        `Stream operation '${request.operation}' requires a streaming case with steps[].`,
+      );
+    }
+    return {
+      protocol_version: "1",
+      case: request.case,
+      operation: request.operation,
+      status: "unsupported",
+      output_text: null,
+      diagnostics: [],
+      fatal_error: {
+        code: "capability_unsupported",
+        message: "Stream engine is not implemented yet.",
+      },
+    };
+  }
+
+  if (!manifest.operation || !(request.operation in manifest.operation)) {
+    throw new Error(`Case '${request.case}' does not declare operation '${request.operation}'.`);
   }
   try {
     let outputText: string;
@@ -118,42 +152,46 @@ async function execute(request: Request): Promise<unknown> {
     if (request.operation === "list-trajectories") {
       outputText = await executeListing(repositoryRoot, manifest);
     } else {
+      if (!manifest.transcript) throw new Error("Case field 'transcript' must be a non-empty string.");
+      const sourceContext = manifest.source_context ?? {};
+      const bounds = manifest.bounds ?? {};
+      const filters = manifest.filters ?? {};
       const transcript = await readFile(safeResolve(caseDirectory, manifest.transcript));
-      const includeEncrypted = manifest.source_context.include_encrypted_reasoning === true
-        || manifest.source_context.include_encrypted_reasoning === "true";
+      const includeEncrypted = sourceContext.include_encrypted_reasoning === true
+        || sourceContext.include_encrypted_reasoning === "true";
       const trajectory = normalizeToIR({
         source: manifest.source as TrajectorySource,
         transcriptBytes: transcript,
         sourceContext: {
-          ...(manifest.source_context.group_id === undefined ? {} : { groupId: manifest.source_context.group_id }),
-          ...(manifest.source_context.base_byte_offset === undefined ? {} : { baseByteOffset: BigInt(manifest.source_context.base_byte_offset) }),
-          partial: manifest.source_context.partial ?? false,
+          ...(sourceContext.group_id === undefined ? {} : { groupId: sourceContext.group_id }),
+          ...(sourceContext.base_byte_offset === undefined ? {} : { baseByteOffset: BigInt(sourceContext.base_byte_offset) }),
+          partial: sourceContext.partial ?? false,
           ...(includeEncrypted ? { includeEncryptedReasoning: true } : {}),
         },
         options: {
           bounds: {
-            ...(manifest.bounds.tool_arguments === undefined ? {} : {
+            ...(bounds.tool_arguments === undefined ? {} : {
               toolArguments: {
-                ...(manifest.bounds.tool_arguments.max_characters === undefined
+                ...(bounds.tool_arguments.max_characters === undefined
                   ? {}
-                  : { maxCharacters: manifest.bounds.tool_arguments.max_characters }),
+                  : { maxCharacters: bounds.tool_arguments.max_characters }),
               },
             }),
-            ...(manifest.bounds.tool_results === undefined ? {} : {
+            ...(bounds.tool_results === undefined ? {} : {
               toolResults: {
-                ...(manifest.bounds.tool_results.max_characters === undefined
+                ...(bounds.tool_results.max_characters === undefined
                   ? {}
-                  : { maxCharacters: manifest.bounds.tool_results.max_characters }),
-                ...(manifest.bounds.tool_results.strategy === undefined
+                  : { maxCharacters: bounds.tool_results.max_characters }),
+                ...(bounds.tool_results.strategy === undefined
                   ? {}
-                  : { strategy: manifest.bounds.tool_results.strategy }),
+                  : { strategy: bounds.tool_results.strategy }),
               },
             }),
           },
           filters: {
-            ...(manifest.filters.tool_results === undefined
+            ...(filters.tool_results === undefined
               ? {}
-              : { toolResults: manifest.filters.tool_results }),
+              : { toolResults: filters.tool_results }),
           },
         },
       });

@@ -1,0 +1,1 @@
+{"type":"message","id":"tool-result-1","timestamp":"2026-01-01T00:00:03.000Z","message":{"role":"toolResult","toolCallId":"call-read-1","toolName":"read","content":"demo contents","isError":false,"timestamp":"2026-01-01T00:00:03.000Z"}}

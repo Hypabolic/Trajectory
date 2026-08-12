@@ -69,9 +69,55 @@ public sealed class ContractsAndConformanceTests
         foreach (var path in manifests)
         {
             using var document = JsonDocument.Parse(File.ReadAllText(path));
-            AssertValid("conformance-case-v1.schema.json", document.RootElement);
             var root = document.RootElement;
             var directory = Path.GetDirectoryName(path)!;
+
+            // LS-02: multi-step stream cases use streaming-case-v1 (steps[]),
+            // not batch conformance-case-v1 (operation{}).
+            if (root.TryGetProperty("steps", out var steps) &&
+                steps.ValueKind == JsonValueKind.Array)
+            {
+                AssertValid("streaming-case-v1.schema.json", root);
+                foreach (var step in steps.EnumerateArray())
+                {
+                    if (!step.TryGetProperty("input", out var input))
+                        continue;
+                    if (input.TryGetProperty("material", out var material) &&
+                        material.ValueKind == JsonValueKind.String)
+                    {
+                        var materialPath = Path.Combine(directory, material.GetString()!);
+                        Assert.True(
+                            File.Exists(materialPath),
+                            $"{path} step references missing material {material.GetString()}.");
+                    }
+
+                    if (input.TryGetProperty("reset", out var reset) &&
+                        reset.ValueKind == JsonValueKind.Object &&
+                        reset.TryGetProperty("material", out var resetMaterial) &&
+                        resetMaterial.ValueKind == JsonValueKind.String)
+                    {
+                        var materialPath = Path.Combine(directory, resetMaterial.GetString()!);
+                        Assert.True(
+                            File.Exists(materialPath),
+                            $"{path} reset step references missing material {resetMaterial.GetString()}.");
+                    }
+
+                    // Goldens are optional until engines land (LS-04+).
+                    if (step.TryGetProperty("expected", out var expected) &&
+                        expected.TryGetProperty("result", out var result) &&
+                        result.ValueKind == JsonValueKind.String)
+                    {
+                        var expectedPath = Path.Combine(directory, result.GetString()!);
+                        Assert.True(
+                            File.Exists(expectedPath),
+                            $"{path} step references missing expected output {result.GetString()}.");
+                    }
+                }
+
+                continue;
+            }
+
+            AssertValid("conformance-case-v1.schema.json", root);
             Assert.True(
                 File.Exists(Path.Combine(directory, root.GetProperty("transcript").GetString()!)),
                 $"{path} references a missing transcript.");

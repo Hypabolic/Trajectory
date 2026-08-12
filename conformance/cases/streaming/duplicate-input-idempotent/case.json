@@ -1,0 +1,52 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/duplicate-input-idempotent",
+  "description": "Replaying the same committed append input is idempotent (second apply → unchanged).",
+  "source": "pi",
+  "group_id": "stream-duplicate-input-idempotent",
+  "required_capabilities": [
+    "stream-core",
+    "stream-apply-append",
+    "stream-deterministic-replay",
+    "stream-jsonl-framing",
+    "stream-cursor-v1",
+    "stream-file-jsonl"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required"
+  },
+  "steps": [
+    {
+      "id": "append-line",
+      "input": {
+        "kind": "append-bytes",
+        "material": "step-line.jsonl",
+        "source_revision": "gen-0"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-idempotence",
+    "stream-cursor-exact"
+  ],
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  }
+}

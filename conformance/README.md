@@ -6,6 +6,8 @@ No runtime owns or copies a shared input or golden.
 
 ## Case layout
 
+### Batch normalize / list
+
 Each `cases/<source>/<name>/case.json` declares the native input, source
 context, normalization options, mode, required capabilities, expected outcome,
 and one or more operations. Every operation names an immutable checked-in
@@ -21,7 +23,47 @@ Fatal cases compare the typed `{ "code", "message" }` object. Listing cases
 reference a declarative fixture under `stores/`; the runner builds a temporary
 explicit root and replaces its path with `$ROOT` before comparison.
 
+### Live stream sequences (LS-02+)
+
+Multi-step stream fixtures live under `cases/streaming/<name>/` and use
+[`streaming-case-v1.schema.json`](../contracts/schemas/streaming-case-v1.schema.json)
+(not the batch `conformance-case-v1` shape). Each case is an **ordered sequence
+of steps** with explicit input kinds (`append-bytes`, `snapshot-bytes`,
+`ahp-actions`, `ahp-snapshot`, `hermes-export`, `finish`, `reset`).
+
+Protocol:
+
+- Request operation `stream-sequence` (or synonym `stream-replay`) runs the
+  entire step list in one runner process. Per-step library ops
+  (`stream-apply-append`, …) are also in the protocol enum; until stream
+  engines land they return `status: "unsupported"`.
+- Response status may be `success`, `fatal-error`, `protocol-error`, or
+  `unsupported`. `unsupported` is a valid pre-engine outcome and is skipped
+  (not failed) by `verify.py`.
+- Runners double-invoke each step when `double_invoke` is true (default) and
+  report `idempotent: true` in the step result once engines land.
+
+Stream comparison modes (from `contracts/spec/streaming.md`):
+
+| Mode | Checks |
+| --- | --- |
+| `stream-json-exact` | Per-step `StreamUpdate` vs optional golden (`expected.result`) |
+| `stream-cursor-exact` | Cursor fields vs golden cursor |
+| `stream-delta-apply` | Applying delta to prior snapshot yields new snapshot |
+| `stream-diagnostics-by-step` | `expected.diagnostic_codes` per step |
+| `stream-idempotence` | Double-apply parity (`idempotent: true`) |
+| `stream-oracle-parity` | Append path equals prefix re-normalize (`case.oracle`) |
+
+Goldens under each step’s `expected.result` are filled as engines land
+(LS-04+). Scaffold cases ship **inputs first**; missing goldens do not fail
+while the runner returns `unsupported`.
+
+Privacy: every stream case should list `privacy.forbidden_substrings` (plus
+defaults in `verify.py`). Diagnostics, errors, and goldens are scanned.
+
 ## Adding a case
+
+### Batch normalize / list
 
 1. Choose the smallest sanitized native fixture that exposes one behavior.
 2. Add `case.json` and the native input.
@@ -31,6 +73,19 @@ explicit root and replaces its path with `$ROOT` before comparison.
 5. Validate the manifest and schemas, then run all implementations.
 6. If the behavior changes identity, hashes, diagnostics, or existing bytes,
    version the affected contract before accepting the change.
+
+### Stream sequence
+
+1. Add `cases/streaming/<name>/case.json` conforming to `streaming-case-v1`.
+2. Prefer synthetic `inline_utf8` for tiny steps; use `material` relative paths
+   for multi-line JSONL / AHP JSON.
+3. Declare `required_capabilities` with the `stream-*` names the case needs.
+   Cases skip until runtimes claim those capabilities (LS-12).
+4. List comparison modes and optional `oracle` / `privacy` blocks.
+5. Leave `expected.result` goldens out until an engine produces a reviewed
+   candidate under `artifacts/conformance-candidates/`.
+6. Run `python3 conformance/verify.py …` with a stream-capable runner (or any
+   of the four runners in unsupported mode) to confirm protocol wiring.
 
 Implementation-specific parser/unit fixtures belong under that runtime, not
 here. Shared cases are copied directly into runtime test output only for test

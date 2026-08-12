@@ -2,10 +2,13 @@
 
 Acceptance (spec §9): All protocol v1 operations implemented.
 
-Protocol v1 ops (conformance/protocol/request-v1.schema.json):
+Protocol v1 batch ops (conformance/protocol/request-v1.schema.json):
   normalize-letta | normalize-canonical | normalize-hypabolic |
   project-openai | project-minimal-jsonl | project-otel |
   list-trajectories
+
+LS-02 stream ops are also in the request enum; they return status=unsupported
+until stream engines land (LS-04+).
 
 This join issue does not expand claims (owned by PY-10a / PY-10b-*). It pins
 that the runner accepts and executes the full operation enum, and that the
@@ -35,8 +38,8 @@ RUNNER_ENV = {
 }
 RUNNER_CMD = [PYTHON, "-m", "trajectory_conformance"]
 
-# Normative protocol-v1 enum (request-v1.schema.json).
-PROTOCOL_V1_OPS: frozenset[str] = frozenset(
+# Batch normalize/list ops (tip-matrix honesty gate).
+PROTOCOL_BATCH_OPS: frozenset[str] = frozenset(
     {
         "normalize-letta",
         "normalize-canonical",
@@ -48,7 +51,24 @@ PROTOCOL_V1_OPS: frozenset[str] = frozenset(
     }
 )
 
-# One representative case per op (declared on that case's case.json).
+# LS-02 stream protocol ops (unsupported until engines land).
+PROTOCOL_STREAM_OPS: frozenset[str] = frozenset(
+    {
+        "stream-sequence",
+        "stream-replay",
+        "stream-apply-append",
+        "stream-apply-snapshot",
+        "stream-apply-ahp-actions",
+        "stream-apply-ahp-snapshot",
+        "stream-finish",
+        "stream-reset",
+    }
+)
+
+# Full normative protocol-v1 enum (request-v1.schema.json).
+PROTOCOL_V1_OPS: frozenset[str] = PROTOCOL_BATCH_OPS | PROTOCOL_STREAM_OPS
+
+# One representative case per batch op (declared on that case's case.json).
 _OP_SMOKE_CASES: dict[str, str] = {
     "normalize-letta": "pi/tool-calls",
     "normalize-canonical": "pi/tool-calls",
@@ -100,6 +120,8 @@ def test_runner_exports_full_protocol_v1_operation_set() -> None:
     sys.path.insert(0, str(TOOLS))
     try:
         from trajectory_conformance.runner import (  # noqa: PLC0415
+            PROTOCOL_BATCH_OPERATIONS,
+            PROTOCOL_STREAM_OPERATIONS,
             PROTOCOL_V1_OPERATIONS,
             _KNOWN_OPS,
             _NORMALIZE_OPS,
@@ -109,13 +131,16 @@ def test_runner_exports_full_protocol_v1_operation_set() -> None:
             sys.path.remove(str(TOOLS))
 
     assert PROTOCOL_V1_OPERATIONS == PROTOCOL_V1_OPS
+    assert PROTOCOL_BATCH_OPERATIONS == PROTOCOL_BATCH_OPS
+    assert PROTOCOL_STREAM_OPERATIONS == PROTOCOL_STREAM_OPS
     assert _KNOWN_OPS == PROTOCOL_V1_OPS
-    assert _NORMALIZE_OPS == PROTOCOL_V1_OPS - {"list-trajectories"}
+    assert _NORMALIZE_OPS == PROTOCOL_BATCH_OPS - {"list-trajectories"}
     assert "list-trajectories" in PROTOCOL_V1_OPERATIONS
+    assert "stream-sequence" in PROTOCOL_V1_OPERATIONS
 
 
 def test_request_schema_enum_matches_protocol_v1_ops() -> None:
-    """Pin request-v1.schema.json operation enum to the same seven ops."""
+    """Pin request-v1.schema.json operation enum to batch + stream ops."""
     schema = json.loads(
         (ROOT / "conformance/protocol/request-v1.schema.json").read_text(
             encoding="utf-8"
@@ -125,9 +150,9 @@ def test_request_schema_enum_matches_protocol_v1_ops() -> None:
     assert enum == PROTOCOL_V1_OPS
 
 
-def test_each_protocol_v1_op_executes_successfully() -> None:
-    """Smoke: every protocol-v1 op runs to success on a declared case."""
-    assert set(_OP_SMOKE_CASES) == PROTOCOL_V1_OPS
+def test_each_protocol_v1_batch_op_executes_successfully() -> None:
+    """Smoke: every batch protocol-v1 op runs to success on a declared case."""
+    assert set(_OP_SMOKE_CASES) == PROTOCOL_BATCH_OPS
     for operation, case_id in _OP_SMOKE_CASES.items():
         completed = _invoke(_request(case_id, operation))
         assert completed.returncode == 0, (
@@ -146,6 +171,21 @@ def test_each_protocol_v1_op_executes_successfully() -> None:
         assert response["output_text"] != ""
 
 
+def test_stream_sequence_returns_unsupported_until_engine() -> None:
+    """LS-02: stream-sequence is accepted and returns unsupported pre-engine."""
+    completed = _invoke(_request("streaming/empty-prefix", "stream-sequence"))
+    assert completed.returncode == 0, (
+        f"stream-sequence failed:\nstdout={completed.stdout}\nstderr={completed.stderr}"
+    )
+    response = json.loads(completed.stdout)
+    assert response["protocol_version"] == "1"
+    assert response["case"] == "streaming/empty-prefix"
+    assert response["operation"] == "stream-sequence"
+    assert response["status"] == "unsupported"
+    assert response["fatal_error"] is not None
+    assert response["fatal_error"]["code"] == "capability_unsupported"
+
+
 def test_unknown_operation_is_protocol_error() -> None:
     """Ops outside the v1 enum are rejected with protocol-error exit 2."""
     completed = _invoke(_request("pi/tool-calls", "normalize-unknown"))
@@ -157,10 +197,11 @@ def test_unknown_operation_is_protocol_error() -> None:
 
 
 def test_filtered_verify_full_protocol_v1_tip_surface_green() -> None:
-    """Honesty gate: filtered tip sources × all protocol-v1 ops is verify-green.
+    """Honesty gate: filtered tip sources × batch protocol-v1 ops is verify-green.
 
     This is the PY-10-full join check. Tip *capabilities equality claim* and
     identity-baseline are formalized in test_py11_full_conformance.py (PY-11).
+    Stream cases are excluded by the batch-op filter (they use stream-sequence).
     """
     cmd: list[str] = [
         PYTHON,
@@ -170,7 +211,7 @@ def test_filtered_verify_full_protocol_v1_tip_surface_green() -> None:
     ]
     for source in _TIP_SOURCES:
         cmd.extend(["--source", source])
-    for operation in sorted(PROTOCOL_V1_OPS):
+    for operation in sorted(PROTOCOL_BATCH_OPS):
         cmd.extend(["--operation", operation])
     cmd.append("--")
     cmd.extend(RUNNER_CMD)
@@ -190,13 +231,45 @@ def test_filtered_verify_full_protocol_v1_tip_surface_green() -> None:
     )
     summary = json.loads(completed.stdout)
     assert summary["status"] == "success"
-    # Current tip case inventory: 39 cases / 66 operations (all declared pairs).
+    # Current tip case inventory: 39 batch cases / 66 operations (all declared pairs).
     assert summary["cases"] == 39
     assert summary["operations"] == 66
 
 
+def test_stream_verify_skips_unsupported() -> None:
+    """LS-02: stream fixtures run and skip cleanly while engines are absent."""
+    cmd: list[str] = [
+        PYTHON,
+        str(ROOT / "conformance" / "verify.py"),
+        "--repository-root",
+        str(ROOT),
+        "--operation",
+        "stream-sequence",
+        "--",
+        *RUNNER_CMD,
+    ]
+    completed = subprocess.run(
+        cmd,
+        text=True,
+        encoding="utf-8",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=str(ROOT),
+        env=RUNNER_ENV,
+        check=False,
+    )
+    assert completed.returncode == 0, (
+        f"stream verify failed:\nstdout={completed.stdout}\nstderr={completed.stderr}"
+    )
+    summary = json.loads(completed.stdout)
+    assert summary["status"] == "success"
+    assert summary["cases"] == 18
+    assert summary["operations"] == 18
+    assert summary["stream_unsupported_skips"] == 18
+
+
 def test_progressive_capabilities_cover_tip_ops_surface() -> None:
-    """Claimed sources/outputs cover schema→op map for every protocol-v1 op.
+    """Claimed sources/outputs cover schema→op map for every batch protocol-v1 op.
 
     Claim membership is owned by PY-10a/PY-10b-*; this only asserts the join
     floor needed so all ops have a claim path (not tip-equality formalization).
@@ -219,8 +292,13 @@ def test_progressive_capabilities_cover_tip_ops_surface() -> None:
     }
     for schema_id, op in schema_to_op.items():
         assert schema_id in caps["outputs"], f"missing claimed output for {op}"
-        assert op in PROTOCOL_V1_OPS
+        assert op in PROTOCOL_BATCH_OPS
 
     # list-trajectories coverage capability.
     assert "list-explicit-root" in caps["capabilities"]
-    assert "list-trajectories" in PROTOCOL_V1_OPS
+    assert "list-trajectories" in PROTOCOL_BATCH_OPS
+    # Stream caps must not be claimed yet (LS-12 gate).
+    for cap in caps.get("capabilities", []):
+        assert not str(cap).startswith("stream-"), (
+            f"stream capability {cap!r} must not be claimed before LS-12"
+        )

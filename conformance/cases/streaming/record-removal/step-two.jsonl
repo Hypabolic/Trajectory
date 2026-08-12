@@ -1,0 +1,3 @@
+{"type":"session","version":3,"id":"stream-record-removal","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/workspace/demo"}
+{"type":"message","id":"msg-keep","timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":"keep me","timestamp":"2026-01-01T00:00:01.000Z"}}
+{"type":"message","id":"msg-drop","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":"drop me","timestamp":"2026-01-01T00:00:02.000Z"}}

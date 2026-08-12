@@ -1,0 +1,82 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/file-truncate-reset",
+  "description": "Shorter snapshot after a longer prefix requires reset (source-truncated).",
+  "source": "pi",
+  "group_id": "stream-file-truncate-reset",
+  "required_capabilities": [
+    "stream-core",
+    "stream-apply-snapshot",
+    "stream-reset",
+    "stream-cursor-v1",
+    "stream-file-jsonl"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required"
+  },
+  "steps": [
+    {
+      "id": "snapshot-long",
+      "input": {
+        "kind": "snapshot-bytes",
+        "material": "step-long.jsonl",
+        "source_revision": "gen-0"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false
+      },
+      "double_invoke": true
+    },
+    {
+      "id": "snapshot-truncated",
+      "input": {
+        "kind": "snapshot-bytes",
+        "material": "step-truncated.jsonl",
+        "source_revision": "gen-0"
+      },
+      "expected": {
+        "update_kind": "reset-required",
+        "reset_reason": "source-truncated"
+      },
+      "double_invoke": true
+    },
+    {
+      "id": "reset-install",
+      "input": {
+        "kind": "reset",
+        "reset": {
+          "reason": "source-truncated",
+          "generation": 1,
+          "source_revision": "gen-1",
+          "material": "step-truncated.jsonl"
+        }
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false,
+        "reset_reason": "source-truncated"
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-cursor-exact",
+    "stream-idempotence"
+  ],
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  }
+}

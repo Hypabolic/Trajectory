@@ -31,8 +31,12 @@ struct Request {
 struct Manifest {
     id: String,
     source: String,
-    transcript: String,
+    #[serde(default)]
+    transcript: Option<String>,
+    #[serde(default)]
     operation: Map<String, Value>,
+    #[serde(default)]
+    steps: Option<Vec<Value>>,
     store: Option<String>,
     listing: Option<ListingManifest>,
     #[serde(default)]
@@ -41,6 +45,20 @@ struct Manifest {
     bounds: BoundsManifest,
     #[serde(default)]
     filters: FiltersManifest,
+}
+
+fn is_stream_operation(operation: &str) -> bool {
+    matches!(
+        operation,
+        "stream-sequence"
+            | "stream-replay"
+            | "stream-apply-append"
+            | "stream-apply-snapshot"
+            | "stream-apply-ahp-actions"
+            | "stream-apply-ahp-snapshot"
+            | "stream-finish"
+            | "stream-reset"
+    )
 }
 
 #[derive(Default, Deserialize)]
@@ -152,12 +170,6 @@ fn run() -> Result<Value, String> {
     if manifest.id != request.case {
         return Err("The requested case does not match its manifest ID.".into());
     }
-    if !manifest.operation.contains_key(&request.operation) {
-        return Err(format!(
-            "Case '{}' does not declare operation '{}'.",
-            request.case, request.operation
-        ));
-    }
     if !matches!(
         manifest.source.as_str(),
         "pi" | "claude-code" | "codex" | "openclaw" | "hermes" | "ahp" | "grok-build"
@@ -165,6 +177,40 @@ fn run() -> Result<Value, String> {
         return Err(format!(
             "Rust does not support source '{}'.",
             manifest.source
+        ));
+    }
+
+    // LS-02: multi-step stream cases — engine lands LS-04+.
+    if is_stream_operation(&request.operation) {
+        let steps_ok = manifest
+            .steps
+            .as_ref()
+            .map(|steps| !steps.is_empty())
+            .unwrap_or(false);
+        if !steps_ok {
+            return Err(format!(
+                "Stream operation '{}' requires a streaming case with steps[].",
+                request.operation
+            ));
+        }
+        return Ok(json!({
+            "protocol_version": "1",
+            "case": request.case,
+            "operation": request.operation,
+            "status": "unsupported",
+            "output_text": null,
+            "diagnostics": [],
+            "fatal_error": {
+                "code": "capability_unsupported",
+                "message": "Stream engine is not implemented yet.",
+            },
+        }));
+    }
+
+    if !manifest.operation.contains_key(&request.operation) {
+        return Err(format!(
+            "Case '{}' does not declare operation '{}'.",
+            request.case, request.operation
         ));
     }
 
@@ -206,7 +252,13 @@ fn execute(
     if operation == "list-trajectories" {
         return execute_listing(repository_root, manifest).map(|value| (value, Vec::new()));
     }
-    let transcript_path = safe_join(case_directory, &manifest.transcript)
+    let transcript_name = manifest.transcript.as_deref().ok_or_else(|| {
+        TrajectoryError::new(
+            "invalid_input",
+            "Case field 'transcript' must be a non-empty string.",
+        )
+    })?;
+    let transcript_path = safe_join(case_directory, transcript_name)
         .map_err(|message| TrajectoryError::new("invalid_input", message))?;
     let transcript = fs::read(transcript_path)
         .map_err(|error| TrajectoryError::new("io_error", error.to_string()))?;

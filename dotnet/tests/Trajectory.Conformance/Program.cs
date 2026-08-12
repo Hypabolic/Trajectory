@@ -13,6 +13,18 @@ internal static class ConformanceProgram
 {
     private const string ProtocolVersion = "1";
 
+    private static readonly HashSet<string> StreamOperations = new(StringComparer.Ordinal)
+    {
+        "stream-sequence",
+        "stream-replay",
+        "stream-apply-append",
+        "stream-apply-snapshot",
+        "stream-apply-ahp-actions",
+        "stream-apply-ahp-snapshot",
+        "stream-finish",
+        "stream-reset",
+    };
+
     public static async Task<int> RunAsync(string[] args)
     {
         try
@@ -74,7 +86,34 @@ internal static class ConformanceProgram
         if (!string.Equals(RequiredString(manifest, "id"), request.Case, StringComparison.Ordinal))
             throw new ProtocolException("The requested case does not match its manifest ID.");
 
-        var operations = manifest.GetProperty("operation");
+        // LS-02: multi-step stream cases (streaming-case-v1) — engine lands LS-04+.
+        if (StreamOperations.Contains(request.Operation))
+        {
+            if (!manifest.TryGetProperty("steps", out var steps) ||
+                steps.ValueKind != JsonValueKind.Array ||
+                steps.GetArrayLength() == 0)
+            {
+                throw new ProtocolException(
+                    $"Stream operation '{request.Operation}' requires a streaming case with steps[].");
+            }
+
+            return new ConformanceResponse(
+                request.Case,
+                request.Operation,
+                "unsupported",
+                null,
+                [],
+                new FatalError(
+                    "capability_unsupported",
+                    "Stream engine is not implemented yet."));
+        }
+
+        if (!manifest.TryGetProperty("operation", out var operations) ||
+            operations.ValueKind != JsonValueKind.Object)
+        {
+            throw new ProtocolException("Case field 'operation' must be an object.");
+        }
+
         if (!operations.TryGetProperty(request.Operation, out _))
             throw new ProtocolException(
                 $"Case '{request.Case}' does not declare operation '{request.Operation}'.");

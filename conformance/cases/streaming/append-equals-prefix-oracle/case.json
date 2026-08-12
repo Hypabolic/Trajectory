@@ -1,0 +1,73 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/append-equals-prefix-oracle",
+  "description": "Append path updates must equal a fresh snapshot apply of the full committed prefix (oracle).",
+  "source": "pi",
+  "group_id": "stream-append-equals-prefix-oracle",
+  "required_capabilities": [
+    "stream-core",
+    "stream-apply-snapshot",
+    "stream-apply-append",
+    "stream-jsonl-framing",
+    "stream-full-snapshot",
+    "stream-record-delta",
+    "stream-deterministic-replay",
+    "stream-cursor-v1",
+    "stream-file-jsonl"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required"
+  },
+  "steps": [
+    {
+      "id": "append-chunk-1",
+      "input": {
+        "kind": "append-bytes",
+        "material": "step-chunk-1.jsonl",
+        "source_revision": "gen-0"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false
+      },
+      "double_invoke": true
+    },
+    {
+      "id": "append-chunk-2",
+      "input": {
+        "kind": "append-bytes",
+        "material": "step-chunk-2.jsonl",
+        "source_revision": "gen-0"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-delta-apply",
+    "stream-oracle-parity",
+    "stream-idempotence"
+  ],
+  "oracle": {
+    "prefix_re_normalize": true,
+    "append_equals_prefix": true
+  },
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  }
+}
