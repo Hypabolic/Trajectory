@@ -228,6 +228,9 @@ def assert_sdist_column(members: set[str], schema_names: list[str]) -> None:
         "src/hypabolic_trajectory/contracts/compatibility.json",
         "src/hypabolic_trajectory/runtime-capabilities.json",
         "src/hypabolic_trajectory/py.typed",
+        "src/hypabolic_trajectory/io/package-capabilities.json",
+        "src/hypabolic_trajectory/ahp_client/package-capabilities.json",
+        "src/hypabolic_trajectory/hermes_provider/package-capabilities.json",
         "LICENSE",
         "README.md",
         "pyproject.toml",
@@ -289,6 +292,9 @@ def assert_wheel_column(members: set[str], schema_names: list[str], meta: str) -
         "hypabolic_trajectory/contracts/compatibility.json",
         "hypabolic_trajectory/runtime-capabilities.json",
         "hypabolic_trajectory/py.typed",
+        "hypabolic_trajectory/io/package-capabilities.json",
+        "hypabolic_trajectory/ahp_client/package-capabilities.json",
+        "hypabolic_trajectory/hermes_provider/package-capabilities.json",
     }
     for schema in schema_names:
         required.add(f"hypabolic_trajectory/contracts/schemas/{schema}")

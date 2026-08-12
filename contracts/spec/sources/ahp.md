@@ -3,8 +3,12 @@
 Contract version: AHP source decode `0.1.0` (Phase 1 — Shape A snapshot decode
 on all four runtimes). Streaming Shape A successive snapshots + Shape B
 action-log reduce are specified under [streaming.md](../streaming.md) and
-implemented as core stream apply APIs (LS-06 / LS-07); capability advertising
-waits for LS-12.
+implemented as core stream apply APIs (LS-06 / LS-07). Core stream AHP
+capabilities (`stream-ahp-snapshot`, `stream-ahp-action-log`) are claimed after
+the shared matrix is green on all four runtimes (LS-12). See
+[streaming.md](../streaming.md) and
+[ahp-ingest-status](../../../docs/ahp-ingest-status.md) for the shipped stream
+surface versus still-deferred batch listing / live WebSocket transport.
 
 Wire source name: **`ahp`** (no aliases on the wire).
 

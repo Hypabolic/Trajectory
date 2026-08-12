@@ -20,6 +20,12 @@ Optional OpenTelemetry: `Hypabolic.Trajectory.OpenTelemetry`,
 `@hypabolic/trajectory-otel`, `hypabolic-trajectory-opentelemetry`, and Python
 extra `hypabolic-trajectory[otel]` (SDK sinks only — pure OTEL project is in core).
 
+Optional live-session stream packages (tip; registry publish on the next
+multi-registry tag after `0.1.0`): `Hypabolic.Trajectory.IO` / `.Ahp` / `.Hermes`,
+`@hypabolic/trajectory-node` (file I/O) / `trajectory-ahp` / `trajectory-hermes`,
+`hypabolic-trajectory-io` / `-ahp` / `-hermes`, and Python extras
+`hypabolic-trajectory[io]` / `[ahp]` / `[hermes]`.
+
 Releases use the **git tag as the version** (same model as Hypa): push
 `vX.Y.Z` and CI stamps packages, publishes NuGet/npm/crates/PyPI, and creates a
 GitHub Release. See [docs/publishing.md](docs/publishing.md).
@@ -56,20 +62,35 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
 # .NET
 dotnet add package Hypabolic.Trajectory
 # optional: dotnet add package Hypabolic.Trajectory.OpenTelemetry
+# optional stream packages (next multi-registry tag):
+#   dotnet add package Hypabolic.Trajectory.IO
+#   dotnet add package Hypabolic.Trajectory.Ahp
+#   dotnet add package Hypabolic.Trajectory.Hermes
 
 # TypeScript
 npm install @hypabolic/trajectory
-npm install @hypabolic/trajectory-node   # local listing
+npm install @hypabolic/trajectory-node   # local listing + stream file I/O
 # optional: npm install @hypabolic/trajectory-otel
+# optional stream packages (next multi-registry tag):
+#   npm install @hypabolic/trajectory-ahp
+#   npm install @hypabolic/trajectory-hermes
 
 # Rust
 cargo add hypabolic-trajectory
 # optional: cargo add hypabolic-trajectory-opentelemetry
+# optional stream packages (next multi-registry tag):
+#   cargo add hypabolic-trajectory-io
+#   cargo add hypabolic-trajectory-ahp
+#   cargo add hypabolic-trajectory-hermes
 
 # Python (first public PyPI cut ships with the next multi-registry tag after 0.1.0)
 pip install hypabolic-trajectory==<tag-semver>
 # optional SDK sinks only:
 pip install 'hypabolic-trajectory[otel]==<tag-semver>'
+# optional stream extras (same wheel; mark install intent):
+#   pip install 'hypabolic-trajectory[io]==<tag-semver>'
+#   pip install 'hypabolic-trajectory[ahp]==<tag-semver>'
+#   pip install 'hypabolic-trajectory[hermes]==<tag-semver>'
 # monorepo / pre-publish:
 #   python -m pip install -e './python[dev]'
 ```

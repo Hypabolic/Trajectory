@@ -68,6 +68,26 @@ PROTOCOL_STREAM_OPS: frozenset[str] = frozenset(
 # Full normative protocol-v1 enum (request-v1.schema.json).
 PROTOCOL_V1_OPS: frozenset[str] = PROTOCOL_BATCH_OPS | PROTOCOL_STREAM_OPS
 
+# LS-12 tip core stream capabilities (runtime-capabilities / compatibility required).
+# Matches tools/validate_release_metadata.py TIP_CAPABILITIES stream-* entries.
+_CORE_STREAM_CAPABILITIES: frozenset[str] = frozenset(
+    {
+        "stream-core",
+        "stream-cursor-v1",
+        "stream-jsonl-framing",
+        "stream-apply-snapshot",
+        "stream-apply-append",
+        "stream-full-snapshot",
+        "stream-record-delta",
+        "stream-reset",
+        "stream-provisional-records",
+        "stream-deterministic-replay",
+        "stream-file-jsonl",
+        "stream-ahp-snapshot",
+        "stream-ahp-action-log",
+    }
+)
+
 # One representative case per batch op (declared on that case's case.json).
 _OP_SMOKE_CASES: dict[str, str] = {
     "normalize-letta": "pi/tool-calls",
@@ -301,8 +321,25 @@ def test_progressive_capabilities_cover_tip_ops_surface() -> None:
     # list-trajectories coverage capability.
     assert "list-explicit-root" in caps["capabilities"]
     assert "list-trajectories" in PROTOCOL_BATCH_OPS
-    # Stream caps must not be claimed yet (LS-12 gate).
-    for cap in caps.get("capabilities", []):
-        assert not str(cap).startswith("stream-"), (
-            f"stream capability {cap!r} must not be claimed before LS-12"
-        )
+
+    # LS-12: core stream-* set is required on tip (matches validate_release_metadata
+    # / test_py15b_tip_gate TIP_CAPABILITIES). Optional/unimplemented names must not
+    # appear on the core runtime-capabilities manifest.
+    claimed = [str(c) for c in caps.get("capabilities", [])]
+    for cap in _CORE_STREAM_CAPABILITIES:
+        assert cap in claimed, f"missing required core stream capability: {cap}"
+    forbidden = {
+        "stream-file-io",
+        "stream-ahp-client",
+        "stream-hermes-provider",
+        "stream-async-iterator",
+        "stream-file-watch",
+        "stream-ahp-list-sessions",
+    }
+    for cap in claimed:
+        if cap.startswith("stream-"):
+            assert cap in _CORE_STREAM_CAPABILITIES, (
+                f"stream capability {cap!r} must not be claimed on core "
+                f"(optional package or unimplemented)"
+            )
+            assert cap not in forbidden

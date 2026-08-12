@@ -18,6 +18,9 @@ public static class Program
         var app = new CommandApp<InteractiveCommand>();
         app.Configure(config =>
         {
+            // Bubble command exceptions to Main so typed fatal codes map to exit 2
+            // (invalid_input / stream privacy validation), matching peer sample CLIs.
+            config.PropagateExceptions();
             config.SetApplicationName("trajectory");
             config.ValidateExamples();
             config.AddCommand<ListCommand>("list")
