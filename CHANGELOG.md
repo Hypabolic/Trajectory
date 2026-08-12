@@ -5,6 +5,12 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **Live session streaming packaging docs:** tip status note for LS-00…LS-12
+  shipped vs post-LS-12 remaining work
+  (`docs/live-session-streaming-status.md`); plan slice status markers; cross-
+  links from product spec, architecture, multi-language plan, and
+  release-readiness.
+
 - **LS-12 capability claims and release gate:** advertise completed live-session
   streaming honestly. `contracts/compatibility.json` required list and all four
   core `runtime-capabilities.json` (dotnet / typescript / rust / python) claim

@@ -107,6 +107,7 @@ core, optional I/O/clients.
 | --- | --- |
 | [live-session-streaming.md](live-session-streaming.md) | Locked product + technical specification |
 | [live-session-streaming-plan.md](live-session-streaming-plan.md) | Slices LS-00 … LS-12 |
+| [live-session-streaming-status.md](live-session-streaming-status.md) | Shipped vs remaining (tip packaging) |
 
 | Slice | Outcome | Status |
 | --- | --- | --- |

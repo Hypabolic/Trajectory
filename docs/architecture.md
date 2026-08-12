@@ -140,7 +140,8 @@ Wire contract: [streaming.md](../contracts/spec/streaming.md).
 File I/O: [streaming-file-io.md](streaming-file-io.md).  
 AHP client: [ahp-client.md](ahp-client.md).  
 Hermes provider: [streaming-hermes-provider.md](streaming-hermes-provider.md).  
-Delivery slices: [live-session-streaming-plan.md](live-session-streaming-plan.md).
+Delivery slices: [live-session-streaming-plan.md](live-session-streaming-plan.md).  
+Tip status: [live-session-streaming-status.md](live-session-streaming-status.md).
 
 ## Further reading
 
@@ -150,4 +151,5 @@ Delivery slices: [live-session-streaming-plan.md](live-session-streaming-plan.md
 - [Streaming contract](../contracts/spec/streaming.md)
 - [Live session streaming (product)](live-session-streaming.md)
 - [Live session streaming plan](live-session-streaming-plan.md)
+- [Live session streaming status](live-session-streaming-status.md)
 - [Publishing](publishing.md)

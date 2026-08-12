@@ -192,5 +192,7 @@ python3 conformance/verify.py --repository-root . --operation stream-sequence --
 ```
 
 Product + slice plan: [live-session-streaming.md](live-session-streaming.md),
-[live-session-streaming-plan.md](live-session-streaming-plan.md). Adapter
+[live-session-streaming-plan.md](live-session-streaming-plan.md). Tip packaging
+status (shipped vs remaining):
+[live-session-streaming-status.md](live-session-streaming-status.md). Adapter
 authoring stream DoD: [adapter-authoring.md](adapter-authoring.md#live-session-streaming--definition-of-done).

@@ -1,11 +1,35 @@
 # Live session streaming — delivery work plan
 
-Status: **locked sequencing for the full feature**  
+Status: **LS-00 … LS-12 complete on tip** (all slices landed; see
+[live-session-streaming-status.md](live-session-streaming-status.md))  
 Normative product/technical spec: [live-session-streaming.md](live-session-streaming.md)
 
 This plan delivers the **complete** streaming feature (file JSONL + AHP +
 optional Hermes provider + optional I/O/clients + all four runtimes). Slices are
 ordered for semantic safety, not for a reduced MVP.
+
+**Slice landing summary (tip of `feature/live-session-streaming`):**
+
+| Slice | Status |
+| --- | --- |
+| LS-00 | **Done on tip** — locked product/technical docs |
+| LS-01 | **Done on tip** — contracts + schemas |
+| LS-02 | **Done on tip** — stream conformance protocol + corpus skeleton |
+| LS-03 | **Done on tip** — stream state & cursor primitives (×4) |
+| LS-04 | **Done on tip** — snapshot apply + diff engine (×4) |
+| LS-05 | **Done on tip** — JSONL append apply (×4) |
+| LS-06 | **Done on tip** — AHP Shape A snapshot streaming (×4) |
+| LS-07 | **Done on tip** — AHP Shape B action-log reducer (×4) |
+| LS-07h | **Done on tip** — Hermes optional provider (×4; package-test-gated) |
+| LS-08 | **Done on tip** — full stream matrix gate (34 cases; skips: 0 ×4) |
+| LS-09 | **Done on tip** — optional file I/O packages (×4) |
+| LS-10 | **Done on tip** — optional AHP clients (×4; fake-host) |
+| LS-11 | **Done on tip** — sample CLI `stream` / `ahp-stream` (×4) |
+| LS-12 | **Done on tip** — honest capability claims + release-gate docs |
+
+Post-LS-12 remaining work (publish wiring, Hermes stream-sequence corpus,
+`stream-file-watch`, `stream-ahp-list-sessions`) is **out of slice scope** —
+see status doc.
 
 ---
 
@@ -45,6 +69,8 @@ LS-00 product freeze
 
 ## LS-00 — Product semantics freeze
 
+**Status: done on tip** (design + plan + architecture pointers).
+
 **Goal:** Land the locked design docs and architecture pointers (this doc +
 spec). No runtime code required beyond doc links.
 
@@ -67,6 +93,9 @@ spec). No runtime code required beyond doc links.
 ---
 
 ## LS-01 — Streaming contracts and schemas (first code-adjacent merge)
+
+**Status: done on tip** (`contracts/spec/streaming.md` + stream schemas +
+vectors; no runtime claims until LS-12).
 
 **Goal:** Normative wire contracts only.
 
@@ -93,6 +122,10 @@ spec). No runtime code required beyond doc links.
 ---
 
 ## LS-02 — Shared conformance protocol and fixture skeleton
+
+**Status: done on tip** (`stream-sequence` / `stream-replay` protocol, verify
+hooks, scaffold cases under `conformance/cases/streaming/`; goldens completed
+by LS-08).
 
 **Goal:** Runner can execute multi-step stream cases on all four runtimes
 (initially may `unsupported` until LS-04+).
@@ -125,6 +158,8 @@ Generic: `empty-prefix`, `append-one-line`, `unterminated-line-held`,
 
 ## LS-03 — Stream state and cursor primitives (all four cores)
 
+**Status: done on tip** (pure cursor/state modules ×4; no I/O in core).
+
 **Goal:** Pure create/validate/advance cursor + state containers; no source
 decode yet beyond framing buffers.
 
@@ -152,6 +187,9 @@ decode yet beyond framing buffers.
 
 ## LS-04 — Snapshot apply, normalize, and diff engine (all four)
 
+**Status: done on tip** (`apply_snapshot` / re-normalize + stable-id diff ×4;
+`docs/streaming-core-api.md`).
+
 **Goal:** `apply_snapshot` / `apply_snapshot-bytes` produces full
 `StreamUpdate` with snapshot+delta via full re-normalize of supplied material.
 
@@ -173,6 +211,9 @@ decode yet beyond framing buffers.
 ---
 
 ## LS-05 — Append apply for file JSONL sources (all four)
+
+**Status: done on tip** (`apply_append` for file JSONL sources ×4; append ≡
+prefix oracle; `docs/streaming-file-sources.md`).
 
 **Goal:** `apply_append` for `pi`, `claude-code`, `codex`, `openclaw`,
 `grok-build` with oracle parity.
@@ -197,6 +238,9 @@ decode yet beyond framing buffers.
 
 ## LS-06 — AHP Shape A snapshot streaming (all four)
 
+**Status: done on tip** (`apply_ahp_snapshot` ×4; provisional `activeTurn`;
+core `stream-ahp-snapshot` claimed at LS-12).
+
 **Goal:** Successive Shape A snapshots with provisional `activeTurn`.
 
 | Area | Deliverable |
@@ -216,6 +260,9 @@ decode yet beyond framing buffers.
 ---
 
 ## LS-07 — AHP Shape B action-log reducer (all four)
+
+**Status: done on tip** (`apply_ahp_actions` + minimal complete reducer ×4;
+`docs/ahp-action-streaming.md`; core `stream-ahp-action-log` claimed at LS-12).
 
 **Goal:** Core reducer + `apply_ahp_actions`; `serverSeq` cursor authority.
 
@@ -266,8 +313,9 @@ shared `hermes-provider-*` stream-sequence corpus still deferred — package-tes
 **Goal:** Complete goldens; parity fixes; no capability advertising yet (or
 draft-only).
 
-**Status: done on tip** (engines + shared goldens + oracle gate; manifests still
-omit `stream-*` until LS-12).
+**Status: done on tip** (engines + shared goldens + oracle gate; 34 stream
+cases; `stream_unsupported_skips: 0` on all four; core `stream-*` claimed at
+LS-12).
 
 | Area | Deliverable |
 | --- | --- |
@@ -286,6 +334,10 @@ omit `stream-*` until LS-12).
 ---
 
 ## LS-09 — Optional file I/O packages (all four)
+
+**Status: done on tip** (poll/follow packages ×4; `docs/streaming-file-io.md`;
+`stream-file-io` / `stream-async-iterator` on optional package manifests only;
+`stream-file-watch` **not** claimed).
 
 **Goal:** Path poll/watch helpers that only call core apply APIs.
 
@@ -313,6 +365,11 @@ omit `stream-*` until LS-12).
 ---
 
 ## LS-10 — Optional AHP client packages (all four)
+
+**Status: done on tip** (transport-only clients ×4; fake-host CI;
+`docs/ahp-client.md`; `stream-ahp-client` on optional package manifests only;
+real WebSocket host remains consumer-injected; `stream-ahp-list-sessions`
+**not** claimed).
 
 **Goal:** Transport only; fake-host CI.
 
@@ -345,7 +402,7 @@ omit `stream-*` until LS-12).
 
 **Status: done on tip** (`stream` / `ahp-stream` on all four sample CLIs;
 privacy defaults; temp-store + FakeAhpHost tests; docs state consumer process
-not daemon). Capability advertising still LS-12.
+not daemon; capability advertising completed in LS-12).
 
 | Command | Purpose |
 | --- | --- |
@@ -372,6 +429,11 @@ not daemon). Capability advertising still LS-12.
 ---
 
 ## LS-12 — Capability claims and release gate
+
+**Status: done on tip** (core `stream-*` in `contracts/compatibility.json`
+required + four `runtime-capabilities.json`; optional package caps only on
+I/O / AHP / Hermes `package-capabilities.json`; privacy + release-readiness
+checklists; no claim for `stream-file-watch` / `stream-ahp-list-sessions`).
 
 **Goal:** Honest manifests and product docs for the completed feature.
 
@@ -475,6 +537,9 @@ and all four core `runtime-capabilities.json`. Optional package caps
 `stream-hermes-provider`) are claimed only on those packages’
 `package-capabilities.json`. Unimplemented `stream-file-watch` /
 `stream-ahp-list-sessions` are not claimed.
+
+Tip packaging status (shipped vs remaining):
+[live-session-streaming-status.md](live-session-streaming-status.md).
 
 **Post-LS-12 next engineering work**
 

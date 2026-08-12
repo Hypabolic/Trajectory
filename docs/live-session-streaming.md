@@ -18,6 +18,7 @@ Related:
 - [AHP source](ahp-source-spec.md) / [AHP status](ahp-ingest-status.md)
 - [Grok Build source](grok-build-source-spec.md)
 - [Delivery work plan](live-session-streaming-plan.md)
+- [Implementation status (shipped vs remaining)](live-session-streaming-status.md)
 
 ---
 
@@ -739,4 +740,6 @@ The feature is complete when:
 10. Batch normalize/list conformance remains unchanged and green.
 
 See [live-session-streaming-plan.md](live-session-streaming-plan.md) for
-sequenced slices LS-00 … LS-12.
+sequenced slices LS-00 … LS-12 and
+[live-session-streaming-status.md](live-session-streaming-status.md) for
+shipped vs post-LS-12 remaining work.
