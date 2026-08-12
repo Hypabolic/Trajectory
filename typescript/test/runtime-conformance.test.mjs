@@ -29,13 +29,13 @@ test("TypeScript runner passes every advertised shared operation deterministical
     ],
     { encoding: "utf8" },
   );
-  // 39 batch + 18 stream scaffolds; stream ops skip as unsupported pre-engine.
+  // 39 batch + 24 stream scaffolds; stream ops skip as unsupported pre LS-12 caps.
   assert.deepEqual(JSON.parse(output), {
     protocol_version: "1",
     status: "success",
-    cases: 57,
-    operations: 84,
-    stream_unsupported_skips: 18,
+    cases: 63,
+    operations: 90,
+    stream_unsupported_skips: 24,
   });
 });
 

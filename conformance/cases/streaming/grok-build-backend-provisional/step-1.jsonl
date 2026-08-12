@@ -1,0 +1,2 @@
+{"type":"user","content":[{"type":"text","text":"Search something."}]}
+{"type":"backend_tool_call","kind":{"tool_type":"web_search","id":"ws_stream_1","status":"completed","action":{"type":"search","query":"trajectory"}}}

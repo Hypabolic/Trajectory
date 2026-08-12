@@ -407,3 +407,124 @@ test("TrajectoryStream facade applySnapshot", () => {
   assert.equal(finished.kind, "updated");
   assert.equal(stream.state.finished, true);
 });
+
+// ---- LS-05: append apply + JSONL sources ----
+
+test("append equals prefix oracle", async () => {
+  const c1 = await readCase("append-equals-prefix-oracle", "step-chunk-1.jsonl");
+  const c2 = await readCase("append-equals-prefix-oracle", "step-chunk-2.jsonl");
+  let state = createStream({
+    source: "pi",
+    groupId: "stream-append-equals-prefix-oracle",
+  });
+  let result = applyAppend(state, c1, undefined, "gen-0");
+  assert.equal(result.update.kind, "updated");
+  result = applyAppend(result.state, c2, undefined, "gen-0");
+  assert.equal(result.update.kind, "updated");
+  const appendIds = result.update.snapshot.records.map((r) => r.record.id);
+  const appendOffset = result.state.cursor.position.nextByteOffset;
+
+  const full = new Uint8Array(c1.length + c2.length);
+  full.set(c1, 0);
+  full.set(c2, c1.length);
+  const oracle = applySnapshot(
+    createStream({ source: "pi", groupId: "stream-append-equals-prefix-oracle" }),
+    full,
+    "gen-0",
+  );
+  assert.equal(oracle.update.kind, "updated");
+  assert.deepEqual(
+    oracle.update.snapshot.records.map((r) => r.record.id),
+    appendIds,
+  );
+  assert.equal(oracle.state.cursor.position.nextByteOffset, appendOffset);
+  assert.equal(oracle.state.cursor.prefixSha256, result.state.cursor.prefixSha256);
+});
+
+test("file compaction returns source-compacted", async () => {
+  const original = await readCase("file-compaction-reset", "step-original.jsonl");
+  const compacted = await readCase("file-compaction-reset", "step-compacted.jsonl");
+  let state = createStream({
+    source: "grok-build",
+    groupId: "stream-file-compaction-reset",
+  });
+  let result = applySnapshot(state, original, "gen-0");
+  assert.equal(result.update.kind, "updated");
+  const prior = result.state.cursor.position.nextByteOffset;
+  result = applySnapshot(result.state, compacted, "gen-compact");
+  assert.equal(result.update.kind, "reset-required");
+  assert.equal(result.update.reset?.reason, "source-compacted");
+  assert.equal(result.state.cursor.position.nextByteOffset, prior);
+});
+
+test("per-source append oracle parity", async () => {
+  const cases = [
+    { source: "pi", caseId: "pi-append-sequence", groupId: "stream-pi-append-sequence", steps: 3 },
+    {
+      source: "claude-code",
+      caseId: "claude-code-append-sequence",
+      groupId: "stream-claude-code-append-sequence",
+      steps: 2,
+    },
+    { source: "codex", caseId: "codex-append-sequence", groupId: "stream-codex-append", steps: 3 },
+    {
+      source: "openclaw",
+      caseId: "openclaw-append-sequence",
+      groupId: "stream-openclaw-append",
+      steps: 3,
+    },
+    {
+      source: "grok-build",
+      caseId: "grok-build-append-sequence",
+      groupId: "stream-grok-build-append-sequence",
+      steps: 3,
+    },
+  ];
+  for (const { source, caseId, groupId, steps } of cases) {
+    const chunks = [];
+    for (let i = 1; i <= steps; i++) {
+      chunks.push(await readCase(caseId, `step-${i}.jsonl`));
+    }
+    let state = createStream({ source, groupId });
+    for (const chunk of chunks) {
+      const result = applyAppend(state, chunk, undefined, "gen-0");
+      assert.equal(result.update.kind, "updated", `${source} append failed`);
+      state = result.state;
+    }
+    const appendIds = state.snapshot.records.map((r) => r.record.id);
+    let fullLen = 0;
+    for (const c of chunks) fullLen += c.length;
+    const full = new Uint8Array(fullLen);
+    let off = 0;
+    for (const c of chunks) {
+      full.set(c, off);
+      off += c.length;
+    }
+    const oracle = applySnapshot(createStream({ source, groupId }), full, "gen-0");
+    assert.deepEqual(
+      oracle.update.snapshot.records.map((r) => r.record.id),
+      appendIds,
+      `${source} oracle mismatch`,
+    );
+  }
+});
+
+test("grok backend tool provisional then stable", async () => {
+  const step1 = await readCase("grok-build-backend-provisional", "step-1.jsonl");
+  const step2 = await readCase("grok-build-backend-provisional", "step-2.jsonl");
+  let state = createStream({
+    source: "grok-build",
+    groupId: "stream-grok-build-backend-provisional",
+  });
+  let result = applyAppend(state, step1, undefined, "gen-0");
+  assert.equal(result.update.kind, "updated");
+  const provisional = result.update.snapshot.records.filter((r) => r.status === "provisional");
+  assert.equal(provisional.length, 1);
+  assert.ok(String(provisional[0].record.content).startsWith("[backend "));
+  result = applyAppend(result.state, step2, undefined, "gen-0");
+  assert.equal(result.update.kind, "updated");
+  assert.ok(result.update.snapshot.records.every((r) => r.status === "stable"));
+  const tool = result.update.snapshot.records.filter((r) => r.record.role === "tool");
+  assert.equal(tool.length, 1);
+  assert.equal(tool[0].record.content, "real later result");
+});

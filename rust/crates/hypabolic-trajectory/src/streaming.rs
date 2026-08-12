@@ -1,4 +1,4 @@
-//! Live session streaming core (LS-03 / LS-04).
+//! Live session streaming core (LS-03 / LS-04 / LS-05).
 //! Pure algorithm: no filesystem watchers, network, or SQLite.
 
 use serde_json::{Map, Value};
@@ -1149,14 +1149,31 @@ pub fn apply_snapshot(
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
+        let has_backend_synth = trajectory
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "backend_tool_result_synthesized");
+        let mark_provisional =
+            has_backend_synth && state.options.source == TrajectorySource::GrokBuild;
         let records: Vec<StreamRecord> = raw_records
             .into_iter()
-            .map(|record| StreamRecord {
-                status: "stable".into(),
-                record,
-                provisional_id: None,
-                replaces_provisional_id: None,
-                finalizes_provisional_id: None,
+            .map(|record| {
+                let mut status = "stable".to_string();
+                let mut provisional_id = None;
+                if mark_provisional && is_synthetic_backend_tool_result(&record) {
+                    status = "provisional".into();
+                    provisional_id = record
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                }
+                StreamRecord {
+                    status,
+                    record,
+                    provisional_id,
+                    replaces_provisional_id: None,
+                    finalizes_provisional_id: None,
+                }
             })
             .collect();
         let diagnostics: Vec<StreamDiagnostic> = trajectory
@@ -1178,14 +1195,10 @@ pub fn apply_snapshot(
     }
 
     if state.snapshot.is_some() && committed_len < state.cursor.position.next_byte_offset {
+        let (reason, message) = shrink_reset_reason(state, &committed);
         return Ok((
             state.clone(),
-            reset_required(
-                state,
-                "source-truncated",
-                "stream_source_reset",
-                "Source material is shorter than the committed cursor.",
-            ),
+            reset_required(state, reason, "stream_source_reset", message),
         ));
     }
 
@@ -1295,7 +1308,13 @@ pub fn apply_snapshot(
     Ok((new_state, update))
 }
 
-/// Append complete-line segment; re-normalize full committed prefix (oracle path).
+/// Append complete-line segment for file JSONL sources.
+///
+/// Frames against the pending buffer, extends the committed prefix, then
+/// re-normalizes the full committed prefix (oracle path). Append equals
+/// full-prefix snapshot on every shared fixture. The oracle path *is* the
+/// steady-state implementation (O(committed_prefix)); no separate incremental
+/// decoder requires a performance fallback in this slice.
 pub fn apply_append(
     state: &StreamState,
     segment: &[u8],
@@ -1334,6 +1353,10 @@ pub fn apply_append(
                 ),
             ));
         }
+    }
+
+    if segment.is_empty() && state.pending_bytes.is_empty() {
+        return Ok((state.clone(), unchanged(state)));
     }
 
     let mut combined = state.pending_bytes.clone();
@@ -1402,8 +1425,51 @@ pub fn apply_append(
         new_state.cursor.position.pending_byte_length = pending_len;
         // Always copy patched cursor onto StreamUpdate (updated and unchanged).
         update.cursor = new_state.cursor.clone();
+        if update.kind == "updated" {
+            let prior_len = state.committed_prefix.len() as i64;
+            let complete_len = complete.len() as i64;
+            update.consumed = StreamConsumed {
+                complete_records: update.consumed.complete_records,
+                bytes: complete_len as u64,
+                first_source_position: if complete_len > 0 {
+                    Some(prior_len)
+                } else {
+                    None
+                },
+                last_source_position: if complete_len > 0 {
+                    Some(prior_len + complete_len - 1)
+                } else {
+                    None
+                },
+            };
+        }
     }
     Ok((new_state, update))
+}
+
+fn shrink_reset_reason(state: &StreamState, committed: &[u8]) -> (&'static str, &'static str) {
+    if state.committed_prefix.starts_with(committed) {
+        return (
+            "source-truncated",
+            "Source material is shorter than the committed cursor.",
+        );
+    }
+    if state.options.source == TrajectorySource::GrokBuild {
+        return (
+            "source-compacted",
+            "Source material was compacted relative to the committed cursor.",
+        );
+    }
+    (
+        "source-replaced",
+        "Source material was replaced relative to the committed cursor.",
+    )
+}
+
+fn is_synthetic_backend_tool_result(record: &Value) -> bool {
+    let role = record.get("role").and_then(Value::as_str);
+    let content = record.get("content").and_then(Value::as_str);
+    matches!((role, content), (Some("tool"), Some(c)) if c.starts_with("[backend "))
 }
 
 /// End-of-stream: optionally commit final unterminated line; finalize records.
@@ -2060,5 +2126,165 @@ mod tests {
             update.error.as_ref().map(|(c, _)| c.as_str()),
             Some("stream_buffer_limit")
         );
+    }
+
+    #[test]
+    fn append_equals_prefix_oracle() {
+        let c1 = read_case("append-equals-prefix-oracle", "step-chunk-1.jsonl");
+        let c2 = read_case("append-equals-prefix-oracle", "step-chunk-2.jsonl");
+        let opts = StreamOptions::new(TrajectorySource::Pi)
+            .with_group_id("stream-append-equals-prefix-oracle");
+        let state = create_stream(opts);
+        let (state, a1) = apply_append(&state, &c1, None, Some("gen-0")).unwrap();
+        assert_eq!(a1.kind, "updated");
+        let (state, a2) = apply_append(&state, &c2, None, Some("gen-0")).unwrap();
+        assert_eq!(a2.kind, "updated");
+        let append_ids: Vec<_> = a2
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .records
+            .iter()
+            .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+            .collect();
+
+        let mut full = c1.clone();
+        full.extend_from_slice(&c2);
+        let opts = StreamOptions::new(TrajectorySource::Pi)
+            .with_group_id("stream-append-equals-prefix-oracle");
+        let oracle_state = create_stream(opts);
+        let (_, snap) = apply_snapshot(&oracle_state, &full, "gen-0", None).unwrap();
+        let snap_ids: Vec<_> = snap
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .records
+            .iter()
+            .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+            .collect();
+        assert_eq!(append_ids, snap_ids);
+        assert_eq!(
+            state.cursor.position.next_byte_offset,
+            snap.cursor.position.next_byte_offset
+        );
+        assert_eq!(state.cursor.prefix_sha256, snap.cursor.prefix_sha256);
+    }
+
+    #[test]
+    fn file_compaction_returns_source_compacted() {
+        let original = read_case("file-compaction-reset", "step-original.jsonl");
+        let compacted = read_case("file-compaction-reset", "step-compacted.jsonl");
+        let opts = StreamOptions::new(TrajectorySource::GrokBuild)
+            .with_group_id("stream-file-compaction-reset");
+        let state = create_stream(opts);
+        let (state, u1) = apply_snapshot(&state, &original, "gen-0", None).unwrap();
+        assert_eq!(u1.kind, "updated");
+        let prior = state.cursor.position.next_byte_offset;
+        let (state2, u2) = apply_snapshot(&state, &compacted, "gen-compact", None).unwrap();
+        assert_eq!(u2.kind, "reset-required");
+        assert_eq!(
+            u2.reset.as_ref().map(|r| r.reason.as_str()),
+            Some("source-compacted")
+        );
+        assert_eq!(state2.cursor.position.next_byte_offset, prior);
+    }
+
+    #[test]
+    fn per_source_append_oracle_parity() {
+        let cases: &[(&str, TrajectorySource, &str, usize)] = &[
+            ("pi-append-sequence", TrajectorySource::Pi, "stream-pi-append-sequence", 3),
+            (
+                "claude-code-append-sequence",
+                TrajectorySource::ClaudeCode,
+                "stream-claude-code-append-sequence",
+                2,
+            ),
+            ("codex-append-sequence", TrajectorySource::Codex, "stream-codex-append", 3),
+            (
+                "openclaw-append-sequence",
+                TrajectorySource::OpenClaw,
+                "stream-openclaw-append",
+                3,
+            ),
+            (
+                "grok-build-append-sequence",
+                TrajectorySource::GrokBuild,
+                "stream-grok-build-append-sequence",
+                3,
+            ),
+        ];
+        for (case_id, source, group_id, steps) in cases {
+            let mut chunks = Vec::new();
+            for i in 1..=*steps {
+                chunks.push(read_case(case_id, &format!("step-{i}.jsonl")));
+            }
+            let opts = StreamOptions::new(*source).with_group_id(*group_id);
+            let mut state = create_stream(opts);
+            for chunk in &chunks {
+                let (next, update) = apply_append(&state, chunk, None, Some("gen-0")).unwrap();
+                assert_eq!(update.kind, "updated", "{case_id} append failed");
+                state = next;
+            }
+            let append_ids: Vec<_> = state
+                .snapshot
+                .as_ref()
+                .unwrap()
+                .records
+                .iter()
+                .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+                .collect();
+            let mut full = Vec::new();
+            for c in &chunks {
+                full.extend_from_slice(c);
+            }
+            let opts = StreamOptions::new(*source).with_group_id(*group_id);
+            let oracle_state = create_stream(opts);
+            let (_, snap) = apply_snapshot(&oracle_state, &full, "gen-0", None).unwrap();
+            let snap_ids: Vec<_> = snap
+                .snapshot
+                .as_ref()
+                .unwrap()
+                .records
+                .iter()
+                .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+                .collect();
+            assert_eq!(append_ids, snap_ids, "{case_id} oracle mismatch");
+        }
+    }
+
+    #[test]
+    fn grok_backend_tool_provisional_then_stable() {
+        let step1 = read_case("grok-build-backend-provisional", "step-1.jsonl");
+        let step2 = read_case("grok-build-backend-provisional", "step-2.jsonl");
+        let opts = StreamOptions::new(TrajectorySource::GrokBuild)
+            .with_group_id("stream-grok-build-backend-provisional");
+        let state = create_stream(opts);
+        let (state, u1) = apply_append(&state, &step1, None, Some("gen-0")).unwrap();
+        assert_eq!(u1.kind, "updated");
+        let provisional: Vec<_> = u1
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .records
+            .iter()
+            .filter(|r| r.status == "provisional")
+            .collect();
+        assert_eq!(provisional.len(), 1);
+        let content = provisional[0]
+            .record
+            .get("content")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        assert!(content.starts_with("[backend "));
+        let (state, u2) = apply_append(&state, &step2, None, Some("gen-0")).unwrap();
+        assert_eq!(u2.kind, "updated");
+        assert!(u2
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .records
+            .iter()
+            .all(|r| r.status == "stable"));
+        let _ = state;
     }
 }

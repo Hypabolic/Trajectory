@@ -1,0 +1,2 @@
+{"type":"tool_result","tool_call_id":"ws_stream_1","content":"real later result"}
+{"type":"assistant","content":"Found it.","model_id":"grok-4.5"}

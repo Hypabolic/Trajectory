@@ -43,6 +43,8 @@ _MSG_BUFFER_LIMIT = "Stream buffer limit exceeded."
 _MSG_CURSOR_CONFLICT = "Supplied stream cursor does not match stream state."
 _MSG_GROUP_CHANGED = "Source group changed relative to the active stream."
 _MSG_SOURCE_TRUNCATED = "Source material is shorter than the committed cursor."
+_MSG_SOURCE_COMPACTED = "Source material was compacted relative to the committed cursor."
+_MSG_SOURCE_REPLACED = "Source material was replaced relative to the committed cursor."
 _MSG_PREFIX_MISMATCH = "Committed prefix hash does not match supplied material."
 _MSG_UNSUPPORTED_INPUT = "Stream input kind is not supported for this source."
 _MSG_AHP_UNSUPPORTED = "AHP stream apply is not available in this slice."
@@ -54,6 +56,8 @@ _STREAM_BUFFER_LIMIT = "stream_buffer_limit"
 _STREAM_CURSOR_CONFLICT = "stream_cursor_conflict"
 _STREAM_SOURCE_RESET = "stream_source_reset"
 _STREAM_RESYNC_REQUIRED = "stream_resync_required"
+_DIAG_BACKEND_TOOL_SYNTH = "backend_tool_result_synthesized"
+_BACKEND_SYNTH_PREFIX = "[backend "
 
 
 def create_stream(options: StreamOptions) -> StreamState:
@@ -164,9 +168,9 @@ def apply_snapshot(
         return state, built
     records, diagnostics, group_id = built
 
-    # Truncation against prior byte cursor (same group). Mid-file rewrites of
-    # equal-or-longer snapshots are valid full re-normalizes (delta shows
-    # upserts/removes). Prefix-hash divergence on append is handled in LS-05.
+    # Shrink / rewrite against prior byte cursor (same group). Mid-file rewrites
+    # of equal-or-longer snapshots remain valid full re-normalizes (delta shows
+    # upserts/removes). Shorter material requires reset with a precise reason.
     prior_pos = state.cursor.position
     if (
         isinstance(prior_pos, BytePosition)
@@ -174,7 +178,9 @@ def apply_snapshot(
         and len(committed) < prior_pos.next_byte_offset
     ):
         return state, _reset_required(
-            state, reason="source-truncated", diagnostic_code=_STREAM_SOURCE_RESET
+            state,
+            reason=_shrink_reset_reason(state, committed),
+            diagnostic_code=_STREAM_SOURCE_RESET,
         )
 
     empty_sha = sha256_hex(b"")
@@ -280,7 +286,14 @@ def apply_append(
     cursor: StreamCursor | None = None,
     source_revision: str | None = None,
 ) -> tuple[StreamState, StreamUpdate]:
-    """Append complete-line segment; re-normalize full committed prefix (oracle path)."""
+    """Append complete-line segment for file JSONL sources.
+
+    Steady-state path frames the segment against the pending buffer, extends the
+    committed prefix, then re-normalizes the full committed prefix (oracle path).
+    That guarantees append == full-prefix snapshot for every shared fixture.
+    There is no separate incremental decoder in this slice: the oracle path *is*
+    the implementation, so no performance fallback is required.
+    """
     if type(segment) is not bytes:
         raise TypeError("segment must be bytes")
     if state.finished:
@@ -294,6 +307,10 @@ def apply_append(
     limit_err = _validate_buffer_limits(opts)
     if limit_err is not None:
         return state, _error_update(state, code="invalid_input", message=limit_err)
+
+    # Empty segment with no pending change is a pure no-op.
+    if not segment and not state.pending_bytes:
+        return state, _unchanged_update(state)
 
     try:
         complete, pending = append_framed(
@@ -333,11 +350,10 @@ def apply_append(
     rev = source_revision if source_revision is not None else (
         state.cursor.source_revision or ""
     )
-    # Build a temporary state with empty pending then snapshot-apply full prefix.
+    # Oracle: full re-normalize of the committed prefix via apply_snapshot.
     # Snapshot path re-splits lines; feed only complete prefix + track pending.
     snap_state = _clone_state(state)
     snap_state.pending_bytes = bytearray()
-    # Use require_complete_lines path on the full prefix (no pending inside material).
     material = new_prefix  # all complete lines already
     new_state, update = apply_snapshot(
         snap_state,
@@ -361,6 +377,17 @@ def apply_append(
                 prefix_sha256=new_state.cursor.prefix_sha256,
             )
         new_state.pending_bytes = bytearray(pending)
+        # Consumed bytes for append = newly framed complete segment only.
+        consumed = StreamConsumed(
+            complete_records=update.consumed.complete_records,
+            bytes=len(complete),
+            first_source_position=(
+                len(bytes(state.committed_prefix)) if complete else None
+            ),
+            last_source_position=(
+                (len(new_prefix) - 1) if complete else None
+            ),
+        )
         update = StreamUpdate(
             kind=update.kind,
             revision=update.revision,
@@ -369,7 +396,7 @@ def apply_append(
             delta=update.delta,
             diagnostics=update.diagnostics,
             provisional=update.provisional,
-            consumed=update.consumed,
+            consumed=consumed if update.kind == "updated" else update.consumed,
             reset=update.reset,
             error=update.error,
         )
@@ -821,11 +848,30 @@ def _build_records_from_prefix(
 
     hyp = project_hypabolic(ir)
     raw_records = hyp.get("records") or []
-    records = tuple(
-        StreamRecord(status="stable", record=dict(r))
-        for r in raw_records
-        if isinstance(r, dict)
+    has_backend_synth = any(
+        d.code == _DIAG_BACKEND_TOOL_SYNTH for d in ir.diagnostics
     )
+    mark_provisional = (
+        has_backend_synth and source == TrajectorySource.GROK_BUILD
+    )
+    built_records: list[StreamRecord] = []
+    for r in raw_records:
+        if not isinstance(r, dict):
+            continue
+        status: str = "stable"
+        provisional_id: str | None = None
+        if mark_provisional and _is_synthetic_backend_tool_result(r):
+            status = "provisional"
+            rid = r.get("id")
+            provisional_id = rid if isinstance(rid, str) and rid else None
+        built_records.append(
+            StreamRecord(
+                status=status,  # type: ignore[arg-type]
+                record=dict(r),
+                provisional_id=provisional_id,
+            )
+        )
+    records = tuple(built_records)
     diagnostics = tuple(
         StreamDiagnostic(
             code=d.code,
@@ -854,6 +900,31 @@ def _revision_id(
         + ",".join(record_ids)
     )
     return sha256_hex(payload)
+
+
+def _shrink_reset_reason(state: StreamState, committed: bytes) -> str:
+    """Classify shorter snapshot material: truncate vs compact vs replace.
+
+    Pure prefix of the prior committed bytes → source-truncated.
+    Non-prefix rewrite on grok-build → source-compacted (first-class).
+    Non-prefix rewrite on other JSONL sources → source-replaced.
+    """
+    prior = bytes(state.committed_prefix)
+    if prior.startswith(committed):
+        return "source-truncated"
+    source = resolve_source(state.options.source)
+    if source == TrajectorySource.GROK_BUILD:
+        return "source-compacted"
+    return "source-replaced"
+
+
+def _is_synthetic_backend_tool_result(record: dict[str, Any]) -> bool:
+    """Grok Build synthetic backend tool results use a fixed content prefix."""
+    role = record.get("role")
+    content = record.get("content")
+    if role != "tool" or not isinstance(content, str):
+        return False
+    return content.startswith(_BACKEND_SYNTH_PREFIX)
 
 
 def _any_line_too_long(data: bytes, max_line_bytes: int) -> bool:
@@ -957,6 +1028,8 @@ def _reset_required(
         code=diagnostic_code,
         message={
             "source-truncated": _MSG_SOURCE_TRUNCATED,
+            "source-compacted": _MSG_SOURCE_COMPACTED,
+            "source-replaced": _MSG_SOURCE_REPLACED,
             "prefix-hash-mismatch": _MSG_PREFIX_MISMATCH,
             "group-changed": _MSG_GROUP_CHANGED,
             "cursor-mismatch": _MSG_CURSOR_CONFLICT,

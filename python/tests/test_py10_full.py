@@ -263,9 +263,9 @@ def test_stream_verify_skips_unsupported() -> None:
     )
     summary = json.loads(completed.stdout)
     assert summary["status"] == "success"
-    assert summary["cases"] == 18
-    assert summary["operations"] == 18
-    assert summary["stream_unsupported_skips"] == 18
+    assert summary["cases"] == 24
+    assert summary["operations"] == 24
+    assert summary["stream_unsupported_skips"] == 24
 
 
 def test_progressive_capabilities_cover_tip_ops_surface() -> None:

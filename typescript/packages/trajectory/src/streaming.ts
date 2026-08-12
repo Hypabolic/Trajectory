@@ -641,10 +641,25 @@ function buildRecords(
     });
     const hyp = projectHypabolic(ir);
     const rawRecords = (hyp.records as JsonObject[]) ?? [];
-    const records: StreamRecord[] = rawRecords.map((r) => ({
-      status: "stable" as const,
-      record: r,
-    }));
+    const hasBackendSynth = ir.diagnostics.some(
+      (d) => d.code === "backend_tool_result_synthesized",
+    );
+    const markProvisional =
+      hasBackendSynth && state.options.source === "grok-build";
+    const records: StreamRecord[] = rawRecords.map((r) => {
+      if (markProvisional && isSyntheticBackendToolResult(r)) {
+        const id = typeof r.id === "string" ? r.id : undefined;
+        return {
+          status: "provisional" as const,
+          record: r,
+          ...(id !== undefined ? { provisionalId: id } : {}),
+        };
+      }
+      return {
+        status: "stable" as const,
+        record: r,
+      };
+    });
     const diagnostics: StreamDiagnostic[] = ir.diagnostics.map((d) => ({
       code: d.code,
       message: d.message,
@@ -782,14 +797,10 @@ export function applySnapshot(
     state.snapshot !== null &&
     BigInt(committed.length) < state.cursor.position.nextByteOffset
   ) {
+    const { reason, message } = shrinkResetReason(state, committed);
     return {
       state,
-      update: resetRequired(
-        state,
-        "source-truncated",
-        "stream_source_reset",
-        "Source material is shorter than the committed cursor.",
-      ),
+      update: resetRequired(state, reason, "stream_source_reset", message),
     };
   }
 
@@ -879,7 +890,12 @@ export function applySnapshot(
 }
 
 /**
- * Append complete-line segment; re-normalize full committed prefix (oracle path).
+ * Append complete-line segment for file JSONL sources.
+ * Frames against the pending buffer, extends the committed prefix, then
+ * re-normalizes the full committed prefix (oracle path). Append equals
+ * full-prefix snapshot on every shared fixture. The oracle path is the
+ * steady-state implementation (O(committed_prefix)); no separate incremental
+ * decoder requires a performance fallback in this slice.
  * First-class pure function matching Python/Rust/.NET apply_append / ApplyAppend.
  */
 export function applyAppend(
@@ -907,6 +923,10 @@ export function applyAppend(
       state,
       update: errorUpdate(state, "invalid_input", MSG_BUFFER_LIMIT_DOMAIN),
     };
+  }
+
+  if (segment.length === 0 && state.pendingBytes.length === 0) {
+    return { state, update: unchangedUpdate(state) };
   }
 
   const pending = state.pendingBytes;
@@ -987,12 +1007,65 @@ export function applyAppend(
       },
     };
     // Always copy patched cursor onto StreamUpdate (updated and unchanged).
-    return {
-      state: result.state,
-      update: { ...result.update, cursor: result.state.cursor },
-    };
+    let update = { ...result.update, cursor: result.state.cursor };
+    if (result.update.kind === "updated") {
+      const priorLen = BigInt(state.committedPrefix.length);
+      const completeLen = BigInt(complete.length);
+      update = {
+        ...update,
+        consumed: {
+          completeRecords: result.update.consumed.completeRecords,
+          bytes: completeLen,
+          ...(completeLen > 0n
+            ? {
+                firstSourcePosition: priorLen,
+                lastSourcePosition: priorLen + completeLen - 1n,
+              }
+            : {}),
+        },
+      };
+    }
+    return { state: result.state, update };
   }
   return result;
+}
+
+function shrinkResetReason(
+  state: StreamState,
+  committed: Uint8Array,
+): { reason: StreamResetReason; message: string } {
+  if (bytesStartWith(state.committedPrefix, committed)) {
+    return {
+      reason: "source-truncated",
+      message: "Source material is shorter than the committed cursor.",
+    };
+  }
+  if (state.options.source === "grok-build") {
+    return {
+      reason: "source-compacted",
+      message: "Source material was compacted relative to the committed cursor.",
+    };
+  }
+  return {
+    reason: "source-replaced",
+    message: "Source material was replaced relative to the committed cursor.",
+  };
+}
+
+function bytesStartWith(haystack: Uint8Array, prefix: Uint8Array): boolean {
+  if (prefix.length > haystack.length) return false;
+  for (let i = 0; i < prefix.length; i++) {
+    if (haystack[i] !== prefix[i]) return false;
+  }
+  return true;
+}
+
+function isSyntheticBackendToolResult(record: JsonObject): boolean {
+  return (
+    record.role === "tool" &&
+    typeof record.content === "string" &&
+    record.content.startsWith("[backend ")
+  );
 }
 
 export function applyStream(

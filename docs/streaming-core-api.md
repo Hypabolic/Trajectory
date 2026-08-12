@@ -1,7 +1,7 @@
-# Streaming core API (LS-03 / LS-04)
+# Streaming core API (LS-03 / LS-04 / LS-05)
 
 Pure library surface for live session streaming. Callers own I/O and scheduling;
-core owns framing, state, snapshot apply, stable-id diff, and cursors.
+core owns framing, state, snapshot + append apply, stable-id diff, and cursors.
 
 Normative contracts: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md),
 product design: [`live-session-streaming.md`](live-session-streaming.md).
@@ -23,6 +23,7 @@ Do **not** advertise `stream-*` capabilities in runtime manifests until LS-12.
 ```text
 create(options) → StreamState | TrajectoryStream
 apply_snapshot(state, material, source_revision, cursor?) → (state, StreamUpdate)
+apply_append(state, segment, cursor?, source_revision?) → (state, StreamUpdate)
 ```
 
 - **`StreamCursor`** — public, serializable committed position (version 1).
@@ -65,11 +66,27 @@ Options (defaults):
 | `reset-required` | Truncation, group conflict, cursor mismatch (cursor unchanged) |
 | `error` | Typed failure (e.g. buffer limit); cursor unchanged |
 
-### Reset reasons (LS-04)
+### Reset reasons (LS-04 / LS-05)
 
-- `source-truncated` — committed material shorter than prior `next_byte_offset`
+- `source-truncated` — shorter material that is a pure byte-prefix of prior committed bytes
+- `source-compacted` — shorter non-prefix rewrite on `grok-build` (compaction)
+- `source-replaced` — shorter non-prefix rewrite on other JSONL sources
 - `group-changed` — native group disagrees with locked stream group
 - `cursor-mismatch` — supplied cursor disagrees with state
+
+## `apply_append` (LS-05)
+
+File JSONL sources (`pi`, `claude-code`, `codex`, `openclaw`, `grok-build`):
+
+1. Frame `pending + segment` into complete lines + new pending tail.
+2. Incomplete / mid-UTF-8 only → `kind=unchanged` with updated `pending_byte_length`.
+3. On complete lines: extend committed prefix and **re-normalize full prefix**
+   (oracle path via `apply_snapshot`).
+4. Append result must equal a fresh snapshot apply of the same committed prefix.
+5. `consumed.bytes` counts newly framed complete-segment bytes only.
+
+See [`streaming-file-sources.md`](streaming-file-sources.md) for per-source notes,
+Grok provisional backend tools, and the performance bound.
 
 ## Delta-apply law
 
@@ -93,7 +110,6 @@ JSON lines, or group/native ids. Operational codes:
 
 ## Not in this slice
 
-- Incremental append fast-path (LS-05; oracle re-normalize may exist as a stub)
 - AHP Shape A/B streaming (LS-06 / LS-07)
 - File I/O packages (LS-09)
 - Capability advertising (LS-12)

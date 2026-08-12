@@ -1,4 +1,4 @@
-"""LS-03 / LS-04: stream state, snapshot apply, delta-apply equivalence."""
+"""LS-03 / LS-04 / LS-05: stream state, snapshot/append apply, oracle parity."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import pytest
 from hypabolic_trajectory import (
     StreamOptions,
     TrajectoryStream,
+    apply_append,
     apply_delta_to_snapshot,
     apply_snapshot,
     create_stream,
@@ -294,3 +295,145 @@ def test_no_io_imports_in_streaming_modules() -> None:
             "asyncio",
         ):
             assert banned not in text, f"{mod.__name__} contains {banned!r}"
+
+
+# ---- LS-05: append apply + JSONL sources ----
+
+
+def test_append_equals_prefix_oracle() -> None:
+    c1 = _read("append-equals-prefix-oracle", "step-chunk-1.jsonl")
+    c2 = _read("append-equals-prefix-oracle", "step-chunk-2.jsonl")
+    state = create_stream(
+        StreamOptions(source="pi", group_id="stream-append-equals-prefix-oracle")
+    )
+    state, a1 = apply_append(state, c1, source_revision="gen-0")
+    assert a1.kind == "updated"
+    state, a2 = apply_append(state, c2, source_revision="gen-0")
+    assert a2.kind == "updated"
+    assert a2.snapshot is not None
+
+    oracle_state = create_stream(
+        StreamOptions(source="pi", group_id="stream-append-equals-prefix-oracle")
+    )
+    _, snap = apply_snapshot(oracle_state, c1 + c2, source_revision="gen-0")
+    assert snap.kind == "updated"
+    assert snap.snapshot is not None
+    assert [r.record["id"] for r in a2.snapshot.records] == [
+        r.record["id"] for r in snap.snapshot.records
+    ]
+    assert a2.cursor.position.next_byte_offset == snap.cursor.position.next_byte_offset  # type: ignore[union-attr]
+    assert a2.cursor.prefix_sha256 == snap.cursor.prefix_sha256
+
+
+def test_cross_chunk_tool_result_append() -> None:
+    call = _read("cross-chunk-tool-result", "step-tool-call.jsonl")
+    result = _read("cross-chunk-tool-result", "step-tool-result.jsonl")
+    state = create_stream(
+        StreamOptions(source="pi", group_id="stream-cross-chunk-tool-result")
+    )
+    state, u1 = apply_append(state, call, source_revision="gen-0")
+    assert u1.kind == "updated"
+    state, u2 = apply_append(state, result, source_revision="gen-0")
+    assert u2.kind == "updated"
+    assert u2.snapshot is not None
+    roles = [r.record.get("role") for r in u2.snapshot.records]
+    assert "tool" in roles
+
+    oracle_state = create_stream(
+        StreamOptions(source="pi", group_id="stream-cross-chunk-tool-result")
+    )
+    _, snap = apply_snapshot(oracle_state, call + result, source_revision="gen-0")
+    assert [r.record["id"] for r in u2.snapshot.records] == [
+        r.record["id"] for r in snap.snapshot.records  # type: ignore[union-attr]
+    ]
+
+
+def test_file_compaction_returns_source_compacted() -> None:
+    original = _read("file-compaction-reset", "step-original.jsonl")
+    compacted = _read("file-compaction-reset", "step-compacted.jsonl")
+    state = create_stream(
+        StreamOptions(source="grok-build", group_id="stream-file-compaction-reset")
+    )
+    state, u1 = apply_snapshot(state, original, source_revision="gen-0")
+    assert u1.kind == "updated"
+    prior = state.cursor.position.next_byte_offset  # type: ignore[union-attr]
+    state2, u2 = apply_snapshot(state, compacted, source_revision="gen-compact")
+    assert u2.kind == "reset-required"
+    assert u2.reset is not None
+    assert u2.reset.reason == "source-compacted"
+    assert state2.cursor.position.next_byte_offset == prior  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    ("source", "case", "group_id", "steps"),
+    [
+        ("pi", "pi-append-sequence", "stream-pi-append-sequence", 3),
+        (
+            "claude-code",
+            "claude-code-append-sequence",
+            "stream-claude-code-append-sequence",
+            2,
+        ),
+        ("codex", "codex-append-sequence", "stream-codex-append", 3),
+        ("openclaw", "openclaw-append-sequence", "stream-openclaw-append", 3),
+        (
+            "grok-build",
+            "grok-build-append-sequence",
+            "stream-grok-build-append-sequence",
+            3,
+        ),
+    ],
+)
+def test_per_source_append_oracle(
+    source: str, case: str, group_id: str, steps: int
+) -> None:
+    chunks = [
+        _read(case, f"step-{i}.jsonl") for i in range(1, steps + 1)
+    ]
+    state = create_stream(StreamOptions(source=source, group_id=group_id))
+    for chunk in chunks:
+        state, update = apply_append(state, chunk, source_revision="gen-0")
+        assert update.kind == "updated", f"{source} step failed: {update.kind}"
+    assert state.snapshot is not None
+    append_ids = [r.record["id"] for r in state.snapshot.records]
+    append_offset = state.cursor.position.next_byte_offset  # type: ignore[union-attr]
+
+    oracle_state = create_stream(StreamOptions(source=source, group_id=group_id))
+    full = b"".join(chunks)
+    _, snap = apply_snapshot(oracle_state, full, source_revision="gen-0")
+    assert snap.kind == "updated"
+    assert snap.snapshot is not None
+    assert append_ids == [r.record["id"] for r in snap.snapshot.records]
+    assert append_offset == snap.cursor.position.next_byte_offset  # type: ignore[union-attr]
+
+
+def test_grok_backend_tool_provisional_then_stable() -> None:
+    step1 = _read("grok-build-backend-provisional", "step-1.jsonl")
+    step2 = _read("grok-build-backend-provisional", "step-2.jsonl")
+    state = create_stream(
+        StreamOptions(
+            source="grok-build", group_id="stream-grok-build-backend-provisional"
+        )
+    )
+    state, u1 = apply_append(state, step1, source_revision="gen-0")
+    assert u1.kind == "updated"
+    assert u1.snapshot is not None
+    provisional = [r for r in u1.snapshot.records if r.status == "provisional"]
+    assert len(provisional) == 1
+    assert provisional[0].provisional_id is not None
+    assert (provisional[0].record.get("content") or "").startswith("[backend ")
+    assert provisional[0].provisional_id in u1.provisional.provisional_ids
+
+    state, u2 = apply_append(state, step2, source_revision="gen-0")
+    assert u2.kind == "updated"
+    assert u2.snapshot is not None
+    assert all(r.status == "stable" for r in u2.snapshot.records)
+    tool = [r for r in u2.snapshot.records if r.record.get("role") == "tool"]
+    assert len(tool) == 1
+    assert tool[0].record.get("content") == "real later result"
+
+
+def test_append_empty_segment_unchanged() -> None:
+    state = create_stream(StreamOptions(source="pi", group_id="g"))
+    state, u = apply_append(state, b"", source_revision="gen-0")
+    assert u.kind == "unchanged"

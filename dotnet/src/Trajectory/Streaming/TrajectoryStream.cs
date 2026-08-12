@@ -169,11 +169,12 @@ public static class TrajectoryStream
 
         if (state.Snapshot is not null && committed.LongLength < state.Cursor.Position.NextByteOffset)
         {
+            var (reason, message) = ShrinkResetReason(state, committed);
             return (state, ResetRequired(
                 state,
-                "source-truncated",
+                reason,
                 "stream_source_reset",
-                "Source material is shorter than the committed cursor."));
+                message));
         }
 
         var effectivePrefixSha = Sha256Hex(committed);
@@ -269,7 +270,12 @@ public static class TrajectoryStream
     }
 
     /// <summary>
-    /// Append complete-line segment; re-normalize full committed prefix (oracle path).
+    /// Append complete-line segment for file JSONL sources.
+    /// Frames against the pending buffer, extends the committed prefix, then
+    /// re-normalizes the full committed prefix (oracle path). Append equals
+    /// full-prefix snapshot on every shared fixture. The oracle path is the
+    /// steady-state implementation (O(committed_prefix)); no separate incremental
+    /// decoder requires a performance fallback in this slice.
     /// </summary>
     public static (StreamState State, StreamUpdate Update) ApplyAppend(
         StreamState state,
@@ -306,6 +312,11 @@ public static class TrajectoryStream
                 state,
                 "invalid_input",
                 "Stream buffer limits must be non-negative int64 values."));
+        }
+
+        if (segment.Length == 0 && state.PendingBytes.Length == 0)
+        {
+            return (state, UnchangedUpdate(state));
         }
 
         var combined = new byte[state.PendingBytes.Length + segment.Length];
@@ -365,6 +376,21 @@ public static class TrajectoryStream
             };
             // Always copy patched cursor onto StreamUpdate (updated and unchanged).
             update = update with { Cursor = newState.Cursor };
+            if (update.Kind == "updated")
+            {
+                var priorLen = state.CommittedPrefix.LongLength;
+                var completeLen = complete.LongLength;
+                update = update with
+                {
+                    Consumed = new StreamConsumed
+                    {
+                        CompleteRecords = update.Consumed.CompleteRecords,
+                        Bytes = (ulong)completeLen,
+                        FirstSourcePosition = completeLen > 0 ? priorLen : null,
+                        LastSourcePosition = completeLen > 0 ? priorLen + completeLen - 1 : null,
+                    },
+                };
+            }
         }
 
         return (newState, update);
@@ -944,10 +970,27 @@ public static class TrajectoryStream
             });
 
             var hyp = engine.Project<HypabolicTrajectoryV1>(ir, OutputSchemaIds.HypabolicTrajectoryV1);
-            var records = hyp.Records.Select(r => new StreamRecord
+            var hasBackendSynth = ir.Diagnostics.Any(d => d.Code == "backend_tool_result_synthesized");
+            var markProvisional = hasBackendSynth && state.Options.Source == TrajectorySource.GrokBuild;
+            var records = hyp.Records.Select(r =>
             {
-                Status = "stable",
-                Record = HypabolicRecordToDict(r),
+                var dict = HypabolicRecordToDict(r);
+                if (markProvisional && IsSyntheticBackendToolResult(dict))
+                {
+                    var provisionalId = dict.TryGetValue("id", out var id) ? id?.ToString() : null;
+                    return new StreamRecord
+                    {
+                        Status = "provisional",
+                        Record = dict,
+                        ProvisionalId = string.IsNullOrEmpty(provisionalId) ? null : provisionalId,
+                    };
+                }
+
+                return new StreamRecord
+                {
+                    Status = "stable",
+                    Record = dict,
+                };
             }).ToList();
             var diagnostics = ir.Diagnostics.Select(d => new StreamDiagnostic
             {
@@ -1321,6 +1364,50 @@ public static class TrajectoryStream
             ["source_revision"] = c.SourceRevision,
             ["prefix_sha256"] = c.PrefixSha256,
         };
+
+    /// <summary>
+    /// Classify shorter snapshot material: pure prefix → truncate; non-prefix
+    /// rewrite on Grok Build → compacted; other sources → replaced.
+    /// </summary>
+    private static (string Reason, string Message) ShrinkResetReason(StreamState state, byte[] committed)
+    {
+        if (StartsWith(state.CommittedPrefix, committed))
+        {
+            return ("source-truncated", "Source material is shorter than the committed cursor.");
+        }
+
+        if (state.Options.Source == TrajectorySource.GrokBuild)
+        {
+            return ("source-compacted", "Source material was compacted relative to the committed cursor.");
+        }
+
+        return ("source-replaced", "Source material was replaced relative to the committed cursor.");
+    }
+
+    private static bool StartsWith(byte[] haystack, byte[] prefix)
+    {
+        if (prefix.Length > haystack.Length)
+        {
+            return false;
+        }
+
+        return haystack.AsSpan(0, prefix.Length).SequenceEqual(prefix);
+    }
+
+    private static bool IsSyntheticBackendToolResult(IReadOnlyDictionary<string, object?> record)
+    {
+        if (!record.TryGetValue("role", out var role) || role is not string roleStr || roleStr != "tool")
+        {
+            return false;
+        }
+
+        if (!record.TryGetValue("content", out var content) || content is not string text)
+        {
+            return false;
+        }
+
+        return text.StartsWith("[backend ", StringComparison.Ordinal);
+    }
 
     private static StreamUpdate ResetRequired(
         StreamState state,

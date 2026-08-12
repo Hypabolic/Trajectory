@@ -298,4 +298,137 @@ public sealed class StreamingCoreTests
         Assert.Equal("error", update.Kind);
         Assert.Equal("stream_buffer_limit", update.Error!.Value.Code);
     }
+
+    [Fact]
+    public void AppendEqualsPrefixOracle()
+    {
+        var c1 = ReadFixture("append-equals-prefix-oracle", "step-chunk-1.jsonl");
+        var c2 = ReadFixture("append-equals-prefix-oracle", "step-chunk-2.jsonl");
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-append-equals-prefix-oracle",
+        });
+        var (state1, a1) = TrajectoryStream.ApplyAppend(state, c1, sourceRevision: "gen-0");
+        Assert.Equal("updated", a1.Kind);
+        var (state2, a2) = TrajectoryStream.ApplyAppend(state1, c2, sourceRevision: "gen-0");
+        Assert.Equal("updated", a2.Kind);
+        Assert.NotNull(a2.Snapshot);
+        var appendIds = a2.Snapshot!.Records
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .ToArray();
+
+        var full = new byte[c1.Length + c2.Length];
+        Buffer.BlockCopy(c1, 0, full, 0, c1.Length);
+        Buffer.BlockCopy(c2, 0, full, c1.Length, c2.Length);
+        var oracleState = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-append-equals-prefix-oracle",
+        });
+        var (_, snap) = TrajectoryStream.ApplySnapshot(oracleState, full, "gen-0");
+        Assert.Equal("updated", snap.Kind);
+        var snapIds = snap.Snapshot!.Records
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .ToArray();
+        Assert.Equal(snapIds, appendIds);
+        Assert.Equal(snap.Cursor.Position.NextByteOffset, state2.Cursor.Position.NextByteOffset);
+        Assert.Equal(snap.Cursor.PrefixSha256, state2.Cursor.PrefixSha256);
+    }
+
+    [Fact]
+    public void FileCompaction_ReturnsSourceCompacted()
+    {
+        var original = ReadFixture("file-compaction-reset", "step-original.jsonl");
+        var compacted = ReadFixture("file-compaction-reset", "step-compacted.jsonl");
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.GrokBuild,
+            GroupId = "stream-file-compaction-reset",
+        });
+        var (state1, u1) = TrajectoryStream.ApplySnapshot(state, original, "gen-0");
+        Assert.Equal("updated", u1.Kind);
+        var prior = state1.Cursor.Position.NextByteOffset;
+        var (state2, u2) = TrajectoryStream.ApplySnapshot(state1, compacted, "gen-compact");
+        Assert.Equal("reset-required", u2.Kind);
+        Assert.Equal("source-compacted", u2.Reset!.Reason);
+        Assert.Equal(prior, state2.Cursor.Position.NextByteOffset);
+    }
+
+    [Theory]
+    [InlineData(TrajectorySource.Pi, "pi-append-sequence", "stream-pi-append-sequence", 3)]
+    [InlineData(TrajectorySource.ClaudeCode, "claude-code-append-sequence", "stream-claude-code-append-sequence", 2)]
+    [InlineData(TrajectorySource.Codex, "codex-append-sequence", "stream-codex-append", 3)]
+    [InlineData(TrajectorySource.OpenClaw, "openclaw-append-sequence", "stream-openclaw-append", 3)]
+    [InlineData(TrajectorySource.GrokBuild, "grok-build-append-sequence", "stream-grok-build-append-sequence", 3)]
+    public void PerSource_AppendOracleParity(
+        TrajectorySource source,
+        string caseId,
+        string groupId,
+        int steps)
+    {
+        var chunks = Enumerable.Range(1, steps)
+            .Select(i => ReadFixture(caseId, $"step-{i}.jsonl"))
+            .ToArray();
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = source,
+            GroupId = groupId,
+        });
+        foreach (var chunk in chunks)
+        {
+            var (next, update) = TrajectoryStream.ApplyAppend(state, chunk, sourceRevision: "gen-0");
+            Assert.Equal("updated", update.Kind);
+            state = next;
+        }
+
+        Assert.NotNull(state.Snapshot);
+        var appendIds = state.Snapshot!.Records
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .ToArray();
+        var fullLen = chunks.Sum(c => c.Length);
+        var full = new byte[fullLen];
+        var offset = 0;
+        foreach (var c in chunks)
+        {
+            Buffer.BlockCopy(c, 0, full, offset, c.Length);
+            offset += c.Length;
+        }
+
+        var oracleState = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = source,
+            GroupId = groupId,
+        });
+        var (_, snap) = TrajectoryStream.ApplySnapshot(oracleState, full, "gen-0");
+        var snapIds = snap.Snapshot!.Records
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .ToArray();
+        Assert.Equal(snapIds, appendIds);
+    }
+
+    [Fact]
+    public void GrokBackendTool_ProvisionalThenStable()
+    {
+        var step1 = ReadFixture("grok-build-backend-provisional", "step-1.jsonl");
+        var step2 = ReadFixture("grok-build-backend-provisional", "step-2.jsonl");
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.GrokBuild,
+            GroupId = "stream-grok-build-backend-provisional",
+        });
+        var (state1, u1) = TrajectoryStream.ApplyAppend(state, step1, sourceRevision: "gen-0");
+        Assert.Equal("updated", u1.Kind);
+        var provisional = u1.Snapshot!.Records.Where(r => r.Status == "provisional").ToList();
+        Assert.Single(provisional);
+        Assert.StartsWith("[backend ", provisional[0].Record["content"]?.ToString() ?? "");
+        var (state2, u2) = TrajectoryStream.ApplyAppend(state1, step2, sourceRevision: "gen-0");
+        Assert.Equal("updated", u2.Kind);
+        Assert.All(u2.Snapshot!.Records, r => Assert.Equal("stable", r.Status));
+        var tool = u2.Snapshot.Records
+            .Where(r => r.Record.TryGetValue("role", out var role) && role?.ToString() == "tool")
+            .ToList();
+        Assert.Single(tool);
+        Assert.Equal("real later result", tool[0].Record["content"]?.ToString());
+    }
 }
