@@ -138,11 +138,19 @@ def test_sequence_gap_triggers_resync() -> None:
         on_event=events.append,
     )
     client.start()
+    gen_before = client.cursor.generation
+    updates_before = sum(1 for e in events if e.kind == "stream-update")
     # Push gapped action (serverSeq 9 after cursor next=6)
     gap = _actions_from_case("ahp-action-sequence-gap", "step-gap.jsonl")
     host.push_actions(gap)
     assert any(e.kind == "resync-required" for e in events)
     assert host.resync_count >= 1
+    # Auto-resync advances generation and installs a post-resync stream-update.
+    assert client.cursor.generation > gen_before
+    updates_after = [e for e in events if e.kind == "stream-update"]
+    assert len(updates_after) > updates_before
+    assert updates_after[-1].update is not None
+    assert updates_after[-1].update.kind in {"updated", "unchanged"}
     # Cursor remains valid after cancel
     cursor_before = client.cursor
     client.cancel()
@@ -196,7 +204,7 @@ def test_backpressure() -> None:
     # Pause by flooding while client is mid-buffer: fill buffer without flush by
     # setting paused via exceeding limit on consecutive pushes when resync holds.
     # Directly exercise buffer limit: push many actions quickly after forcing pause.
-    client._paused = True  # type: ignore[attr-defined]
+    client.set_paused_for_test(True)
     for i in range(5):
         host.push_action(
             {

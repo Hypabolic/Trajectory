@@ -323,13 +323,19 @@ public sealed class FileTrajectoryStream : IAsyncDisposable, IDisposable
 
     private static bool IsUnderRoot(string root, string path)
     {
+        // Match OS path case rules: Windows is case-insensitive; Unix/macOS
+        // default to case-sensitive so a differently-cased sibling of root
+        // cannot pass containment (LS-09 path_outside_root).
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
         var rootFull = root.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar)
             + System.IO.Path.DirectorySeparatorChar;
         var pathFull = path;
-        return pathFull.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase)
+        return pathFull.StartsWith(rootFull, comparison)
             || string.Equals(
                 pathFull.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar),
                 root.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar),
-                StringComparison.OrdinalIgnoreCase);
+                comparison);
     }
 }

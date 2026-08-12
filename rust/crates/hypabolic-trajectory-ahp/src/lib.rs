@@ -75,6 +75,11 @@ struct MemoryInner {
     handler: Option<Box<dyn Fn(&str)>>,
     closed: bool,
     sent: Vec<String>,
+    /// Frames queued while a delivery is already in progress on this end.
+    /// Without this, re-entrant peer responses (e.g. resync result while the
+    /// client handler is still running the gap notification) are dropped.
+    pending: Vec<String>,
+    delivering: bool,
 }
 
 /// One side of an in-memory duplex.
@@ -108,6 +113,57 @@ impl MemoryAhpTransport {
     }
 }
 
+/// Deliver `message` to `peer`, queuing if a delivery is already in flight so
+/// re-entrant reverse-path frames (resync RPC replies, nested notifications)
+/// are not dropped while the peer handler is temporarily taken.
+fn deliver_to_peer(peer: &Rc<RefCell<MemoryInner>>, message: &str) {
+    {
+        let mut p = peer.borrow_mut();
+        if p.closed {
+            return;
+        }
+        p.pending.push(message.to_owned());
+        if p.delivering {
+            return;
+        }
+        p.delivering = true;
+    }
+    loop {
+        let next = {
+            let mut p = peer.borrow_mut();
+            if p.closed {
+                p.pending.clear();
+                p.delivering = false;
+                None
+            } else if p.pending.is_empty() {
+                p.delivering = false;
+                None
+            } else {
+                Some(p.pending.remove(0))
+            }
+        };
+        let Some(raw) = next else {
+            break;
+        };
+        let handler = {
+            let mut p = peer.borrow_mut();
+            if p.closed {
+                None
+            } else {
+                p.handler.take()
+            }
+        };
+        if let Some(h) = handler {
+            h(&raw);
+            let mut p = peer.borrow_mut();
+            if !p.closed && p.handler.is_none() {
+                p.handler = Some(h);
+            }
+        }
+        // If handler was missing, frame is dropped (peer not yet wired).
+    }
+}
+
 impl AhpTransport for MemoryAhpTransport {
     fn send(&self, message: &str) -> Result<(), String> {
         // Deliver without holding RefCell borrows across the peer callback so
@@ -121,21 +177,7 @@ impl AhpTransport for MemoryAhpTransport {
             inner.peer.clone()
         };
         if let Some(peer) = peer {
-            let handler = {
-                let mut p = peer.borrow_mut();
-                if p.closed {
-                    None
-                } else {
-                    p.handler.take()
-                }
-            };
-            if let Some(h) = handler {
-                h(message);
-                let mut p = peer.borrow_mut();
-                if !p.closed && p.handler.is_none() {
-                    p.handler = Some(h);
-                }
-            }
+            deliver_to_peer(&peer, message);
         }
         Ok(())
     }
@@ -148,6 +190,7 @@ impl AhpTransport for MemoryAhpTransport {
         let mut inner = self.inner.borrow_mut();
         inner.closed = true;
         inner.handler = None;
+        inner.pending.clear();
     }
 }
 
@@ -1050,7 +1093,7 @@ fn encode_error(id: Value, code: i64, message: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hypabolic_trajectory::StreamPosition;
+    use hypabolic_trajectory::{StreamPosition, update_to_value};
     use std::path::PathBuf;
 
     const CHAT: &str = "ahp-chat:/00000000-0000-4000-8000-0000000000c1";
@@ -1162,6 +1205,39 @@ mod tests {
     }
 
     #[test]
+    fn auth_success_token_not_in_stream_update() {
+        let pair = InMemoryAhpTransportPair::new();
+        let mut script = FakeAhpHostScript::new();
+        script.require_auth = true;
+        script.accept_token = Some("secret-token-xyz".into());
+        script.initial_snapshot = Some(empty_snapshot());
+        let host = FakeAhpHost::new(pair.host, script, CHAT);
+        let mut opts = AhpClientOptions::new(CHAT);
+        opts.auth = Some(Box::new(|_| {
+            Some(AhpAuthCredentials {
+                token: "secret-token-xyz".into(),
+            })
+        }));
+        let (client, events) = collect_client(pair.client, opts);
+        client.start();
+        {
+            let events = events.borrow();
+            assert!(events.iter().any(|e| e.kind == AhpClientEventKind::Ready));
+            for e in events.iter().filter(|e| e.kind == AhpClientEventKind::StreamUpdate) {
+                if let Some(ref update) = e.update {
+                    let blob = update_to_value(update).to_string();
+                    assert!(
+                        !blob.contains("secret-token-xyz"),
+                        "auth token must not appear in stream update JSON"
+                    );
+                }
+            }
+        }
+        client.cancel();
+        let _ = host;
+    }
+
+    #[test]
     fn sequence_gap_triggers_resync() {
         let pair = InMemoryAhpTransportPair::new();
         let actions = load_actions("ahp-action-turn-flow", "step-actions.jsonl");
@@ -1171,6 +1247,12 @@ mod tests {
         let host = FakeAhpHost::new(pair.host, script, CHAT);
         let (client, events) = collect_client(pair.client, AhpClientOptions::new(CHAT));
         client.start();
+        let gen_before = client.cursor().generation;
+        let updates_before = events
+            .borrow()
+            .iter()
+            .filter(|e| e.kind == AhpClientEventKind::StreamUpdate)
+            .count();
         let gap = load_actions("ahp-action-sequence-gap", "step-gap.jsonl");
         host.push_actions(&gap);
         // Host push enqueues client inbox; pump to process.
@@ -1184,6 +1266,23 @@ mod tests {
             );
         }
         assert!(host.resync_count() >= 1);
+        assert!(client.cursor().generation > gen_before);
+        let updates_after: Vec<_> = events
+            .borrow()
+            .iter()
+            .filter(|e| e.kind == AhpClientEventKind::StreamUpdate)
+            .cloned()
+            .collect();
+        assert!(updates_after.len() > updates_before);
+        let last_kind = updates_after
+            .last()
+            .and_then(|e| e.update.as_ref())
+            .map(|u| u.kind.as_str())
+            .unwrap_or("");
+        assert!(
+            last_kind == "updated" || last_kind == "unchanged",
+            "expected post-resync stream-update, got {last_kind}"
+        );
         client.cancel();
         assert!(client.is_cancelled());
     }
@@ -1253,3 +1352,4 @@ mod tests {
         host.close();
     }
 }
+

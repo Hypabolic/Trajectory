@@ -15,7 +15,7 @@ Wire contract: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md).
 | --- | --- | --- |
 | .NET | `Hypabolic.Trajectory.IO` | `FileTrajectoryStream`, `IAsyncEnumerable` follow |
 | TypeScript | `@hypabolic/trajectory-node` | Extended with file follow helpers |
-| Rust | `hypabolic-trajectory-io` | Poll by default; optional `watch` feature |
+| Rust | `hypabolic-trajectory-io` | Poll by default; optional `watch` feature reserved/unimplemented |
 | Python | `hypabolic-trajectory[io]` | Stdlib-only module `hypabolic_trajectory.io` |
 
 Capability names `stream-file-io` / `stream-file-watch` / `stream-async-iterator`

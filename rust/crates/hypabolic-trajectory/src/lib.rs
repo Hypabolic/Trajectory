@@ -37,7 +37,7 @@ pub use streaming::{
     AhpServerSeqPosition, BytePosition, STREAM_SCHEMA_ID, SnapshotRevisionPosition, StreamConsumed,
     StreamCursor, StreamDelivery, StreamDelta, StreamInput, StreamInputKind, StreamOptions,
     StreamPosition, StreamProvisionalInfo, StreamRecord, StreamReset, StreamResetRequest,
-    StreamSnapshot, StreamState, StreamUpdate, TrajectoryStream, apply_ahp_actions,
+    StreamRevision, StreamSnapshot, StreamState, StreamUpdate, TrajectoryStream, apply_ahp_actions,
     apply_ahp_snapshot, apply_append, apply_delta_to_snapshot, apply_snapshot, apply_stream,
     create_stream, delta_to_value, diagnostic_key, diff_snapshots, finish_stream, match_key_value,
     reset_stream, snapshot_to_value, split_complete_lines, update_to_value,

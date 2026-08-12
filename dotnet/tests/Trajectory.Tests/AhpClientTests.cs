@@ -130,10 +130,16 @@ public sealed class AhpClientTests
             new AhpClientOptions { ChatChannel = Chat, AutoResync = true },
             events.Add);
         client.Start();
+        var genBefore = client.Cursor.Generation;
+        var updatesBefore = events.Count(e => e.Kind == AhpClientEventKind.StreamUpdate);
         var gap = LoadActions("ahp-action-sequence-gap", "step-gap.jsonl");
         host.PushActions(gap);
         Assert.Contains(events, e => e.Kind == AhpClientEventKind.ResyncRequired);
         Assert.True(host.ResyncCount >= 1);
+        Assert.True(client.Cursor.Generation > genBefore);
+        var updatesAfter = events.Where(e => e.Kind == AhpClientEventKind.StreamUpdate).ToList();
+        Assert.True(updatesAfter.Count > updatesBefore);
+        Assert.Contains(updatesAfter[^1].Update!.Kind, new[] { "updated", "unchanged" });
         client.Cancel();
         Assert.True(client.IsCancelled);
     }

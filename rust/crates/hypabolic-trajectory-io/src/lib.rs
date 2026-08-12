@@ -12,8 +12,8 @@ use std::thread;
 use std::time::Duration;
 
 use hypabolic_trajectory::{
-    StreamOptions, StreamUpdate, TrajectoryError, TrajectorySource, TrajectoryStream,
-    split_complete_lines,
+    StreamConsumed, StreamOptions, StreamProvisionalInfo, StreamRevision, StreamState,
+    StreamUpdate, TrajectoryError, TrajectorySource, TrajectoryStream, split_complete_lines,
 };
 
 /// Host error: missing root.
@@ -258,9 +258,13 @@ impl FileTrajectoryStream {
         self.host_pending = pending;
         self.first = false;
         self.polls = self.polls.saturating_add(1);
-        self.stream
-            .apply_snapshot(&complete, &self.source_revision, None)
-            .map_err(core_to_host)
+        let result = self
+            .stream
+            .apply_snapshot(&complete, &self.source_revision, None);
+        Ok(match result {
+            Ok(update) => update,
+            Err(err) => stream_error_from_core(self.stream.state(), err),
+        })
     }
 
     fn reconcile_snapshot(&mut self, size: u64) -> Result<Option<StreamUpdate>, HostError> {
@@ -268,10 +272,13 @@ impl FileTrajectoryStream {
         let (complete, pending) = split_complete_lines(&material);
         self.host_pending = pending;
         self.file_offset = size;
-        let update = self
+        let result = self
             .stream
-            .apply_snapshot(&complete, &self.source_revision, None)
-            .map_err(core_to_host)?;
+            .apply_snapshot(&complete, &self.source_revision, None);
+        let update = match result {
+            Ok(update) => update,
+            Err(err) => stream_error_from_core(self.stream.state(), err),
+        };
         if update.kind == "unchanged" {
             Ok(None)
         } else {
@@ -290,10 +297,13 @@ impl FileTrajectoryStream {
         if complete.is_empty() {
             return Ok(None);
         }
-        let update = self
+        let result = self
             .stream
-            .apply_append(&complete, None, Some(self.source_revision.as_str()))
-            .map_err(core_to_host)?;
+            .apply_append(&complete, None, Some(self.source_revision.as_str()));
+        let update = match result {
+            Ok(update) => update,
+            Err(err) => stream_error_from_core(self.stream.state(), err),
+        };
         if update.kind == "unchanged" {
             Ok(None)
         } else {
@@ -372,14 +382,36 @@ where
     }
 }
 
-fn core_to_host(err: TrajectoryError) -> HostError {
-    // Core domain failures during apply are unexpected for host framing;
-    // surface as generic I/O-adjacent host error without path/content leakage.
-    let _ = err;
-    HostError {
-        code: HOST_IO_ERROR,
-        message: MSG_IO_ERROR,
-        path: None,
+/// Core apply paths normally return `Ok(StreamUpdate)` with `kind=error` /
+/// `reset-required`. Rare typed [`TrajectoryError`] values are surfaced as
+/// stream error updates (preserving the core code) rather than collapsed into
+/// a generic host I/O error.
+fn stream_error_from_core(state: &StreamState, err: TrajectoryError) -> StreamUpdate {
+    let revision = state.snapshot.as_ref().map_or_else(
+        || StreamRevision {
+            revision: 0,
+            revision_id: "error".into(),
+            parent_revision_id: None,
+            complete: false,
+            generation: state.generation,
+        },
+        |s| s.revision.clone(),
+    );
+    StreamUpdate {
+        kind: "error".into(),
+        revision,
+        cursor: state.cursor.clone(),
+        snapshot: None,
+        delta: None,
+        diagnostics: vec![],
+        provisional: StreamProvisionalInfo {
+            include: state.options.include_provisional,
+            provisional_ids: vec![],
+            finalized_ids: vec![],
+        },
+        consumed: StreamConsumed::default(),
+        reset: None,
+        error: Some((err.code, err.message)),
     }
 }
 

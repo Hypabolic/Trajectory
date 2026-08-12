@@ -151,6 +151,10 @@ class AhpStreamClient:
     def cancelled(self) -> bool:
         return self._cancelled
 
+    def set_paused_for_test(self, paused: bool) -> None:
+        """Test helper: force backpressure pause without filling the buffer."""
+        self._paused = paused
+
     def start(self) -> None:
         """Send initialize and begin the subscribe handshake."""
         if self._cancelled:

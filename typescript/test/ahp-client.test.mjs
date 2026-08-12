@@ -133,12 +133,48 @@ test("sequence gap triggers resync", () => {
     (e) => events.push(e),
   );
   client.start();
+  const genBefore = client.cursor.generation;
+  const updatesBefore = events.filter((e) => e.kind === "stream-update").length;
   const gap = loadActions("ahp-action-sequence-gap", "step-gap.jsonl");
   host.pushActions(gap);
   assert.ok(events.some((e) => e.kind === "resync-required"));
   assert.ok(host.resyncCount >= 1);
+  assert.ok(client.cursor.generation > genBefore);
+  const updatesAfter = events.filter((e) => e.kind === "stream-update");
+  assert.ok(updatesAfter.length > updatesBefore);
+  assert.ok(["updated", "unchanged"].includes(updatesAfter.at(-1).update.kind));
   client.cancel();
   assert.ok(client.isCancelled);
+});
+
+test("cancel while auth pending does not finish auth", async () => {
+  let resolveAuth;
+  const authPromise = new Promise((resolve) => {
+    resolveAuth = resolve;
+  });
+  const pair = new InMemoryAhpTransportPair();
+  const host = new FakeAhpHost(
+    pair.host,
+    { requireAuth: true, acceptToken: "secret-late" },
+    CHAT,
+  );
+  const events = [];
+  const client = new AhpStreamClient(
+    pair.client,
+    { chatChannel: CHAT, auth: () => authPromise },
+    (e) => events.push(e),
+  );
+  client.start();
+  assert.ok(events.some((e) => e.kind === "auth-required"));
+  client.cancel();
+  assert.ok(client.isCancelled);
+  resolveAuth({ token: "secret-late" });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(host.authAttempts, 0);
+  assert.ok(!events.some((e) => e.kind === "ready"));
+  assert.ok(!events.some((e) => e.kind === "error"));
+  assert.ok(!events.some((e) => e.kind === "auth-failed"));
 });
 
 test("duplicate action replay does not crash", () => {

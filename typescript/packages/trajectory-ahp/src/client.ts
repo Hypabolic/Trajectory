@@ -323,6 +323,8 @@ export class AhpStreamClient {
       void (result as Promise<AhpAuthCredentials | null>).then(
         (creds) => this.finishAuth(creds),
         () => {
+          // Late rejection after cancel must not emit transport/auth events.
+          if (this.cancelled) return;
           this.onEvent({
             kind: "auth-failed",
             code: ERR_AUTH_FAILED,
@@ -336,6 +338,9 @@ export class AhpStreamClient {
   }
 
   private finishAuth(creds: AhpAuthCredentials | null): void {
+    // Post-async entry: cancel must stop auth completion (no re-hold token /
+    // authenticate / transport error after cancel).
+    if (this.cancelled) return;
     if (!creds?.token) {
       this.onEvent({
         kind: "auth-failed",

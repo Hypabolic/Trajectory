@@ -160,6 +160,48 @@ public sealed class StreamingFileIoTests
         Assert.Equal("File stream path is outside the explicit root.", ex.Message);
     }
 
+    /// On case-sensitive filesystems, a differently-cased sibling of root must
+    /// not pass explicit-root containment (LS-09 path_outside_root).
+    [Fact]
+    public void CaseDifferingSiblingRootIsOutsideOnCaseSensitiveFileSystems()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var parent = Path.Combine(Path.GetTempPath(), "traj-io-case-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(parent);
+        var rootA = Path.Combine(parent, "RootDir");
+        var rootB = Path.Combine(parent, "rootdir");
+        Directory.CreateDirectory(rootA);
+        // Case-insensitive volumes treat RootDir/rootdir as the same entry.
+        if (Directory.Exists(rootB))
+        {
+            try { Directory.Delete(parent, recursive: true); } catch { /* best-effort */ }
+            return;
+        }
+
+        Directory.CreateDirectory(rootB);
+        var pathInB = Path.Combine(rootB, "x.jsonl");
+        File.WriteAllBytes(pathInB, "\n"u8.ToArray());
+        try
+        {
+            var ex = Assert.Throws<FileStreamHostException>(() =>
+                FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+                {
+                    Root = rootA,
+                    Path = pathInB,
+                    Source = TrajectorySource.Pi,
+                }));
+            Assert.Equal(FileStreamHostException.PathOutsideRoot, ex.Code);
+        }
+        finally
+        {
+            try { Directory.Delete(parent, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
     [Fact]
     public void RootRequired()
     {
