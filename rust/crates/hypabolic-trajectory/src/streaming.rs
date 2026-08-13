@@ -3792,6 +3792,10 @@ mod tests {
 
         let partial = read_case("utf8-byte-boundary", "step-partial-utf8.bin");
         let tail = read_case("utf8-byte-boundary", "step-utf8-tail.bin");
+        assert_eq!(partial.len(), 125);
+        assert_eq!(tail.len(), 6);
+        assert_eq!(*tail.last().unwrap(), b'\n');
+        assert!(!partial.contains(&b'\r') && !tail.contains(&b'\r'));
         let opts =
             StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-utf8-byte-boundary");
         let state = create_stream(opts);
@@ -3805,6 +3809,8 @@ mod tests {
         assert_eq!(update.kind, "updated");
         assert_eq!(update.cursor.position.pending_byte_length(), 0);
         assert_eq!(state.cursor.position.pending_byte_length(), 0);
+        assert_eq!(update.cursor.position.next_byte_offset(), 131);
+        assert_eq!(update.consumed.bytes, 131u64);
     }
 
     #[test]

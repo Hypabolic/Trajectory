@@ -252,6 +252,9 @@ def test_apply_append_pending_only_advances_cursor() -> None:
 
     partial = _read("utf8-byte-boundary", "step-partial-utf8.bin")
     tail = _read("utf8-byte-boundary", "step-utf8-tail.bin")
+    assert len(partial) == 125
+    assert len(tail) == 6
+    assert tail.endswith(b"\n") and b"\r" not in partial and b"\r" not in tail
     state = create_stream(
         StreamOptions(source="pi", group_id="stream-utf8-byte-boundary")
     )
@@ -262,6 +265,9 @@ def test_apply_append_pending_only_advances_cursor() -> None:
     assert update.kind == "updated"
     assert update.cursor.position.pending_byte_length == 0  # type: ignore[union-attr]
     assert state.cursor.position.pending_byte_length == 0
+    assert isinstance(state.cursor.position, BytePosition)
+    assert state.cursor.position.next_byte_offset == 131
+    assert update.consumed.bytes == 131
 
 
 def test_apply_append_enforces_buffer_limits() -> None:

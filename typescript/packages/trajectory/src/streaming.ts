@@ -429,7 +429,11 @@ function isNonNegativeInt64(value: bigint): boolean {
 }
 
 function sha256Hex(data: string | Uint8Array): string {
-  return createHash("sha256").update(data).digest("hex");
+  // Always hash the UTF-8 byte span. String inputs use TextEncoder (never a
+  // platform default encoding). Copy the visible TypedArray span so subarray
+  // views hash the same bytes as a standalone buffer.
+  const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data.slice();
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 export function splitCompleteLines(data: Uint8Array): { committed: Uint8Array; pending: Uint8Array } {
@@ -1376,6 +1380,7 @@ export function applyAppend(
   }
 
   // No complete lines: only pending advanced (incomplete line / mid-UTF-8).
+  // Pending stays raw bytes — never decoded (no U+FFFD, no platform encoding).
   // Visible records unchanged → kind=unchanged with patched pending cursor.
   if (complete.length === 0) {
     if (equalBytes(newPending, state.pendingBytes)) {

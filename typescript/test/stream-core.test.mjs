@@ -356,6 +356,10 @@ test("applyAppend pending-only advances cursor on state and update", async () =>
 
   const partial = await readCase("utf8-byte-boundary", "step-partial-utf8.bin");
   const tail = await readCase("utf8-byte-boundary", "step-utf8-tail.bin");
+  assert.equal(partial.length, 125);
+  assert.equal(tail.length, 6);
+  assert.equal(tail[tail.length - 1], 0x0a);
+  assert.ok(!partial.includes(0x0d) && !tail.includes(0x0d));
   state = createStream({ source: "pi", groupId: "stream-utf8-byte-boundary" });
   result = applyAppend(state, partial, undefined, "gen-0");
   assert.equal(result.update.kind, "unchanged");
@@ -364,6 +368,8 @@ test("applyAppend pending-only advances cursor on state and update", async () =>
   assert.equal(result.update.kind, "updated");
   assert.equal(result.update.cursor.position.pendingByteLength, 0n);
   assert.equal(result.state.cursor.position.pendingByteLength, 0n);
+  assert.equal(result.update.cursor.position.nextByteOffset, 131n);
+  assert.equal(result.update.consumed.bytes, 131n);
 });
 
 test("applyAppend enforces maxPendingBytes and maxLineBytes", () => {

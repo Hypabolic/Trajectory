@@ -61,6 +61,22 @@ DEFAULT_PRIVACY_SENTINELS: tuple[str, ...] = (
     "auth.json",
 )
 
+
+def _read_utf8(path: Path) -> str:
+    """Read a UTF-8 file without newline translation.
+
+    ``Path.read_text`` uses universal newlines, which would rewrite CRLF into
+    ``\\n`` before compare and can hide fixture corruption. Goldens and
+    runner I/O are encoding-stable UTF-8 with LF only.
+    """
+    return path.read_bytes().decode("utf-8")
+
+
+def _write_utf8(path: Path, text: str) -> None:
+    """Write UTF-8 bytes without translating ``\\n`` to ``os.linesep``."""
+    path.write_bytes(text.encode("utf-8"))
+
+
 # Required core stream capabilities (compatibility.json required + four
 # runtime-capabilities.json). Advertised ⇒ stream unsupported must FAIL.
 CORE_STREAM_CAPABILITIES: frozenset[str] = frozenset(
@@ -196,13 +212,13 @@ def compare_output(
             / expected_path.relative_to(repository_root / "conformance" / "cases")
         )
         candidate.parent.mkdir(parents=True, exist_ok=True)
-        candidate.write_text(actual, encoding="utf-8")
+        _write_utf8(candidate, actual)
         print(
             f"CANDIDATE {label}: wrote unaccepted output {candidate}",
             file=sys.stderr,
         )
         return False
-    expected = expected_path.read_text(encoding="utf-8")
+    expected = _read_utf8(expected_path)
 
     mode = operation.get("comparison", "json-exact")
     if mode == "json-exact":
@@ -327,11 +343,20 @@ def _scan_step_input_materials(
     if isinstance(material, str) and material:
         path = case_directory / material
         if path.is_file():
+            raw = path.read_bytes()
+            # Streaming materials are byte-identity fixtures. A CR means
+            # Windows autocrlf (or a text-mode rewrite) corrupted LF JSONL /
+            # utf8-byte-boundary tails — that shifts apply_append offsets.
+            if b"\r" in raw:
+                raise AssertionError(
+                    f"{label}/material:{material}: fixture contains CR; "
+                    "streaming materials must keep LF byte identity"
+                )
             # Binary materials (utf8-byte-boundary) are scanned as latin-1 so
             # ASCII privacy sentinels still match without decode failures.
             scan_privacy(
                 f"{label}/material:{material}",
-                path.read_bytes().decode("latin-1"),
+                raw.decode("latin-1"),
                 sentinels,
             )
     inline = step_input.get("inline_utf8")
@@ -344,9 +369,15 @@ def _scan_step_input_materials(
         if isinstance(reset_material, str) and reset_material:
             path = case_directory / reset_material
             if path.is_file():
+                raw = path.read_bytes()
+                if b"\r" in raw:
+                    raise AssertionError(
+                        f"{label}/reset.material:{reset_material}: fixture "
+                        "contains CR; streaming materials must keep LF byte identity"
+                    )
                 scan_privacy(
                     f"{label}/reset.material:{reset_material}",
-                    path.read_bytes().decode("latin-1"),
+                    raw.decode("latin-1"),
                     sentinels,
                 )
         reset_inline = reset.get("inline_utf8")
@@ -760,14 +791,14 @@ def compare_stream_modes(
                         / golden_rel
                     )
                     candidate.parent.mkdir(parents=True, exist_ok=True)
-                    candidate.write_text(actual_json + "\n", encoding="utf-8")
+                    _write_utf8(candidate, actual_json + "\n")
                     print(
                         f"CANDIDATE {step_label}: wrote unaccepted output {candidate}",
                         file=sys.stderr,
                     )
                     missing_goldens += 1
                 else:
-                    expected = json.loads(golden_path.read_text(encoding="utf-8"))
+                    expected = json.loads(_read_utf8(golden_path))
                     if update != expected:
                         raise AssertionError(
                             f"{step_label}: stream-json-exact differs from {golden_path}"
@@ -782,7 +813,7 @@ def compare_stream_modes(
                     continue
                 golden_path = case_directory / golden_rel
                 if golden_path.exists():
-                    expected = json.loads(golden_path.read_text(encoding="utf-8"))
+                    expected = json.loads(_read_utf8(golden_path))
                     expected_cursor = expected.get("cursor")
                     if expected_cursor is not None and cursor != expected_cursor:
                         raise AssertionError(
@@ -1011,9 +1042,7 @@ def run_batch_case(
                 candidates += 1
         else:
             expected_error = json.loads(
-                (manifest_path.parent / operation["expected"]).read_text(
-                    encoding="utf-8"
-                )
+                _read_utf8(manifest_path.parent / operation["expected"])
             )
             if first.get("fatal_error") != expected_error:
                 raise AssertionError(f"{label}: fatal error differs")
@@ -1144,7 +1173,7 @@ def run_stream_case(
                 if golden.exists():
                     scan_privacy(
                         f"{label}/{result_rel}",
-                        golden.read_text(encoding="utf-8"),
+                        _read_utf8(golden),
                         sentinels,
                     )
 

@@ -362,6 +362,8 @@ async function loadStepBytes(
     return new TextEncoder().encode(input.inline_utf8);
   }
   if (!input.material) throw new Error("Step input requires material or inline_utf8.");
+  // Binary read: never decode as text (Windows would inject CRLF into JSONL /
+  // utf8-byte-boundary .bin tails and shift apply_append cursor / hashes).
   return new Uint8Array(await readFile(safeResolve(caseDirectory, input.material)));
 }
 

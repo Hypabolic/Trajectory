@@ -271,6 +271,11 @@ public sealed class StreamingCoreTests
 
         var partial = ReadFixture("utf8-byte-boundary", "step-partial-utf8.bin");
         var tail = ReadFixture("utf8-byte-boundary", "step-utf8-tail.bin");
+        Assert.Equal(125, partial.Length);
+        Assert.Equal(6, tail.Length);
+        Assert.Equal((byte)'\n', tail[^1]);
+        Assert.DoesNotContain((byte)'\r', partial);
+        Assert.DoesNotContain((byte)'\r', tail);
         state = TrajectoryStream.Create(new StreamOptions
         {
             Source = TrajectorySource.Pi,
@@ -283,6 +288,8 @@ public sealed class StreamingCoreTests
         Assert.Equal("updated", u3.Kind);
         Assert.Equal(0, BytePos(u3.Cursor).PendingByteLength);
         Assert.Equal(0, BytePos(state3.Cursor).PendingByteLength);
+        Assert.Equal(131, BytePos(u3.Cursor).NextByteOffset);
+        Assert.Equal(131UL, u3.Consumed.Bytes);
     }
 
     [Fact]
