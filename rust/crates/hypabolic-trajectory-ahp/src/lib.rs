@@ -1253,7 +1253,9 @@ mod tests {
             assert!(events.iter().any(|e| e.kind == AhpClientEventKind::Ready));
             for e in events.iter().filter(|e| e.kind == AhpClientEventKind::StreamUpdate) {
                 if let Some(ref update) = e.update {
-                    let blob = update_to_value(update).to_string();
+                    let blob = update_to_value(update)
+                        .expect("json-safe stream integers")
+                        .to_string();
                     assert!(
                         !blob.contains("secret-token-xyz"),
                         "auth token must not appear in stream update JSON"

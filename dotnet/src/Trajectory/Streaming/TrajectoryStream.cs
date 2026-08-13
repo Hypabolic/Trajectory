@@ -15,6 +15,13 @@ public static class TrajectoryStream
 {
     public const string SchemaId = "trajectory-stream-v1";
 
+    /// <summary>IEEE-754 binary64 safe integer domain (stream wire contract).</summary>
+    public const long JsonSafeIntegerMax = 9007199254740991L;
+
+    /// <summary>Minimum JSON-safe signed integer.</summary>
+    public const long JsonSafeIntegerMin = -9007199254740991L;
+
+    private const string MsgJsonSafeInteger = "Stream integer exceeds JSON safe integer domain.";
     private const string MsgAhpSourceRequired = "AHP stream apply requires source ahp.";
     private const string MsgHermesSourceRequired = "Hermes export stream apply requires source hermes.";
     private const string MsgInvalidHermesExport = "Hermes export material is not valid session-export JSON.";
@@ -1639,17 +1646,17 @@ public static class TrajectoryStream
         ArgumentNullException.ThrowIfNull(update);
         var consumed = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            ["complete_records"] = update.Consumed.CompleteRecords,
-            ["bytes"] = update.Consumed.Bytes,
+            ["complete_records"] = JsonSafeUInt64(update.Consumed.CompleteRecords),
+            ["bytes"] = JsonSafeUInt64(update.Consumed.Bytes),
         };
         if (update.Consumed.FirstSourcePosition is not null)
         {
-            consumed["first_source_position"] = update.Consumed.FirstSourcePosition;
+            consumed["first_source_position"] = JsonSafeInt(update.Consumed.FirstSourcePosition.Value);
         }
 
         if (update.Consumed.LastSourcePosition is not null)
         {
-            consumed["last_source_position"] = update.Consumed.LastSourcePosition;
+            consumed["last_source_position"] = JsonSafeInt(update.Consumed.LastSourcePosition.Value);
         }
 
         var provisional = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -2558,15 +2565,68 @@ public static class TrajectoryStream
             ["dropped_record_ids"] = reset.DroppedRecordIds.ToList(),
         };
 
-    private static Dictionary<string, object?> CursorToDict(StreamCursor c)
+    /// <summary>Require a JSON-safe integer for stream wire fields.</summary>
+    public static long JsonSafeInt(long value, bool nonNegative = false)
     {
+        var lo = nonNegative ? 0L : JsonSafeIntegerMin;
+        if (value < lo || value > JsonSafeIntegerMax)
+        {
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.InvalidInput,
+                MsgJsonSafeInteger);
+        }
+
+        return value;
+    }
+
+    /// <summary>Require a non-negative JSON-safe integer from a <see cref="ulong"/> wire field.</summary>
+    public static long JsonSafeUInt64(ulong value)
+    {
+        if (value > (ulong)JsonSafeIntegerMax)
+        {
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.InvalidInput,
+                MsgJsonSafeInteger);
+        }
+
+        return (long)value;
+    }
+
+    /// <summary>
+    /// Parse a boxed JSON number as a JSON-safe stream integer
+    /// (no decimal-string fallback).
+    /// </summary>
+    public static long JsonSafeFromNumber(object? value, bool nonNegative = false)
+    {
+        return value switch
+        {
+            byte b => JsonSafeInt(b, nonNegative),
+            sbyte sb => JsonSafeInt(sb, nonNegative),
+            short s => JsonSafeInt(s, nonNegative),
+            ushort us => JsonSafeInt(us, nonNegative),
+            int i => JsonSafeInt(i, nonNegative),
+            uint ui => JsonSafeInt(ui, nonNegative),
+            long l => JsonSafeInt(l, nonNegative),
+            ulong ul => JsonSafeUInt64(ul),
+            JsonElement { ValueKind: JsonValueKind.Number } el when el.TryGetInt64(out var parsed) =>
+                JsonSafeInt(parsed, nonNegative),
+            _ => throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.InvalidInput,
+                MsgJsonSafeInteger),
+        };
+    }
+
+    /// <summary>Serialize a stream cursor to wire snake_case JSON objects.</summary>
+    public static Dictionary<string, object?> CursorToDict(StreamCursor c)
+    {
+        ArgumentNullException.ThrowIfNull(c);
         Dictionary<string, object?> position = c.Position switch
         {
             BytePosition b => new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["kind"] = "byte",
-                ["next_byte_offset"] = b.NextByteOffset,
-                ["pending_byte_length"] = b.PendingByteLength,
+                ["next_byte_offset"] = JsonSafeInt(b.NextByteOffset, nonNegative: true),
+                ["pending_byte_length"] = JsonSafeInt(b.PendingByteLength, nonNegative: true),
             },
             AhpServerSeqPosition a => BuildAhpSeqPositionDict(a),
             SnapshotRevisionPosition s => BuildSnapshotRevisionPositionDict(s),
@@ -2581,7 +2641,7 @@ public static class TrajectoryStream
             ["cursor_version"] = c.CursorVersion,
             ["source"] = c.Source,
             ["group_id"] = c.GroupId,
-            ["generation"] = c.Generation,
+            ["generation"] = JsonSafeUInt64(c.Generation),
             ["position"] = position,
             ["source_revision"] = c.SourceRevision,
             ["prefix_sha256"] = c.PrefixSha256,
@@ -2593,12 +2653,12 @@ public static class TrajectoryStream
         var position = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["kind"] = "ahp-server-seq",
-            ["next_server_seq"] = a.NextServerSeq,
-            ["last_server_seq"] = a.LastServerSeq,
+            ["next_server_seq"] = JsonSafeInt(a.NextServerSeq),
+            ["last_server_seq"] = JsonSafeInt(a.LastServerSeq),
         };
         if (a.NextByteOffset is not null)
         {
-            position["next_byte_offset"] = a.NextByteOffset;
+            position["next_byte_offset"] = JsonSafeInt(a.NextByteOffset.Value, nonNegative: true);
         }
 
         return position;
@@ -2629,7 +2689,7 @@ public static class TrajectoryStream
         };
         if (h.LastRowId is not null)
         {
-            position["last_row_id"] = h.LastRowId;
+            position["last_row_id"] = JsonSafeInt(h.LastRowId.Value);
         }
 
         if (h.ChangeToken is not null)
@@ -2787,11 +2847,11 @@ public static class TrajectoryStream
     private static Dictionary<string, object?> RevisionToDict(StreamRevision r) =>
         new(StringComparer.Ordinal)
         {
-            ["revision"] = r.Revision,
+            ["revision"] = JsonSafeUInt64(r.Revision),
             ["revision_id"] = r.RevisionId,
             ["parent_revision_id"] = r.ParentRevisionId,
             ["complete"] = r.Complete,
-            ["generation"] = r.Generation,
+            ["generation"] = JsonSafeUInt64(r.Generation),
         };
 
     private static string MatchKeyDict(Dictionary<string, object?> record)

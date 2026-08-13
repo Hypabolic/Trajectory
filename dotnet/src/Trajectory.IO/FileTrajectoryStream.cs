@@ -247,6 +247,8 @@ public sealed class FileTrajectoryStream : IAsyncDisposable, IDisposable
             return false;
         }
 
+        // File-ID change is authoritative (atomic replace / new inode).
+        // Same-size in-place rewrite typically keeps the ID but updates mtime.
         if (identity.VolumeSerial != _identity.Value.VolumeSerial ||
             identity.FileIndex != _identity.Value.FileIndex)
         {
@@ -264,7 +266,8 @@ public sealed class FileTrajectoryStream : IAsyncDisposable, IDisposable
         {
             var info = new FileInfo(_path);
             info.Refresh();
-            var identity = new FileIdentity(0, 0, info.LastWriteTimeUtc.Ticks);
+            FileIdentityNative.TryGet(_path, out var volumeSerial, out var fileIndex);
+            var identity = new FileIdentity(volumeSerial, fileIndex, info.LastWriteTimeUtc.Ticks);
             return (info.Length, identity);
         }
         catch (FileNotFoundException ex)

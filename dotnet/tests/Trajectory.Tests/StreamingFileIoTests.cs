@@ -366,6 +366,40 @@ public sealed class StreamingFileIoTests
         Assert.True(update!.Kind is "updated" or "reset-required");
     }
 
+    [Fact]
+    public void SameSizeAtomicReplace_IsDetectedWhenMtimePreserved()
+    {
+        // M2 residual: file-ID (inode/volume), not LastWriteTicks, must see replace.
+        var root = CreateTempRoot();
+        var path = Path.Combine(root, "session.jsonl");
+        var original = SessionLine.Concat(UserLine).ToArray();
+        var replacedUser = Encoding.UTF8.GetBytes(
+            Encoding.UTF8.GetString(UserLine).Replace("\"hello\"", "\"hallo\"", StringComparison.Ordinal));
+        var replaced = SessionLine.Concat(replacedUser).ToArray();
+        Assert.Equal(original.Length, replaced.Length);
+        File.WriteAllBytes(path, original);
+
+        using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+        {
+            Root = root,
+            Path = path,
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-io-dotnet",
+        });
+        Assert.NotNull(stream.Poll());
+
+        var originalWrite = File.GetLastWriteTimeUtc(path);
+        var tmp = path + ".tmp";
+        File.WriteAllBytes(tmp, replaced);
+        File.SetLastWriteTimeUtc(tmp, originalWrite);
+        File.Move(tmp, path, overwrite: true);
+        File.SetLastWriteTimeUtc(path, originalWrite);
+
+        var update = stream.Poll();
+        Assert.NotNull(update);
+        Assert.True(update!.Kind is "updated" or "reset-required");
+    }
+
     private static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "traj-io-" + Guid.NewGuid().ToString("N"));

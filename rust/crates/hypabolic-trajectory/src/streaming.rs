@@ -54,6 +54,45 @@ pub enum StreamResetPolicy {
 pub const JSON_SAFE_INTEGER_MAX: i64 = 9_007_199_254_740_991;
 /// Minimum JSON-safe signed integer.
 pub const JSON_SAFE_INTEGER_MIN: i64 = -9_007_199_254_740_991;
+const MSG_JSON_SAFE_INTEGER: &str = "Stream integer exceeds JSON safe integer domain.";
+
+/// Require a JSON-safe integer for stream wire fields.
+pub fn json_safe_int(value: i64, non_negative: bool) -> Result<i64, TrajectoryError> {
+    let lo = if non_negative { 0 } else { JSON_SAFE_INTEGER_MIN };
+    if value < lo || value > JSON_SAFE_INTEGER_MAX {
+        return Err(TrajectoryError::new("invalid_input", MSG_JSON_SAFE_INTEGER));
+    }
+    Ok(value)
+}
+
+/// Require a non-negative JSON-safe integer from a `u64` wire field.
+pub fn json_safe_u64(value: u64) -> Result<i64, TrajectoryError> {
+    if value > JSON_SAFE_INTEGER_MAX as u64 {
+        return Err(TrajectoryError::new("invalid_input", MSG_JSON_SAFE_INTEGER));
+    }
+    Ok(value as i64)
+}
+
+/// Parse a JSON number as a JSON-safe stream integer (no decimal-string fallback).
+pub fn json_safe_from_value(value: &Value, non_negative: bool) -> Result<i64, TrajectoryError> {
+    match value {
+        Value::Number(n) => {
+            let parsed = n.as_i64().ok_or_else(|| {
+                TrajectoryError::new("invalid_input", MSG_JSON_SAFE_INTEGER)
+            })?;
+            json_safe_int(parsed, non_negative)
+        }
+        _ => Err(TrajectoryError::new("invalid_input", MSG_JSON_SAFE_INTEGER)),
+    }
+}
+
+fn json_num(value: i64, non_negative: bool) -> Result<Value, TrajectoryError> {
+    json_safe_int(value, non_negative).map(Value::from)
+}
+
+fn json_unum(value: u64) -> Result<Value, TrajectoryError> {
+    json_safe_u64(value).map(Value::from)
+}
 
 /// Public stream options.
 #[derive(Debug, Clone)]
@@ -689,9 +728,9 @@ fn diagnostic_to_value(d: &StreamDiagnostic) -> Value {
     Value::Object(map)
 }
 
-fn revision_to_value(r: &StreamRevision) -> Value {
+fn revision_to_value(r: &StreamRevision) -> Result<Value, TrajectoryError> {
     let mut map = Map::new();
-    map.insert("revision".into(), Value::from(r.revision));
+    map.insert("revision".into(), json_unum(r.revision)?);
     map.insert("revision_id".into(), Value::String(r.revision_id.clone()));
     map.insert(
         "parent_revision_id".into(),
@@ -700,18 +739,17 @@ fn revision_to_value(r: &StreamRevision) -> Value {
             .map_or(Value::Null, |s| Value::String(s.clone())),
     );
     map.insert("complete".into(), Value::Bool(r.complete));
-    map.insert("generation".into(), Value::from(r.generation));
-    Value::Object(map)
+    map.insert("generation".into(), json_unum(r.generation)?);
+    Ok(Value::Object(map))
 }
 
 /// Serialize snapshot to JSON value.
-#[must_use]
-pub fn snapshot_to_value(s: &StreamSnapshot) -> Value {
+pub fn snapshot_to_value(s: &StreamSnapshot) -> Result<Value, TrajectoryError> {
     let mut map = Map::new();
     map.insert("schema_id".into(), Value::String(s.schema_id.clone()));
     map.insert("source".into(), Value::String(s.source.clone()));
     map.insert("group_id".into(), Value::String(s.group_id.clone()));
-    map.insert("revision".into(), revision_to_value(&s.revision));
+    map.insert("revision".into(), revision_to_value(&s.revision)?);
     map.insert(
         "records".into(),
         Value::Array(s.records.iter().map(record_to_value).collect()),
@@ -721,25 +759,28 @@ pub fn snapshot_to_value(s: &StreamSnapshot) -> Value {
         Value::Array(s.diagnostics.iter().map(diagnostic_to_value).collect()),
     );
     map.insert("complete".into(), Value::Bool(s.complete));
-    Value::Object(map)
+    Ok(Value::Object(map))
 }
 
 /// Serialize stream update to JSON value (wire snake_case).
-#[must_use]
-pub fn update_to_value(u: &StreamUpdate) -> Value {
+pub fn update_to_value(u: &StreamUpdate) -> Result<Value, TrajectoryError> {
     let mut map = Map::new();
     map.insert("kind".into(), Value::String(u.kind.clone()));
-    map.insert("revision".into(), revision_to_value(&u.revision));
-    map.insert("cursor".into(), cursor_to_value(&u.cursor));
+    map.insert("revision".into(), revision_to_value(&u.revision)?);
+    map.insert("cursor".into(), cursor_to_value(&u.cursor)?);
     map.insert(
         "snapshot".into(),
-        u.snapshot
-            .as_ref()
-            .map_or(Value::Null, snapshot_to_value),
+        match &u.snapshot {
+            Some(s) => snapshot_to_value(s)?,
+            None => Value::Null,
+        },
     );
     map.insert(
         "delta".into(),
-        u.delta.as_ref().map_or(Value::Null, delta_to_value),
+        match &u.delta {
+            Some(d) => delta_to_value(d)?,
+            None => Value::Null,
+        },
     );
     map.insert(
         "diagnostics".into(),
@@ -773,18 +814,18 @@ pub fn update_to_value(u: &StreamUpdate) -> Value {
     let mut consumed = Map::new();
     consumed.insert(
         "complete_records".into(),
-        Value::from(u.consumed.complete_records),
+        json_unum(u.consumed.complete_records)?,
     );
-    consumed.insert("bytes".into(), Value::from(u.consumed.bytes));
+    consumed.insert("bytes".into(), json_unum(u.consumed.bytes)?);
     if let Some(pos) = u.consumed.first_source_position {
-        consumed.insert("first_source_position".into(), Value::from(pos));
+        consumed.insert("first_source_position".into(), json_num(pos, false)?);
     }
     if let Some(pos) = u.consumed.last_source_position {
-        consumed.insert("last_source_position".into(), Value::from(pos));
+        consumed.insert("last_source_position".into(), json_num(pos, false)?);
     }
     map.insert("consumed".into(), Value::Object(consumed));
     if let Some(reset) = &u.reset {
-        map.insert("reset".into(), reset_to_value(reset));
+        map.insert("reset".into(), reset_to_value(reset)?);
     }
     if let Some((code, message)) = &u.error {
         let mut err = Map::new();
@@ -792,12 +833,11 @@ pub fn update_to_value(u: &StreamUpdate) -> Value {
         err.insert("message".into(), Value::String(message.clone()));
         map.insert("error".into(), Value::Object(err));
     }
-    Value::Object(map)
+    Ok(Value::Object(map))
 }
 
 /// Serialize delta to JSON value.
-#[must_use]
-pub fn delta_to_value(d: &StreamDelta) -> Value {
+pub fn delta_to_value(d: &StreamDelta) -> Result<Value, TrajectoryError> {
     let mut map = Map::new();
     map.insert("schema_id".into(), Value::String(d.schema_id.clone()));
     map.insert(
@@ -806,7 +846,7 @@ pub fn delta_to_value(d: &StreamDelta) -> Value {
             .as_ref()
             .map_or(Value::Null, |s| Value::String(s.clone())),
     );
-    map.insert("revision".into(), revision_to_value(&d.revision));
+    map.insert("revision".into(), revision_to_value(&d.revision)?);
     let ops = d
         .operations
         .iter()
@@ -817,7 +857,7 @@ pub fn delta_to_value(d: &StreamDelta) -> Value {
         })
         .collect();
     map.insert("operations".into(), Value::Array(ops));
-    Value::Object(map)
+    Ok(Value::Object(map))
 }
 
 /// Diff two snapshots into ordered delta ops.
@@ -1326,15 +1366,15 @@ fn is_whitespace_only(data: &[u8]) -> bool {
         .all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
 }
 
-fn reset_to_value(reset: &StreamReset) -> Value {
+fn reset_to_value(reset: &StreamReset) -> Result<Value, TrajectoryError> {
     let mut map = Map::new();
     map.insert("reason".into(), Value::String(reset.reason.clone()));
     map.insert(
         "prior_cursor".into(),
-        reset
-            .prior_cursor
-            .as_ref()
-            .map_or(Value::Null, cursor_to_value),
+        match &reset.prior_cursor {
+            Some(c) => cursor_to_value(c)?,
+            None => Value::Null,
+        },
     );
     map.insert(
         "requires_snapshot".into(),
@@ -1351,28 +1391,32 @@ fn reset_to_value(reset: &StreamReset) -> Value {
                 .collect(),
         ),
     );
-    Value::Object(map)
+    Ok(Value::Object(map))
 }
 
-fn cursor_to_value(c: &StreamCursor) -> Value {
+/// Serialize a stream cursor to wire snake_case JSON.
+pub fn cursor_to_value(c: &StreamCursor) -> Result<Value, TrajectoryError> {
     let pos = match &c.position {
         StreamPosition::Byte(p) => {
             let mut pos = Map::new();
             pos.insert("kind".into(), Value::String("byte".into()));
-            pos.insert("next_byte_offset".into(), Value::from(p.next_byte_offset));
+            pos.insert(
+                "next_byte_offset".into(),
+                json_num(p.next_byte_offset, true)?,
+            );
             pos.insert(
                 "pending_byte_length".into(),
-                Value::from(p.pending_byte_length),
+                json_num(p.pending_byte_length, true)?,
             );
             pos
         }
         StreamPosition::AhpServerSeq(p) => {
             let mut pos = Map::new();
             pos.insert("kind".into(), Value::String("ahp-server-seq".into()));
-            pos.insert("next_server_seq".into(), Value::from(p.next_server_seq));
-            pos.insert("last_server_seq".into(), Value::from(p.last_server_seq));
+            pos.insert("next_server_seq".into(), json_num(p.next_server_seq, false)?);
+            pos.insert("last_server_seq".into(), json_num(p.last_server_seq, false)?);
             if let Some(off) = p.next_byte_offset {
-                pos.insert("next_byte_offset".into(), Value::from(off));
+                pos.insert("next_byte_offset".into(), json_num(off, true)?);
             }
             pos
         }
@@ -1393,7 +1437,7 @@ fn cursor_to_value(c: &StreamCursor) -> Value {
                 Value::String(p.database_generation.clone()),
             );
             if let Some(id) = p.last_row_id {
-                pos.insert("last_row_id".into(), Value::from(id));
+                pos.insert("last_row_id".into(), json_num(id, false)?);
             }
             if let Some(tok) = &p.change_token {
                 pos.insert("change_token".into(), Value::String(tok.clone()));
@@ -1405,7 +1449,7 @@ fn cursor_to_value(c: &StreamCursor) -> Value {
     map.insert("cursor_version".into(), Value::from(c.cursor_version));
     map.insert("source".into(), Value::String(c.source.clone()));
     map.insert("group_id".into(), Value::String(c.group_id.clone()));
-    map.insert("generation".into(), Value::from(c.generation));
+    map.insert("generation".into(), json_unum(c.generation)?);
     map.insert("position".into(), Value::Object(pos));
     map.insert(
         "source_revision".into(),
@@ -1419,7 +1463,7 @@ fn cursor_to_value(c: &StreamCursor) -> Value {
             .as_ref()
             .map_or(Value::Null, |s| Value::String(s.clone())),
     );
-    Value::Object(map)
+    Ok(Value::Object(map))
 }
 
 fn cursor_conflict(state: &StreamState, cursor: Option<&StreamCursor>) -> Option<StreamUpdate> {
@@ -2966,7 +3010,7 @@ pub fn reset_stream(
         }
         if let Some(delta) = update.delta.as_mut() {
             let mut payload = Map::new();
-            payload.insert("reset".into(), reset_to_value(&reset_meta));
+            payload.insert("reset".into(), reset_to_value(&reset_meta)?);
             delta.operations.insert(
                 0,
                 StreamDeltaOperation {
@@ -3006,7 +3050,7 @@ pub fn reset_stream(
     };
     let mut delta = diff_snapshots(None, &snapshot, &revision);
     let mut payload = Map::new();
-    payload.insert("reset".into(), reset_to_value(&reset_meta));
+    payload.insert("reset".into(), reset_to_value(&reset_meta)?);
     delta.operations.insert(
         0,
         StreamDeltaOperation {
@@ -3582,12 +3626,12 @@ mod tests {
         let state = create_stream(opts);
         let (state, u1) = apply_snapshot(&state, &a, "gen-0", None).unwrap();
         assert_eq!(u1.kind, "updated");
-        let prior = snapshot_to_value(u1.snapshot.as_ref().unwrap());
+        let prior = snapshot_to_value(u1.snapshot.as_ref().unwrap()).unwrap();
         let (_, u2) = apply_snapshot(&state, &b, "gen-0", None).unwrap();
         assert_eq!(u2.kind, "updated");
-        let delta = delta_to_value(u2.delta.as_ref().unwrap());
+        let delta = delta_to_value(u2.delta.as_ref().unwrap()).unwrap();
         let recon = apply_delta_to_snapshot(Some(&prior), &delta).unwrap();
-        let snap = snapshot_to_value(u2.snapshot.as_ref().unwrap());
+        let snap = snapshot_to_value(u2.snapshot.as_ref().unwrap()).unwrap();
         assert_eq!(recon.get("records"), snap.get("records"));
     }
 
@@ -4339,8 +4383,66 @@ mod tests {
     }
 
     #[test]
-    fn json_safe_integer_domain_constants() {
+    fn json_safe_integer_overflow_on_wire() {
         assert_eq!(JSON_SAFE_INTEGER_MAX, 9_007_199_254_740_991);
         assert_eq!(JSON_SAFE_INTEGER_MIN, -9_007_199_254_740_991);
+        assert_eq!(
+            json_safe_int(JSON_SAFE_INTEGER_MAX, true).unwrap(),
+            JSON_SAFE_INTEGER_MAX
+        );
+        let overflow = json_safe_int(JSON_SAFE_INTEGER_MAX + 1, true).unwrap_err();
+        assert_eq!(overflow.code, "invalid_input");
+        let negative = json_safe_int(-1, true).unwrap_err();
+        assert_eq!(negative.code, "invalid_input");
+
+        let max_value = Value::from(JSON_SAFE_INTEGER_MAX);
+        assert_eq!(
+            json_safe_from_value(&max_value, true).unwrap(),
+            JSON_SAFE_INTEGER_MAX
+        );
+        let overflow_value = Value::from(JSON_SAFE_INTEGER_MAX + 1);
+        assert_eq!(
+            json_safe_from_value(&overflow_value, true)
+                .unwrap_err()
+                .code,
+            "invalid_input"
+        );
+        assert_eq!(
+            json_safe_from_value(&Value::String((JSON_SAFE_INTEGER_MAX + 1).to_string()), true)
+                .unwrap_err()
+                .code,
+            "invalid_input"
+        );
+
+        let cursor = StreamCursor {
+            cursor_version: 1,
+            source: "pi".into(),
+            group_id: "g".into(),
+            generation: (JSON_SAFE_INTEGER_MAX as u64) + 1,
+            position: StreamPosition::Byte(BytePosition {
+                next_byte_offset: 0,
+                pending_byte_length: 0,
+            }),
+            source_revision: None,
+            prefix_sha256: None,
+        };
+        assert_eq!(cursor_to_value(&cursor).unwrap_err().code, "invalid_input");
+
+        let offset_cursor = StreamCursor {
+            cursor_version: 1,
+            source: "pi".into(),
+            group_id: "g".into(),
+            generation: 0,
+            position: StreamPosition::Byte(BytePosition {
+                next_byte_offset: JSON_SAFE_INTEGER_MAX + 1,
+                pending_byte_length: 0,
+            }),
+            source_revision: None,
+            prefix_sha256: None,
+        };
+        assert_eq!(
+            cursor_to_value(&offset_cursor).unwrap_err().code,
+            "invalid_input"
+        );
     }
 }

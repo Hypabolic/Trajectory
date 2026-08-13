@@ -758,22 +758,22 @@ internal static class ConformanceProgram
             "byte" => new BytePosition
             {
                 NextByteOffset = position.TryGetProperty("next_byte_offset", out var nbo)
-                    ? nbo.GetInt64()
+                    ? TrajectoryStream.JsonSafeFromNumber(nbo, nonNegative: true)
                     : 0,
                 PendingByteLength = position.TryGetProperty("pending_byte_length", out var pbl)
-                    ? pbl.GetInt64()
+                    ? TrajectoryStream.JsonSafeFromNumber(pbl, nonNegative: true)
                     : 0,
             },
             "ahp-server-seq" => new AhpServerSeqPosition
             {
                 NextServerSeq = position.TryGetProperty("next_server_seq", out var nss)
-                    ? nss.GetInt64()
+                    ? TrajectoryStream.JsonSafeFromNumber(nss)
                     : 0,
                 LastServerSeq = position.TryGetProperty("last_server_seq", out var lss)
-                    ? lss.GetInt64()
+                    ? TrajectoryStream.JsonSafeFromNumber(lss)
                     : 0,
                 NextByteOffset = position.TryGetProperty("next_byte_offset", out var abo)
-                    ? abo.GetInt64()
+                    ? TrajectoryStream.JsonSafeFromNumber(abo, nonNegative: true)
                     : null,
             },
             "snapshot-revision" => new SnapshotRevisionPosition
@@ -786,7 +786,7 @@ internal static class ConformanceProgram
                 DatabaseGeneration = OptionalString(position, "database_generation") ?? "",
                 LastRowId = position.TryGetProperty("last_row_id", out var lri) &&
                     lri.ValueKind == JsonValueKind.Number
-                    ? lri.GetInt64()
+                    ? TrajectoryStream.JsonSafeFromNumber(lri)
                     : null,
                 ChangeToken = OptionalString(position, "change_token"),
             },
@@ -798,7 +798,7 @@ internal static class ConformanceProgram
             Source = RequiredString(cursor, "source"),
             GroupId = RequiredString(cursor, "group_id"),
             Generation = cursor.TryGetProperty("generation", out var gen)
-                ? gen.GetUInt64()
+                ? (ulong)TrajectoryStream.JsonSafeFromNumber(gen, nonNegative: true)
                 : 0,
             Position = streamPosition,
             SourceRevision = OptionalString(cursor, "source_revision"),
@@ -869,7 +869,7 @@ internal static class ConformanceProgram
         {
             Reason = RequiredString(reset, "reason"),
             Generation = reset.TryGetProperty("generation", out var gen)
-                ? gen.GetUInt64()
+                ? (ulong)TrajectoryStream.JsonSafeFromNumber(gen, nonNegative: true)
                 : null,
             SourceRevision = OptionalString(reset, "source_revision"),
             Material = material,

@@ -689,4 +689,52 @@ public sealed class StreamingCoreTests
         Assert.Equal(NormalizationErrorCode.InvalidInput, ex.Code);
         Assert.Empty((List<object?>)prior["records"]!);
     }
+
+    [Fact]
+    public void JsonSafeInteger_OverflowOnWire()
+    {
+        Assert.Equal(
+            TrajectoryStream.JsonSafeIntegerMax,
+            TrajectoryStream.JsonSafeInt(TrajectoryStream.JsonSafeIntegerMax, nonNegative: true));
+        var overflow = Assert.Throws<TrajectoryNormalizationException>(
+            () => TrajectoryStream.JsonSafeInt(TrajectoryStream.JsonSafeIntegerMax + 1, nonNegative: true));
+        Assert.Equal(NormalizationErrorCode.InvalidInput, overflow.Code);
+        var negative = Assert.Throws<TrajectoryNormalizationException>(
+            () => TrajectoryStream.JsonSafeInt(-1, nonNegative: true));
+        Assert.Equal(NormalizationErrorCode.InvalidInput, negative.Code);
+
+        Assert.Equal(
+            TrajectoryStream.JsonSafeIntegerMax,
+            TrajectoryStream.JsonSafeFromNumber(TrajectoryStream.JsonSafeIntegerMax, nonNegative: true));
+        var parsedOverflow = Assert.Throws<TrajectoryNormalizationException>(
+            () => TrajectoryStream.JsonSafeFromNumber(TrajectoryStream.JsonSafeIntegerMax + 1L, nonNegative: true));
+        Assert.Equal(NormalizationErrorCode.InvalidInput, parsedOverflow.Code);
+        var stringRejected = Assert.Throws<TrajectoryNormalizationException>(
+            () => TrajectoryStream.JsonSafeFromNumber("9007199254740992", nonNegative: true));
+        Assert.Equal(NormalizationErrorCode.InvalidInput, stringRejected.Code);
+
+        var cursor = new StreamCursor
+        {
+            Source = "pi",
+            GroupId = "g",
+            Generation = (ulong)TrajectoryStream.JsonSafeIntegerMax + 1,
+            Position = new BytePosition { NextByteOffset = 0, PendingByteLength = 0 },
+        };
+        var wire = Assert.Throws<TrajectoryNormalizationException>(() => TrajectoryStream.CursorToDict(cursor));
+        Assert.Equal(NormalizationErrorCode.InvalidInput, wire.Code);
+
+        var offsetCursor = new StreamCursor
+        {
+            Source = "pi",
+            GroupId = "g",
+            Generation = 0,
+            Position = new BytePosition
+            {
+                NextByteOffset = TrajectoryStream.JsonSafeIntegerMax + 1,
+                PendingByteLength = 0,
+            },
+        };
+        var offset = Assert.Throws<TrajectoryNormalizationException>(() => TrajectoryStream.CursorToDict(offsetCursor));
+        Assert.Equal(NormalizationErrorCode.InvalidInput, offset.Code);
+    }
 }

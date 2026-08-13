@@ -17,7 +17,8 @@ use hypabolic_trajectory::{
     list_hermes_trajectories, list_openclaw_trajectories, list_pi_trajectories, normalize_ahp,
     normalize_claude_code, normalize_codex, normalize_grok_build, normalize_hermes,
     normalize_openclaw, normalize_pi, project_canonical, project_hypabolic, project_letta,
-    project_minimal_jsonl, project_openai, project_opentelemetry, reset_stream, update_to_value,
+    json_safe_from_value, project_minimal_jsonl, project_openai, project_opentelemetry, reset_stream,
+    update_to_value,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -383,6 +384,19 @@ fn load_step_bytes(
     })
 }
 
+fn parse_optional_json_safe(
+    map: &Map<String, Value>,
+    key: &str,
+    non_negative: bool,
+) -> Result<Option<i64>, StreamEngineError> {
+    match map.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => json_safe_from_value(v, non_negative)
+            .map(Some)
+            .map_err(StreamEngineError::Fatal),
+    }
+}
+
 fn parse_stream_cursor(raw: Option<&Value>) -> Result<Option<StreamCursor>, StreamEngineError> {
     let Some(Value::Object(map)) = raw else {
         return Ok(None);
@@ -397,10 +411,10 @@ fn parse_stream_cursor(raw: Option<&Value>) -> Result<Option<StreamCursor>, Stre
         .and_then(Value::as_str)
         .ok_or_else(|| StreamEngineError::Protocol("cursor.group_id required.".into()))?
         .to_string();
-    let generation = map
-        .get("generation")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
+    let generation = match map.get("generation") {
+        None | Some(Value::Null) => 0,
+        Some(v) => json_safe_from_value(v, true).map_err(StreamEngineError::Fatal)? as u64,
+    };
     let position_obj = map
         .get("position")
         .and_then(Value::as_object)
@@ -411,27 +425,21 @@ fn parse_stream_cursor(raw: Option<&Value>) -> Result<Option<StreamCursor>, Stre
         .ok_or_else(|| StreamEngineError::Protocol("cursor.position.kind required.".into()))?;
     let position = match kind {
         "byte" => StreamPosition::Byte(BytePosition {
-            next_byte_offset: position_obj
-                .get("next_byte_offset")
-                .and_then(Value::as_i64)
+            next_byte_offset: parse_optional_json_safe(position_obj, "next_byte_offset", true)?
                 .unwrap_or(0),
-            pending_byte_length: position_obj
-                .get("pending_byte_length")
-                .and_then(Value::as_i64)
-                .unwrap_or(0),
+            pending_byte_length: parse_optional_json_safe(
+                position_obj,
+                "pending_byte_length",
+                true,
+            )?
+            .unwrap_or(0),
         }),
         "ahp-server-seq" => StreamPosition::AhpServerSeq(AhpServerSeqPosition {
-            next_server_seq: position_obj
-                .get("next_server_seq")
-                .and_then(Value::as_i64)
+            next_server_seq: parse_optional_json_safe(position_obj, "next_server_seq", false)?
                 .unwrap_or(0),
-            last_server_seq: position_obj
-                .get("last_server_seq")
-                .and_then(Value::as_i64)
+            last_server_seq: parse_optional_json_safe(position_obj, "last_server_seq", false)?
                 .unwrap_or(0),
-            next_byte_offset: position_obj
-                .get("next_byte_offset")
-                .and_then(Value::as_i64),
+            next_byte_offset: parse_optional_json_safe(position_obj, "next_byte_offset", true)?,
         }),
         "snapshot-revision" => StreamPosition::SnapshotRevision(SnapshotRevisionPosition {
             revision: position_obj
@@ -508,7 +516,12 @@ fn apply_stream_step(
                 .and_then(Value::as_str)
                 .ok_or_else(|| StreamEngineError::Protocol("reset.reason required.".into()))?
                 .to_string();
-            let generation = reset.get("generation").and_then(Value::as_u64);
+            let generation = match reset.get("generation") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(
+                    json_safe_from_value(v, true).map_err(StreamEngineError::Fatal)? as u64,
+                ),
+            };
             let rev = reset
                 .get("source_revision")
                 .and_then(|v| v.as_str().map(str::to_string));
@@ -639,7 +652,7 @@ fn execute_stream_sequence(
         }
         step_results.push(json!({
             "id": step_id,
-            "update": update_to_value(&update),
+            "update": update_to_value(&update).expect("json-safe stream integers"),
             "idempotent": idempotent,
         }));
     }
