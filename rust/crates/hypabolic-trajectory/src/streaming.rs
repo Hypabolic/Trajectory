@@ -1539,15 +1539,15 @@ fn cursor_conflict(state: &StreamState, cursor: Option<&StreamCursor>) -> Option
                 ));
             }
         }
-        (StreamPosition::SnapshotRevision(cpos), StreamPosition::SnapshotRevision(spos)) => {
-            if cpos.revision != spos.revision {
-                return Some(reset_required(
-                    state,
-                    "cursor-mismatch",
-                    "stream_cursor_conflict",
-                    "Supplied stream cursor does not match stream state.",
-                ));
-            }
+        (StreamPosition::SnapshotRevision(cpos), StreamPosition::SnapshotRevision(spos))
+            if cpos.revision != spos.revision =>
+        {
+            return Some(reset_required(
+                state,
+                "cursor-mismatch",
+                "stream_cursor_conflict",
+                "Supplied stream cursor does not match stream state.",
+            ));
         }
         _ => {}
     }
