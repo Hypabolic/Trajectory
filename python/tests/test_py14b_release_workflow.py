@@ -102,11 +102,16 @@ def test_already_published_fallbacks_require_stream_content_check() -> None:
     nuget = _job_block(text, "publish-nuget")
     assert "--skip-duplicate" in nuget
     assert "--registry nuget" in nuget
+    assert "artifacts/release/nuget/*.nupkg" in nuget
+    assert "artifacts/release/nuget/*.snupkg" not in nuget
     npm = _job_block(text, "publish-npm")
     assert "already published; verifying stream content" in npm
+    assert "NPM_TOKEN_FALLBACK" in npm
     crates = _job_block(text, "publish-crates")
     assert "already published; verifying stream content" in crates
     assert "already on crates.io; verifying stream content" in crates
+    assert "CARGO_REGISTRY_TOKEN_FALLBACK" in crates
+    assert "Trusted Publishing tokens do not support creating new crates" in crates
     pypi = _job_block(text, "publish-pypi")
     assert "skip-existing: true" in pypi
     assert "--registry pypi" in pypi

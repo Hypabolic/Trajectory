@@ -28,6 +28,8 @@ from typing import Iterable
 USER_AGENT = "TrajectoryReleaseVerifier/1.0 (+https://github.com/Hypabolic/Trajectory)"
 RETRY_ATTEMPTS = 8
 RETRY_SLEEP_SECONDS = 15
+NUGET_RETRY_ATTEMPTS = 18
+NUGET_RETRY_SLEEP_SECONDS = 20
 
 CORE_STREAM_CAPS = (
     "stream-core",
@@ -399,10 +401,17 @@ def format_failure(package: str, version: str, details: Iterable[str]) -> str:
 def download_nuget(package: str, version: str) -> bytes:
     ident = package.lower()
     ver = version.lower()
-    url = (
-        f"https://api.nuget.org/v3-flatcontainer/{ident}/{ver}/{ident}.{ver}.nupkg"
+    urls = (
+        f"https://api.nuget.org/v3-flatcontainer/{ident}/{ver}/{ident}.{ver}.nupkg",
+        f"https://www.nuget.org/api/v2/package/{package}/{version}",
     )
-    return _http_get(url)
+    last_error: Exception | None = None
+    for url in urls:
+        try:
+            return _http_get(url)
+        except (VerifyError, urllib.error.URLError, TimeoutError) as exc:
+            last_error = exc
+    raise VerifyError(f"{package}@{version} nuget download failed: {last_error}")
 
 
 def download_npm(package: str, version: str) -> bytes:
@@ -443,7 +452,9 @@ def download_pypi(package: str, version: str, *, prefer: str = "wheel") -> bytes
 
 def download_with_retries(registry: str, package: str, version: str) -> bytes:
     last_error: Exception | None = None
-    for attempt in range(1, RETRY_ATTEMPTS + 1):
+    attempts = NUGET_RETRY_ATTEMPTS if registry == "nuget" else RETRY_ATTEMPTS
+    sleep_s = NUGET_RETRY_SLEEP_SECONDS if registry == "nuget" else RETRY_SLEEP_SECONDS
+    for attempt in range(1, attempts + 1):
         try:
             if registry == "nuget":
                 return download_nuget(package, version)
@@ -458,11 +469,11 @@ def download_with_retries(registry: str, package: str, version: str) -> bytes:
             last_error = exc
             print(
                 f"{package}@{version} {registry} download attempt {attempt}/"
-                f"{RETRY_ATTEMPTS} failed: {exc}",
+                f"{attempts} failed: {exc}",
                 file=sys.stderr,
             )
-            if attempt < RETRY_ATTEMPTS:
-                time.sleep(RETRY_SLEEP_SECONDS)
+            if attempt < attempts:
+                time.sleep(sleep_s)
     raise VerifyError(
         f"could not download {package}@{version} from {registry}: {last_error}"
     )
