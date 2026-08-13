@@ -6,10 +6,11 @@ Packaging note for **repository tip** on `feature/live-session-streaming`
 [live-session-streaming-plan.md](live-session-streaming-plan.md).
 
 **Publication status:** **In-tree on tip.** **Not** included in published
-registry packages at **`0.1.0` / `0.1.x`**. Publishing stream engines and
+registry packages at **`0.1.0`**. Checked-in `VERSION` is **`0.1.2`** (already
+used for the Grok Build + AHP tip cut). Publishing stream engines and
 optional I/O / AHP / Hermes packages requires a **new** synchronized
-multi-registry version / tag (do not retag or rewrite historical capability
-sets). See [release-readiness.md](release-readiness.md) and
+multi-registry version / tag **strictly after `0.1.2`**. **Do not retag
+`v0.1.2`.** See [release-readiness.md](release-readiness.md) and
 [CHANGELOG.md](../CHANGELOG.md) `## [Unreleased]`.
 
 **Verdict:** Feature slices **LS-00 … LS-12 are complete on tip**. Shared
@@ -32,8 +33,8 @@ are **post-LS-12** engineering / product follow-ons, not open plan slices.
 | **LS-05** | JSONL `apply_append` for file sources (×4) | **Shipped in-tree** |
 | **LS-06** | AHP Shape A `apply_ahp_snapshot` (×4) | **Shipped in-tree** |
 | **LS-07** | AHP Shape B action-log reducer / `apply_ahp_actions` (×4) | **Shipped in-tree** |
-| **LS-07h** | Hermes optional provider packages (×4) + core `apply_hermes_export` | **Shipped in-tree** (package-test-gated) |
-| **LS-08** | Full stream matrix gate — 38 shared cases, goldens, oracle parity | **Shipped in-tree** |
+| **LS-07h** | Hermes optional provider packages (×4) + core `apply_hermes_export` | **Shipped in-tree** (shared `hermes-provider-*` export apply; SQLite I/O still package-test-gated) |
+| **LS-08** | Full stream matrix gate — 41 shared cases, goldens, oracle parity | **Shipped in-tree** |
 | **LS-09** | Optional file I/O packages (poll/follow; ×4) | **Shipped in-tree** |
 | **LS-10** | Optional AHP client packages (transport-only; fake-host; ×4) | **Shipped in-tree** |
 | **LS-11** | Sample CLI `stream` / `ahp-stream` (×4) | **Shipped in-tree** |
@@ -77,12 +78,14 @@ are **post-LS-12** engineering / product follow-ons, not open plan slices.
 
 ### Stream corpus
 
-Shared authority: `conformance/cases/streaming/**` (**38** cases), including:
+Shared authority: `conformance/cases/streaming/**` (**41** cases), including:
 
 - Generic framing / cursor / reset / delta cases
 - Per-source append sequences (`pi`, `claude-code`, `codex`, `openclaw`,
   `grok-build`)
 - AHP snapshot + action-log + `action_equals_snapshot` / provisional cases
+- Hermes core `apply_hermes_export`: `hermes-provider-append`,
+  `hermes-provider-soft-delete`, `hermes-provider-invalidation`
 - Oracle: append ≡ prefix re-normalize; AHP action ≡ Shape A where declared
 
 ---
@@ -91,8 +94,8 @@ Shared authority: `conformance/cases/streaming/**` (**38** cases), including:
 
 | Area | Notes |
 | --- | --- |
-| **Registry publish** | Wire optional stream packages on next multi-registry tag (NuGet IO/Ahp/Hermes, npm `trajectory-ahp` / `trajectory-hermes`, crates `io`/`ahp`/`hermes`, Python extras already in core wheel layout). Do not retag `0.1.0`. |
-| **Hermes stream-sequence corpus** | `stream-hermes-provider` is **package-test-gated**, not shared `hermes-provider-*` stream-sequence corpus-gated yet. |
+| **Registry publish** | Wire optional stream packages on the **next synchronized tag after `0.1.2`** (NuGet IO/Ahp/Hermes, npm `trajectory-ahp` / `trajectory-hermes`, crates `io`/`ahp`/`hermes`, Python extras already in core wheel layout). **Do not retag `0.1.0` or `0.1.2`.** |
+| **Hermes SQLite I/O** | Shared `hermes-provider-*` cases cover core `apply_hermes_export` (append, soft-delete, db-generation invalidation + reset). Optional `stream-hermes-provider` SQLite/query I/O remains **package-test-gated**. |
 | **`stream-file-watch`** | Optional watch backends deferred; poll/follow shipped. Leave unclaimed until product-ready. |
 | **`stream-ahp-list-sessions`** | AHP session listing on live client deferred. Leave unclaimed. |
 | **Real AHP WebSocket host** | Clients are transport-injected; CI uses FakeAhpHost / `fake://`. Consumer supplies live transport. |

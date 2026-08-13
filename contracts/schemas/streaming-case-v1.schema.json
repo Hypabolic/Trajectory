@@ -240,6 +240,11 @@
         "change_token": {
           "type": "string",
           "minLength": 1
+        },
+        "database_generation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Hermes database generation for hermes-export (defaults to source_revision when omitted)."
         }
       },
       "allOf": [

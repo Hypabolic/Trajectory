@@ -25,18 +25,20 @@ Cross-ecosystem package map (core vs optional):
 ## Create a release (normal path)
 
 `v0.1.0` is **already published** on NuGet / npm / crates (sources through
-`hermes` only). Capability additions such as **AHP** Shape A require a **new**
-tag (`v0.1.1`, `v0.2.0`, …). Do not retag `v0.1.0`. skip-duplicate / OIDC re-runs
-will not replace existing package contents with AHP.
+`hermes` only). Checked-in `VERSION` is **`0.1.2`** (Grok Build + AHP tip;
+**do not retag `v0.1.2`**). The live-session stream cut and first PyPI upload
+require a **new** synchronized tag **strictly after `0.1.2`** (`v0.1.3`,
+`v0.2.0`, …). skip-duplicate / OIDC re-runs will not replace existing package
+contents with stream APIs.
 
 ```bash
 git checkout main
 git pull origin main
 
 # Tag the commit you want to ship (must already be green on CI).
-# Example for the next cut after 0.1.0:
-git tag -a v0.1.1 -m "Trajectory 0.1.1"
-git push origin v0.1.1
+# Example: stream cut after checked-in 0.1.2 — never retag v0.1.2.
+git tag -a v0.1.3 -m "Trajectory 0.1.3"
+git push origin v0.1.3
 ```
 
 That is the whole developer step. The **Release** workflow then:

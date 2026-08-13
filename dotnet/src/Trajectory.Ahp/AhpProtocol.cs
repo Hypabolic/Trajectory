@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -18,35 +19,42 @@ public static class AhpProtocol
     public const string ErrCancelled = "ahp_cancelled";
     public const string ErrResyncRequired = "ahp_resync_required";
 
-    private static readonly JsonSerializerOptions Compact = new()
+    /// <summary>AOT-safe compact JSON: <see cref="JsonNode.WriteTo"/>, no reflection serialize.</summary>
+    private static string WriteCompact(JsonNode node)
     {
-        WriteIndented = false,
-    };
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            node.WriteTo(writer);
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
 
     public static string EncodeRequest(int id, string method, JsonObject parameters) =>
-        JsonSerializer.Serialize(new JsonObject
+        WriteCompact(new JsonObject
         {
             ["jsonrpc"] = "2.0",
             ["id"] = id,
             ["method"] = method,
             ["params"] = parameters,
-        }, Compact);
+        });
 
     public static string EncodeNotification(string method, JsonObject parameters) =>
-        JsonSerializer.Serialize(new JsonObject
+        WriteCompact(new JsonObject
         {
             ["jsonrpc"] = "2.0",
             ["method"] = method,
             ["params"] = parameters,
-        }, Compact);
+        });
 
     public static string EncodeResult(JsonNode id, JsonNode? result) =>
-        JsonSerializer.Serialize(new JsonObject
+        WriteCompact(new JsonObject
         {
             ["jsonrpc"] = "2.0",
             ["id"] = id.DeepClone(),
             ["result"] = result?.DeepClone(),
-        }, Compact);
+        });
 
     public static string EncodeError(JsonNode? id, int code, string message)
     {
@@ -56,7 +64,7 @@ public static class AhpProtocol
             ["error"] = new JsonObject { ["code"] = code, ["message"] = message },
         };
         if (id is not null) body["id"] = id.DeepClone();
-        return JsonSerializer.Serialize(body, Compact);
+        return WriteCompact(body);
     }
 
     public static JsonObject ParseMessage(string raw)

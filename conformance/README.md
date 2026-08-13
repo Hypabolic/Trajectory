@@ -37,11 +37,19 @@ Protocol:
   entire step list in one runner process. Per-step library ops
   (`stream-apply-append`, …) remain in the protocol enum for dedicated harnesses.
 - Response status may be `success`, `fatal-error`, `protocol-error`, or
-  `unsupported`. `unsupported` is skipped (not failed) by `verify.py` for
-  optional paths still in flight. Core file JSONL + AHP cases must return
-  `success` on all four runners (LS-08). Hermes export (`hermes-export`) is
-  implemented in core engines (LS-07h); optional SQLite provider packages are
-  separate and not required for `stream-sequence` success.
+  `unsupported`. **`unsupported` is a skip only for unclaimed optional
+  capabilities** (`stream-file-io`, `stream-hermes-provider`,
+  `stream-ahp-client`, `stream-async-iterator`, `stream-file-watch`,
+  `stream-ahp-list-sessions`). When the invoked runner advertises any
+  required core `stream-*` capability that the case lists (default advertised
+  set: `contracts/compatibility.json` `capabilities.required`; override with
+  `--capabilities-file path/to/runtime-capabilities.json`), `unsupported`
+  is a **failure**. The four core runners claim the full required core stream
+  set, so CI `stream-sequence` must report `stream_unsupported_skips: 0`.
+  Hermes `hermes-export` steps exercise core `apply_hermes_export` (shared
+  `hermes-provider-*` cases). Optional SQLite/query I/O
+  (`stream-hermes-provider`) remains package-test-gated and is not required
+  for core `stream-sequence` success.
 - Runners double-invoke each step when `double_invoke` is true (default) and
   report `idempotent: true` in the step result.
 
@@ -91,7 +99,10 @@ defaults in `verify.py`). Diagnostics, errors, and goldens are scanned.
    hand, check in, and wire `expected.result`. Candidates may land under
    `artifacts/conformance-candidates/` during review.
 6. Run `python3 conformance/verify.py --operation stream-sequence -- <runner>`
-   on **all four** runtimes before merging.
+   on **all four** runtimes before merging. Pass
+   `--capabilities-file <runtime-capabilities.json>` so the advertised set
+   is explicit (default is `contracts/compatibility.json` required). Expect
+   `stream_unsupported_skips: 0` for the four core runners.
 
 Implementation-specific parser/unit fixtures belong under that runtime, not
 here. Shared cases are copied directly into runtime test output only for test

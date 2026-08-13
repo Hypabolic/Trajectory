@@ -30,7 +30,7 @@ wire contracts and shared conformance suite as .NET, TypeScript, and Rust.
 | **`hypabolic-trajectory[otel]`** | same `hypabolic_trajectory.otel` | Optional OpenTelemetry **SDK sink helpers** + `opentelemetry-*` deps only. Does **not** gate pure projection or `emit_to` with a pure sink. |
 | **`hypabolic-trajectory[io]`** | `hypabolic_trajectory.io` | Optional file poll/follow stream I/O (`stream-file-io`; stdlib only). Modules ship in the core wheel; extra marks install intent. |
 | **`hypabolic-trajectory[ahp]`** | `hypabolic_trajectory.ahp_client` | Optional AHP live-host client (`stream-ahp-client`; stdlib only; auth via callback). |
-| **`hypabolic-trajectory[hermes]`** | `hypabolic_trajectory.hermes_provider` | Optional Hermes SQLite/provider stream (`stream-hermes-provider`; stdlib `sqlite3`). Package-test-gated; no shared stream-sequence corpus yet. |
+| **`hypabolic-trajectory[hermes]`** | `hypabolic_trajectory.hermes_provider` | Optional Hermes SQLite/provider stream (`stream-hermes-provider`; stdlib `sqlite3`). Shared `hermes-provider-*` cases cover core `apply_hermes_export`; SQLite I/O is package-test-gated. |
 | Conformance runner | **not published** | `python/tools/trajectory_conformance` — stdin/stdout protocol v1 for `conformance/verify.py` |
 | Sample CLI | **not published** | `python/samples/trajectory_cli` — browse/list/show/**stream**/**ahp-stream** (no console script; monorepo sample only) |
 

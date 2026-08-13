@@ -75,25 +75,34 @@ Wire contract: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md).
 | Without provider package | Core still applies export when caller supplies JSON |
 | Core package graph | No SQLite import in core streaming modules |
 
-### Coverage gate (honest LS-12)
+### Coverage gate (honest)
 
-`stream-hermes-provider` is **package-test-gated**, not
-`conformance/cases/streaming/**` stream-sequence corpus-gated:
+Shared stream-sequence cases exercise the **core** `apply_hermes_export` feed
+(what every provider must emit), not SQLite I/O:
 
-- Per-runtime unit / provider tests cover snapshot, insert growth, soft-delete
-  reset, and nonnumeric-id behavior for each optional Hermes package.
-- There is **no** shared `hermes-provider-*` (or `hermes-export`) fixture tree
-  under `conformance/cases/streaming/` yet. Product §8 lists those names as the
-  intended future corpus; until they land, do **not** treat the shared stream
-  matrix as proof of provider I/O — only core `apply_hermes_export` path that
-  callers feed with export JSON participates in the shared corpus where
-  applicable.
-- Adding `hermes-provider-*` shared cases is post-LS-12 work (see
-  [live-session-streaming-plan.md](live-session-streaming-plan.md)).
+| Case | Behavior |
+| --- | --- |
+| `streaming/hermes-provider-append` | Snapshot export then insert growth; `hermes-row` cursor |
+| `streaming/hermes-provider-soft-delete` | Soft-delete → `reset-required` / `source-replaced`; explicit reset |
+| `streaming/hermes-provider-invalidation` | `database_generation` change → `reset-required`; explicit reset |
+
+These cases require **core** `stream-*` capabilities (not
+`stream-hermes-provider`) so all four core runners execute them. Comparison
+uses cursor / delta-apply / structural `update_kind` (not `stream-json-exact`)
+because TypeScript/Rust currently emit extra Hermes `source_offset` /
+`source_anchor_kind` provenance fields that Python/.NET omit.
+
+`stream-hermes-provider` (SQLite/query provider I/O) remains
+**package-test-gated**:
+
+- Per-runtime unit / provider tests cover listing, SQLite round-trip, memory
+  store, and host-error paths.
+- Do **not** treat the shared stream matrix as proof of SQLite provider I/O.
 
 ## Capability advertising
 
 Claim `stream-hermes-provider` only on optional Hermes provider packages
 (`package-capabilities.json`). Core `runtime-capabilities.json` must not list
-it. Unimplemented stream names must not be claimed. Provider capability honesty
-rests on package tests until the shared corpus exists.
+it. Unimplemented stream names must not be claimed. Shared `hermes-provider-*`
+cases prove core export-apply parity; SQLite/query honesty rests on package
+tests.

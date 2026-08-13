@@ -1,0 +1,172 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 1,
+    "revision_id": "33048541baf1736c470c8c206c27ebdf6863efd43f45323f7937abe953f1efc3",
+    "parent_revision_id": "fd7163f40302b68fe0b92ff2e08689476a449243ee0c00cedfcd16fe2331acaa",
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "hermes",
+    "group_id": "hermes-session-stream-1",
+    "generation": 0,
+    "position": {
+      "kind": "hermes-row",
+      "database_generation": "db-1",
+      "last_row_id": 2,
+      "change_token": "4e021207fa8035de528353e16880f9a0ae58008763d9a20498301e564d276edc"
+    },
+    "source_revision": "db-1",
+    "prefix_sha256": "4e021207fa8035de528353e16880f9a0ae58008763d9a20498301e564d276edc"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "hermes",
+    "group_id": "hermes-session-stream-1",
+    "revision": {
+      "revision": 1,
+      "revision_id": "33048541baf1736c470c8c206c27ebdf6863efd43f45323f7937abe953f1efc3",
+      "parent_revision_id": "fd7163f40302b68fe0b92ff2e08689476a449243ee0c00cedfcd16fe2331acaa",
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "d8002c15a1013aaa6c02bc386046942a52add66e40524e92bb46132fd07da1cf",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "hermes",
+          "cwd": "/workspace/demo",
+          "model": "gpt-test",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "484997041822bf2eaa68bd96292adf6eedff789643aa8b9a7bfad94b368fb6b6",
+            "record_sha256": "9f139f744f7d819152dc658595d38879bc75363385c984e05cfd1ba6f88740f9"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "f92ce24ae8eea767857de0749ad418fe65a6a46a70b97f77151658d11ac4b05f",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-07-02T13:48:21.000Z",
+          "timestamp": "2026-07-02T13:48:21.000Z",
+          "content": "Hello",
+          "provenance": {
+            "stable_source_record_id": "1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-07-02T13:48:21.000Z|00000000000000000001|1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "1",
+            "source_sequence": 1
+          },
+          "hashes": {
+            "content_sha256": "22617902a401406bbbd5d82c49da07eb742bb8173445a71278645c4c3bae4713",
+            "record_sha256": "0a646f610861487f803cb08da59289ef834f15f858f68e32faf3c094a7b39985"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "f76d37370d890011ceadb973511f5bed1ee17b95bb49176dd2e486dbd64cecfc",
+          "kind": "message",
+          "role": "assistant",
+          "order": 1,
+          "source_timestamp": "2026-07-02T13:48:22.000Z",
+          "timestamp": "2026-07-02T13:48:22.000Z",
+          "content": "Hi there.",
+          "provenance": {
+            "stable_source_record_id": "2",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-07-02T13:48:22.000Z|00000000000000000002|2",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "2",
+            "source_sequence": 2
+          },
+          "hashes": {
+            "content_sha256": "c96ab6dbbd7670bc5677e0484748ee2b8297e128b77a6c344c4079c61643b9e5",
+            "record_sha256": "a891d9cca9bd51bc93ec68a6005084a8c9b00264e2d4bc13450a69f65bac6fdd"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "fd7163f40302b68fe0b92ff2e08689476a449243ee0c00cedfcd16fe2331acaa",
+    "revision": {
+      "revision": 1,
+      "revision_id": "33048541baf1736c470c8c206c27ebdf6863efd43f45323f7937abe953f1efc3",
+      "parent_revision_id": "fd7163f40302b68fe0b92ff2e08689476a449243ee0c00cedfcd16fe2331acaa",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "f76d37370d890011ceadb973511f5bed1ee17b95bb49176dd2e486dbd64cecfc",
+            "kind": "message",
+            "role": "assistant",
+            "order": 1,
+            "source_timestamp": "2026-07-02T13:48:22.000Z",
+            "timestamp": "2026-07-02T13:48:22.000Z",
+            "content": "Hi there.",
+            "provenance": {
+              "stable_source_record_id": "2",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-07-02T13:48:22.000Z|00000000000000000002|2",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "2",
+              "source_sequence": 2
+            },
+            "hashes": {
+              "content_sha256": "c96ab6dbbd7670bc5677e0484748ee2b8297e128b77a6c344c4079c61643b9e5",
+              "record_sha256": "a891d9cca9bd51bc93ec68a6005084a8c9b00264e2d4bc13450a69f65bac6fdd"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 3,
+    "bytes": 645,
+    "first_source_position": 0,
+    "last_source_position": 644
+  }
+}

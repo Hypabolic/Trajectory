@@ -636,10 +636,11 @@ Per-source append sequences: `pi-*`, `claude-code-*`, `codex-*`, `openclaw-*`,
 AHP: `ahp-snapshot-*`, `ahp-action-*` (including sequence gap, foreign channel,
 unknown action, equals-snapshot).
 
-Hermes provider (optional capability): `hermes-provider-*` (intended shared
-names; **not yet landed** under `conformance/cases/streaming/`). Until that
-corpus ships, `stream-hermes-provider` is **package-test-gated** — see
-[`streaming-hermes-provider.md`](streaming-hermes-provider.md).
+Hermes provider feed (core `apply_hermes_export`): shared
+`hermes-provider-append`, `hermes-provider-soft-delete`,
+`hermes-provider-invalidation` under `conformance/cases/streaming/`. Optional
+SQLite/query I/O (`stream-hermes-provider`) remains **package-test-gated** —
+see [`streaming-hermes-provider.md`](streaming-hermes-provider.md).
 
 ---
 

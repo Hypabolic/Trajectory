@@ -85,9 +85,9 @@ TIP_CAPABILITIES = [
 ]
 TIP_SLICE = "ML13"
 NORMALIZER_CONTRACT_VERSION = "0.2.0"
-# 39 batch + 38 stream cases (LS-08 matrix + H1/H3 cases; LS-12 advertises core stream-* caps).
-EXPECTED_TIP_CASES = 77
-EXPECTED_TIP_OPERATIONS = 104
+# 39 batch + 41 stream cases (LS-08 matrix + H1/H3 + hermes-provider-* export apply).
+EXPECTED_TIP_CASES = 80
+EXPECTED_TIP_OPERATIONS = 107
 EXPECTED_IDENTITY_GOLDENS = 37
 
 # Exhaustive root __all__ (export owner PY-04a → PY-12 pin).

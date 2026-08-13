@@ -788,10 +788,10 @@ internal static class AhpReducer
         var newParts = new JsonArray();
         foreach (var p in parts)
         {
-            newParts.Add(p?.DeepClone());
+            AppendJson(newParts, p?.DeepClone());
         }
 
-        newParts.Add(part.DeepClone());
+        AppendJson(newParts, part.DeepClone());
         active["responseParts"] = newParts;
         next["activeTurn"] = active;
         return next;
@@ -833,12 +833,12 @@ internal static class AhpReducer
                     ? cv.GetValue<string>()
                     : "";
                 p["content"] = prev + content;
-                newParts.Add(p);
+                AppendJson(newParts, p);
                 updated = true;
             }
             else
             {
-                newParts.Add(partNode?.DeepClone());
+                AppendJson(newParts, partNode?.DeepClone());
             }
         }
 
@@ -868,10 +868,10 @@ internal static class AhpReducer
         var newParts = new JsonArray();
         foreach (var p in parts)
         {
-            newParts.Add(p?.DeepClone());
+            AppendJson(newParts, p?.DeepClone());
         }
 
-        newParts.Add(new JsonObject
+        AppendJson(newParts, new JsonObject
         {
             ["kind"] = "toolCall",
             ["toolCall"] = new JsonObject
@@ -928,7 +928,7 @@ internal static class AhpReducer
                 tc["toolCallId"]?.GetValue<string>() == tid)
             {
                 var updated = updater((JsonObject)tc.DeepClone());
-                newParts.Add(new JsonObject
+                AppendJson(newParts, new JsonObject
                 {
                     ["kind"] = "toolCall",
                     ["toolCall"] = updated,
@@ -937,7 +937,7 @@ internal static class AhpReducer
             }
             else
             {
-                newParts.Add(partNode?.DeepClone());
+                AppendJson(newParts, partNode?.DeepClone());
             }
         }
 
@@ -1010,7 +1010,7 @@ internal static class AhpReducer
                         tcc["reason"] = "skipped";
                     }
 
-                    newParts.Add(new JsonObject
+                    AppendJson(newParts, new JsonObject
                     {
                         ["kind"] = "toolCall",
                         ["toolCall"] = tcc,
@@ -1018,7 +1018,7 @@ internal static class AhpReducer
                 }
                 else
                 {
-                    newParts.Add(partNode?.DeepClone());
+                    AppendJson(newParts, partNode?.DeepClone());
                 }
             }
         }
@@ -1038,10 +1038,10 @@ internal static class AhpReducer
         var newTurns = new JsonArray();
         foreach (var t in turns)
         {
-            newTurns.Add(t?.DeepClone());
+            AppendJson(newTurns, t?.DeepClone());
         }
 
-        newTurns.Add(turn);
+        AppendJson(newTurns, turn);
         next["turns"] = newTurns;
         next["activeTurn"] = null;
         next["activity"] = "";
@@ -1083,7 +1083,7 @@ internal static class AhpReducer
             var kept = new JsonArray();
             for (var i = 0; i <= idx; i++)
             {
-                kept.Add(turns[i]?.DeepClone());
+                AppendJson(kept, turns[i]?.DeepClone());
             }
 
             next["turns"] = kept;
@@ -1125,12 +1125,12 @@ internal static class AhpReducer
                 found = true;
             }
 
-            newDirs.Add(d?.DeepClone());
+            AppendJson(newDirs, d?.DeepClone());
         }
 
         if (!found)
         {
-            newDirs.Add(directory);
+            AppendJson(newDirs, JsonValue.Create(directory));
         }
 
         next["workingDirectories"] = newDirs;
@@ -1157,10 +1157,14 @@ internal static class AhpReducer
                 continue;
             }
 
-            newDirs.Add(d?.DeepClone());
+            AppendJson(newDirs, d?.DeepClone());
         }
 
         next["workingDirectories"] = newDirs;
         return next;
     }
+
+    /// <summary>Add via the <see cref="JsonNode"/> overload (not generic Add{T}) for trim/AOT.</summary>
+    private static void AppendJson(JsonArray array, JsonNode? node) =>
+        array.Add((JsonNode?)node);
 }

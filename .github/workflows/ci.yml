@@ -111,7 +111,8 @@ jobs:
           ' dotnet/src/Trajectory/runtime-capabilities.json > /dev/null
       - name: Run every shared case twice
         run: |
-          summary=$(python3 conformance/verify.py --repository-root . -- \
+          summary=$(python3 conformance/verify.py --repository-root . \
+            --capabilities-file dotnet/src/Trajectory/runtime-capabilities.json -- \
             dotnet \
             dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll)
           echo "$summary"
@@ -268,7 +269,8 @@ jobs:
           ' typescript/packages/trajectory/runtime-capabilities.json > /dev/null
       - name: Run every advertised shared case twice
         run: |
-          summary=$(python3 conformance/verify.py --repository-root . -- \
+          summary=$(python3 conformance/verify.py --repository-root . \
+            --capabilities-file typescript/packages/trajectory/runtime-capabilities.json -- \
             node typescript/packages/trajectory-testing/dist/cli.js)
           echo "$summary"
           echo "$summary" | jq -e '.status == "success" and .stream_unsupported_skips == 0'
@@ -421,7 +423,8 @@ jobs:
         # No --source/--operation: verify defaults to compatibility tip matrix.
         # LS-08: stream_unsupported_skips must be 0 (unsupported-as-skip must not green CI).
         run: |
-          summary=$(python conformance/verify.py --repository-root . -- \
+          summary=$(python conformance/verify.py --repository-root . \
+            --capabilities-file python/runtime-capabilities.json -- \
             env PYTHONPATH=python/tools python -m trajectory_conformance)
           echo "$summary"
           echo "$summary" | jq -e '.status == "success" and .stream_unsupported_skips == 0'
@@ -560,7 +563,8 @@ jobs:
           ' rust/crates/hypabolic-trajectory/runtime-capabilities.json > /dev/null
       - name: Run every advertised shared case and output twice
         run: |
-          summary=$(python3 conformance/verify.py --repository-root . -- \
+          summary=$(python3 conformance/verify.py --repository-root . \
+            --capabilities-file rust/crates/hypabolic-trajectory/runtime-capabilities.json -- \
             rust/target/release/trajectory-conformance)
           echo "$summary"
           echo "$summary" | jq -e '.status == "success" and .stream_unsupported_skips == 0'

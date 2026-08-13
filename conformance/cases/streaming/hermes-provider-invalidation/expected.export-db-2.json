@@ -1,0 +1,64 @@
+{
+  "kind": "reset-required",
+  "revision": {
+    "revision": 0,
+    "revision_id": "8a6c9dc456097867ad44766f0a33e99167648e21f2f06e162d1f9e9915cbb8dc",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "hermes",
+    "group_id": "hermes-session-stream-1",
+    "generation": 0,
+    "position": {
+      "kind": "hermes-row",
+      "database_generation": "db-1",
+      "last_row_id": 2,
+      "change_token": "4e021207fa8035de528353e16880f9a0ae58008763d9a20498301e564d276edc"
+    },
+    "source_revision": "db-1",
+    "prefix_sha256": "4e021207fa8035de528353e16880f9a0ae58008763d9a20498301e564d276edc"
+  },
+  "snapshot": null,
+  "delta": null,
+  "diagnostics": [
+    {
+      "code": "stream_source_reset",
+      "message": "Source material was replaced relative to the committed cursor."
+    }
+  ],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 0,
+    "bytes": 0
+  },
+  "reset": {
+    "reason": "source-replaced",
+    "prior_cursor": {
+      "cursor_version": 1,
+      "source": "hermes",
+      "group_id": "hermes-session-stream-1",
+      "generation": 0,
+      "position": {
+        "kind": "hermes-row",
+        "database_generation": "db-1",
+        "last_row_id": 2,
+        "change_token": "4e021207fa8035de528353e16880f9a0ae58008763d9a20498301e564d276edc"
+      },
+      "source_revision": "db-1",
+      "prefix_sha256": "4e021207fa8035de528353e16880f9a0ae58008763d9a20498301e564d276edc"
+    },
+    "requires_snapshot": true,
+    "dropped_record_ids": [
+      "d8002c15a1013aaa6c02bc386046942a52add66e40524e92bb46132fd07da1cf",
+      "f92ce24ae8eea767857de0749ad418fe65a6a46a70b97f77151658d11ac4b05f",
+      "f76d37370d890011ceadb973511f5bed1ee17b95bb49176dd2e486dbd64cecfc"
+    ]
+  }
+}

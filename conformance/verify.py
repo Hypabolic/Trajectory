@@ -5,9 +5,13 @@ Supports:
 - Batch normalize/list cases (conformance-case-v1)
 - Multi-step stream cases (streaming-case-v1) via stream-sequence / stream-replay
 
-Stream engines may return status=unsupported until LS-04+ lands; that is a
-valid protocol outcome and does not fail the suite. When engines return
-success, comparison modes from contracts/spec/streaming.md are applied.
+Stream ``status=unsupported`` is a skip **only** for unclaimed *optional*
+capabilities (``stream-file-io``, ``stream-hermes-provider``, …). When the
+invoked runner advertises a required core ``stream-*`` capability (default:
+``contracts/compatibility.json`` ``capabilities.required``, or
+``--capabilities-file``), an unsupported response for a case that needs that
+capability is a **failure**. Four core runners must report
+``stream_unsupported_skips: 0`` on ``stream-sequence``.
 """
 
 from __future__ import annotations
@@ -57,6 +61,39 @@ DEFAULT_PRIVACY_SENTINELS: tuple[str, ...] = (
     "auth.json",
 )
 
+# Required core stream capabilities (compatibility.json required + four
+# runtime-capabilities.json). Advertised ⇒ stream unsupported must FAIL.
+CORE_STREAM_CAPABILITIES: frozenset[str] = frozenset(
+    {
+        "stream-core",
+        "stream-cursor-v1",
+        "stream-jsonl-framing",
+        "stream-apply-snapshot",
+        "stream-apply-append",
+        "stream-full-snapshot",
+        "stream-record-delta",
+        "stream-reset",
+        "stream-provisional-records",
+        "stream-deterministic-replay",
+        "stream-file-jsonl",
+        "stream-ahp-snapshot",
+        "stream-ahp-action-log",
+    }
+)
+
+# Optional package-only stream capabilities. Unsupported may skip when the
+# runner did not advertise the name.
+OPTIONAL_STREAM_CAPABILITIES: frozenset[str] = frozenset(
+    {
+        "stream-file-io",
+        "stream-file-watch",
+        "stream-ahp-client",
+        "stream-ahp-list-sessions",
+        "stream-hermes-provider",
+        "stream-async-iterator",
+    }
+)
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository-root", type=Path, required=True)
@@ -71,6 +108,18 @@ def parse_args() -> argparse.Namespace:
         action="append",
         dest="operations",
         help="only run declared operations with this name (repeatable)",
+    )
+    parser.add_argument(
+        "--capabilities-file",
+        type=Path,
+        dest="capabilities_file",
+        help=(
+            "JSON capability manifest for this invocation "
+            "(runtime-capabilities.json with a capabilities array, or "
+            "compatibility.json with capabilities.required). Default: "
+            "contracts/compatibility.json required set — the four core "
+            "runners advertise that set."
+        ),
     )
     parser.add_argument("runner", nargs=argparse.REMAINDER)
     result = parser.parse_args()
@@ -172,6 +221,33 @@ def implemented_sources(repository_root: Path) -> set[str]:
     manifest_path = repository_root / "contracts" / "compatibility.json"
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     return set(payload.get("implemented", {}).get("sources", []))
+
+
+def load_advertised_capabilities(
+    repository_root: Path, capabilities_file: Path | None
+) -> set[str]:
+    """Capability set the invoked runner claims for this verify run.
+
+    ``--capabilities-file`` should be that runtime's ``runtime-capabilities.json``
+    (or a compatibility-shaped document). When omitted, use
+    ``contracts/compatibility.json`` ``capabilities.required`` — the four core
+    runners advertise that required set.
+    """
+    path = capabilities_file
+    if path is None:
+        path = repository_root / "contracts" / "compatibility.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    caps = payload.get("capabilities")
+    if isinstance(caps, list):
+        return {item for item in caps if isinstance(item, str)}
+    if isinstance(caps, dict):
+        required = caps.get("required") or []
+        if not isinstance(required, list):
+            raise AssertionError(f"{path}: capabilities.required must be an array")
+        return {item for item in required if isinstance(item, str)}
+    raise AssertionError(
+        f"{path}: capabilities must be an array or an object with required[]"
+    )
 
 
 def privacy_sentinels(manifest: dict[str, Any]) -> list[str]:
@@ -947,12 +1023,36 @@ def run_batch_case(
     return checked, candidates
 
 
+def stream_unsupported_is_skip(
+    *,
+    required: set[str],
+    advertised: set[str],
+) -> bool:
+    """True when unsupported may be skipped (unclaimed optional only).
+
+    Fail (return False) when the case needs any advertised core ``stream-*``
+    name, or any other advertised capability. Skip only when every required
+    capability is either unadvertised-and-optional or not a stream name the
+    runner claimed.
+    """
+    if not required:
+        # No declared requirements: treat as core stream work once the runner
+        # advertises any required core stream capability.
+        return not bool(advertised & CORE_STREAM_CAPABILITIES)
+    claimed_needed = required & advertised
+    if claimed_needed:
+        return False
+    leftover = required - advertised
+    return leftover <= OPTIONAL_STREAM_CAPABILITIES
+
+
 def run_stream_case(
     *,
     args: argparse.Namespace,
     repository_root: Path,
     manifest_path: Path,
     manifest: dict[str, Any],
+    advertised: set[str],
 ) -> tuple[int, int, int]:
     """Returns (operations_checked, candidates, skipped_unsupported)."""
     case_id = manifest["id"]
@@ -992,16 +1092,23 @@ def run_stream_case(
 
         status = first.get("status")
         if status == "unsupported":
-            # Pre-engine: protocol works; capabilities not claimed yet.
             fatal = first.get("fatal_error") or {}
             code = fatal.get("code", "")
-            if code not in {
-                "capability_unsupported",
-                "stream_engine_unavailable",
-                "unsupported",
-            }:
-                # Accept any content-safe unsupported code; warn only.
-                pass
+            required_caps = {
+                item
+                for item in (manifest.get("required_capabilities") or [])
+                if isinstance(item, str)
+            }
+            if not stream_unsupported_is_skip(
+                required=required_caps, advertised=advertised
+            ):
+                claimed = sorted((required_caps & advertised) or (advertised & CORE_STREAM_CAPABILITIES))
+                raise AssertionError(
+                    f"{label}: runner advertised required core stream "
+                    f"capabilities {claimed} but returned unsupported "
+                    f"({code or 'no-code'}). Unsupported is a skip only for "
+                    "unclaimed optional capabilities."
+                )
             scan_privacy(label, json.dumps(first, ensure_ascii=False), sentinels)
             print(f"SKIP {label}: unsupported ({code or 'no-code'})", file=sys.stderr)
             skipped += 1
@@ -1088,6 +1195,10 @@ def main() -> int:
             for path in manifests
             if json.loads(path.read_text(encoding="utf-8"))["source"] in allowed
         ]
+    advertised = load_advertised_capabilities(
+        repository_root, args.capabilities_file
+    )
+
     checked = 0
     candidates = 0
     checked_manifests = 0
@@ -1101,6 +1212,7 @@ def main() -> int:
                 repository_root=repository_root,
                 manifest_path=manifest_path,
                 manifest=manifest,
+                advertised=advertised,
             )
             if ops_checked == 0:
                 continue

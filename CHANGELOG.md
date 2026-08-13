@@ -5,6 +5,18 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **Streaming M5–M8:** .NET `Trajectory.Ahp` stays trim/AOT-clean (`JsonNode.WriteTo`,
+  `IL2026`/`IL3050` as errors). `Trajectory.Hermes` **stops claiming**
+  AOT/trim compatibility (native SQLite) and pins
+  `SQLitePCLRaw.lib.e_sqlite3` 3.50.3 to clear NU1903 / CVE-2025-6965.
+  `conformance/verify.py` fails `unsupported` when the runner advertises
+  required core `stream-*` capabilities (`--capabilities-file`; default
+  `compatibility.json` required). Shared `hermes-provider-append` /
+  `hermes-provider-soft-delete` / `hermes-provider-invalidation` stream-sequence
+  cases exercise core `apply_hermes_export` (41 stream cases). **Next
+  registry publish is a new synchronized tag after `0.1.2`** — do not retag
+  `v0.1.2` for the stream cut.
+
 - **Streaming M1–M4 (all four runtimes):** `reset_policy=auto-reset` atomically
   installs a new generation when the same call supplies replacement material
   (default remains `return-reset-required`). File hosts detect same-size
@@ -19,7 +31,7 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
   sequenced+unsequenced batches without advancing the cursor (no silent
   sort-then-apply). Active-turn provisional IDs are derived from stable
   turn/part/tool native IDs (`prov-active:{native_id}`) with mapping persisted
-  in `StreamState`. Shared stream cases expanded (38): batch reorder /
+  in `StreamState`. Shared stream cases expanded (then 38; now 41 with M7): batch reorder /
   duplicate / mixed-seq negatives and multi-part provisional growth+finalize.
 
 - **Streaming H2 diagnostic sanitization (all four runtimes):** stream

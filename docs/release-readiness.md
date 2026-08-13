@@ -24,12 +24,12 @@ Distinguish **published registry packages** from **this repository tip**.
 
 | Item | Value |
 | --- | --- |
-| Checked-in `VERSION` | `0.1.2` on the release tip |
+| Checked-in `VERSION` | `0.1.2` (Grok Build + AHP tip cut; **already used** — do not retag) |
 | Capability slice | `ML13` (historical slice id; AHP is a post-`0.1.0` source addition) |
 | Normalizer contract | `0.2.0` |
 | Implemented sources (tip) | Published set **plus** `ahp` and `grok-build` |
-| AHP scope | Batch Shape A + core stream Shape A/B in-tree; optional AHP clients in-tree (fake-host tested); listing and real WebSocket transport still **not** shipped; registry publish still pending next tag |
-| Next registry publish | Tag `v0.1.2` after merge to main when CI is green |
+| AHP scope | Batch Shape A + core stream Shape A/B in-tree; optional AHP clients in-tree (fake-host tested); listing and real WebSocket transport still **not** shipped |
+| Next registry publish | A **new** synchronized tag **strictly after `0.1.2`** (for example `v0.1.3` or `v0.2.0`) for the live-session stream cut. **Do not tag or retag `v0.1.2`.** `skip-duplicate` / “already published” fallbacks must not treat a reused `0.1.2` as a successful stream ship. |
 
 AHP phase truth: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
 [ahp-source-spec.md](ahp-source-spec.md).
@@ -147,7 +147,8 @@ After the first multi-registry release:
       through `hermes` only; **no** PyPI `0.1.0`; **no** optional stream packages).
 - [ ] Explicit decision to cut the **next** public version tag when ready
       (required before AHP, Python on PyPI, optional stream packages, or other
-      post-`0.1.0` capabilities reach registries).
+      post-`0.1.0` capabilities reach registries). That tag **must be new and
+      greater than `0.1.2`**. Never retag `v0.1.0` or `v0.1.2`.
 
 ### Explicit non-goals for v1
 
@@ -160,8 +161,16 @@ After the first multi-registry release:
 
 Core stream engines, optional I/O/AHP/Hermes packages, sample CLIs, and honest
 capability advertising are **in-tree on tip** (LS-00–LS-12). Not yet a
-registry-published multi-registry version bump (no retag of `0.1.0` / `0.1.x`
-capability rewrites).
+registry-published multi-registry version bump. The stream package set ships
+on a **new synchronized tag after `0.1.2`**. Do **not** retag `0.1.0` or
+`0.1.2`.
+
+### .NET optional package AOT / audit (M5)
+
+| Package | AOT / trim claim | Notes |
+| --- | --- | --- |
+| `Hypabolic.Trajectory.Ahp` | `IsAotCompatible` / `IsTrimmable` **true** | JSON-RPC uses `JsonNode.WriteTo`; `IL2026`/`IL3050` are errors |
+| `Hypabolic.Trajectory.Hermes` | **false** | Native SQLite (`Microsoft.Data.Sqlite` + `SQLitePCLRaw.lib.e_sqlite3` 3.50.3+). NU1903 / CVE-2025-6965 must stay cleared. AOT hosts feed core `ApplyHermesExport`. |
 
 ### Stream matrix definition of done (LS-08 + LS-12)
 
