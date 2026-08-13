@@ -25,8 +25,12 @@ Cross-ecosystem package map (core vs optional):
 ## Create a release (normal path)
 
 `v0.1.3` is the live-session streaming cut (core stream APIs + optional I/O /
-AHP / Hermes packages). Do **not** retag `v0.1.0` or `v0.1.2`. Further
-releases use a new synchronized tag (`v0.1.4`, `v0.2.0`, …).
+AHP / Hermes packages). That tag **partially published**: PyPI, existing npm
+names, existing crates, and NuGet accepted `0.1.3`; brand-new npm/crates names
+(`trajectory-ahp`, `trajectory-hermes`, `hypabolic-trajectory-io` / `-ahp` /
+`-hermes`) cannot be created by OIDC and need a one-time token first-publish.
+Do **not** retag `v0.1.0`, `v0.1.2`, or `v0.1.3`. Further releases use a new
+synchronized tag (`v0.1.4`, `v0.2.0`, …).
 
 ```bash
 git checkout main

@@ -9,7 +9,7 @@ install of the core package).
 
 ## What it does
 
-- Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes, Grok Build)
+- Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes, Grok Build, Cursor Agent)
 - Normalizes AHP Shape A offline snapshots via `show --path` (no default store)
 - Interactive browse with numbered selection prompts, then Watch live or Show snapshot
 - Privacy-safe summaries (record counts, roles, tool calls, diagnostics)
@@ -29,6 +29,7 @@ pure stream apply; the CLI owns lifetime, explicit roots, and AHP transport.
 | `hermes` | `~/.hermes` | `TRAJECTORY_HERMES_ROOT` |
 | `ahp` | _(none — export file only)_ | _(not applicable)_ |
 | `grok-build` (alias `grok`) | `$GROK_HOME/sessions` or `~/.grok/sessions` | `TRAJECTORY_GROK_BUILD_ROOT` or `GROK_HOME` |
+| `cursor` (alias `cursor-agent`) | `$CURSOR_HOME` or `~/.cursor` | `TRAJECTORY_CURSOR_ROOT` or `CURSOR_HOME` |
 
 Hermes core listing is SQLite-free and returns empty pages. Export message JSON
 from Hermes and use `show --path`.
@@ -110,7 +111,7 @@ Shared flags: `--source`, `--root`, `--limit`, `--show-content`.
 Stream flags: `--emit snapshot+delta|snapshot|delta` (default `snapshot+delta`),
 `--follow`, `--interval`, `--max-updates`, `--path` / `--id` (+ explicit `--root`
 for listing resolution). File stream sources: `pi`, `claude-code`, `codex`,
-`openclaw`, `grok-build`.
+`openclaw`, `grok-build`, `cursor`.
 
 AHP stream flags: `--url` (sample: `fake://…`), `--chat`, `--from-seq`,
 `--token` / `TRAJECTORY_AHP_TOKEN`, `--snapshot-path`, `--actions-path`.

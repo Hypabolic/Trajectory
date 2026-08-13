@@ -426,6 +426,7 @@ public sealed class StreamingCoreTests
     [InlineData(TrajectorySource.Codex, "codex-append-sequence", "stream-codex-append", 3)]
     [InlineData(TrajectorySource.OpenClaw, "openclaw-append-sequence", "stream-openclaw-append", 3)]
     [InlineData(TrajectorySource.GrokBuild, "grok-build-append-sequence", "stream-grok-build-append-sequence", 3)]
+    [InlineData(TrajectorySource.Cursor, "cursor-append-sequence", "stream-cursor-append-sequence", 3)]
     public void PerSource_AppendOracleParity(
         TrajectorySource source,
         string caseId,

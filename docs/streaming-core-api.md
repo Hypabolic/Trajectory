@@ -93,7 +93,7 @@ Options (defaults):
 
 ## `apply_append` (LS-05)
 
-File JSONL sources (`pi`, `claude-code`, `codex`, `openclaw`, `grok-build`):
+File JSONL sources (`pi`, `claude-code`, `codex`, `openclaw`, `grok-build`, `cursor`):
 
 1. Frame `pending + segment` into complete lines + new pending tail.
 2. Incomplete / mid-UTF-8 only → `kind=unchanged` with updated `pending_byte_length`.

@@ -27,7 +27,7 @@ OUTPUTS = [
     "jsonl-minimal",
     "otel-genai-spans-v1",
 ]
-EXPECTED_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"]
+EXPECTED_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build", "cursor"]
 # Tip capability set advertised by peer runtimes (ML13 + LS-12 stream core).
 # PY-15b / ship require python/runtime-capabilities.json equality to this set
 # (order-sensitive). Optional package stream caps (file-io / ahp-client /

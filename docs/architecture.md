@@ -84,7 +84,7 @@ Python is an independent native **3.11+** implementation under `python/`
 
 Built-in sources: **Pi**, **Claude Code**, **Codex**, **OpenClaw**,
 **Hermes**, **AHP** (Shape A offline ChatState snapshot; listing deferred),
-and **Grok Build** (`grok-build`).
+and **Grok Build** (`grok-build`), plus **Cursor Agent** (`cursor`).
 
 AHP export-directory listing, multi-chat unpack, and a first-class live
 WebSocket host remain caller-owned. See

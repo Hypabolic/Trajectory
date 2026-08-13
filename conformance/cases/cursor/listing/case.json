@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1, "id": "cursor/listing",
+  "operation": {"list-trajectories": {"expected": "expected.listing.json", "comparison": "json-exact"}},
+  "source": "cursor", "transcript": "input.jsonl", "native_container": "declarative-store",
+  "store": "cursor-pagination", "listing": {"limit": 1, "all_pages": true},
+  "source_context": {}, "bounds": {}, "filters": {}, "projection_options": {}, "mode": "whole",
+  "required_capabilities": ["list-explicit-root", "deterministic-rerun"], "expected": {"result": "success", "diagnostic_codes": []}, "comparison": "json-exact"
+}

@@ -17,11 +17,15 @@ const ACTIONS = join(
   "conformance/cases/streaming/ahp-action-turn-flow/step-actions.jsonl",
 );
 const CHAT = "ahp-chat:/00000000-0000-4000-8000-0000000000c1";
+const CURSOR_ID = "019f0000-0000-7000-8000-00000000c0a1";
 
 const SESSION_LINE =
   '{"type":"session","version":3,"id":"ls11-stream-ts","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/workspace/demo"}\n';
 const USER_LINE =
   '{"type":"message","id":"m1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"hello"}]},"sessionId":"ls11-stream-ts"}\n';
+const CURSOR_LINE =
+  '{"role":"user","message":{"content":[{"type":"text","text":"hello"}]}}\n' +
+  '{"role":"assistant","message":{"content":[{"type":"text","text":"done"}]}}\n';
 
 function runCli(args, { timeoutMs = 15000 } = {}) {
   return new Promise((resolve, reject) => {
@@ -148,6 +152,66 @@ test("browse --watch listed session", async () => {
   assert.match(stdout, /live tail/);
   assert.match(stdout.toLowerCase(), /not a daemon/);
   assert.doesNotMatch(stdout, /hello/);
+});
+
+test("cursor list, show, and browse --watch use the listed session id", async () => {
+  const root = await mkdtemp(join(tmpdir(), "traj-ls11-cursor-"));
+  const path = join(
+    root,
+    "projects",
+    "%2Fworkspace%2Fdemo",
+    "agent-transcripts",
+    CURSOR_ID,
+    `${CURSOR_ID}.jsonl`,
+  );
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, CURSOR_LINE);
+
+  const listed = await runCli([
+    "list",
+    "--source",
+    "cursor",
+    "--root",
+    root,
+    "--limit",
+    "5",
+  ]);
+  assert.equal(listed.code, 0, listed.stderr);
+  assert.match(listed.stdout, new RegExp(CURSOR_ID));
+
+  const shown = await runCli([
+    "show",
+    "--source",
+    "cursor",
+    "--root",
+    root,
+    "--id",
+    CURSOR_ID,
+  ]);
+  assert.equal(shown.code, 0, shown.stderr);
+  assert.match(shown.stdout, new RegExp(CURSOR_ID));
+  assert.match(shown.stdout, /Content omitted/);
+
+  const browsed = await runCli([
+    "browse",
+    "--source",
+    "cursor-agent",
+    "--root",
+    root,
+    "--id",
+    CURSOR_ID,
+    "--watch",
+    "--emit",
+    "snapshot+delta",
+    "--max-updates",
+    "1",
+  ]);
+  assert.equal(browsed.code, 0, browsed.stderr);
+  assert.match(browsed.stdout, /stream update/);
+  assert.match(browsed.stdout, /snapshot/);
+  assert.match(browsed.stdout, /delta/);
+  assert.match(browsed.stdout, /Content omitted/);
+  assert.doesNotMatch(browsed.stdout, /hello/);
 });
 
 test("browse --watch rejects ahp", async () => {

@@ -5,6 +5,23 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+## 0.1.4 — 2026-08-13
+
+Cursor Agent source plus a synchronized re-publish after the partial `0.1.3`
+registry cut. **Do not retag `v0.1.3`** — PyPI / most NuGet / existing npm and
+crates names already accepted `0.1.3`.
+
+- **Source:** added Cursor Agent (`cursor`) transcript JSONL decoding, listing,
+  and file streaming across all four runtimes. Wire name `cursor` (alias
+  `cursor-agent`). Default store `$CURSOR_HOME` or `~/.cursor`. Encrypted
+  `store.db` is not v1 normalize input.
+
+- **Release:** NuGet verify waits longer for the CDN and tries the v2 package
+  URL; `dotnet nuget push` no longer double-uploads `.snupkg`. New npm/crates
+  names (`trajectory-ahp`, `trajectory-hermes`, `hypabolic-trajectory-io` /
+  `-ahp` / `-hermes`) retry first-publish with token secrets when OIDC cannot
+  create them.
+
 - **Docs:** removed delivery-plan / status trackers
   (`implementation-plan`, `multi-language-plan`, `live-session-streaming-plan`,
   `live-session-streaming-status`, `python-implementation-spec`,

@@ -37,6 +37,9 @@ public static class DiagnosticCodes
     public const string ImageContentDropped = "image_content_dropped";
     public const string BackendToolResultSynthesized = "backend_tool_result_synthesized";
     public const string EncryptedReasoningIncluded = "encrypted_reasoning_included";
+    public const string UnknownContentPart = "unknown_content_part";
+    public const string ToolUseMissingName = "tool_use_missing_name";
+    public const string TurnEndedError = "turn_ended_error";
 }
 
 public sealed record TrajectoryDiagnostic

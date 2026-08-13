@@ -155,6 +155,8 @@ pub enum TrajectorySource {
     Ahp,
     /// Grok Build `chat_history.jsonl`.
     GrokBuild,
+    /// Cursor Agent agent-transcript JSONL.
+    Cursor,
 }
 
 impl TrajectorySource {
@@ -167,6 +169,7 @@ impl TrajectorySource {
             Self::Hermes => "hermes",
             Self::Ahp => "ahp",
             Self::GrokBuild => "grok-build",
+            Self::Cursor => "cursor",
         }
     }
 }

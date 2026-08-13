@@ -2801,6 +2801,7 @@ public static class TrajectoryStream
             TrajectorySource.Hermes => "hermes",
             TrajectorySource.Ahp => "ahp",
             TrajectorySource.GrokBuild => "grok-build",
+            TrajectorySource.Cursor => "cursor",
             _ => source.ToString().ToLowerInvariant(),
         };
 

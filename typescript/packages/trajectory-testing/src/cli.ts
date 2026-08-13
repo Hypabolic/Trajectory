@@ -41,6 +41,7 @@ import {
   listAhpTrajectories,
   listClaudeCodeTrajectories,
   listCodexTrajectories,
+  listCursorTrajectories,
   listGrokBuildTrajectories,
   listHermesTrajectories,
   listOpenClawTrajectories,
@@ -181,7 +182,7 @@ async function execute(request: Request): Promise<unknown> {
   const caseDirectory = safeResolve(casesRoot, request.case);
   const manifest = JSON.parse(await readFile(join(caseDirectory, "case.json"), "utf8")) as Manifest;
   if (manifest.id !== request.case) throw new Error("The requested case does not match its manifest ID.");
-  if (!["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"].includes(manifest.source)) {
+  if (!["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build", "cursor"].includes(manifest.source)) {
     throw new Error(`TypeScript does not support source '${manifest.source}'.`);
   }
 
@@ -766,6 +767,8 @@ async function executeListing(repositoryRoot: string, manifest: Manifest): Promi
                 ? listAhpTrajectories
               : manifest.source === "grok-build"
                 ? listGrokBuildTrajectories
+                : manifest.source === "cursor"
+                  ? listCursorTrajectories
                 : listPiTrajectories;
       const page = await list({
         root: listingRoot,

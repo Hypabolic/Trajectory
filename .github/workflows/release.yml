@@ -396,7 +396,9 @@ jobs:
             exit 1
           fi
           shopt -s nullglob
-          pkgs=(artifacts/release/nuget/*.nupkg artifacts/release/nuget/*.snupkg)
+          # Push nupkgs only. Adjacent .snupkg symbols ride along with the
+          # nupkg; a second glob of .snupkg hits Conflict after that upload.
+          pkgs=(artifacts/release/nuget/*.nupkg)
           if [[ ${#pkgs[@]} -eq 0 ]]; then
             echo "No NuGet packages found under artifacts/release/nuget" >&2
             exit 1
@@ -445,6 +447,7 @@ jobs:
       - name: Publish packages
         env:
           NODE_AUTH_TOKEN: ${{ needs.resolve.outputs.npm_auth == 'token' && secrets.NPM_TOKEN || '' }}
+          NPM_TOKEN_FALLBACK: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           VERSION="${{ needs.resolve.outputs.version }}"
@@ -473,8 +476,13 @@ jobs:
                 --registry npm \
                 --package "$workspace" \
                 --version "$VERSION"
+            elif [[ -n "${NPM_TOKEN_FALLBACK:-}" ]]; then
+              # OIDC cannot create a brand-new package name (0.1.3: trajectory-ahp / hermes).
+              echo "::notice::$workspace missing on npm; retrying first publish with NPM_TOKEN"
+              NODE_AUTH_TOKEN="$NPM_TOKEN_FALLBACK" npm publish --workspace "$workspace" --access public
             else
-              echo "Failed to publish $workspace@${VERSION}" >&2
+              echo "Failed to publish $workspace@${VERSION}." >&2
+              echo "If this package name has never been published, create it once with an npm token (OIDC cannot create new names), then configure trusted publishing." >&2
               exit 1
             fi
           done
@@ -505,6 +513,7 @@ jobs:
       - name: Stamp version and publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN_FALLBACK: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
           VERSION="${{ needs.resolve.outputs.version }}"
@@ -534,6 +543,18 @@ jobs:
                 --package "$crate" \
                 --version "$VERSION" || exit 1
               return 0
+            fi
+            if echo "$out" | grep -qi 'Trusted Publishing tokens do not support creating new crates'; then
+              if [[ -n "${CARGO_REGISTRY_TOKEN_FALLBACK:-}" ]]; then
+                echo "::notice::${crate} is a new crate; retrying first publish with CARGO_REGISTRY_TOKEN"
+                CARGO_REGISTRY_TOKEN="$CARGO_REGISTRY_TOKEN_FALLBACK" \
+                  cargo +stable publish --manifest-path rust/Cargo.toml \
+                    -p "$crate" --locked --allow-dirty
+                return $?
+              fi
+              echo "${crate} has never been published. OIDC cannot create new crate names." >&2
+              echo "Publish it once with a crates.io token, then add a Trusted Publishing policy." >&2
+              exit 1
             fi
             if curl -fsSL "https://crates.io/api/v1/crates/${crate}/${VERSION}" >/dev/null 2>&1; then
               echo "::notice::${crate}@${VERSION} already on crates.io; verifying stream content"

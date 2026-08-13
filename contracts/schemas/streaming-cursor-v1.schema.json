@@ -57,7 +57,8 @@
         "openclaw",
         "hermes",
         "ahp",
-        "grok-build"
+        "grok-build",
+        "cursor"
       ]
     },
     "int64": {

@@ -108,6 +108,7 @@ _TIP_SOURCES: tuple[str, ...] = (
     "hermes",
     "ahp",
     "grok-build",
+    "cursor",
 )
 
 
@@ -254,9 +255,9 @@ def test_filtered_verify_full_protocol_v1_tip_surface_green() -> None:
     )
     summary = json.loads(completed.stdout)
     assert summary["status"] == "success"
-    # Current tip case inventory: 39 batch cases / 66 operations (all declared pairs).
-    assert summary["cases"] == 39
-    assert summary["operations"] == 66
+    # Current tip case inventory: 45 batch cases / 76 operations (all declared pairs).
+    assert summary["cases"] == 45
+    assert summary["operations"] == 76
 
 
 def test_stream_verify_matrix_green() -> None:
@@ -287,8 +288,8 @@ def test_stream_verify_matrix_green() -> None:
     summary = json.loads(completed.stdout)
     assert summary["status"] == "success"
     # 41 streaming cases × stream-sequence (includes hermes-provider-* export apply).
-    assert summary["cases"] == 41
-    assert summary["operations"] == 41
+    assert summary["cases"] == 42
+    assert summary["operations"] == 42
     assert summary["stream_unsupported_skips"] == 0
 
 

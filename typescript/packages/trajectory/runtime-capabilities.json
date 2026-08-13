@@ -9,7 +9,8 @@
     "openclaw",
     "hermes",
     "ahp",
-    "grok-build"
+    "grok-build",
+    "cursor"
   ],
   "outputs": [
     "letta-trajectory-v1",

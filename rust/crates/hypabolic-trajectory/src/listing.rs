@@ -220,6 +220,101 @@ pub fn list_grok_build_trajectories(
     paginate(options, items)
 }
 
+/// Lists Cursor Agent transcripts under `projects/*/agent-transcripts/*`.
+pub fn list_cursor_trajectories(
+    options: &ListingOptions<'_>,
+) -> Result<TrajectoryListingPage, TrajectoryError> {
+    validate_limit(options.limit)?;
+    let root = absolute_path(options.root);
+    let mut items = Vec::new();
+    let mut meta = Vec::new();
+    if let Ok(hashes) = fs::read_dir(root.join("chats")) {
+        for hash in hashes.flatten() {
+            if !hash.file_type().is_ok_and(|kind| kind.is_dir()) {
+                continue;
+            }
+            if let Ok(sessions) = fs::read_dir(hash.path()) {
+                for session in sessions.flatten() {
+                    let path = session.path().join("meta.json");
+                    let Ok(text) = fs::read_to_string(path) else {
+                        continue;
+                    };
+                    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+                        continue;
+                    };
+                    if value.is_object() {
+                        meta.push((session.file_name().to_string_lossy().into_owned(), value));
+                    }
+                }
+            }
+        }
+    }
+    let projects = match fs::read_dir(root.join("projects")) {
+        Ok(value) => value,
+        Err(error) if missing_or_denied(&error) => {
+            return Ok(TrajectoryListingPage {
+                items,
+                next_cursor: None,
+            });
+        }
+        Err(error) => return Err(io_error("Could not enumerate the Cursor store.", &error)),
+    };
+    for project in projects.flatten() {
+        if !project.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let sessions_root = project.path().join("agent-transcripts");
+        let Ok(sessions) = fs::read_dir(sessions_root) else {
+            continue;
+        };
+        for session in sessions.flatten() {
+            if !session.file_type().is_ok_and(|kind| kind.is_dir()) {
+                continue;
+            }
+            let id = session.file_name().to_string_lossy().into_owned();
+            let path = session.path().join(format!("{id}.jsonl"));
+            let Ok(metadata) = fs::metadata(&path) else {
+                continue;
+            };
+            if !metadata.is_file()
+                || path.file_stem().and_then(|value| value.to_str()) != Some(id.as_str())
+            {
+                continue;
+            }
+            let found = meta
+                .iter()
+                .find(|(key, _)| key == &id)
+                .map(|(_, value)| value);
+            let updated = found
+                .and_then(|value| value.get("updatedAtMs"))
+                .and_then(serde_json::Value::as_i64)
+                .and_then(|value| format_ms(value).ok())
+                .unwrap_or_else(|| {
+                    metadata
+                        .modified()
+                        .ok()
+                        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                        .and_then(|value| i64::try_from(value.as_millis()).ok())
+                        .and_then(|value| format_ms(value).ok())
+                        .unwrap_or_default()
+                });
+            let title = found
+                .and_then(|value| value.get("title"))
+                .and_then(serde_json::Value::as_str)
+                .and_then(format_title)
+                .or_else(|| derive_cursor_title(&path));
+            items.push(TrajectoryListing {
+                id,
+                path,
+                updated_at: updated,
+                title,
+                size_bytes: metadata.len(),
+            });
+        }
+    }
+    paginate(options, items)
+}
+
 fn absolute_path(path: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_path_buf()
@@ -708,6 +803,32 @@ fn derive_generic_user_title(path: &Path) -> Option<String> {
         if let Some(title) = title_from_user_text(&text) {
             return Some(title);
         }
+    }
+    None
+}
+
+fn derive_cursor_title(path: &Path) -> Option<String> {
+    for value in scan_json_lines(path) {
+        if value.get("role").and_then(serde_json::Value::as_str) != Some("user") {
+            continue;
+        }
+        let Some(parts) = value
+            .get("message")
+            .and_then(|value| value.get("content"))
+            .and_then(serde_json::Value::as_array)
+        else {
+            continue;
+        };
+        let text = parts
+            .iter()
+            .filter_map(|part| {
+                (part.get("type").and_then(serde_json::Value::as_str) == Some("text"))
+                    .then(|| part.get("text").and_then(serde_json::Value::as_str))
+                    .flatten()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        return format_title(&text);
     }
     None
 }

@@ -78,7 +78,7 @@ jobs:
             .runtime == "dotnet"
             and .slice == "ML13"
             and .normalizer_contract_version == "0.2.0"
-            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"]
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build", "cursor"]
             and .outputs == [
               "letta-trajectory-v1",
               "letta-canonical-v1",
@@ -236,7 +236,7 @@ jobs:
             .runtime == "typescript"
             and .slice == "ML13"
             and .normalizer_contract_version == "0.2.0"
-            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"]
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build", "cursor"]
             and .outputs == [
               "letta-trajectory-v1",
               "letta-canonical-v1",
@@ -378,7 +378,7 @@ jobs:
             .runtime == "python"
             and .slice == "ML13"
             and .normalizer_contract_version == "0.2.0"
-            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"]
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build", "cursor"]
             and .outputs == [
               "letta-trajectory-v1",
               "letta-canonical-v1",
@@ -530,7 +530,7 @@ jobs:
             .runtime == "rust"
             and .slice == "ML13"
             and .normalizer_contract_version == "0.2.0"
-            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"]
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build", "cursor"]
             and .outputs == [
               "letta-trajectory-v1",
               "letta-canonical-v1",

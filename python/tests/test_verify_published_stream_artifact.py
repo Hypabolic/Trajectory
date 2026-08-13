@@ -18,6 +18,7 @@ sys.path.insert(0, str(TOOLS))
 from verify_published_stream_artifact import (  # noqa: E402
     CORE_STREAM_CAPS,
     VerifyError,
+    download_nuget,
     identify_package,
     main,
     read_archive,
@@ -79,6 +80,24 @@ def test_pre_stream_nupkg_fails_with_retag_guidance(tmp_path: Path) -> None:
     with pytest.raises(VerifyError, match="Do not retag 0.1.2") as exc:
         verify_local_path(nupkg, "0.1.2")
     assert "stream-core" in str(exc.value)
+
+
+def test_nuget_download_falls_back_to_v2_package_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[str] = []
+
+    def fake_get(url: str) -> bytes:
+        seen.append(url)
+        if "flatcontainer" in url:
+            raise VerifyError("HTTP Error 404: The specified blob does not exist.")
+        return b"nupkg-bytes"
+
+    monkeypatch.setattr(
+        "verify_published_stream_artifact._http_get",
+        fake_get,
+    )
+    assert download_nuget("Hypabolic.Trajectory", "0.1.3") == b"nupkg-bytes"
+    assert any("flatcontainer" in url for url in seen)
+    assert any("/api/v2/package/Hypabolic.Trajectory/0.1.3" in url for url in seen)
 
 
 def test_optional_npm_tarball_requires_package_capabilities(tmp_path: Path) -> None:

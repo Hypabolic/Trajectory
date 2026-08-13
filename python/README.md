@@ -275,7 +275,7 @@ Advertised surface is the tip matrix in
 [`python/runtime-capabilities.json`](runtime-capabilities.json) (must equal
 `contracts/compatibility.json` and peer TS/Rust manifests at ship):
 
-- **Sources:** `pi`, `claude-code`, `codex`, `openclaw`, `hermes`, `ahp` (Shape A offline ChatState snapshot; listing Phase 3 stub)
+- **Sources:** `pi`, `claude-code`, `codex`, `openclaw`, `hermes`, `ahp` (Shape A offline ChatState snapshot; listing Phase 3 stub), `grok-build`, `cursor`
 - **Outputs:** `letta-trajectory-v1`, `letta-canonical-v1`, `hypabolic-trajectory-v1`, `openai-chat-messages`, `jsonl-minimal`, `otel-genai-spans-v1`
 - **Capabilities:** `normalize`, `normalize-partial`, `list-explicit-root`, `typed-diagnostics`, `typed-fatal-errors`, `deterministic-rerun`
 - **Slice:** `ML13` (historical id; AHP is a post-`0.1.0` source addition on tip)

@@ -539,6 +539,12 @@ test("per-source append oracle parity", async () => {
       groupId: "stream-grok-build-append-sequence",
       steps: 3,
     },
+    {
+      source: "cursor",
+      caseId: "cursor-append-sequence",
+      groupId: "stream-cursor-append-sequence",
+      steps: 3,
+    },
   ];
   for (const { source, caseId, groupId, steps } of cases) {
     const chunks = [];

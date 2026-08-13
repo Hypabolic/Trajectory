@@ -14,11 +14,11 @@ use hypabolic_trajectory::{
     TrajectorySource, TruncationStrategy, apply_ahp_actions, apply_ahp_snapshot, apply_append,
     apply_hermes_export, apply_snapshot, create_stream, finish_stream, json_safe_from_value,
     list_ahp_trajectories, list_claude_code_trajectories, list_codex_trajectories,
-    list_grok_build_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
-    list_pi_trajectories, normalize_ahp, normalize_claude_code, normalize_codex,
-    normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi, project_canonical,
-    project_hypabolic, project_letta, project_minimal_jsonl, project_openai, project_opentelemetry,
-    reset_stream, update_to_value,
+    list_cursor_trajectories, list_grok_build_trajectories, list_hermes_trajectories,
+    list_openclaw_trajectories, list_pi_trajectories, normalize_ahp, normalize_claude_code,
+    normalize_codex, normalize_cursor, normalize_grok_build, normalize_hermes, normalize_openclaw,
+    normalize_pi, project_canonical, project_hypabolic, project_letta, project_minimal_jsonl,
+    project_openai, project_opentelemetry, reset_stream, update_to_value,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -182,7 +182,7 @@ fn run() -> Result<Value, String> {
     }
     if !matches!(
         manifest.source.as_str(),
-        "pi" | "claude-code" | "codex" | "openclaw" | "hermes" | "ahp" | "grok-build"
+        "pi" | "claude-code" | "codex" | "openclaw" | "hermes" | "ahp" | "grok-build" | "cursor"
     ) {
         return Err(format!(
             "Rust does not support source '{}'.",
@@ -312,6 +312,7 @@ fn parse_trajectory_source(name: &str) -> Result<TrajectorySource, StreamEngineE
         "hermes" => Ok(TrajectorySource::Hermes),
         "ahp" => Ok(TrajectorySource::Ahp),
         "grok-build" => Ok(TrajectorySource::GrokBuild),
+        "cursor" => Ok(TrajectorySource::Cursor),
         other => Err(StreamEngineError::Protocol(format!(
             "Unknown stream source '{other}'."
         ))),
@@ -890,6 +891,7 @@ fn execute(
         "hermes" => normalize_hermes(normalize_request),
         "ahp" => normalize_ahp(normalize_request),
         "grok-build" => normalize_grok_build(normalize_request),
+        "cursor" => normalize_cursor(normalize_request),
         _ => unreachable!("source is validated before execution"),
     }?;
     let output = match operation {
@@ -945,7 +947,7 @@ fn execute_listing(repository_root: &Path, manifest: &Manifest) -> Result<String
         loop {
             let listing_root = if matches!(
                 manifest.source.as_str(),
-                "claude-code" | "codex" | "grok-build"
+                "claude-code" | "codex" | "grok-build" | "cursor"
             ) {
                 root.join("store")
             } else {
@@ -964,6 +966,7 @@ fn execute_listing(repository_root: &Path, manifest: &Manifest) -> Result<String
                 "hermes" => list_hermes_trajectories(&options),
                 "ahp" => list_ahp_trajectories(&options),
                 "grok-build" => list_grok_build_trajectories(&options),
+                "cursor" => list_cursor_trajectories(&options),
                 _ => unreachable!("source is validated before execution"),
             }?;
             let items = page

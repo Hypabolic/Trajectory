@@ -68,6 +68,7 @@ internal static class Sources
         "hermes",
         "ahp",
         "grok-build",
+        "cursor",
     ];
 
     public static TrajectorySource Parse(string value) => value.Trim().ToLowerInvariant() switch
@@ -79,9 +80,10 @@ internal static class Sources
         "hermes" => TrajectorySource.Hermes,
         "ahp" => TrajectorySource.Ahp,
         "grok-build" or "grok" => TrajectorySource.GrokBuild,
+        "cursor" or "cursor-agent" => TrajectorySource.Cursor,
         _ => throw new TrajectoryNormalizationException(
             NormalizationErrorCode.UnknownSource,
-            $"Unknown source '{value}'. Expected one of: {string.Join(", ", Names)} (alias: grok)."),
+            $"Unknown source '{value}'. Expected one of: {string.Join(", ", Names)} (aliases: grok, cursor-agent)."),
     };
 
     public static string WireName(TrajectorySource source) => source switch
@@ -93,6 +95,7 @@ internal static class Sources
         TrajectorySource.Hermes => "hermes",
         TrajectorySource.Ahp => "ahp",
         TrajectorySource.GrokBuild => "grok-build",
+        TrajectorySource.Cursor => "cursor",
         _ => source.ToString().ToLowerInvariant(),
     };
 }
@@ -115,6 +118,7 @@ internal static class StoreRoots
             TrajectorySource.Hermes => "TRAJECTORY_HERMES_ROOT",
             TrajectorySource.Ahp => "TRAJECTORY_AHP_ROOT",
             TrajectorySource.GrokBuild => "TRAJECTORY_GROK_BUILD_ROOT",
+            TrajectorySource.Cursor => "TRAJECTORY_CURSOR_ROOT",
             _ => null,
         };
         if (envKey is not null)
@@ -143,6 +147,7 @@ internal static class StoreRoots
             TrajectorySource.Hermes => Path.Combine(home, ".hermes"),
             TrajectorySource.Ahp => home,
             TrajectorySource.GrokBuild => ResolveGrokBuildRoot(home),
+            TrajectorySource.Cursor => Expand(Environment.GetEnvironmentVariable("CURSOR_HOME")?.Trim() ?? Path.Combine(home, ".cursor")),
             _ => home,
         };
     }
@@ -167,6 +172,7 @@ internal static class StoreRoots
         TrajectorySource.Hermes => "~/.hermes/state.db",
         TrajectorySource.Ahp => "explicit export root only (no home default)",
         TrajectorySource.GrokBuild => "$GROK_HOME/sessions or ~/.grok/sessions (or TRAJECTORY_GROK_BUILD_ROOT)",
+        TrajectorySource.Cursor => "$CURSOR_HOME or ~/.cursor (or TRAJECTORY_CURSOR_ROOT)",
         _ => "n/a",
     };
 
@@ -253,7 +259,7 @@ internal static class StreamCli
 {
     public static readonly string[] FileSources =
     [
-        "pi", "claude-code", "codex", "openclaw", "grok-build",
+        "pi", "claude-code", "codex", "openclaw", "grok-build", "cursor",
     ];
 
     public static StreamDelivery ParseEmit(string? value)
@@ -438,9 +444,9 @@ internal static class StreamCli
 
         AnsiConsole.WriteLine();
 
-        // Grok history lines do not embed the session id; listing id is the group.
+        // Grok history and Cursor transcript lines do not embed the session id; listing id is the group.
         // Other file sources lock group from the transcript.
-        if (source != TrajectorySource.GrokBuild)
+        if (source is not (TrajectorySource.GrokBuild or TrajectorySource.Cursor))
         {
             groupId = null;
         }
@@ -536,7 +542,7 @@ internal static class StreamCli
 internal class GlobalSettings : CommandSettings
 {
     [CommandOption("-s|--source <SOURCE>")]
-    [Description("Transcript source: pi, claude-code, codex, openclaw, hermes, ahp, grok-build (alias: grok).")]
+    [Description("Transcript source: pi, claude-code, codex, openclaw, hermes, ahp, grok-build, cursor (aliases: grok, cursor-agent).")]
     public string? Source { get; init; }
 
     [CommandOption("-r|--root <PATH>")]

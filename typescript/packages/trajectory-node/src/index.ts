@@ -120,6 +120,13 @@ export async function listGrokBuildTrajectories(
   return listDiscovered(options, discoverGrokBuild);
 }
 
+/** Cursor Agent sessions under projects and agent-transcripts directories. */
+export async function listCursorTrajectories(
+  options: ListingOptions,
+): Promise<TrajectoryListingPage> {
+  return listDiscovered(options, discoverCursor);
+}
+
 async function discoverHermes(root: string): Promise<TrajectoryListing[]> {
   // SQLite-backed session discovery is intentionally not implemented in the
   // core Node listing package so package dependencies stay free of native
@@ -176,6 +183,52 @@ async function discoverGrokBuild(root: string): Promise<TrajectoryListing[]> {
       } catch (error) {
         if (!isMissingOrDenied(error)) throw error;
       }
+    }
+  }
+  return items;
+}
+
+async function discoverCursor(root: string): Promise<TrajectoryListing[]> {
+  const absoluteRoot = isAbsolute(root) ? root : resolve(root);
+  const meta = new Map<string, Record<string, unknown>>();
+  try {
+    const hashes = await readdir(join(absoluteRoot, "chats"), { withFileTypes: true });
+    for (const hash of hashes) {
+      if (!hash.isDirectory()) continue;
+      let sessions;
+      try { sessions = await readdir(join(absoluteRoot, "chats", hash.name), { withFileTypes: true }); }
+      catch (error) { if (isMissingOrDenied(error)) continue; throw error; }
+      for (const session of sessions) {
+        if (!session.isDirectory() || meta.has(session.name)) continue;
+        try {
+          const parsed: unknown = JSON.parse(await readFile(join(absoluteRoot, "chats", hash.name, session.name, "meta.json"), "utf8"));
+          if (isRecord(parsed)) meta.set(session.name, parsed);
+        } catch { /* malformed or absent metadata is optional */ }
+      }
+    }
+  } catch (error) { if (!isMissingOrDenied(error)) throw error; }
+  const items: TrajectoryListing[] = [];
+  let projects;
+  try { projects = await readdir(join(absoluteRoot, "projects"), { withFileTypes: true }); }
+  catch (error) { if (isMissingOrDenied(error)) return items; throw error; }
+  for (const project of projects) {
+    if (!project.isDirectory()) continue;
+    let sessions;
+    try { sessions = await readdir(join(absoluteRoot, "projects", project.name, "agent-transcripts"), { withFileTypes: true }); }
+    catch (error) { if (isMissingOrDenied(error)) continue; throw error; }
+    for (const session of sessions) {
+      if (!session.isDirectory()) continue;
+      const path = join(absoluteRoot, "projects", project.name, "agent-transcripts", session.name, `${session.name}.jsonl`);
+      try {
+        const info = await stat(path);
+        if (!info.isFile()) continue;
+        const entry = meta.get(session.name);
+        const updatedAtMs = entry?.updatedAtMs;
+        const updatedAt = typeof updatedAtMs === "number" && Number.isSafeInteger(updatedAtMs) && updatedAtMs >= 0
+          ? new Date(updatedAtMs).toISOString() : info.mtime.toISOString();
+        const title = typeof entry?.title === "string" ? (formatTitle(entry.title) ?? await deriveCursorTitle(path)) : await deriveCursorTitle(path);
+        items.push({ id: session.name, path, updatedAt, ...(title === undefined ? {} : { title }), sizeBytes: info.size });
+      } catch (error) { if (!isMissingOrDenied(error)) throw error; }
     }
   }
   return items;
@@ -455,6 +508,17 @@ async function deriveGenericUserTitle(path: string): Promise<string | undefined>
     const text = blocksToText(message?.content) ?? blocksToText(row.content) ?? "";
     const title = titleFromUserText(text);
     if (title !== undefined) return title;
+  }
+  return undefined;
+}
+
+async function deriveCursorTitle(path: string): Promise<string | undefined> {
+  for await (const row of scanJsonLines(path)) {
+    if (stringField(row.role) !== "user") continue;
+    const message = isRecord(row.message) ? row.message : undefined;
+    const parts = Array.isArray(message?.content) ? message.content : [];
+    const text = parts.filter(isRecord).filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text as string).join("\n");
+    return formatTitle(text);
   }
   return undefined;
 }

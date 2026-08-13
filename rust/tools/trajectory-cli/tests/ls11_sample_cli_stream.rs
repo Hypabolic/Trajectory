@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use std::{env, fs, thread};
 
 const CHAT: &str = "ahp-chat:/00000000-0000-4000-8000-0000000000c1";
+const CURSOR_ID: &str = "019f0000-0000-7000-8000-00000000c0a1";
 
 const SESSION_LINE: &str = concat!(
     r#"{"type":"session","version":3,"id":"ls11-stream-rs","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/workspace/demo"}"#,
@@ -20,6 +21,11 @@ const SESSION_LINE: &str = concat!(
 const USER_LINE: &str = concat!(
     r#"{"type":"message","id":"m1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"hello"}]},"sessionId":"ls11-stream-rs"}"#,
     "\n"
+);
+const CURSOR_LINE: &str = concat!(
+    r#"{"role":"user","message":{"content":[{"type":"text","text":"hello"}]}}"#,
+    "\n",
+    r#"{"role":"assistant","message":{"content":[{"type":"text","text":"done"}]}}"#
 );
 
 fn trajectory_bin() -> PathBuf {
@@ -325,6 +331,106 @@ fn browse_watch_listed_session() {
         !out.stdout.contains("hello"),
         "privacy leak of user prose:\n{}",
         out.stdout
+    );
+}
+
+fn write_cursor_store(root: &Path) -> PathBuf {
+    let path = root
+        .join("projects")
+        .join("%2Fworkspace%2Fdemo")
+        .join("agent-transcripts")
+        .join(CURSOR_ID)
+        .join(format!("{CURSOR_ID}.jsonl"));
+    fs::create_dir_all(path.parent().expect("cursor transcript parent"))
+        .expect("create cursor store");
+    fs::write(&path, format!("{CURSOR_LINE}\n")).expect("write cursor transcript");
+    path
+}
+
+#[test]
+fn cursor_list_show_and_browse_watch_use_listed_session_id() {
+    let root = env::temp_dir().join(format!("traj-ls11-cursor-rs-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    write_cursor_store(&root);
+
+    let root_text = root.to_str().expect("utf8 cursor root");
+    let listed = run_cli(&[
+        "list", "--source", "cursor", "--root", root_text, "--limit", "5",
+    ]);
+    assert_eq!(
+        listed.code, 0,
+        "stderr={}\nstdout={}",
+        listed.stderr, listed.stdout
+    );
+    assert!(
+        listed.stdout.contains(CURSOR_ID),
+        "session id missing:\n{}",
+        listed.stdout
+    );
+
+    let shown = run_cli(&[
+        "show", "--source", "cursor", "--root", root_text, "--id", CURSOR_ID,
+    ]);
+    assert_eq!(
+        shown.code, 0,
+        "stderr={}\nstdout={}",
+        shown.stderr, shown.stdout
+    );
+    assert!(
+        shown.stdout.contains(CURSOR_ID),
+        "session id missing:\n{}",
+        shown.stdout
+    );
+    assert!(
+        shown.stdout.contains("Content omitted"),
+        "privacy omission missing:\n{}",
+        shown.stdout
+    );
+
+    let browsed = run_cli(&[
+        "browse",
+        "--source",
+        "cursor",
+        "--root",
+        root_text,
+        "--id",
+        CURSOR_ID,
+        "--watch",
+        "--emit",
+        "snapshot+delta",
+        "--max-updates",
+        "1",
+    ]);
+    let _ = fs::remove_dir_all(&root);
+    assert_eq!(
+        browsed.code, 0,
+        "stderr={}\nstdout={}",
+        browsed.stderr, browsed.stdout
+    );
+    assert!(
+        browsed.stdout.contains("stream update"),
+        "missing stream update:\n{}",
+        browsed.stdout
+    );
+    assert!(
+        browsed.stdout.contains("snapshot"),
+        "missing snapshot:\n{}",
+        browsed.stdout
+    );
+    assert!(
+        browsed.stdout.contains("delta"),
+        "missing delta:\n{}",
+        browsed.stdout
+    );
+    assert!(
+        browsed.stdout.contains("Content omitted"),
+        "privacy omission missing:\n{}",
+        browsed.stdout
+    );
+    assert!(
+        !browsed.stdout.contains("hello"),
+        "privacy leak:\n{}",
+        browsed.stdout
     );
 }
 

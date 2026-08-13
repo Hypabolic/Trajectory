@@ -27,7 +27,7 @@ Distinguish **published registry packages** from **this repository tip**.
 | Checked-in `VERSION` | `0.1.2` (Grok Build + AHP tip cut; **already used** — do not retag) |
 | Capability slice | `ML13` (historical slice id; AHP is a post-`0.1.0` source addition) |
 | Normalizer contract | `0.2.0` |
-| Implemented sources (tip) | Published set **plus** `ahp` and `grok-build` |
+| Implemented sources (tip) | Published set **plus** `ahp`, `grok-build`, and `cursor` |
 | AHP scope | Batch Shape A + core stream Shape A/B in-tree; optional AHP clients in-tree (fake-host tested); listing and real WebSocket transport still **not** shipped |
 | Next registry publish | A **new** synchronized tag **strictly after `0.1.2`** (for example `v0.1.3` or `v0.2.0`) for the live-session stream cut. **Do not tag or retag `v0.1.2`.** `skip-duplicate` / “already published” fallbacks must not treat a reused `0.1.2` as a successful stream ship. |
 

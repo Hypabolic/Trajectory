@@ -46,6 +46,16 @@ additional items remain.
   (`generated_title` then `session_summary`) and `updated_at`
   (`last_active_at` then `updated_at`); otherwise use the history file mtime.
   Ignore non-session files (locks, `events.jsonl`, `updates.jsonl`, etc.).
+- Cursor Agent: `projects/*/agent-transcripts/<session-id>/<session-id>.jsonl`,
+  under the default `$CURSOR_HOME` when non-empty, otherwise `~/.cursor`.
+  The item ID is the session directory name and `path` is the transcript path;
+  skip files whose stem does not equal the session directory name. Use matching
+  `chats/*/<session-id>/meta.json` `updatedAtMs` for `updated_at`, otherwise
+  the transcript mtime; use a non-empty meta `title`, otherwise a bounded peek
+  of the first user text. Report `size_bytes` from the transcript. Join meta by
+  scanning `chats/*/<session-id>/meta.json` without decoding the CWD. A missing
+  root returns an empty page. Ignore unrelated files such as `repo.json`,
+  `worker.log`, and `store.db`.
 
 ## Optional title derivation
 
@@ -60,6 +70,11 @@ Per-source rules:
 
 - **Grok Build:** `summary.json` `generated_title`, else `session_summary`
   (unchanged; no transcript scan).
+- **Cursor Agent:** matching `chats/*/<session-id>/meta.json` `title`, else
+  the first user turn's joined text from the bounded transcript peek. Matching
+  `updatedAtMs` supplies `updated_at`; otherwise use transcript mtime. Discover
+  only `projects/*/agent-transcripts/<session-id>/<session-id>.jsonl` and ignore
+  unrelated Cursor files.
 - **Codex:** scan early rollout records. Prefer the first `response_item` with
   `payload.role === "user"` whose extracted text is not harness injection.
   Noise includes markers such as `# AGENTS.md`, `<INSTRUCTIONS>`,

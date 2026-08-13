@@ -47,6 +47,10 @@ DIAG_AHP_FOREIGN_CHANNEL: Final[str] = "ahp_foreign_channel"
 DIAG_IMAGE_CONTENT_DROPPED: Final[str] = "image_content_dropped"
 DIAG_BACKEND_TOOL_RESULT_SYNTHESIZED: Final[str] = "backend_tool_result_synthesized"
 DIAG_ENCRYPTED_REASONING_INCLUDED: Final[str] = "encrypted_reasoning_included"
+# Shared Grok Build / Cursor source diagnostics.
+DIAG_UNKNOWN_CONTENT_PART: Final[str] = "unknown_content_part"
+DIAG_TOOL_USE_MISSING_NAME: Final[str] = "tool_use_missing_name"
+DIAG_TURN_ENDED_ERROR: Final[str] = "turn_ended_error"
 
 # OTEL projection diagnostic (exact fixture message in §4).
 DIAG_MODEL_SPAN_OMITTED: Final[str] = "model_span_omitted"
@@ -85,6 +89,9 @@ DIAGNOSTIC_CODES: Final[frozenset[str]] = frozenset(
         DIAG_IMAGE_CONTENT_DROPPED,
         DIAG_BACKEND_TOOL_RESULT_SYNTHESIZED,
         DIAG_ENCRYPTED_REASONING_INCLUDED,
+        DIAG_UNKNOWN_CONTENT_PART,
+        DIAG_TOOL_USE_MISSING_NAME,
+        DIAG_TURN_ENDED_ERROR,
         DIAG_MODEL_SPAN_OMITTED,
     }
 )

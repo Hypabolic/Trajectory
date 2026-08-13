@@ -1,0 +1,7 @@
+not valid json
+[1,2]
+{"type":"future_record","secret":"SECRET_TOKEN_xyz"}
+{"role":"sideways","message":{"content":[]}}
+{"role":"user","message":{"content":[{"type":"text","text":"Clean this up."},{"type":"image","url":"/Users/real-user/image.png"},{"type":"future_part"},{"type":"tool_use","name":"ignored_user_tool","input":{"secret":"not emitted"}}]}}
+{"role":"assistant","message":{"content":[{"type":"tool_use","input":{"x":1}},{"type":"text","text":"Done."}]}}
+{"type":"turn_ended","status":"error","error":"SECRET_TOKEN_xyz /Users/real-user/"}

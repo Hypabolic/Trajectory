@@ -132,7 +132,7 @@ _KNOWN_OPS: Final[frozenset[str]] = PROTOCOL_V1_OPERATIONS
 # ``{temp_root}/store`` (goldens show ``$ROOT/store/...``). All other sources
 # (pi, openclaw, hermes/ahp stubs) list at the temp root itself.
 _LISTING_STORE_PREFIX_SOURCES: Final[frozenset[str]] = frozenset(
-    {"claude-code", "codex", "grok-build"}
+    {"claude-code", "codex", "grok-build", "cursor"}
 )
 
 

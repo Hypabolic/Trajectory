@@ -303,6 +303,7 @@ public sealed class HypabolicTrajectoryV1OutputAdapter : OutputSchemaAdapter<Hyp
         TrajectorySource.DeepAgents => "deepagents",
         TrajectorySource.Ahp => "ahp",
         TrajectorySource.GrokBuild => "grok-build",
+        TrajectorySource.Cursor => "cursor",
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 

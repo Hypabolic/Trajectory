@@ -139,7 +139,8 @@
               "openclaw",
               "hermes",
               "ahp",
-              "grok-build"
+              "grok-build",
+              "cursor"
             ]
           },
           "uniqueItems": true

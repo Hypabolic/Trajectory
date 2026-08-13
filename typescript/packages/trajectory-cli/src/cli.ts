@@ -27,6 +27,7 @@ import {
   listAhpTrajectories,
   listClaudeCodeTrajectories,
   listCodexTrajectories,
+  listCursorTrajectories,
   listGrokBuildTrajectories,
   listHermesTrajectories,
   listOpenClawTrajectories,
@@ -42,9 +43,9 @@ import {
   type AhpTransport,
 } from "@hypabolic/trajectory-ahp";
 
-const SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"] as const;
+const SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build", "cursor"] as const;
 type SourceName = (typeof SOURCES)[number];
-const STREAM_FILE_SOURCES = ["pi", "claude-code", "codex", "openclaw", "grok-build"] as const;
+const STREAM_FILE_SOURCES = ["pi", "claude-code", "codex", "openclaw", "grok-build", "cursor"] as const;
 type StreamFileSource = (typeof STREAM_FILE_SOURCES)[number];
 type EmitMode = "snapshot+delta" | "snapshot" | "delta";
 
@@ -253,9 +254,10 @@ function parseSource(value: string): SourceName {
   if ((SOURCES as readonly string[]).includes(normalized)) return normalized as SourceName;
   if (normalized === "claude" || normalized === "claudecode") return "claude-code";
   if (normalized === "grok") return "grok-build";
+  if (normalized === "cursor-agent") return "cursor";
   throw new TrajectoryNormalizationError(
     "unknown_source",
-    `Unknown source '${value}'. Expected one of: ${SOURCES.join(", ")} (alias: grok).`,
+    `Unknown source '${value}'. Expected one of: ${SOURCES.join(", ")} (aliases: grok, cursor-agent).`,
   );
 }
 
@@ -274,6 +276,7 @@ function defaultRoot(source: SourceName): string {
     hermes: "TRAJECTORY_HERMES_ROOT",
     ahp: "TRAJECTORY_AHP_ROOT",
     "grok-build": "TRAJECTORY_GROK_BUILD_ROOT",
+    cursor: "TRAJECTORY_CURSOR_ROOT",
   };
   const fromTrajectory = process.env[envMap[source]]?.trim();
   if (fromTrajectory) return expandHome(fromTrajectory);
@@ -303,6 +306,8 @@ function defaultRoot(source: SourceName): string {
       if (grokHome) return join(expandHome(grokHome), "sessions");
       return join(home, ".grok", "sessions");
     }
+    case "cursor":
+      return expandHome(process.env.CURSOR_HOME?.trim() || join(home, ".cursor"));
   }
 }
 
@@ -322,6 +327,8 @@ function describeDefault(source: SourceName): string {
       return "explicit export root only (no home default)";
     case "grok-build":
       return "$GROK_HOME/sessions or ~/.grok/sessions (or TRAJECTORY_GROK_BUILD_ROOT)";
+    case "cursor":
+      return "$CURSOR_HOME or ~/.cursor (or TRAJECTORY_CURSOR_ROOT)";
   }
 }
 
@@ -346,6 +353,8 @@ async function listForSource(
       return listAhpTrajectories(options);
     case "grok-build":
       return listGrokBuildTrajectories(options);
+    case "cursor":
+      return listCursorTrajectories(options);
   }
 }
 
@@ -402,7 +411,7 @@ async function followFileSession(
   const delivery = emitToDelivery(args.emit);
   // Grok history lines do not embed the session id; listing id is the group.
   // Other file sources lock group from the transcript.
-  const groupId = source === "grok-build" ? target.groupId : undefined;
+  const groupId = source === "grok-build" || source === "cursor" ? target.groupId : undefined;
   console.log(`${BOLD}${CYAN}Trajectory stream${RESET}  ${DIM}live file follow (not a daemon)${RESET}`);
   console.log(`${DIM}source${RESET}   ${source}`);
   console.log(`${DIM}root${RESET}     ${target.root}`);
@@ -1205,7 +1214,7 @@ Usage:
                         [--from-seq N] [--token T] [--snapshot-path F] [--actions-path F]
   trajectory help
 
-Sources: ${SOURCES.join(", ")}
+Sources: ${SOURCES.join(", ")} (alias: cursor-agent)
 File stream sources: ${STREAM_FILE_SOURCES.join(", ")}
 
 Default roots:
@@ -1216,6 +1225,7 @@ Default roots:
   hermes       ~/.hermes
   ahp          explicit export root only (use show --path)
   grok-build   $GROK_HOME/sessions or ~/.grok/sessions (alias: grok)
+  cursor       $CURSOR_HOME or ~/.cursor (alias: cursor-agent)
 
 Root overrides: --root or TRAJECTORY_<SOURCE>_ROOT (e.g. TRAJECTORY_PI_ROOT).
 OpenClaw also honors OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR.

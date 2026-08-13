@@ -19,6 +19,7 @@ Related:
   snapshot source (`ahp`); Shape B reduce is in core stream apply; listing and
   live WebSocket remain caller-owned.
 - [Grok Build source](grok-build-source-spec.md) — Grok Build (`grok-build`) session history
+- [Cursor source](cursor-source-spec.md) — Cursor Agent (`cursor`) transcript JSONL
 
 ## Architecture reminder
 

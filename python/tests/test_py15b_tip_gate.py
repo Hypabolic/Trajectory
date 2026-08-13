@@ -29,7 +29,7 @@ COMPAT_PATH = ROOT / "contracts" / "compatibility.json"
 VALIDATOR = TOOLS / "validate_release_metadata.py"
 GENERATOR = TOOLS / "conformance_argv_from_capabilities.py"
 
-TIP_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"]
+TIP_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build", "cursor"]
 TIP_OUTPUTS = [
     "letta-trajectory-v1",
     "letta-canonical-v1",
