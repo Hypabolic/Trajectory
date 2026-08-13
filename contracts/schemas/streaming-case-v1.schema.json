@@ -1,0 +1,383 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hypabolic.dev/trajectory/contracts/streaming-case-v1.schema.json",
+  "title": "Trajectory stream conformance case v1",
+  "description": "Multi-step ordered stream conformance case. Distinct from batch conformance-case-v1. Goldens and runners land in LS-02+; this schema freezes the case wire shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "case_version",
+    "id",
+    "source",
+    "required_capabilities",
+    "options",
+    "steps",
+    "comparison"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "case_version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9/-]*$",
+      "description": "Case id, e.g. streaming/empty-prefix or pi/stream-append-one."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "enum": [
+        "pi",
+        "claude-code",
+        "codex",
+        "openclaw",
+        "hermes",
+        "ahp",
+        "grok-build"
+      ]
+    },
+    "group_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "required_capabilities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/streamCapability" },
+      "uniqueItems": true,
+      "description": "Stream (and optionally batch) capabilities required to run this case. Cases requiring stream-* skip until claimed."
+    },
+    "options": {
+      "$ref": "#/$defs/streamOptions"
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "comparison": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/comparisonMode" },
+      "uniqueItems": true
+    },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prefix_re_normalize": {
+          "type": "boolean",
+          "description": "When true, final snapshot must equal a fresh snapshot apply of the full committed prefix."
+        },
+        "append_equals_prefix": {
+          "type": "boolean",
+          "description": "When true, append-path updates must match prefix-oracle path."
+        },
+        "action_equals_snapshot": {
+          "type": "boolean",
+          "description": "When true, an independent Shape A snapshot apply must match the action-path stream for non-meta record ids, statuses, and content (AHP LS-07 oracle)."
+        },
+        "snapshot_material": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative path under the case directory for the independent Shape A oracle material when action_equals_snapshot is true."
+        },
+        "snapshot_source_revision": {
+          "type": "string",
+          "minLength": 1,
+          "description": "source_revision for the independent Shape A oracle apply when action_equals_snapshot is true."
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "forbidden_substrings": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Sentinel secrets/paths that must not appear in any diagnostic, error, or golden text."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "streamCapability": {
+      "type": "string",
+      "description": "Known batch and stream capability names (same enum as compatibility-manifest-v1 capabilityName). Typos like stream-coree are rejected.",
+      "enum": [
+        "normalize",
+        "normalize-partial",
+        "list-explicit-root",
+        "typed-diagnostics",
+        "typed-fatal-errors",
+        "deterministic-rerun",
+        "native-aot",
+        "otel-sdk-emission",
+        "sqlite-stores",
+        "stream-core",
+        "stream-cursor-v1",
+        "stream-jsonl-framing",
+        "stream-apply-snapshot",
+        "stream-apply-append",
+        "stream-full-snapshot",
+        "stream-record-delta",
+        "stream-reset",
+        "stream-provisional-records",
+        "stream-deterministic-replay",
+        "stream-file-jsonl",
+        "stream-ahp-snapshot",
+        "stream-ahp-action-log",
+        "stream-file-io",
+        "stream-file-watch",
+        "stream-ahp-client",
+        "stream-ahp-list-sessions",
+        "stream-hermes-provider",
+        "stream-async-iterator"
+      ]
+    },
+    "comparisonMode": {
+      "enum": [
+        "stream-json-exact",
+        "stream-cursor-exact",
+        "stream-delta-apply",
+        "stream-diagnostics-by-step",
+        "stream-idempotence",
+        "stream-oracle-parity"
+      ]
+    },
+    "delivery": {
+      "enum": ["both", "snapshot", "delta"]
+    },
+    "resetPolicy": {
+      "enum": ["return-reset-required", "auto-reset"]
+    },
+    "streamOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delivery", "include_provisional", "require_complete_lines", "finalize_on_close", "reset_policy"],
+      "properties": {
+        "delivery": { "$ref": "#/$defs/delivery" },
+        "include_provisional": { "type": "boolean" },
+        "require_complete_lines": { "type": "boolean" },
+        "finalize_on_close": { "type": "boolean" },
+        "reorder": { "const": "reject" },
+        "reset_policy": { "$ref": "#/$defs/resetPolicy" },
+        "max_pending_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_line_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "normalize": {
+          "type": "object",
+          "description": "Batch normalize options (bounds, filters). Shape follows existing normalize request options."
+        },
+        "ahp_protocol_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        }
+      }
+    },
+    "inputKind": {
+      "enum": [
+        "append-bytes",
+        "snapshot-bytes",
+        "ahp-actions",
+        "ahp-snapshot",
+        "hermes-export",
+        "finish",
+        "reset"
+      ]
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "input", "expected"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "description": "Step id unique within the case."
+        },
+        "input": { "$ref": "#/$defs/stepInput" },
+        "expected": { "$ref": "#/$defs/stepExpected" },
+        "double_invoke": {
+          "type": "boolean",
+          "description": "When true (default for conformance), apply the step twice and require idempotence."
+        }
+      }
+    },
+    "stepInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/inputKind" },
+        "material": {
+          "type": "string",
+          "description": "Relative path to input bytes/JSON under the case directory, or inline omission when kind is finish."
+        },
+        "inline_utf8": {
+          "type": "string",
+          "description": "Optional small inline UTF-8 material for synthetic steps (not production transcripts)."
+        },
+        "source_revision": {
+          "type": ["string", "null"]
+        },
+        "cursor": {
+          "type": "object",
+          "description": "Optional StreamCursor object for this step (validated against streaming-cursor-v1 at apply time)."
+        },
+        "reset": {
+          "$ref": "#/$defs/streamResetRequest",
+          "description": "StreamResetRequest when kind=reset (not response StreamReset)."
+        },
+        "change_token": {
+          "type": "string",
+          "minLength": 1
+        },
+        "database_generation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Hermes database generation for hermes-export (defaults to source_revision when omitted)."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "append-bytes",
+                  "snapshot-bytes",
+                  "ahp-actions",
+                  "ahp-snapshot",
+                  "hermes-export"
+                ]
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "anyOf": [
+              { "required": ["material"] },
+              { "required": ["inline_utf8"] }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "reset" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["reset"]
+          }
+        }
+      ]
+    },
+    "streamResetRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason"],
+      "description": "Caller payload for reset(state, request) and case step kind=reset. Distinct from response StreamReset.",
+      "properties": {
+        "reason": {
+          "enum": [
+            "source-truncated",
+            "source-replaced",
+            "source-compacted",
+            "cursor-mismatch",
+            "group-changed",
+            "sequence-gap",
+            "prefix-hash-mismatch",
+            "manual"
+          ]
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "New generation; default prior generation + 1 when omitted."
+        },
+        "source_revision": {
+          "type": ["string", "null"]
+        },
+        "prior_cursor": {
+          "type": "object",
+          "description": "Optional StreamCursor (validated against streaming-cursor-v1 at apply time)."
+        },
+        "material": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative path to replacement source material under the case directory."
+        },
+        "inline_utf8": {
+          "type": "string",
+          "description": "Small synthetic UTF-8 replacement prefix for case vectors."
+        },
+        "change_token": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "stepExpected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["update_kind"],
+      "properties": {
+        "update_kind": {
+          "enum": ["updated", "unchanged", "reset-required", "error"]
+        },
+        "result": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relative path to expected StreamUpdate JSON golden for this step."
+        },
+        "diagnostic_codes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "fatal_error": {
+          "type": ["string", "null"]
+        },
+        "reset_reason": {
+          "enum": [
+            "source-truncated",
+            "source-replaced",
+            "source-compacted",
+            "cursor-mismatch",
+            "group-changed",
+            "sequence-gap",
+            "prefix-hash-mismatch",
+            "manual"
+          ]
+        },
+        "cursor_position_kind": {
+          "enum": ["byte", "ahp-server-seq", "snapshot-revision", "hermes-row"]
+        },
+        "provisional_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "finalized_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "record_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

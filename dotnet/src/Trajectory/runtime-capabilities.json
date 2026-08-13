@@ -1,0 +1,43 @@
+{
+  "runtime": "dotnet",
+  "slice": "ML13",
+  "normalizer_contract_version": "0.2.0",
+  "sources": [
+    "pi",
+    "claude-code",
+    "codex",
+    "openclaw",
+    "hermes",
+    "ahp",
+    "grok-build"
+  ],
+  "outputs": [
+    "letta-trajectory-v1",
+    "letta-canonical-v1",
+    "hypabolic-trajectory-v1",
+    "openai-chat-messages",
+    "jsonl-minimal",
+    "otel-genai-spans-v1"
+  ],
+  "capabilities": [
+    "normalize",
+    "normalize-partial",
+    "list-explicit-root",
+    "typed-diagnostics",
+    "typed-fatal-errors",
+    "deterministic-rerun",
+    "stream-core",
+    "stream-cursor-v1",
+    "stream-jsonl-framing",
+    "stream-apply-snapshot",
+    "stream-apply-append",
+    "stream-full-snapshot",
+    "stream-record-delta",
+    "stream-reset",
+    "stream-provisional-records",
+    "stream-deterministic-replay",
+    "stream-file-jsonl",
+    "stream-ahp-snapshot",
+    "stream-ahp-action-log"
+  ]
+}

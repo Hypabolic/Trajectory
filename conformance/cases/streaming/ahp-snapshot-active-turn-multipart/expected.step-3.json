@@ -1,0 +1,263 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 2,
+    "revision_id": "ee3e27658c670b03a811d9778917b2e379e831426ba86f1eeaf81230d86c086d",
+    "parent_revision_id": "fca302212f67551d10267038156bd571993966069aa15387c6562a0aa8c5b302",
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000b2",
+    "generation": 0,
+    "position": {
+      "kind": "snapshot-revision",
+      "revision": "ahp-mp-3",
+      "content_sha256": "bffaef5590f2fe4035edb22751bd6fa91e79ca1f4de1f1ebe5b3e1416fa353fa"
+    },
+    "source_revision": "ahp-mp-3",
+    "prefix_sha256": "bffaef5590f2fe4035edb22751bd6fa91e79ca1f4de1f1ebe5b3e1416fa353fa"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000b2",
+    "revision": {
+      "revision": 2,
+      "revision_id": "ee3e27658c670b03a811d9778917b2e379e831426ba86f1eeaf81230d86c086d",
+      "parent_revision_id": "fca302212f67551d10267038156bd571993966069aa15387c6562a0aa8c5b302",
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "a6f5359705bff66118f4b8beb7d7fb223f13e66ef6c5cc863380c98352f010d3",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "ahp",
+          "cwd": "/workspace/demo",
+          "model": "synthetic-model-1",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "555b0bc1d8f81eca5dba68517f69a1a6c4bd79809d4658794c723516113e49a2",
+            "record_sha256": "bb7d3f6743c6f38889772d6e56cec3e145d2d5b7d84f9bd83377a66eab43f7a6"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "7b3cd6fa1558985d90e7a598c60fcda4208473030b63103358f6fb7e19081614",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-03-15T12:00:00.000Z",
+          "timestamp": "2026-03-15T12:00:00.000Z",
+          "content": "Hello multi",
+          "provenance": {
+            "stable_source_record_id": "turn-00000000-0000-4000-8000-0000000000u2",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-03-15T12:00:00.000Z|00000000000000000000|turn-00000000-0000-4000-8000-0000000000u2",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "turn-00000000-0000-4000-8000-0000000000u2",
+            "source_sequence": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "c39e733ec932904ac45dbbe25956a2ce2caa827715373922ed94641943029e20",
+            "record_sha256": "5fffbc417ed43743c920d9acf492c126a0c25f2285b4da6d56ca0f8e162388db"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "d5bb6a11b7d24f160d61794a3bdd209678a2234507ff500d8138e4186a2a1c57",
+          "kind": "message",
+          "role": "assistant",
+          "order": 1,
+          "source_timestamp": "2026-03-15T12:00:05.000Z",
+          "timestamp": "2026-03-15T12:00:05.000Z",
+          "content": "Working on it",
+          "provenance": {
+            "stable_source_record_id": "part-md-multi-1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-03-15T12:00:05.000Z|00000000000000000000|part-md-multi-1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "part-md-multi-1",
+            "source_sequence": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "9d83d611b0d38e37719f8ead5f989f7e184cc932054a53c896e7487772de8bd7",
+            "record_sha256": "c8a0a6f54e09102fa714d1f505ce1f33c046996482756419868c361b245281b9"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "edd867f0a4b98b2242049fb257496b757d3635ad71e3440a3ddf4e42a295c3a2",
+          "kind": "assistant_tool_calls",
+          "role": "assistant",
+          "order": 2,
+          "source_timestamp": "2026-03-15T12:00:05.000Z",
+          "timestamp": "2026-03-15T12:00:05.000Z",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "tool-call-multi-1",
+              "name": "read_file",
+              "arguments_json": "{}"
+            }
+          ],
+          "provenance": {
+            "stable_source_record_id": "tool-call-multi-1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-03-15T12:00:05.000Z|00000000000000000000|tool-call-multi-1",
+            "component_key": "tool-call:tool-call-multi-1",
+            "component_index": 1,
+            "component_type_ordinal": 0,
+            "native_record_id": "tool-call-multi-1",
+            "source_sequence": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "332cae014a03f08a1ec37ae6838f57dad754143ed5e49dc9544f97c9637fca91",
+            "record_sha256": "753d6f11112bd6395ae99fcc5b27baec5643749e571c0b8f37d8ab25b57f8e7d"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "fca302212f67551d10267038156bd571993966069aa15387c6562a0aa8c5b302",
+    "revision": {
+      "revision": 2,
+      "revision_id": "ee3e27658c670b03a811d9778917b2e379e831426ba86f1eeaf81230d86c086d",
+      "parent_revision_id": "fca302212f67551d10267038156bd571993966069aa15387c6562a0aa8c5b302",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "remove",
+        "record_id": "prov-active:part-md-multi-1",
+        "reason": "source-rewrite"
+      },
+      {
+        "op": "remove",
+        "record_id": "prov-active:tool-call-multi-1",
+        "reason": "source-rewrite"
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "d5bb6a11b7d24f160d61794a3bdd209678a2234507ff500d8138e4186a2a1c57",
+            "kind": "message",
+            "role": "assistant",
+            "order": 1,
+            "source_timestamp": "2026-03-15T12:00:05.000Z",
+            "timestamp": "2026-03-15T12:00:05.000Z",
+            "content": "Working on it",
+            "provenance": {
+              "stable_source_record_id": "part-md-multi-1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-03-15T12:00:05.000Z|00000000000000000000|part-md-multi-1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "part-md-multi-1",
+              "source_sequence": 0,
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "9d83d611b0d38e37719f8ead5f989f7e184cc932054a53c896e7487772de8bd7",
+              "record_sha256": "c8a0a6f54e09102fa714d1f505ce1f33c046996482756419868c361b245281b9"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "edd867f0a4b98b2242049fb257496b757d3635ad71e3440a3ddf4e42a295c3a2",
+            "kind": "assistant_tool_calls",
+            "role": "assistant",
+            "order": 2,
+            "source_timestamp": "2026-03-15T12:00:05.000Z",
+            "timestamp": "2026-03-15T12:00:05.000Z",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "tool-call-multi-1",
+                "name": "read_file",
+                "arguments_json": "{}"
+              }
+            ],
+            "provenance": {
+              "stable_source_record_id": "tool-call-multi-1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-03-15T12:00:05.000Z|00000000000000000000|tool-call-multi-1",
+              "component_key": "tool-call:tool-call-multi-1",
+              "component_index": 1,
+              "component_type_ordinal": 0,
+              "native_record_id": "tool-call-multi-1",
+              "source_sequence": 0,
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "332cae014a03f08a1ec37ae6838f57dad754143ed5e49dc9544f97c9637fca91",
+              "record_sha256": "753d6f11112bd6395ae99fcc5b27baec5643749e571c0b8f37d8ab25b57f8e7d"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": [
+      "prov-active:part-md-multi-1",
+      "prov-active:tool-call-multi-1"
+    ]
+  },
+  "consumed": {
+    "complete_records": 4,
+    "bytes": 2152,
+    "first_source_position": 0,
+    "last_source_position": 2151
+  }
+}

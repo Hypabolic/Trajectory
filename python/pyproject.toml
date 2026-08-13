@@ -20,6 +20,12 @@ otel = [
   "opentelemetry-api>=1.27.0",
   "opentelemetry-sdk>=1.27.0",
 ]
+# LS-09 file I/O uses stdlib only; extra marks install intent for optional surface.
+io = []
+# LS-10 AHP client uses stdlib only (`hypabolic_trajectory.ahp_client`).
+ahp = []
+# LS-07h Hermes provider uses stdlib sqlite3 (`hypabolic_trajectory.hermes_provider`).
+hermes = []
 dev = [
   "pytest>=8.0",
   "jsonschema>=4.0",
@@ -37,6 +43,10 @@ artifacts = [
   "src/hypabolic_trajectory/contracts/**",
   "src/hypabolic_trajectory/runtime-capabilities.json",
   "src/hypabolic_trajectory/py.typed",
+  # LS-12 optional stream package capability manifests (io / ahp / hermes).
+  "src/hypabolic_trajectory/io/package-capabilities.json",
+  "src/hypabolic_trajectory/ahp_client/package-capabilities.json",
+  "src/hypabolic_trajectory/hermes_provider/package-capabilities.json",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -47,6 +57,9 @@ artifacts = [
   "src/hypabolic_trajectory/contracts/**",
   "src/hypabolic_trajectory/runtime-capabilities.json",
   "src/hypabolic_trajectory/py.typed",
+  "src/hypabolic_trajectory/io/package-capabilities.json",
+  "src/hypabolic_trajectory/ahp_client/package-capabilities.json",
+  "src/hypabolic_trajectory/hermes_provider/package-capabilities.json",
   "/LICENSE",
   "/README.md",
   "/pyproject.toml",

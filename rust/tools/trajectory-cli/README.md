@@ -9,9 +9,13 @@ Local sample TUI for browsing agent sessions with
 
 - Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes, Grok Build)
 - Normalizes AHP Shape A offline snapshots via `show --path` (no default store)
-- Interactive browse with `dialoguer` selection prompts
+- Interactive browse with `dialoguer` selection prompts, then Watch live or Show snapshot
 - Privacy-safe summaries (record counts, roles, tool calls, diagnostics)
 - Optional `--show-content` with an explicit privacy warning
+- **`stream`**: follow a JSONL session file (optional file I/O → core stream apply)
+- **`ahp-stream`**: demo optional AHP client with in-memory `fake://` FakeAhpHost
+
+This sample is a **consumer process**, not a Trajectory daemon.
 
 | Source | Default root | Env override |
 | --- | --- | --- |
@@ -47,6 +51,22 @@ cargo run -p trajectory-cli -- show \
   --source ahp \
   --path ../conformance/cases/ahp/tool-calls/input.json
 cargo run -p trajectory-cli -- browse
+
+# Watch a live local session (pick, then Watch live)
+cargo run -p trajectory-cli -- browse --source grok-build --watch --show-content
+
+# File stream (one-shot poll; default emit snapshot+delta)
+cargo run -p trajectory-cli -- stream \
+  --source pi \
+  --path ../conformance/cases/pi/tool-calls/input.jsonl \
+  --max-updates 1
+
+# AHP stream demo (FakeAhpHost only in this sample)
+cargo run -p trajectory-cli -- ahp-stream \
+  --url fake://demo \
+  --chat 'ahp-chat:/00000000-0000-4000-8000-0000000000c1' \
+  --actions-path ../conformance/cases/streaming/ahp-action-turn-flow/step-actions.jsonl \
+  --max-updates 1
 ```
 
 Release binary:
@@ -69,16 +89,30 @@ cargo run -p trajectory-cli -- show \
 
 | Command | Purpose |
 | --- | --- |
-| `browse` (default) | Interactive source → session → summary |
+| `browse` (default) | Interactive source → session → Watch live or Show snapshot |
 | `list` | Print discovered sessions |
 | `show` | Normalize one path/id |
+| `stream` | Follow a JSONL file via optional file I/O + core stream |
+| `ahp-stream` | Optional AHP client demo (`fake://` FakeAhpHost) |
 
-Shared flags: `--source`, `--root`, `--limit`, `--show-content`.
+Shared flags: `--source`, `--root`, `--limit`, `--show-content`, `--watch`,
+`--emit`, `--interval`, `--max-updates`.
+
+Stream flags: `--emit snapshot+delta|snapshot|delta` (default `snapshot+delta`),
+`--follow`, `--interval`, `--max-updates`, `--path` / `--id` (+ explicit `--root`
+for listing). File stream sources: `pi`, `claude-code`, `codex`, `openclaw`,
+`grok-build`.
+
+AHP stream flags: `--url` (sample: `fake://…`), `--chat`, `--from-seq`,
+`--token` / `TRAJECTORY_AHP_TOKEN`, `--snapshot-path`, `--actions-path`.
 
 ## Notes
 
 - Empty stores exit 0 with a clear message.
 - Typed `TrajectoryError` codes are printed without panicking.
+- Stream follow is **not** a background daemon; process exit stops it.
+- Sample `ahp-stream` uses in-memory FakeAhpHost only. Live WebSocket hosts:
+  inject `AhpTransport` in your app (`docs/ahp-client.md`).
 - Built with `clap` + `dialoguer` over the workspace library.
 
 ## Related

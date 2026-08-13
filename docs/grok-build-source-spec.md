@@ -171,6 +171,21 @@ normalize accepts a byte slice with `source_context.partial = true` and optional
 `base_byte_offset`. Compaction is not multi-file; the current file is the
 post-compaction truth.
 
+### 5.5.1 Live session streaming (LS-05)
+
+Core `apply_append` / `apply_snapshot` for Grok Build:
+
+- Stream re-normalize uses `partial=true` and `base_byte_offset=0` over the full
+  committed complete-line prefix (oracle path).
+- Incomplete lines remain in the stream pending buffer; they are not records.
+- Post-compaction file that is shorter and not a pure prefix of the prior
+  committed bytes → `reset-required` with reason `source-compacted`.
+- Pure prefix shrink → `source-truncated`.
+- Synthetic backend tool results (`backend_tool_result_synthesized`, content
+  prefix `[backend …]`) are stream-record `status: "provisional"` until a later
+  real `tool_result` re-normalize or `finish`.
+- See [`streaming-file-sources.md`](streaming-file-sources.md).
+
 ### 5.6 Model invocations
 
 When an `assistant` line carries `model_id` (and optional `model_fingerprint`,

@@ -1,0 +1,58 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/ahp-snapshot-active-turn",
+  "description": "AHP Shape A snapshot with activeTurn yields provisional stream records.",
+  "source": "ahp",
+  "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000b1",
+  "required_capabilities": [
+    "stream-core",
+    "stream-ahp-snapshot",
+    "stream-provisional-records",
+    "stream-full-snapshot",
+    "stream-record-delta",
+    "stream-cursor-v1"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required",
+    "ahp_protocol_version": "0.7.0"
+  },
+  "steps": [
+    {
+      "id": "with-active-turn",
+      "input": {
+        "kind": "ahp-snapshot",
+        "material": "step-active.json",
+        "source_revision": "ahp-rev-1"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false,
+        "provisional_ids": [
+          "prov-active:part-md-active-1"
+        ],
+        "result": "expected.with-active-turn.json"
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-delta-apply",
+    "stream-idempotence",
+    "stream-cursor-exact"
+  ],
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  }
+}

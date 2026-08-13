@@ -1,0 +1,18 @@
+{
+  "schema": "trajectory-stream-v1.schema.json",
+  "instance": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "pi",
+    "group_id": "empty-prefix-group",
+    "revision": {
+      "revision": 0,
+      "revision_id": "rev-empty-0",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [],
+    "diagnostics": [],
+    "complete": false
+  }
+}

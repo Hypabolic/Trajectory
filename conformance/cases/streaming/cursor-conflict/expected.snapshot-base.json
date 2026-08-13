@@ -1,0 +1,119 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "c932e90d8a3ec3f61e4143277418b9f1448759c13dfbefd49e6b014430ee6028",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-cursor-conflict",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 124,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "22e7ab13edd53ae3aae403575f1c3901ad3c37103f78c761d68de230080a2d1d"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "pi",
+    "group_id": "stream-cursor-conflict",
+    "revision": {
+      "revision": 0,
+      "revision_id": "c932e90d8a3ec3f61e4143277418b9f1448759c13dfbefd49e6b014430ee6028",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "2182f2ac7a57fc25d29bbc80a15db0582e657333297f7e349e5b59a57c813086",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "pi",
+          "cwd": "/workspace/demo",
+          "producer_version": "3",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "1388ada6b0d0cd9a4b29e993627fa273947e11fc5330ca4ad770723cea66e013",
+            "record_sha256": "e1b8c4833a9305e86a6b952171b82f196d8cbe19517d45f6f6ae027a41ce20d5"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "c932e90d8a3ec3f61e4143277418b9f1448759c13dfbefd49e6b014430ee6028",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "2182f2ac7a57fc25d29bbc80a15db0582e657333297f7e349e5b59a57c813086",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "pi",
+            "cwd": "/workspace/demo",
+            "producer_version": "3",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "1388ada6b0d0cd9a4b29e993627fa273947e11fc5330ca4ad770723cea66e013",
+              "record_sha256": "e1b8c4833a9305e86a6b952171b82f196d8cbe19517d45f6f6ae027a41ce20d5"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 1,
+    "bytes": 124,
+    "first_source_position": 0,
+    "last_source_position": 123
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/hermes-provider-soft-delete",
+  "description": "Soft-deleted prior Hermes row breaks the fingerprint prefix and requires reset; explicit reset installs the new export.",
+  "source": "hermes",
+  "group_id": "hermes-session-stream-1",
+  "required_capabilities": [
+    "stream-core",
+    "stream-cursor-v1",
+    "stream-full-snapshot",
+    "stream-record-delta",
+    "stream-reset"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required"
+  },
+  "steps": [
+    {
+      "id": "export-full",
+      "input": {
+        "kind": "hermes-export",
+        "material": "step-full.json",
+        "source_revision": "db-1"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false,
+        "record_count": 3,
+        "cursor_position_kind": "hermes-row",
+        "result": "expected.export-full.json"
+      },
+      "double_invoke": true
+    },
+    {
+      "id": "export-soft-deleted",
+      "input": {
+        "kind": "hermes-export",
+        "material": "step-deleted.json",
+        "source_revision": "db-1"
+      },
+      "expected": {
+        "update_kind": "reset-required",
+        "reset_reason": "source-replaced",
+        "result": "expected.export-soft-deleted.json"
+      },
+      "double_invoke": true
+    },
+    {
+      "id": "reset-install",
+      "input": {
+        "kind": "reset",
+        "reset": {
+          "reason": "source-replaced",
+          "generation": 1,
+          "source_revision": "db-1",
+          "material": "step-deleted.json"
+        }
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false,
+        "reset_reason": "source-replaced",
+        "result": "expected.reset-install.json"
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-cursor-exact",
+    "stream-idempotence"
+  ],
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  }
+}

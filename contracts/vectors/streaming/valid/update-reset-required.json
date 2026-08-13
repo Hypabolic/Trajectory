@@ -1,0 +1,61 @@
+{
+  "schema": "trajectory-stream-v1.schema.json",
+  "instance": {
+    "kind": "reset-required",
+    "revision": {
+      "revision": 3,
+      "revision_id": "rev-3",
+      "parent_revision_id": "rev-2",
+      "complete": false,
+      "generation": 0
+    },
+    "cursor": {
+      "cursor_version": 1,
+      "source": "grok-build",
+      "group_id": "grok-session",
+      "generation": 0,
+      "position": {
+        "kind": "byte",
+        "next_byte_offset": 4096,
+        "pending_byte_length": 0
+      },
+      "source_revision": "pre-compaction",
+      "prefix_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "snapshot": null,
+    "delta": null,
+    "diagnostics": [
+      {
+        "code": "stream_source_reset",
+        "message": "Source compaction detected; full snapshot required."
+      }
+    ],
+    "provisional": {
+      "include": true,
+      "provisional_ids": [],
+      "finalized_ids": []
+    },
+    "consumed": {
+      "complete_records": 0,
+      "bytes": 0
+    },
+    "reset": {
+      "reason": "source-compacted",
+      "prior_cursor": {
+        "cursor_version": 1,
+        "source": "grok-build",
+        "group_id": "grok-session",
+        "generation": 0,
+        "position": {
+          "kind": "byte",
+          "next_byte_offset": 4096,
+          "pending_byte_length": 0
+        },
+        "source_revision": "pre-compaction",
+        "prefix_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "requires_snapshot": true,
+      "dropped_record_ids": []
+    }
+  }
+}

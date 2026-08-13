@@ -1,0 +1,236 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "8316ff40e6f9a1ce8e629003aa9b2fe9f2238d1b219323676882306c1a22ef11",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000c1",
+    "generation": 0,
+    "position": {
+      "kind": "ahp-server-seq",
+      "next_server_seq": 6,
+      "last_server_seq": 5,
+      "next_byte_offset": 1284
+    },
+    "source_revision": "seq:5",
+    "prefix_sha256": "988aa2f6264dc7583aa54716e35bb086726a9bd7ce701952efd761aa1b3fcdf0"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000c1",
+    "revision": {
+      "revision": 0,
+      "revision_id": "8316ff40e6f9a1ce8e629003aa9b2fe9f2238d1b219323676882306c1a22ef11",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "95698fddfe34f9537adc1dc78996f0378e1ede8ca6c6f7ca499a2b24d27979b6",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "ahp",
+          "model": "synthetic-model-1",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "7473bb9e5c7516c451e4619778d4aa958ecd1e5acf53250580c9e19003ec87de",
+            "record_sha256": "1ebb5adef82ad916303e39e3e186bcd0ab3cee762944c0decc26866d63c90fe8"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "7c465cf973b8e55935e73b053883f347db41d99e00c960f824db65043b2057ee",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-03-15T12:00:00.000Z",
+          "timestamp": "2026-03-15T12:00:00.000Z",
+          "content": "List the files.",
+          "provenance": {
+            "stable_source_record_id": "turn-00000000-0000-4000-8000-0000000000t1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-03-15T12:00:00.000Z|00000000000000000000|turn-00000000-0000-4000-8000-0000000000t1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "turn-00000000-0000-4000-8000-0000000000t1",
+            "source_sequence": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "650c5164ee7184671d2512dcd6cacadd5fe138ab912abd25b6ec353eb884ace5",
+            "record_sha256": "af04eaad87ea126edee2020934765d38aa514682359475b87c4f31dde74931ed"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "1fab6a9e02938a937f5768f98bee291e2df3135d28d6c1b9f349314e6f4a0e05",
+          "kind": "message",
+          "role": "assistant",
+          "order": 1,
+          "source_timestamp": "2026-03-15T12:00:00.000Z",
+          "timestamp": "2026-03-15T12:00:00.000Z",
+          "content": "Here are the files.",
+          "provenance": {
+            "stable_source_record_id": "part-md-1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-03-15T12:00:00.000Z|00000000000000000000|part-md-1",
+            "component_key": "message:1",
+            "component_index": 1,
+            "component_type_ordinal": 1,
+            "native_record_id": "part-md-1",
+            "source_sequence": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "abb48e9a55bbc1ae18c011337a3685c50f6136f8172882e9e7df10656cf971af",
+            "record_sha256": "de4724a359e922abf4b0334eb2e80317d48f57a858446b7ceb3307cc53ed9e67"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "8316ff40e6f9a1ce8e629003aa9b2fe9f2238d1b219323676882306c1a22ef11",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "95698fddfe34f9537adc1dc78996f0378e1ede8ca6c6f7ca499a2b24d27979b6",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "ahp",
+            "model": "synthetic-model-1",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "7473bb9e5c7516c451e4619778d4aa958ecd1e5acf53250580c9e19003ec87de",
+              "record_sha256": "1ebb5adef82ad916303e39e3e186bcd0ab3cee762944c0decc26866d63c90fe8"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "7c465cf973b8e55935e73b053883f347db41d99e00c960f824db65043b2057ee",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": "2026-03-15T12:00:00.000Z",
+            "timestamp": "2026-03-15T12:00:00.000Z",
+            "content": "List the files.",
+            "provenance": {
+              "stable_source_record_id": "turn-00000000-0000-4000-8000-0000000000t1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-03-15T12:00:00.000Z|00000000000000000000|turn-00000000-0000-4000-8000-0000000000t1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "turn-00000000-0000-4000-8000-0000000000t1",
+              "source_sequence": 0,
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "650c5164ee7184671d2512dcd6cacadd5fe138ab912abd25b6ec353eb884ace5",
+              "record_sha256": "af04eaad87ea126edee2020934765d38aa514682359475b87c4f31dde74931ed"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "1fab6a9e02938a937f5768f98bee291e2df3135d28d6c1b9f349314e6f4a0e05",
+            "kind": "message",
+            "role": "assistant",
+            "order": 1,
+            "source_timestamp": "2026-03-15T12:00:00.000Z",
+            "timestamp": "2026-03-15T12:00:00.000Z",
+            "content": "Here are the files.",
+            "provenance": {
+              "stable_source_record_id": "part-md-1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-03-15T12:00:00.000Z|00000000000000000000|part-md-1",
+              "component_key": "message:1",
+              "component_index": 1,
+              "component_type_ordinal": 1,
+              "native_record_id": "part-md-1",
+              "source_sequence": 0,
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "abb48e9a55bbc1ae18c011337a3685c50f6136f8172882e9e7df10656cf971af",
+              "record_sha256": "de4724a359e922abf4b0334eb2e80317d48f57a858446b7ceb3307cc53ed9e67"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 3,
+    "bytes": 1284,
+    "first_source_position": 0,
+    "last_source_position": 1283
+  }
+}

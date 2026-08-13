@@ -1,0 +1,39 @@
+{
+  "schema": "streaming-delta-v1.schema.json",
+  "comment": "diagnostic_add / diagnostic_remove wire shape. Keys follow contracts/spec/streaming.md §7: code|input_line|record_index with '-' for omitted fields; count/message excluded. Example keys: invalid_json_line|3|-, orphan_tool_result|10|2.",
+  "instance": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "rev-6",
+    "revision": {
+      "revision": 7,
+      "revision_id": "rev-7",
+      "parent_revision_id": "rev-6",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "diagnostic_remove",
+        "diagnostic_key": "invalid_json_line|3|-"
+      },
+      {
+        "op": "diagnostic_add",
+        "diagnostic": {
+          "code": "invalid_json_line",
+          "message": "Malformed complete JSONL line.",
+          "input_line": 12
+        }
+      },
+      {
+        "op": "diagnostic_add",
+        "diagnostic": {
+          "code": "orphan_tool_result",
+          "message": "Tool result without matching tool call.",
+          "input_line": 10,
+          "record_index": 2,
+          "count": 1
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "ahpProtocolVersion": "0.7.0",
+  "chat": {
+    "resource": "ahp-chat:/00000000-0000-4000-8000-0000000000b2",
+    "title": "Synthetic: multi-part active turn final",
+    "status": 1,
+    "activity": "",
+    "modifiedAt": "2026-03-15T12:00:20.000Z",
+    "origin": {
+      "kind": "user"
+    },
+    "workingDirectories": [
+      "file:///workspace/demo"
+    ],
+    "turns": [
+      {
+        "id": "turn-00000000-0000-4000-8000-0000000000u2",
+        "startedAt": "2026-03-15T12:00:00.000Z",
+        "duration": 0,
+        "message": {
+          "text": "Hello multi",
+          "origin": {
+            "kind": "user"
+          },
+          "model": {
+            "id": "synthetic-model-1"
+          }
+        },
+        "responseParts": [],
+        "usage": null,
+        "state": "complete",
+        "error": null
+      },
+      {
+        "id": "turn-00000000-0000-4000-8000-0000000000a2",
+        "startedAt": "2026-03-15T12:00:05.000Z",
+        "duration": 15000,
+        "message": {
+          "text": "",
+          "origin": {
+            "kind": "agent"
+          },
+          "model": {
+            "id": "synthetic-model-1"
+          }
+        },
+        "responseParts": [
+          {
+            "kind": "markdown",
+            "id": "part-md-multi-1",
+            "content": "Working on it"
+          },
+          {
+            "kind": "toolCall",
+            "id": "part-tool-multi-1",
+            "toolCall": {
+              "toolCallId": "tool-call-multi-1",
+              "toolName": "read_file",
+              "toolInput": {
+                "path": "demo.txt"
+              },
+              "status": "ready"
+            }
+          }
+        ],
+        "usage": {
+          "inputTokens": 10,
+          "outputTokens": 8,
+          "model": "synthetic-model-1"
+        },
+        "state": "complete",
+        "error": null
+      }
+    ],
+    "activeTurn": null
+  },
+  "session": {
+    "provider": "synthetic-provider",
+    "title": "Synthetic multi-part provisional session",
+    "status": 1,
+    "resource": "ahp-session:/00000000-0000-4000-8000-0000000000s3",
+    "workingDirectories": [
+      "file:///workspace/demo"
+    ]
+  }
+}

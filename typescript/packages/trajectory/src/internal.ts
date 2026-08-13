@@ -21,13 +21,16 @@ interface DecodedEvent {
   argumentsJson?: string;
   isError?: boolean;
   nativeId?: string;
-  sourceSequence: number;
+  /** Optional; omitted on wire when unset (Claude/Codex/Grok have no native sequence). */
+  sourceSequence?: number;
   sourceOffset: bigint;
   inputLine?: number;
   timestamp?: number;
   timestampPrecise?: string;
   componentIndex: number;
   model?: string;
+  /** Session/producer version copied onto provenance when present (e.g. Codex cli_version). */
+  producerVersion?: string;
 }
 
 type DecodedEventValues = {
@@ -94,6 +97,7 @@ interface Provenance {
   componentIndex: number;
   componentTypeOrdinal: number;
   nativeRecordId?: string;
+  producerVersion?: string;
   sourceSequence?: number;
   sourceOffset?: bigint;
   sourceAnchorKind?: "byte";
@@ -563,7 +567,6 @@ function decodeClaudeCode(bytes: Uint8Array): DecodedSession {
       events.push({
         kind,
         role,
-        sourceSequence: 0,
         sourceOffset,
         inputLine,
         componentIndex: componentIndex++,
@@ -572,6 +575,7 @@ function decodeClaudeCode(bytes: Uint8Array): DecodedSession {
           timestamp: timestampData.milliseconds,
           timestampPrecise: timestampData.precise,
         }),
+        ...(producerVersion === undefined ? {} : { producerVersion }),
         ...defined,
       });
     };
@@ -724,7 +728,6 @@ function decodeCodex(bytes: Uint8Array): DecodedSession {
       events.push({
         kind,
         role,
-        sourceSequence: 0,
         sourceOffset,
         inputLine,
         componentIndex: 0,
@@ -732,6 +735,7 @@ function decodeCodex(bytes: Uint8Array): DecodedSession {
           timestamp: timestampData.milliseconds,
           timestampPrecise: timestampData.precise,
         }),
+        ...(producerVersion === undefined ? {} : { producerVersion }),
         ...defined,
       });
     };
@@ -1632,7 +1636,6 @@ function decodeGrokBuild(
       events.push({
         kind,
         role,
-        sourceSequence: 0,
         sourceOffset,
         inputLine,
         componentIndex: componentIndex++,
@@ -2152,15 +2155,19 @@ function createRecord(
 ): IRRecord {
   const absoluteOffset = event.sourceOffset + baseByteOffset;
   const stableId = event.nativeId ?? sha256(`${groupId}|byte|${absoluteOffset}`);
+  // Order-id sequence slot uses 0 when the source has no native sequence
+  // (matches Python/Rust/.NET); the wire provenance field stays omitted.
+  const orderSequence = event.sourceSequence ?? 0;
   const provenance: Provenance = {
     stableSourceRecordId: stableId,
     sourceIdentityKind: event.nativeId ? "native" : "location",
-    sourceOrderId: `1|${event.timestamp === undefined ? "0000-00-00T00:00:00.001Z" : formatMs(event.timestamp)}|${String(event.sourceSequence).padStart(20, "0")}|${stableId}`,
+    sourceOrderId: `1|${event.timestamp === undefined ? "0000-00-00T00:00:00.001Z" : formatMs(event.timestamp)}|${String(orderSequence).padStart(20, "0")}|${stableId}`,
     componentKey,
     componentIndex: event.componentIndex,
     componentTypeOrdinal: ordinal,
     ...(event.nativeId === undefined ? {} : { nativeRecordId: event.nativeId }),
-    sourceSequence: event.sourceSequence,
+    ...(event.producerVersion === undefined ? {} : { producerVersion: event.producerVersion }),
+    ...(event.sourceSequence === undefined ? {} : { sourceSequence: event.sourceSequence }),
     sourceOffset: event.nativeId === undefined ? absoluteOffset : event.sourceOffset,
     sourceAnchorKind: "byte",
   };

@@ -1,0 +1,21 @@
+{
+  "session": {
+    "id": "hermes-session-stream-1",
+    "source": "tui",
+    "model": "gpt-test",
+    "cwd": "/workspace/demo",
+    "started_at": 1783000100.0,
+    "title": "Stream demo"
+  },
+  "messages": [
+    {
+      "id": 1,
+      "session_id": "hermes-session-stream-1",
+      "role": "user",
+      "content": "Hello",
+      "timestamp": 1783000101.0,
+      "observed": 0,
+      "active": 1
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "package": "@hypabolic/trajectory-node",
+  "runtime": "typescript",
+  "capabilities": [
+    "stream-file-io",
+    "stream-async-iterator"
+  ],
+  "notes": "Optional Node file poll/follow + async generators. Not claimed by core @hypabolic/trajectory."
+}

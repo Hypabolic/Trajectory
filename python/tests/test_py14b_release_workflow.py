@@ -75,6 +75,36 @@ def test_publish_pypi_skipped_on_dry_run() -> None:
     assert "needs.validate.result == 'success'" in job
 
 
+def test_release_yml_stream_cut_examples_are_after_0_1_2() -> None:
+    text = RELEASE_YML.read_text(encoding="utf-8")
+    header = text.split("on:", 1)[0]
+    assert "git tag -a v0.1.3" in header
+    assert "git tag -a v0.1.0" not in header
+    assert "tag=v0.1.3" in header
+    assert "tag=v0.1.0" not in header
+    assert "Do not retag v0.1.2" in text
+    assert 'description: "Release tag (e.g. v0.1.3)' in text
+
+
+def test_already_published_fallbacks_require_stream_content_check() -> None:
+    text = RELEASE_YML.read_text(encoding="utf-8")
+    assert "tools/verify_published_stream_artifact.py" in text
+    for job_id in ("validate", "publish-nuget", "publish-npm", "publish-crates", "publish-pypi"):
+        job = _job_block(text, job_id)
+        assert "verify_published_stream_artifact.py" in job, job_id
+    nuget = _job_block(text, "publish-nuget")
+    assert "--skip-duplicate" in nuget
+    assert "--registry nuget" in nuget
+    npm = _job_block(text, "publish-npm")
+    assert "already published; verifying stream content" in npm
+    crates = _job_block(text, "publish-crates")
+    assert "already published; verifying stream content" in crates
+    assert "already on crates.io; verifying stream content" in crates
+    pypi = _job_block(text, "publish-pypi")
+    assert "skip-existing: true" in pypi
+    assert "--registry pypi" in pypi
+
+
 def test_publishing_md_pypi_prereq_and_install() -> None:
     md = PUBLISHING_MD.read_text(encoding="utf-8")
 
@@ -92,3 +122,6 @@ def test_publishing_md_pypi_prereq_and_install() -> None:
     assert "artifacts/release/pypi" in md
     # No rebuild contract documented
     assert "no rebuild" in md.lower() or "does **not** rebuild" in md
+    # M8: already-published fallbacks are not success without a stream content check
+    assert "verify_published_stream_artifact.py" in md
+    assert "v0.1.3" in md

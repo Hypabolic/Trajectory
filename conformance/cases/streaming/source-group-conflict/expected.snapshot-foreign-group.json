@@ -1,0 +1,61 @@
+{
+  "kind": "reset-required",
+  "revision": {
+    "revision": 0,
+    "revision_id": "5179fccf191bcb6ca5512f72c389ba3e586c4213707e882fe6a9a39b708ba999",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-expected-group",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 283,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "a60fe38f590cfdb7ff78c069ccd4b969ff1dc7cb44ed0494ed4e114dcf826ad0"
+  },
+  "snapshot": null,
+  "delta": null,
+  "diagnostics": [
+    {
+      "code": "stream_source_reset",
+      "message": "Source group changed relative to the active stream."
+    }
+  ],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 0,
+    "bytes": 0
+  },
+  "reset": {
+    "reason": "group-changed",
+    "prior_cursor": {
+      "cursor_version": 1,
+      "source": "pi",
+      "group_id": "stream-expected-group",
+      "generation": 0,
+      "position": {
+        "kind": "byte",
+        "next_byte_offset": 283,
+        "pending_byte_length": 0
+      },
+      "source_revision": "gen-0",
+      "prefix_sha256": "a60fe38f590cfdb7ff78c069ccd4b969ff1dc7cb44ed0494ed4e114dcf826ad0"
+    },
+    "requires_snapshot": true,
+    "dropped_record_ids": [
+      "c8786325f6f43b874c7db4d174f4ba46edf8d6aafda2a93dc48c777aaf954af6",
+      "4cfd991107ec1985de43ba9c7c184640dd0ba8b2c090c652419ad30ff9e2075f"
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "package": "hypabolic-trajectory-io",
+  "runtime": "rust",
+  "capabilities": [
+    "stream-file-io"
+  ],
+  "notes": "Optional file poll/follow. OS watch feature reserved/unimplemented (do not claim stream-file-watch). Not claimed by core hypabolic-trajectory."
+}

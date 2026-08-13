@@ -1,0 +1,175 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 2,
+    "revision_id": "6f3ed5e6c2fe7b61b6ea1f3f0b77ff587e4cbb7f2c02fc80ae98e90b7db6607b",
+    "parent_revision_id": "379387f3ac203965da6a3102e40e75c3eea8739c010abff2dad0bfd733d611eb",
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "codex",
+    "group_id": "stream-codex-append",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 481,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "9ec40a89f7d2fb7e8e522114809043588951bc0cc97e381df73990306839cf91"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "codex",
+    "group_id": "stream-codex-append",
+    "revision": {
+      "revision": 2,
+      "revision_id": "6f3ed5e6c2fe7b61b6ea1f3f0b77ff587e4cbb7f2c02fc80ae98e90b7db6607b",
+      "parent_revision_id": "379387f3ac203965da6a3102e40e75c3eea8739c010abff2dad0bfd733d611eb",
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "a34ffd1660dd72aaf60662dd06df0cf07b5398835f35eaabad2596c2c7ea0ca0",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "codex",
+          "cwd": "/repo/codex",
+          "git_branch": "main",
+          "producer_version": "0.140.0",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "7951ea8769dd8180cd9b6f0adccafc1ade608c92288bde12f68b33fa94b68e5f",
+            "record_sha256": "5441153e42e53f2f107101f0fec1eeb0a850e56983a8272b07206d909b8b0cad"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "ee6969de7b5f938f8cf19c4cc38a60a002642c09f8cc65de86d719638cc95aab",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-07-02T09:00:01.000Z",
+          "timestamp": "2026-07-02T09:00:01.000Z",
+          "content": "hello codex",
+          "provenance": {
+            "stable_source_record_id": "c1981dc772aa3bb69d0fe0f4b38052f0776e6ba6a9f1c3529716ee2f7ec4043e",
+            "source_identity_kind": "location",
+            "source_order_id": "1|2026-07-02T09:00:01.000Z|00000000000000000000|c1981dc772aa3bb69d0fe0f4b38052f0776e6ba6a9f1c3529716ee2f7ec4043e",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "producer_version": "0.140.0",
+            "source_offset": 209,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "e34a5192997e4e8da3ecf2bcbdc013d92b77d8bd27b62825b69e6baddc596e55",
+            "record_sha256": "d4eea62b09f02b4a21a6f83f46bc3eef29b3e53ab0bceec6a9d04bf20ec41d1c"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "b664b61b97ca0130f31893a0df2e68144d3cf6bcde8cdd6fe5ef739cd229ceef",
+          "kind": "message",
+          "role": "assistant",
+          "order": 1,
+          "source_timestamp": "2026-07-02T09:00:02.000Z",
+          "timestamp": "2026-07-02T09:00:02.000Z",
+          "content": "hello from codex",
+          "provenance": {
+            "stable_source_record_id": "3268463870a2897987f4b9e95c7da182e0b369cd4891e6f576f1e1cb350ea51f",
+            "source_identity_kind": "location",
+            "source_order_id": "1|2026-07-02T09:00:02.000Z|00000000000000000000|3268463870a2897987f4b9e95c7da182e0b369cd4891e6f576f1e1cb350ea51f",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "producer_version": "0.140.0",
+            "source_offset": 340,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "6b828d54e3beeb16378d9ecf664e324d142e742f8f27e3808d7591405b7c6eaf",
+            "record_sha256": "74908e702cae91625c4ba66212a0996de8150e533ad4ea860ed4de619e9149d6"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "379387f3ac203965da6a3102e40e75c3eea8739c010abff2dad0bfd733d611eb",
+    "revision": {
+      "revision": 2,
+      "revision_id": "6f3ed5e6c2fe7b61b6ea1f3f0b77ff587e4cbb7f2c02fc80ae98e90b7db6607b",
+      "parent_revision_id": "379387f3ac203965da6a3102e40e75c3eea8739c010abff2dad0bfd733d611eb",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "b664b61b97ca0130f31893a0df2e68144d3cf6bcde8cdd6fe5ef739cd229ceef",
+            "kind": "message",
+            "role": "assistant",
+            "order": 1,
+            "source_timestamp": "2026-07-02T09:00:02.000Z",
+            "timestamp": "2026-07-02T09:00:02.000Z",
+            "content": "hello from codex",
+            "provenance": {
+              "stable_source_record_id": "3268463870a2897987f4b9e95c7da182e0b369cd4891e6f576f1e1cb350ea51f",
+              "source_identity_kind": "location",
+              "source_order_id": "1|2026-07-02T09:00:02.000Z|00000000000000000000|3268463870a2897987f4b9e95c7da182e0b369cd4891e6f576f1e1cb350ea51f",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "producer_version": "0.140.0",
+              "source_offset": 340,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "6b828d54e3beeb16378d9ecf664e324d142e742f8f27e3808d7591405b7c6eaf",
+              "record_sha256": "74908e702cae91625c4ba66212a0996de8150e533ad4ea860ed4de619e9149d6"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 3,
+    "bytes": 141,
+    "first_source_position": 340,
+    "last_source_position": 480
+  }
+}

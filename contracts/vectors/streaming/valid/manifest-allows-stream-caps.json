@@ -1,0 +1,56 @@
+{
+  "schema": "compatibility-manifest-v1.schema.json",
+  "instance": {
+    "manifest_version": 1,
+    "product": "Trajectory",
+    "contracts": {
+      "normalizer": "0.2.0",
+      "diagnostics": "1",
+      "conformance_protocol": "1"
+    },
+    "public_schemas": [
+      {
+        "id": "hypabolic-trajectory-v1",
+        "version": "1",
+        "schema": "schemas/hypabolic-trajectory-v1.schema.json"
+      },
+      {
+        "id": "trajectory-stream-v1",
+        "version": "1",
+        "schema": "schemas/trajectory-stream-v1.schema.json"
+      }
+    ],
+    "capabilities": {
+      "required": [
+        "normalize",
+        "normalize-partial",
+        "list-explicit-root",
+        "typed-diagnostics",
+        "typed-fatal-errors",
+        "deterministic-rerun"
+      ],
+      "optional": [
+        "native-aot",
+        "otel-sdk-emission",
+        "sqlite-stores",
+        "stream-core",
+        "stream-cursor-v1",
+        "stream-file-io"
+      ]
+    },
+    "implemented": {
+      "sources": [
+        "pi",
+        "claude-code",
+        "codex",
+        "openclaw",
+        "hermes",
+        "ahp",
+        "grok-build"
+      ],
+      "outputs": [
+        "hypabolic-trajectory-v1"
+      ]
+    }
+  }
+}

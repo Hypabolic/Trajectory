@@ -1,0 +1,86 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/cursor-conflict",
+  "description": "Append with a mismatched cursor yields reset-required / cursor-mismatch.",
+  "source": "pi",
+  "group_id": "stream-cursor-conflict",
+  "required_capabilities": [
+    "stream-core",
+    "stream-apply-append",
+    "stream-apply-snapshot",
+    "stream-reset",
+    "stream-cursor-v1",
+    "stream-file-jsonl"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required"
+  },
+  "steps": [
+    {
+      "id": "snapshot-base",
+      "input": {
+        "kind": "snapshot-bytes",
+        "material": "step-base.jsonl",
+        "source_revision": "gen-0"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false,
+        "cursor_position_kind": "byte",
+        "result": "expected.snapshot-base.json"
+      },
+      "double_invoke": true
+    },
+    {
+      "id": "append-bad-cursor",
+      "input": {
+        "kind": "append-bytes",
+        "material": "step-append.jsonl",
+        "source_revision": "gen-0",
+        "cursor": {
+          "cursor_version": 1,
+          "source": "pi",
+          "group_id": "stream-cursor-conflict",
+          "generation": 0,
+          "position": {
+            "kind": "byte",
+            "next_byte_offset": 999999,
+            "pending_byte_length": 0
+          },
+          "source_revision": "gen-0",
+          "prefix_sha256": null
+        }
+      },
+      "expected": {
+        "update_kind": "reset-required",
+        "reset_reason": "cursor-mismatch",
+        "result": "expected.append-bad-cursor.json"
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-cursor-exact",
+    "stream-idempotence",
+    "stream-oracle-parity"
+  ],
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  },
+  "oracle": {
+    "append_equals_prefix": true,
+    "prefix_re_normalize": true
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "kind": "reset-required",
+  "revision": {
+    "revision": 0,
+    "revision_id": "571a30e35834c475fcb72324afa2fd23a83ecd530003311aca23721adc67774a",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-file-truncate-reset",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 442,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "5838288a643dbb11587ee99e598cd9ce90d56cd701f6f9c695d3e5c5cc800329"
+  },
+  "snapshot": null,
+  "delta": null,
+  "diagnostics": [
+    {
+      "code": "stream_source_reset",
+      "message": "Source material is shorter than the committed cursor."
+    }
+  ],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 0,
+    "bytes": 0
+  },
+  "reset": {
+    "reason": "source-truncated",
+    "prior_cursor": {
+      "cursor_version": 1,
+      "source": "pi",
+      "group_id": "stream-file-truncate-reset",
+      "generation": 0,
+      "position": {
+        "kind": "byte",
+        "next_byte_offset": 442,
+        "pending_byte_length": 0
+      },
+      "source_revision": "gen-0",
+      "prefix_sha256": "5838288a643dbb11587ee99e598cd9ce90d56cd701f6f9c695d3e5c5cc800329"
+    },
+    "requires_snapshot": true,
+    "dropped_record_ids": [
+      "768bb9f1d2ff4347010877fada93ebc10a87418c0787a2e46a333b53cf0bea93",
+      "8bc759aa566ea9bacf5f4518112f05535b99bd2b21c6a8244cccdfba635d53a8",
+      "e856561e9a33255705b5cbd5a880dec312e2378b03d447bc638e428ed824c5f6"
+    ]
+  }
+}

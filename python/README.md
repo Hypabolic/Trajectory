@@ -26,19 +26,22 @@ wire contracts and shared conformance suite as .NET, TypeScript, and Rust.
 
 | Dist / extra | Import | Role |
 | --- | --- | --- |
-| **`hypabolic-trajectory`** (core wheel) | `hypabolic_trajectory` | Normalize, project (including **pure** `project_otel_genai`), listing, bundled contracts + `runtime-capabilities.json`, and **`hypabolic_trajectory.otel`** (`SpanSetSink` / `emit_to`, no SDK) |
+| **`hypabolic-trajectory`** (core wheel) | `hypabolic_trajectory` | Normalize, project (including **pure** `project_otel_genai`), listing, bundled contracts + `runtime-capabilities.json`, core **streaming** apply APIs, and **`hypabolic_trajectory.otel`** (`SpanSetSink` / `emit_to`, no SDK) |
 | **`hypabolic-trajectory[otel]`** | same `hypabolic_trajectory.otel` | Optional OpenTelemetry **SDK sink helpers** + `opentelemetry-*` deps only. Does **not** gate pure projection or `emit_to` with a pure sink. |
+| **`hypabolic-trajectory[io]`** | `hypabolic_trajectory.io` | Optional file poll/follow stream I/O (`stream-file-io`; stdlib only). Modules ship in the core wheel; extra marks install intent. |
+| **`hypabolic-trajectory[ahp]`** | `hypabolic_trajectory.ahp_client` | Optional AHP live-host client (`stream-ahp-client`; stdlib only; auth via callback). |
+| **`hypabolic-trajectory[hermes]`** | `hypabolic_trajectory.hermes_provider` | Optional Hermes SQLite/provider stream (`stream-hermes-provider`; stdlib `sqlite3`). Shared `hermes-provider-*` cases cover core `apply_hermes_export`; SQLite I/O is package-test-gated. |
 | Conformance runner | **not published** | `python/tools/trajectory_conformance` — stdin/stdout protocol v1 for `conformance/verify.py` |
-| Sample CLI | **not published** | `python/samples/trajectory_cli` — browse/list/show (no console script) |
+| Sample CLI | **not published** | `python/samples/trajectory_cli` — browse/list/show/**stream**/**ahp-stream** (no console script; monorepo sample only) |
 
 Cross-ecosystem map (same product):
 
 | Ecosystem | Core | Optional |
 | --- | --- | --- |
-| .NET | `Hypabolic.Trajectory` | `.OpenTelemetry`, `.Testing` |
-| TypeScript | `@hypabolic/trajectory` | `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
-| Rust | `hypabolic-trajectory` | `hypabolic-trajectory-opentelemetry` |
-| **Python** | **`hypabolic-trajectory`** | **`[otel]` SDK sinks only** |
+| .NET | `Hypabolic.Trajectory` | `.OpenTelemetry`, `.Testing`, `.IO`, `.Ahp`, `.Hermes` |
+| TypeScript | `@hypabolic/trajectory` | `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel`, `@hypabolic/trajectory-ahp`, `@hypabolic/trajectory-hermes` |
+| Rust | `hypabolic-trajectory` | `hypabolic-trajectory-opentelemetry`, `-io`, `-ahp`, `-hermes` |
+| **Python** | **`hypabolic-trajectory`** | **`[otel]`**, **`[io]`**, **`[ahp]`**, **`[hermes]`** |
 
 ---
 
@@ -47,14 +50,19 @@ Cross-ecosystem map (same product):
 ```bash
 # After first public tag (replace with the tag SemVer):
 pip install hypabolic-trajectory==<tag-semver>
-pip install 'hypabolic-trajectory[otel]==<tag-semver>'   # optional SDK sinks
+pip install 'hypabolic-trajectory[otel]==<tag-semver>'     # optional SDK sinks
+pip install 'hypabolic-trajectory[io]==<tag-semver>'       # stream file I/O intent
+pip install 'hypabolic-trajectory[ahp]==<tag-semver>'      # AHP client intent
+pip install 'hypabolic-trajectory[hermes]==<tag-semver>'   # Hermes provider intent
 
 # From this monorepo (development):
 python -m pip install -e './python[dev]'
+# Stream extras (optional install intent; modules already in the src tree):
+python -m pip install -e './python[io,ahp,hermes,dev]'
 ```
 
 The published wheel has **no** console scripts. The conformance runner and sample
-CLI are monorepo-only.
+CLI (`stream` / `ahp-stream` included) are monorepo-only unpublished samples.
 
 ### Sample CLI (unpublished)
 
@@ -65,6 +73,10 @@ PYTHONPATH=python/samples python -m trajectory_cli show \
   --source pi \
   --path conformance/cases/pi/tool-calls/input.jsonl
 PYTHONPATH=python/samples python -m trajectory_cli browse
+PYTHONPATH=python/samples python -m trajectory_cli stream \
+  --source pi \
+  --path conformance/cases/pi/tool-calls/input.jsonl \
+  --max-updates 1
 ```
 
 See [`samples/trajectory_cli/README.md`](samples/trajectory_cli/README.md).
@@ -78,6 +90,9 @@ See [`samples/trajectory_cli/README.md`](samples/trajectory_cli/README.md).
 1. **Package root** `hypabolic_trajectory` — names in root `__all__`
 2. **`hypabolic_trajectory.ir`** — multi-project IR surface (`ir.__all__`)
 3. **`hypabolic_trajectory.otel`** — always importable from the core wheel
+4. **`hypabolic_trajectory.io`** — optional file stream I/O (`[io]` extra intent)
+5. **`hypabolic_trajectory.ahp_client`** — optional AHP client (`[ahp]` extra intent)
+6. **`hypabolic_trajectory.hermes_provider`** — optional Hermes provider (`[hermes]` extra intent)
 
 Any other module path (`api`, `engine`, `normalize`, `sources`, …) is
 **unsupported** and may break without notice.

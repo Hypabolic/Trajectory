@@ -84,13 +84,27 @@ TIP_CAPABILITIES: list[str] = [
     "typed-diagnostics",
     "typed-fatal-errors",
     "deterministic-rerun",
+    "stream-core",
+    "stream-cursor-v1",
+    "stream-jsonl-framing",
+    "stream-apply-snapshot",
+    "stream-apply-append",
+    "stream-full-snapshot",
+    "stream-record-delta",
+    "stream-reset",
+    "stream-provisional-records",
+    "stream-deterministic-replay",
+    "stream-file-jsonl",
+    "stream-ahp-snapshot",
+    "stream-ahp-action-log",
 ]
 TIP_SLICE = "ML13"
 NORMALIZER_CONTRACT_VERSION = "0.2.0"
 
 # Current tip case inventory under unfiltered verify (all declared pairs).
-EXPECTED_TIP_CASES = 27
-EXPECTED_TIP_OPERATIONS = 47
+# 39 batch + 41 stream cases (LS-08 matrix + H1/H3 + hermes-provider-* export apply).
+EXPECTED_TIP_CASES = 80
+EXPECTED_TIP_OPERATIONS = 107
 
 
 def _load_json(path: Path) -> dict:

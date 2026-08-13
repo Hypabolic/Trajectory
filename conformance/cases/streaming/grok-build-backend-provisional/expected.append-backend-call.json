@@ -1,0 +1,340 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "05edf704f9dab72940ea77a49dae3c6e0c83d296f8d3967a50e019cd854f0b83",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "grok-build",
+    "group_id": "stream-grok-build-backend-provisional",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 222,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "e55cb4b40336403cd1a8ed9624512da496c244e6a734acdcbae4e5b0e04214c0"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "grok-build",
+    "group_id": "stream-grok-build-backend-provisional",
+    "revision": {
+      "revision": 0,
+      "revision_id": "05edf704f9dab72940ea77a49dae3c6e0c83d296f8d3967a50e019cd854f0b83",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "1ada673158eeec544662a142a0567ce52852ef819eb2a51d07a709275db3aed0",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "grok-build",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "52db9a8d0e8ebe4f777d65036248947429438854c31966db419234973efffb91",
+            "record_sha256": "4fc077f4eb522c9850edd24be6161c226681968a2b409fb58ddaad71d9de35da"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "824ae9832917a08b91545b7b9dc2a3af11f3c558e35c4f4a46b2fb3ec8dbf6b2",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": null,
+          "timestamp": "2026-01-01T00:00:00.000Z",
+          "content": "Search something.",
+          "provenance": {
+            "stable_source_record_id": "380c472ddf9eb72affa44a5985bfcfe1a0a44f2428822d9c8e8b4fc737f4ad1a",
+            "source_identity_kind": "location",
+            "source_order_id": "1|0000-00-00T00:00:00.001Z|00000000000000000000|380c472ddf9eb72affa44a5985bfcfe1a0a44f2428822d9c8e8b4fc737f4ad1a",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "427933ef251d1dbbba93013c8de98d18dd7bc3073285f8a7307c581ba7a95016",
+            "record_sha256": "81230993583de40bda364a9b234aad3b6fcbf6d72e5ac33154b4e9894fb35fa5"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "9c8d85a16af2768a62674c5c0af1eec8dcf6011c9aeeb6cac4780df349334367",
+          "kind": "assistant_tool_calls",
+          "role": "assistant",
+          "order": 1,
+          "source_timestamp": null,
+          "timestamp": "2026-01-01T00:00:15.000Z",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "ws_stream_1",
+              "name": "web_search",
+              "arguments_json": "{\"action\":{\"type\":\"search\",\"query\":\"trajectory\"}}"
+            }
+          ],
+          "provenance": {
+            "stable_source_record_id": "a750929dc65463ba9cfa3ebe65cc37596eab8815b95b5451cd95b6ef9dc45397",
+            "source_identity_kind": "location",
+            "source_order_id": "1|0000-00-00T00:00:00.001Z|00000000000000000000|a750929dc65463ba9cfa3ebe65cc37596eab8815b95b5451cd95b6ef9dc45397",
+            "component_key": "tool-call:ws_stream_1",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "source_offset": 71,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "5739e2029410f413797962ff7ab90b1d3894c99e2b0e68b3e8b78fb72de9cd0d",
+            "record_sha256": "ddd011b7e5f4b7413d4ac09df31a683a1e36c1f5266a497bf6c8f9d9fcbaa126"
+          }
+        }
+      },
+      {
+        "status": "provisional",
+        "record": {
+          "id": "5ec8eb21175b4b68f0b797ee52d3d355d079223ee7d0e7b9d1cc44bd93aef69a",
+          "kind": "tool_result",
+          "role": "tool",
+          "order": 2,
+          "source_timestamp": null,
+          "timestamp": "2026-01-01T00:00:30.000Z",
+          "content": "[backend web_search] search: trajectory",
+          "tool_call_id": "ws_stream_1",
+          "is_error": false,
+          "provenance": {
+            "stable_source_record_id": "a750929dc65463ba9cfa3ebe65cc37596eab8815b95b5451cd95b6ef9dc45397",
+            "source_identity_kind": "location",
+            "source_order_id": "1|0000-00-00T00:00:00.001Z|00000000000000000000|a750929dc65463ba9cfa3ebe65cc37596eab8815b95b5451cd95b6ef9dc45397",
+            "component_key": "tool-result:ws_stream_1",
+            "component_index": 1,
+            "component_type_ordinal": 0,
+            "source_offset": 71,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "eecfa9fe35a1c4acee74c19f298a81c4b8ae4c2e0e1926414c089ab80d9f9024",
+            "record_sha256": "7353970eaab799a2e75511074d1c88ec8ca07874719b3bea09b4cdfd8a05d112"
+          }
+        },
+        "provisional_id": "5ec8eb21175b4b68f0b797ee52d3d355d079223ee7d0e7b9d1cc44bd93aef69a"
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "backend_tool_result_synthesized",
+        "message": "Synthesized a tool result for a backend tool call.",
+        "input_line": 2
+      },
+      {
+        "code": "timestamps_synthesized",
+        "message": "Synthesized timestamps for 3 normalized records.",
+        "count": 3
+      }
+    ],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "05edf704f9dab72940ea77a49dae3c6e0c83d296f8d3967a50e019cd854f0b83",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "1ada673158eeec544662a142a0567ce52852ef819eb2a51d07a709275db3aed0",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "grok-build",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "52db9a8d0e8ebe4f777d65036248947429438854c31966db419234973efffb91",
+              "record_sha256": "4fc077f4eb522c9850edd24be6161c226681968a2b409fb58ddaad71d9de35da"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "824ae9832917a08b91545b7b9dc2a3af11f3c558e35c4f4a46b2fb3ec8dbf6b2",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": null,
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "content": "Search something.",
+            "provenance": {
+              "stable_source_record_id": "380c472ddf9eb72affa44a5985bfcfe1a0a44f2428822d9c8e8b4fc737f4ad1a",
+              "source_identity_kind": "location",
+              "source_order_id": "1|0000-00-00T00:00:00.001Z|00000000000000000000|380c472ddf9eb72affa44a5985bfcfe1a0a44f2428822d9c8e8b4fc737f4ad1a",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "427933ef251d1dbbba93013c8de98d18dd7bc3073285f8a7307c581ba7a95016",
+              "record_sha256": "81230993583de40bda364a9b234aad3b6fcbf6d72e5ac33154b4e9894fb35fa5"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "9c8d85a16af2768a62674c5c0af1eec8dcf6011c9aeeb6cac4780df349334367",
+            "kind": "assistant_tool_calls",
+            "role": "assistant",
+            "order": 1,
+            "source_timestamp": null,
+            "timestamp": "2026-01-01T00:00:15.000Z",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "ws_stream_1",
+                "name": "web_search",
+                "arguments_json": "{\"action\":{\"type\":\"search\",\"query\":\"trajectory\"}}"
+              }
+            ],
+            "provenance": {
+              "stable_source_record_id": "a750929dc65463ba9cfa3ebe65cc37596eab8815b95b5451cd95b6ef9dc45397",
+              "source_identity_kind": "location",
+              "source_order_id": "1|0000-00-00T00:00:00.001Z|00000000000000000000|a750929dc65463ba9cfa3ebe65cc37596eab8815b95b5451cd95b6ef9dc45397",
+              "component_key": "tool-call:ws_stream_1",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "source_offset": 71,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "5739e2029410f413797962ff7ab90b1d3894c99e2b0e68b3e8b78fb72de9cd0d",
+              "record_sha256": "ddd011b7e5f4b7413d4ac09df31a683a1e36c1f5266a497bf6c8f9d9fcbaa126"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "provisional",
+          "record": {
+            "id": "5ec8eb21175b4b68f0b797ee52d3d355d079223ee7d0e7b9d1cc44bd93aef69a",
+            "kind": "tool_result",
+            "role": "tool",
+            "order": 2,
+            "source_timestamp": null,
+            "timestamp": "2026-01-01T00:00:30.000Z",
+            "content": "[backend web_search] search: trajectory",
+            "tool_call_id": "ws_stream_1",
+            "is_error": false,
+            "provenance": {
+              "stable_source_record_id": "a750929dc65463ba9cfa3ebe65cc37596eab8815b95b5451cd95b6ef9dc45397",
+              "source_identity_kind": "location",
+              "source_order_id": "1|0000-00-00T00:00:00.001Z|00000000000000000000|a750929dc65463ba9cfa3ebe65cc37596eab8815b95b5451cd95b6ef9dc45397",
+              "component_key": "tool-result:ws_stream_1",
+              "component_index": 1,
+              "component_type_ordinal": 0,
+              "source_offset": 71,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "eecfa9fe35a1c4acee74c19f298a81c4b8ae4c2e0e1926414c089ab80d9f9024",
+              "record_sha256": "7353970eaab799a2e75511074d1c88ec8ca07874719b3bea09b4cdfd8a05d112"
+            }
+          },
+          "provisional_id": "5ec8eb21175b4b68f0b797ee52d3d355d079223ee7d0e7b9d1cc44bd93aef69a"
+        }
+      },
+      {
+        "op": "diagnostic_add",
+        "diagnostic": {
+          "code": "backend_tool_result_synthesized",
+          "message": "Synthesized a tool result for a backend tool call.",
+          "input_line": 2
+        }
+      },
+      {
+        "op": "diagnostic_add",
+        "diagnostic": {
+          "code": "timestamps_synthesized",
+          "message": "Synthesized timestamps for 3 normalized records.",
+          "count": 3
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "backend_tool_result_synthesized",
+      "message": "Synthesized a tool result for a backend tool call.",
+      "input_line": 2
+    },
+    {
+      "code": "timestamps_synthesized",
+      "message": "Synthesized timestamps for 3 normalized records.",
+      "count": 3
+    }
+  ],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [
+      "5ec8eb21175b4b68f0b797ee52d3d355d079223ee7d0e7b9d1cc44bd93aef69a"
+    ],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 4,
+    "bytes": 222,
+    "first_source_position": 0,
+    "last_source_position": 221
+  }
+}

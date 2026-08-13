@@ -42,7 +42,8 @@ NORMALIZE_OPERATIONS: frozenset[str] = frozenset(
     }
 )
 
-KNOWN_CAPABILITIES: frozenset[str] = frozenset(
+# Batch capabilities with progressive coverage rules.
+BATCH_CAPABILITIES: frozenset[str] = frozenset(
     {
         "normalize",
         "normalize-partial",
@@ -52,6 +53,28 @@ KNOWN_CAPABILITIES: frozenset[str] = frozenset(
         "deterministic-rerun",
     }
 )
+
+# Core stream capabilities (LS-12). Claimed only when the shared stream matrix
+# is green; optional package stream caps are never tip-required.
+CORE_STREAM_CAPABILITIES: frozenset[str] = frozenset(
+    {
+        "stream-core",
+        "stream-cursor-v1",
+        "stream-jsonl-framing",
+        "stream-apply-snapshot",
+        "stream-apply-append",
+        "stream-full-snapshot",
+        "stream-record-delta",
+        "stream-reset",
+        "stream-provisional-records",
+        "stream-deterministic-replay",
+        "stream-file-jsonl",
+        "stream-ahp-snapshot",
+        "stream-ahp-action-log",
+    }
+)
+
+KNOWN_CAPABILITIES: frozenset[str] = BATCH_CAPABILITIES | CORE_STREAM_CAPABILITIES
 
 NORMALIZER_CONTRACT_VERSION = "0.2.0"
 REQUIRED_SLICE = "ML13"
@@ -176,7 +199,7 @@ def validate_capabilities(
 def operations_from_claims(
     outputs: Sequence[str], capabilities: Sequence[str]
 ) -> list[str]:
-    """Map claimed outputs + list capability to ordered unique operations."""
+    """Map claimed outputs + list/stream capabilities to ordered unique operations."""
     ops: list[str] = []
     seen: set[str] = set()
     for schema_id in outputs:
@@ -188,6 +211,10 @@ def operations_from_claims(
         if "list-trajectories" not in seen:
             ops.append("list-trajectories")
             seen.add("list-trajectories")
+    if CORE_STREAM_CAPABILITIES.intersection(capabilities):
+        if "stream-sequence" not in seen:
+            ops.append("stream-sequence")
+            seen.add("stream-sequence")
     if not ops:
         raise GeneratorError(
             "no operations derived from claimed outputs/capabilities — fail closed"
@@ -234,10 +261,19 @@ def _case_is_partial(manifest: dict[str, Any]) -> bool:
     return False
 
 
+def _is_stream_case(manifest: dict[str, Any]) -> bool:
+    steps = manifest.get("steps")
+    return isinstance(steps, list) and len(steps) >= 1
+
+
 def filtered_case_ops(
     root: Path, sources: Sequence[str], operations: Sequence[str]
 ) -> list[tuple[dict[str, Any], list[str]]]:
-    """Return (manifest, matching_ops) pairs under the progressive filter."""
+    """Return (manifest, matching_ops) pairs under the progressive filter.
+
+    Batch cases contribute names from their ``operation`` map. Stream cases
+    (ordered ``steps``) contribute ``stream-sequence`` when that op is selected.
+    """
     source_set = set(sources)
     op_set = set(operations)
     cases_root = root / CASES_REL
@@ -248,6 +284,11 @@ def filtered_case_ops(
     for path in sorted(cases_root.glob("**/case.json")):
         manifest = load_json(path)
         if manifest.get("source") not in source_set:
+            continue
+        if _is_stream_case(manifest):
+            matching = [name for name in ("stream-sequence", "stream-replay") if name in op_set]
+            if matching:
+                pairs.append((manifest, matching))
             continue
         op_table = manifest.get("operation") or {}
         if not isinstance(op_table, dict):
@@ -343,6 +384,32 @@ def enforce_capability_coverage(
             raise GeneratorError(
                 "capability 'typed-fatal-errors' claimed but filtered suite has "
                 "no fatal-error case under filter"
+            )
+
+    stream_claimed = CORE_STREAM_CAPABILITIES.intersection(claimed)
+    if stream_claimed:
+        if "stream-sequence" not in op_set:
+            raise GeneratorError(
+                "stream-* core capabilities claimed but --operation stream-sequence "
+                "is missing from progressive filter"
+            )
+        stream_pairs = [(m, ops) for m, ops in pairs if _is_stream_case(m) and ops]
+        if not stream_pairs:
+            raise GeneratorError(
+                "stream-* core capabilities claimed but filtered suite has no "
+                "stream-sequence cases under claimed sources"
+            )
+        # Every claimed stream core cap must appear on at least one matching case.
+        required_on_cases: set[str] = set()
+        for m, _ops in stream_pairs:
+            for cap in m.get("required_capabilities") or []:
+                if isinstance(cap, str):
+                    required_on_cases.add(cap)
+        missing_fixture_caps = sorted(stream_claimed - required_on_cases)
+        if missing_fixture_caps:
+            raise GeneratorError(
+                "claimed stream capabilities lack shared fixtures under filter: "
+                f"{missing_fixture_caps}"
             )
 
     # deterministic-rerun: satisfied automatically by verify.py double-invoke.

@@ -5,6 +5,22 @@ import { createInterface } from "node:readline";
 
 import { TrajectoryNormalizationError } from "@hypabolic/trajectory";
 
+export {
+  FileStreamHostError,
+  FileTrajectoryStream,
+  followFile,
+  openFileStream,
+  splitCompleteLines,
+  HOST_IO_ERROR,
+  HOST_IO_NOT_FOUND,
+  HOST_IO_PERMISSION,
+  HOST_PATH_OUTSIDE_ROOT,
+  HOST_PATH_REQUIRED,
+  HOST_ROOT_REQUIRED,
+  type FileStreamHostCode,
+  type FileStreamOptions,
+} from "./file-stream.js";
+
 const TITLE_SCAN_MAX_BYTES = 64 * 1024;
 const TITLE_SCAN_MAX_LINES = 200;
 const TITLE_MAX_SCALARS = 120;

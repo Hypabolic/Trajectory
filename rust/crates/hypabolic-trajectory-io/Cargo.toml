@@ -1,0 +1,25 @@
+[package]
+name = "hypabolic-trajectory-io"
+description = "Optional file path poll/follow helpers for Hypabolic Trajectory live session streaming"
+readme = "README.md"
+keywords = ["agents", "transcripts", "streaming", "jsonl"]
+categories = ["development-tools", "filesystem"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# Reserved: optional OS watcher wake-ups (not required for poll-based follow).
+# Currently unimplemented — enabling the feature does not change behavior.
+# Poll-based follow remains the supported path; a future release may wire
+# wake-up-only notifications behind this flag (size + cursor stay authoritative).
+watch = []
+
+[dependencies]
+hypabolic-trajectory.workspace = true
+
+[lints]
+workspace = true

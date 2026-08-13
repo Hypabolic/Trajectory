@@ -1,0 +1,241 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "19d871f92e7148889889fdfc235d495cbab75d38445e5e7820b11290d35666bf",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000b2",
+    "generation": 0,
+    "position": {
+      "kind": "snapshot-revision",
+      "revision": "ahp-mp-1",
+      "content_sha256": "82dc1e78545b1c5e78716c43acec5699cb2dc02fdbe23f9ba4319f60ff6f3938"
+    },
+    "source_revision": "ahp-mp-1",
+    "prefix_sha256": "82dc1e78545b1c5e78716c43acec5699cb2dc02fdbe23f9ba4319f60ff6f3938"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000b2",
+    "revision": {
+      "revision": 0,
+      "revision_id": "19d871f92e7148889889fdfc235d495cbab75d38445e5e7820b11290d35666bf",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "a6f5359705bff66118f4b8beb7d7fb223f13e66ef6c5cc863380c98352f010d3",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "ahp",
+          "cwd": "/workspace/demo",
+          "model": "synthetic-model-1",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "555b0bc1d8f81eca5dba68517f69a1a6c4bd79809d4658794c723516113e49a2",
+            "record_sha256": "bb7d3f6743c6f38889772d6e56cec3e145d2d5b7d84f9bd83377a66eab43f7a6"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "7b3cd6fa1558985d90e7a598c60fcda4208473030b63103358f6fb7e19081614",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-03-15T12:00:00.000Z",
+          "timestamp": "2026-03-15T12:00:00.000Z",
+          "content": "Hello multi",
+          "provenance": {
+            "stable_source_record_id": "turn-00000000-0000-4000-8000-0000000000u2",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-03-15T12:00:00.000Z|00000000000000000000|turn-00000000-0000-4000-8000-0000000000u2",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "turn-00000000-0000-4000-8000-0000000000u2",
+            "source_sequence": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "c39e733ec932904ac45dbbe25956a2ce2caa827715373922ed94641943029e20",
+            "record_sha256": "5fffbc417ed43743c920d9acf492c126a0c25f2285b4da6d56ca0f8e162388db"
+          }
+        }
+      },
+      {
+        "status": "provisional",
+        "record": {
+          "id": "d5bb6a11b7d24f160d61794a3bdd209678a2234507ff500d8138e4186a2a1c57",
+          "kind": "message",
+          "role": "assistant",
+          "order": 1,
+          "source_timestamp": "2026-03-15T12:00:05.000Z",
+          "timestamp": "2026-03-15T12:00:05.000Z",
+          "content": "Working",
+          "provenance": {
+            "stable_source_record_id": "part-md-multi-1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-03-15T12:00:05.000Z|00000000000000000000|part-md-multi-1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "part-md-multi-1",
+            "source_sequence": 0,
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "2b79dfe8e8f675ff5d010e1d8bf311949d26c1f42e754a10458ffb651a084b08",
+            "record_sha256": "3f552bf750dc258a5ec82c6f586b34d69f87d4e7a07eaa52dea77aea0d756443"
+          }
+        },
+        "provisional_id": "prov-active:part-md-multi-1"
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "19d871f92e7148889889fdfc235d495cbab75d38445e5e7820b11290d35666bf",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "a6f5359705bff66118f4b8beb7d7fb223f13e66ef6c5cc863380c98352f010d3",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "ahp",
+            "cwd": "/workspace/demo",
+            "model": "synthetic-model-1",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "555b0bc1d8f81eca5dba68517f69a1a6c4bd79809d4658794c723516113e49a2",
+              "record_sha256": "bb7d3f6743c6f38889772d6e56cec3e145d2d5b7d84f9bd83377a66eab43f7a6"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "7b3cd6fa1558985d90e7a598c60fcda4208473030b63103358f6fb7e19081614",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": "2026-03-15T12:00:00.000Z",
+            "timestamp": "2026-03-15T12:00:00.000Z",
+            "content": "Hello multi",
+            "provenance": {
+              "stable_source_record_id": "turn-00000000-0000-4000-8000-0000000000u2",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-03-15T12:00:00.000Z|00000000000000000000|turn-00000000-0000-4000-8000-0000000000u2",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "turn-00000000-0000-4000-8000-0000000000u2",
+              "source_sequence": 0,
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "c39e733ec932904ac45dbbe25956a2ce2caa827715373922ed94641943029e20",
+              "record_sha256": "5fffbc417ed43743c920d9acf492c126a0c25f2285b4da6d56ca0f8e162388db"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "provisional",
+          "record": {
+            "id": "d5bb6a11b7d24f160d61794a3bdd209678a2234507ff500d8138e4186a2a1c57",
+            "kind": "message",
+            "role": "assistant",
+            "order": 1,
+            "source_timestamp": "2026-03-15T12:00:05.000Z",
+            "timestamp": "2026-03-15T12:00:05.000Z",
+            "content": "Working",
+            "provenance": {
+              "stable_source_record_id": "part-md-multi-1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-03-15T12:00:05.000Z|00000000000000000000|part-md-multi-1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "part-md-multi-1",
+              "source_sequence": 0,
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "2b79dfe8e8f675ff5d010e1d8bf311949d26c1f42e754a10458ffb651a084b08",
+              "record_sha256": "3f552bf750dc258a5ec82c6f586b34d69f87d4e7a07eaa52dea77aea0d756443"
+            }
+          },
+          "provisional_id": "prov-active:part-md-multi-1"
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [
+      "prov-active:part-md-multi-1"
+    ],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 3,
+    "bytes": 1662,
+    "first_source_position": 0,
+    "last_source_position": 1661
+  }
+}

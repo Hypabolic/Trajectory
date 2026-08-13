@@ -1,0 +1,3 @@
+{"type":"session","version":3,"id":"stream-diagnostic-add-remove","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/workspace/demo"}
+{"type":"message","id":"msg-ok","timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":"ok","timestamp":"2026-01-01T00:00:01.000Z"}}
+{"type":"message","id":"msg-extra","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":"repaired continues","timestamp":"2026-01-01T00:00:02.000Z"}}

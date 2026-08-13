@@ -1,0 +1,35 @@
+{
+  "kind": "unchanged",
+  "revision": {
+    "revision": 0,
+    "revision_id": "31d11eef965156f086e33469bfc394d4f123091801ddbfa762ded0c39c5c7267",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "ahp",
+    "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000b1",
+    "generation": 0,
+    "position": {
+      "kind": "snapshot-revision",
+      "revision": "ahp-rev-dup",
+      "content_sha256": "eb3123927b3184a456f7a31178a803230bf82c0b1965d0debfddf4f89cfffa5f"
+    },
+    "source_revision": "ahp-rev-dup",
+    "prefix_sha256": "eb3123927b3184a456f7a31178a803230bf82c0b1965d0debfddf4f89cfffa5f"
+  },
+  "snapshot": null,
+  "delta": null,
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 0,
+    "bytes": 0
+  }
+}

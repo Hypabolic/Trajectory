@@ -40,7 +40,7 @@ def main() -> None:
         text = lock.read_text(encoding="utf-8")
         # Update name = "hypabolic-trajectory" / version = "..." pairs coarsely
         text2 = re.sub(
-            r'(name = "hypabolic-trajectory(?:-opentelemetry)?"\nversion = ")[^"]+(")',
+            r'(name = "hypabolic-trajectory(?:-opentelemetry|-io|-ahp|-hermes)?"\nversion = ")[^"]+(")',
             rf"\g<1>{version}\g<2>",
             text,
         )

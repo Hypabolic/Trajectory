@@ -10,6 +10,10 @@ Related:
 - [Normative normalization](../contracts/spec/normalization.md)
 - [Identity](../contracts/spec/identity.md)
 - [Listing](../contracts/spec/listing.md)
+- [Streaming](../contracts/spec/streaming.md) — live session stream wire
+  contract (`trajectory-stream-v1`); product design
+  [live-session-streaming.md](live-session-streaming.md) and slices
+  [live-session-streaming-plan.md](live-session-streaming-plan.md)
 - [Conformance case authoring](../conformance/README.md)
 - [Contributing](contributing.md)
 - [AHP source design](ahp-source-spec.md) — Agent Host Protocol Shape A offline
@@ -159,6 +163,58 @@ Only after goldens pass on all claiming runtimes:
 - runtime capability manifests
 - README output list
 - package release notes
+
+## Live session streaming — definition of done
+
+Streaming is a **separate** surface from one-shot normalize/list. Normative
+wire: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md). Product
+locks and package boundaries:
+[live-session-streaming.md](live-session-streaming.md). Delivery slices:
+[live-session-streaming-plan.md](live-session-streaming-plan.md).
+
+### Core algorithm DoD (LS-08 matrix gate)
+
+A stream engine change is **done** for the core packages only when:
+
+1. **All four cores** (.NET, TypeScript, Rust, Python) implement the same
+   observable ops: `create`, `apply_snapshot`, `apply_append`,
+   `apply_ahp_snapshot`, `apply_ahp_actions`, `finish`, `reset` (Hermes export
+   stream remains optional / capability-gated).
+2. Shared fixtures under `conformance/cases/streaming/**` pass
+   `stream-sequence` on every runtime with **zero** `unsupported` skips for
+   implemented input kinds.
+3. **Append ≡ prefix oracle** (`stream-oracle-parity` /
+   `oracle.append_equals_prefix`) holds on every file-JSONL growth case that
+   declares it; AHP action ≡ independent Shape A when
+   `oracle.action_equals_snapshot` is set.
+4. **Delta-apply law** holds (`stream-delta-apply`): applying `delta` to the
+   prior snapshot yields the new snapshot.
+5. Per-step `expected.result` goldens (when present) match via
+   `stream-json-exact` on all four runners (structural JSON equality).
+6. Stream diagnostics stay content-safe (no paths, secrets, or raw lines).
+7. **Batch** normalize/list conformance remains green and identity baseline
+   unchanged.
+8. Core packages gain **no** FS watcher, network, or SQLite dependencies.
+
+### Capability advertising (LS-12)
+
+Core `stream-*` names are claimed in `contracts/compatibility.json` (required)
+and each runtime’s core `runtime-capabilities.json` only after the shared stream
+matrix is green on all four runtimes. Optional package caps (`stream-file-io`,
+`stream-ahp-client`, `stream-hermes-provider`, `stream-async-iterator`) are
+advertised only on those optional packages’ `package-capabilities.json` — never
+on core, and never via a global `stream` flag. Do not claim unimplemented names
+(`stream-file-watch`, `stream-ahp-list-sessions`).
+
+### Extending a source for streaming
+
+1. Keep batch identity formulas stable under normalizer contract `0.2.0`.
+2. Ensure complete-line framing never emits partial JSONL as records.
+3. Document compaction/truncation → `reset-required` reasons in the source
+   spec.
+4. Add or extend `conformance/cases/streaming/<source>-…` sequences with
+   `stream-oracle-parity` when append is supported.
+5. Land goldens only after four-runtime review — never CI auto-accept.
 
 ## .NET registration sketch
 

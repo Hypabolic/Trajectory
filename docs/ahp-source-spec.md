@@ -1,8 +1,9 @@
 # Spec: Agent Host Protocol (AHP) support in Trajectory
 
-Status: **Phase 0–1 complete** (AHP-0 contracts + AHP-1 Shape A snapshot decode
-on .NET, TypeScript, and Rust). See [ahp-ingest-status.md](ahp-ingest-status.md)
-for what shipped and how to re-run tests.  
+Status: **Phase 0–1 complete** (offline Shape A); **LS-06/LS-07 streaming
+in-tree** (Shape A successive snapshots + Shape B action-log reducer in core).
+See [ahp-ingest-status.md](ahp-ingest-status.md) and
+[ahp-action-streaming.md](ahp-action-streaming.md).  
 Target product slice: post-v1 source family  
 AHP reference: [microsoft.github.io/agent-host-protocol](https://microsoft.github.io/agent-host-protocol/)  
 AHP schemas: [github.com/microsoft/agent-host-protocol/schema](https://github.com/microsoft/agent-host-protocol/tree/main/schema)  
@@ -10,11 +11,16 @@ Pinned protocol family: **0.7.x** (vendor pin `conformance/vendor/ahp/PROTOCOL_V
 
 **Phase 0 (AHP-0):** `contracts/spec/sources/ahp.md`, export schema, vendor pin,
 synthetic fixtures.  
-**Phase 1 (AHP-1):** Shape A snapshot decoder → IR on all three runtimes,
+**Phase 1 (AHP-1):** Shape A snapshot decoder → IR on all four runtimes,
 shared conformance goldens, wire source `ahp` in runners/CLIs, and
 `compatibility.json` → `implemented.sources`.  
-**Not yet (Phase 2+):** action-log reduce (Shape B), live WebSocket host, export
-listing.
+**Streaming (LS-06 / LS-07 / LS-12):** `apply_ahp_snapshot` + core Shape B
+reducer / `apply_ahp_actions` (no network). Core stream AHP capabilities
+(`stream-ahp-snapshot`, `stream-ahp-action-log`) are **claimed** on tip after
+the shared matrix is green. Optional AHP / file-I/O / Hermes client packages
+are **in-tree** with package-capability claims only (not on core manifests).  
+**Not yet:** export-directory listing, real WebSocket host transport
+(consumer-injected `AhpTransport`; fake-host tested).
 
 Related Trajectory docs:
 
@@ -48,10 +54,11 @@ live WebSocket client inside core packages, terminal/changeset as primary
 transcripts, or ACP agent backends.
 
 ```text
-AHP ChatState snapshot (Shape A; Phase 1)
+AHP ChatState snapshot (Shape A; Phase 1 offline + LS-06 stream)
         →  source adapter "ahp"  →  shared normalizer  →  IR  →  projections
 
-AHP action log (Shape B; Phase 2, not shipped)
+AHP action log (Shape B; stream path LS-07 shipped in core apply_ahp_actions;
+               batch one-shot listing/export still deferred)
         →  reduce to ChatState  →  same decoder path
 ```
 
@@ -71,7 +78,7 @@ immutable state, pure reducers, and write-ahead reconciliation.
 | --- | --- | --- |
 | **Harness files** (Pi, Claude Code, Codex, …) | On-disk session JSONL | Existing sources |
 | **ACP** (Agent Client Protocol) | 1:1 client ↔ agent | Not a Trajectory source; host-internal |
-| **AHP** | N clients ↔ host (state + sequencing) | **Implemented** Shape A offline source (Phase 1); Shape B / listing / live deferred |
+| **AHP** | N clients ↔ host (state + sequencing) | **Implemented** Shape A offline (Phase 1) + core stream Shape A/B apply (LS-06/07, claimed LS-12); batch listing / real WebSocket still deferred |
 
 AHP hosts often *use* ACP (or vendor APIs) *below* the host; clients never see
 agent-private wire formats. Trajectory should ingest the **agent-agnostic AHP

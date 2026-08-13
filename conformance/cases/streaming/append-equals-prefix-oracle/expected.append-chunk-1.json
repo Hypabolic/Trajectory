@@ -1,0 +1,178 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "3394f4d164beb82a2ef1264c3ad827fc19baa69fa37c04f6a921434363564e01",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-append-equals-prefix-oracle",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 301,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "d9328ec9a319b763833c7d7e92e3e7734efcc9b5644c7e0bc3979a9d1862fd41"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "pi",
+    "group_id": "stream-append-equals-prefix-oracle",
+    "revision": {
+      "revision": 0,
+      "revision_id": "3394f4d164beb82a2ef1264c3ad827fc19baa69fa37c04f6a921434363564e01",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "ddc15bd4bd823eb99995fad38dc1b8e9989fa69e5ee376f8bf463b3c02a326a6",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "pi",
+          "cwd": "/workspace/demo",
+          "producer_version": "3",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "1388ada6b0d0cd9a4b29e993627fa273947e11fc5330ca4ad770723cea66e013",
+            "record_sha256": "e1b8c4833a9305e86a6b952171b82f196d8cbe19517d45f6f6ae027a41ce20d5"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "da3a47a1f2ac0be5e084043cc6c5f2c01a2bcc18555eadf5752fe3eed2240bdc",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-01-01T00:00:01.000Z",
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "content": "chunk one",
+          "provenance": {
+            "stable_source_record_id": "msg-oracle-1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-01-01T00:00:01.000Z|00000000000000000001|msg-oracle-1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "msg-oracle-1",
+            "source_sequence": 1,
+            "source_offset": 136,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "a4294e84d2c0a99f0275a9316a5a3487bc4a73b18fa0721532a4d6dd75cd92ba",
+            "record_sha256": "e79898fc8b39e4c5d07ec33793c6734a57dffbf91c31d1cdb45dc93091f51928"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "3394f4d164beb82a2ef1264c3ad827fc19baa69fa37c04f6a921434363564e01",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "ddc15bd4bd823eb99995fad38dc1b8e9989fa69e5ee376f8bf463b3c02a326a6",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "pi",
+            "cwd": "/workspace/demo",
+            "producer_version": "3",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "1388ada6b0d0cd9a4b29e993627fa273947e11fc5330ca4ad770723cea66e013",
+              "record_sha256": "e1b8c4833a9305e86a6b952171b82f196d8cbe19517d45f6f6ae027a41ce20d5"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "da3a47a1f2ac0be5e084043cc6c5f2c01a2bcc18555eadf5752fe3eed2240bdc",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": "2026-01-01T00:00:01.000Z",
+            "timestamp": "2026-01-01T00:00:01.000Z",
+            "content": "chunk one",
+            "provenance": {
+              "stable_source_record_id": "msg-oracle-1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-01-01T00:00:01.000Z|00000000000000000001|msg-oracle-1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "msg-oracle-1",
+              "source_sequence": 1,
+              "source_offset": 136,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "a4294e84d2c0a99f0275a9316a5a3487bc4a73b18fa0721532a4d6dd75cd92ba",
+              "record_sha256": "e79898fc8b39e4c5d07ec33793c6734a57dffbf91c31d1cdb45dc93091f51928"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 2,
+    "bytes": 301,
+    "first_source_position": 0,
+    "last_source_position": 300
+  }
+}

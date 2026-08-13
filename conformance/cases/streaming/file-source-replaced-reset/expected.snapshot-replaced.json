@@ -1,0 +1,62 @@
+{
+  "kind": "reset-required",
+  "revision": {
+    "revision": 0,
+    "revision_id": "21ded08e8fa69a4a165375e4b8e821c3d9298953eb8493806560c12b7cf0772a",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-file-source-replaced-reset",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 467,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "c31c6180afa169c5632b5a2883936344071db76a559df2809dd6d0bd568459fa"
+  },
+  "snapshot": null,
+  "delta": null,
+  "diagnostics": [
+    {
+      "code": "stream_source_reset",
+      "message": "Source material was replaced relative to the committed cursor."
+    }
+  ],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 0,
+    "bytes": 0
+  },
+  "reset": {
+    "reason": "source-replaced",
+    "prior_cursor": {
+      "cursor_version": 1,
+      "source": "pi",
+      "group_id": "stream-file-source-replaced-reset",
+      "generation": 0,
+      "position": {
+        "kind": "byte",
+        "next_byte_offset": 467,
+        "pending_byte_length": 0
+      },
+      "source_revision": "gen-0",
+      "prefix_sha256": "c31c6180afa169c5632b5a2883936344071db76a559df2809dd6d0bd568459fa"
+    },
+    "requires_snapshot": true,
+    "dropped_record_ids": [
+      "fb5bd54cf702029c0aa488dff878b7b8fc07223412cc235357d97b6279ebbfc5",
+      "9948c7eb2d32353757bf10465ed64117f2308a1bd0bd03a11e7dad0a23a5e470",
+      "2bfb41e613d3a70d9480aa8d4935c3ae1b08b6ffc49e78b781bd41cb634800b9"
+    ]
+  }
+}

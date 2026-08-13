@@ -169,8 +169,14 @@ def apply_version(root: Path, version: str) -> list[str]:
         root / "dotnet/src/Trajectory/Trajectory.csproj",
         root / "dotnet/src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj",
         root / "dotnet/src/Trajectory.Testing/Trajectory.Testing.csproj",
+        # Optional stream packages (LS-09 / LS-10 / LS-07h) — publish with core.
+        root / "dotnet/src/Trajectory.IO/Trajectory.IO.csproj",
+        root / "dotnet/src/Trajectory.Ahp/Trajectory.Ahp.csproj",
+        root / "dotnet/src/Trajectory.Hermes/Trajectory.Hermes.csproj",
     ]
     for path in csprojs:
+        if not path.is_file():
+            continue
         replace_csproj_version(path, version)
         changed.append(str(path.relative_to(root)))
 
@@ -179,10 +185,14 @@ def apply_version(root: Path, version: str) -> list[str]:
         root / "typescript/packages/trajectory/package.json",
         root / "typescript/packages/trajectory-node/package.json",
         root / "typescript/packages/trajectory-otel/package.json",
+        root / "typescript/packages/trajectory-ahp/package.json",
+        root / "typescript/packages/trajectory-hermes/package.json",
         root / "typescript/packages/trajectory-testing/package.json",
         root / "typescript/packages/trajectory-cli/package.json",
     ]
     for path in npm_packages:
+        if not path.is_file():
+            continue
         replace_json_version(path, version, also_deps=True)
         changed.append(str(path.relative_to(root)))
 

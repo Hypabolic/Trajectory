@@ -1,0 +1,9 @@
+{
+  "package": "hypabolic-trajectory[hermes]",
+  "runtime": "python",
+  "module": "hypabolic_trajectory.hermes_provider",
+  "capabilities": [
+    "stream-hermes-provider"
+  ],
+  "notes": "Optional Hermes SQLite/provider module. Not claimed by core runtime-capabilities.json."
+}

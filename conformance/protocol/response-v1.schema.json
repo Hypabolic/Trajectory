@@ -8,7 +8,10 @@
     "protocol_version": { "const": "1" },
     "case": { "type": "string" },
     "operation": { "type": "string" },
-    "status": { "enum": ["success", "fatal-error", "protocol-error"] },
+    "status": {
+      "enum": ["success", "fatal-error", "protocol-error", "unsupported"],
+      "description": "unsupported is used when a stream operation is declared but the runtime has not implemented the stream engine yet (pre-LS-04/LS-12). It is not a protocol error."
+    },
     "output_text": { "type": ["string", "null"] },
     "diagnostics": { "type": "array", "items": { "type": "object" } },
     "fatal_error": {

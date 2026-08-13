@@ -69,12 +69,26 @@ TIP_CAPABILITIES = [
     "typed-diagnostics",
     "typed-fatal-errors",
     "deterministic-rerun",
+    "stream-core",
+    "stream-cursor-v1",
+    "stream-jsonl-framing",
+    "stream-apply-snapshot",
+    "stream-apply-append",
+    "stream-full-snapshot",
+    "stream-record-delta",
+    "stream-reset",
+    "stream-provisional-records",
+    "stream-deterministic-replay",
+    "stream-file-jsonl",
+    "stream-ahp-snapshot",
+    "stream-ahp-action-log",
 ]
 TIP_SLICE = "ML13"
 NORMALIZER_CONTRACT_VERSION = "0.2.0"
-EXPECTED_TIP_CASES = 27
-EXPECTED_TIP_OPERATIONS = 47
-EXPECTED_IDENTITY_GOLDENS = 21
+# 39 batch + 41 stream cases (LS-08 matrix + H1/H3 + hermes-provider-* export apply).
+EXPECTED_TIP_CASES = 80
+EXPECTED_TIP_OPERATIONS = 107
+EXPECTED_IDENTITY_GOLDENS = 37
 
 # Exhaustive root __all__ (export owner PY-04a → PY-12 pin).
 _EXPECTED_ROOT_ALL = frozenset(
@@ -137,6 +151,26 @@ _EXPECTED_ROOT_ALL = frozenset(
         "ModelInvocation",
         "ModelTokenUsage",
         "WorkflowInvocation",
+        # Live session streaming (LS-03–LS-12 core surface)
+        "StreamOptions",
+        "StreamState",
+        "StreamUpdate",
+        "StreamCursor",
+        "TrajectoryStream",
+        "BytePosition",
+        "AhpServerSeqPosition",
+        "SnapshotRevisionPosition",
+        "HermesRowPosition",
+        "create_stream",
+        "apply_stream",
+        "apply_snapshot",
+        "apply_append",
+        "apply_ahp_snapshot",
+        "apply_ahp_actions",
+        "apply_hermes_export",
+        "apply_delta_to_snapshot",
+        "finish_stream",
+        "reset_stream",
     }
 )
 

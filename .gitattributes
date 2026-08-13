@@ -1,1 +1,9 @@
+# Streaming materials are byte-identity fixtures. JSON/JSONL/TXT stay LF so
+# Windows core.autocrlf cannot rewrite line terminators into JSONL or JSON
+# string values. *.bin must stay binary: utf8-byte-boundary's tail is LF-
+# terminated ASCII that autocrlf would turn into CRLF and shift apply_append
+# cursor / prefix_sha256 (stream-json-exact).
 *.jsonl text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.bin binary

@@ -1,0 +1,20 @@
+{
+  "schema": "streaming-delta-v1.schema.json",
+  "instance": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 1,
+      "revision_id": "rev-1",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "merge",
+        "record_id": "x"
+      }
+    ]
+  }
+}

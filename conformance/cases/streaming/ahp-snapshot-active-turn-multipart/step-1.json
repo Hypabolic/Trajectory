@@ -1,0 +1,69 @@
+{
+  "ahpProtocolVersion": "0.7.0",
+  "chat": {
+    "resource": "ahp-chat:/00000000-0000-4000-8000-0000000000b2",
+    "title": "Synthetic: multi-part active turn growth-1",
+    "status": 1,
+    "activity": "generating",
+    "modifiedAt": "2026-03-15T12:00:10.000Z",
+    "origin": {
+      "kind": "user"
+    },
+    "workingDirectories": [
+      "file:///workspace/demo"
+    ],
+    "turns": [
+      {
+        "id": "turn-00000000-0000-4000-8000-0000000000u2",
+        "startedAt": "2026-03-15T12:00:00.000Z",
+        "duration": 0,
+        "message": {
+          "text": "Hello multi",
+          "origin": {
+            "kind": "user"
+          },
+          "model": {
+            "id": "synthetic-model-1"
+          }
+        },
+        "responseParts": [],
+        "usage": null,
+        "state": "complete",
+        "error": null
+      }
+    ],
+    "activeTurn": {
+      "id": "turn-00000000-0000-4000-8000-0000000000a2",
+      "startedAt": "2026-03-15T12:00:05.000Z",
+      "duration": null,
+      "message": {
+        "text": "",
+        "origin": {
+          "kind": "agent"
+        },
+        "model": {
+          "id": "synthetic-model-1"
+        }
+      },
+      "responseParts": [
+        {
+          "kind": "markdown",
+          "id": "part-md-multi-1",
+          "content": "Working"
+        }
+      ],
+      "usage": null,
+      "state": "in-progress",
+      "error": null
+    }
+  },
+  "session": {
+    "provider": "synthetic-provider",
+    "title": "Synthetic multi-part provisional session",
+    "status": 1,
+    "resource": "ahp-session:/00000000-0000-4000-8000-0000000000s3",
+    "workingDirectories": [
+      "file:///workspace/demo"
+    ]
+  }
+}

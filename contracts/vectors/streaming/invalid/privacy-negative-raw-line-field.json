@@ -1,0 +1,26 @@
+{
+  "schema": "streaming-delta-v1.schema.json",
+  "reason": "diagnostic_add must not accept raw_line or path on diagnostic objects.",
+  "instance": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 1,
+      "revision_id": "rev-1",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "diagnostic_add",
+        "diagnostic": {
+          "code": "invalid_json_line",
+          "message": "Line was not valid JSON.",
+          "raw_line": "{\"token\":\"SECRET_TOKEN_xyz\"}",
+          "path": "/Users/real-user/.codex/sessions/x.jsonl"
+        }
+      }
+    ]
+  }
+}

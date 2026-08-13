@@ -24,12 +24,12 @@ Distinguish **published registry packages** from **this repository tip**.
 
 | Item | Value |
 | --- | --- |
-| Checked-in `VERSION` | `0.1.2` on the release tip |
+| Checked-in `VERSION` | `0.1.2` (Grok Build + AHP tip cut; **already used** — do not retag) |
 | Capability slice | `ML13` (historical slice id; AHP is a post-`0.1.0` source addition) |
 | Normalizer contract | `0.2.0` |
 | Implemented sources (tip) | Published set **plus** `ahp` and `grok-build` |
-| AHP scope | Phase 0–1 shipped in-tree on `main`; listing, Shape B action log, and live host are **not** shipped |
-| Next registry publish | Tag `v0.1.2` after merge to main when CI is green |
+| AHP scope | Batch Shape A + core stream Shape A/B in-tree; optional AHP clients in-tree (fake-host tested); listing and real WebSocket transport still **not** shipped |
+| Next registry publish | A **new** synchronized tag **strictly after `0.1.2`** (for example `v0.1.3` or `v0.2.0`) for the live-session stream cut. **Do not tag or retag `v0.1.2`.** `skip-duplicate` / “already published” fallbacks must not treat a reused `0.1.2` as a successful stream ship. |
 
 AHP phase truth: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
 [ahp-source-spec.md](ahp-source-spec.md).
@@ -37,7 +37,7 @@ AHP phase truth: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
 Machine-readable surfaces (repository tip advertises `ahp`):
 
 - [`contracts/compatibility.json`](../contracts/compatibility.json)
-- Runtime `runtime-capabilities.json` files (TypeScript, Rust, Python)
+- Runtime `runtime-capabilities.json` files (.NET, TypeScript, Rust, Python)
 - `tools/validate_release_metadata.py`
 - CI preview packaging + **Release** workflow (see [publishing.md](publishing.md))
 
@@ -127,19 +127,28 @@ After the first multi-registry release:
 
 ### Publish process
 
-- [x] Release workflow packs and can publish NuGet / npm / crates / PyPI.
+- [x] Release workflow packs and can publish NuGet / npm / crates / PyPI,
+      including optional stream packages (`.IO` / `.Ahp` / `.Hermes`,
+      `@hypabolic/trajectory-ahp` / `trajectory-hermes`, crates `-io` / `-ahp` /
+      `-hermes`; Python `[io]`/`[ahp]`/`[hermes]` extras on the core wheel).
 - [x] npm packages bootstrapped under `@hypabolic` (local CLI); OIDC Trusted
-      Publisher configured for steady-state CI publishes.
+      Publisher configured for steady-state CI publishes. **New** names
+      (`trajectory-ahp`, `trajectory-hermes`) still need one-time
+      `./tools/bootstrap_npm_packages.sh --publish` + Trusted Publisher setup
+      before the next tag.
 - [ ] GitHub Environment `release` protection rules as desired.
-- [x] NuGet / npm / crates.io Trusted Publishing (OIDC) for multi-registry Release.
+- [x] NuGet / npm / crates.io Trusted Publishing (OIDC) for multi-registry Release
+      (register Trusted Publishing on **each** new crate/package before first
+      optional-stream ship).
 - [x] PyPI Trusted Publishing path (OIDC pending publisher org `Hypabolic`,
       package `hypabolic-trajectory`) wired in `release.yml` (first live upload
       on the next tag).
 - [x] Public version tag `v0.1.0` published on NuGet / npm / crates (sources
-      through `hermes` only; **no** PyPI `0.1.0`).
+      through `hermes` only; **no** PyPI `0.1.0`; **no** optional stream packages).
 - [ ] Explicit decision to cut the **next** public version tag when ready
-      (required before AHP, Python on PyPI, or other post-`0.1.0` capabilities
-      reach registries).
+      (required before AHP, Python on PyPI, optional stream packages, or other
+      post-`0.1.0` capabilities reach registries). That tag **must be new and
+      greater than `0.1.2`**. Never retag `v0.1.0` or `v0.1.2`.
 
 ### Explicit non-goals for v1
 
@@ -147,3 +156,52 @@ After the first multi-registry release:
 - Cloud ingestion, tenancy, or hosted storage
 - Identical public APIs across languages
 - A stable serialized internal IR
+
+## Live session streaming (post-v1; LS-12 complete on tip)
+
+Core stream engines, optional I/O/AHP/Hermes packages, sample CLIs, and honest
+capability advertising are **in-tree on tip** (LS-00–LS-12). Not yet a
+registry-published multi-registry version bump. The stream package set ships
+on a **new synchronized tag after `0.1.2`**. Do **not** retag `0.1.0` or
+`0.1.2`.
+
+### .NET optional package AOT / audit (M5)
+
+| Package | AOT / trim claim | Notes |
+| --- | --- | --- |
+| `Hypabolic.Trajectory.Ahp` | `IsAotCompatible` / `IsTrimmable` **true** | JSON-RPC uses `JsonNode.WriteTo`; `IL2026`/`IL3050` are errors |
+| `Hypabolic.Trajectory.Hermes` | **false** | Native SQLite (`Microsoft.Data.Sqlite` + `SQLitePCLRaw.lib.e_sqlite3` 3.50.3+). NU1903 / CVE-2025-6965 must stay cleared. AOT hosts feed core `ApplyHermesExport`. |
+
+### Stream matrix definition of done (LS-08 + LS-12)
+
+| Gate | Requirement |
+| --- | --- |
+| Corpus | Entire `conformance/cases/streaming/**` green on .NET, TypeScript, Rust, Python |
+| Oracle | Append path ≡ prefix re-normalize (`stream-oracle-parity`); AHP action ≡ Shape A when declared |
+| Goldens | Per-step `expected.result` stream-json-exact goldens are shared authority |
+| Batch | Existing normalize/list conformance + identity baseline remain green |
+| Privacy | Stream diagnostics/fixtures obey the same sanitization rules as batch (no paths/secrets/raw lines) |
+| Capabilities | Core `stream-*` claimed in `compatibility.json` required + four `runtime-capabilities.json`; optional package caps only on those packages |
+| Core purity | No FS watchers, network, or SQLite in core packages |
+| Optional matrix | File I/O + AHP client green; Hermes provider claimed only on provider packages |
+
+### Streaming privacy audit checklist
+
+- [x] Stream diagnostics schema forbids path/raw payload fields
+- [x] Shared stream fixtures privacy-scanned by `conformance/verify.py`
+- [x] Optional host errors (`FileStreamHostError` / peers) stay out of transcript diagnostics
+- [x] AHP auth tokens never enter stream snapshots/deltas/diagnostics
+- [x] Schema vector privacy sentinels + `tools/validate_streaming_schemas.py`
+
+Operator verify (stream filter only):
+
+```bash
+python3 conformance/verify.py --repository-root . --operation stream-sequence -- \
+  <runtime-stream-capable-runner>
+```
+
+Product + slice plan: [live-session-streaming.md](live-session-streaming.md),
+[live-session-streaming-plan.md](live-session-streaming-plan.md). Tip packaging
+status (shipped vs remaining):
+[live-session-streaming-status.md](live-session-streaming-status.md). Adapter
+authoring stream DoD: [adapter-authoring.md](adapter-authoring.md#live-session-streaming--definition-of-done).

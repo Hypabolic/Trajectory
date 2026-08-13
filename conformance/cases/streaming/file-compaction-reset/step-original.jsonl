@@ -1,0 +1,4 @@
+{"type":"system","content":"You are Grok Build."}
+{"type":"user","content":[{"type":"text","text":"List files in src."}],"prompt_index":0}
+{"type":"assistant","content":"I'll list src.","tool_calls":[{"id":"call_list_1","name":"run_terminal_command","arguments":"{\"command\":\"ls src\"}"}],"model_id":"grok-4.5-build"}
+{"type":"tool_result","tool_call_id":"call_list_1","content":"main.rs\nlib.rs\n"}

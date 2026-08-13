@@ -1,0 +1,39 @@
+{
+  "schema": "trajectory-stream-v1.schema.json",
+  "reason": "kind=updated requires at least one of snapshot or delta non-null; both null is invalid for all delivery modes.",
+  "instance": {
+    "kind": "updated",
+    "revision": {
+      "revision": 1,
+      "revision_id": "rev-1",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "cursor": {
+      "cursor_version": 1,
+      "source": "pi",
+      "group_id": "g",
+      "generation": 0,
+      "position": {
+        "kind": "byte",
+        "next_byte_offset": 0,
+        "pending_byte_length": 0
+      },
+      "source_revision": null,
+      "prefix_sha256": null
+    },
+    "snapshot": null,
+    "delta": null,
+    "diagnostics": [],
+    "provisional": {
+      "include": true,
+      "provisional_ids": [],
+      "finalized_ids": []
+    },
+    "consumed": {
+      "complete_records": 0,
+      "bytes": 0
+    }
+  }
+}

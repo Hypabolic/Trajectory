@@ -1,0 +1,66 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/ahp-snapshot-duplicate-revision",
+  "description": "Duplicate AHP source_revision with identical content is idempotent (unchanged).",
+  "source": "ahp",
+  "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000b1",
+  "required_capabilities": [
+    "stream-core",
+    "stream-ahp-snapshot",
+    "stream-deterministic-replay",
+    "stream-cursor-v1"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required",
+    "ahp_protocol_version": "0.7.0"
+  },
+  "steps": [
+    {
+      "id": "first",
+      "input": {
+        "kind": "ahp-snapshot",
+        "material": "step.json",
+        "source_revision": "ahp-rev-dup"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false,
+        "result": "expected.first.json"
+      },
+      "double_invoke": true
+    },
+    {
+      "id": "duplicate",
+      "input": {
+        "kind": "ahp-snapshot",
+        "material": "step.json",
+        "source_revision": "ahp-rev-dup"
+      },
+      "expected": {
+        "update_kind": "unchanged",
+        "complete": false,
+        "result": "expected.duplicate.json"
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-idempotence",
+    "stream-cursor-exact"
+  ],
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/unterminated-line-held",
+  "description": "Incomplete JSONL line is held in the pending buffer; not emitted as a provisional record.",
+  "source": "pi",
+  "group_id": "stream-unterminated-line-held",
+  "required_capabilities": [
+    "stream-core",
+    "stream-apply-append",
+    "stream-jsonl-framing",
+    "stream-cursor-v1",
+    "stream-file-jsonl"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": false,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required"
+  },
+  "steps": [
+    {
+      "id": "append-incomplete",
+      "input": {
+        "kind": "append-bytes",
+        "material": "step-incomplete.txt",
+        "source_revision": "gen-0"
+      },
+      "expected": {
+        "update_kind": "unchanged",
+        "record_count": 0,
+        "complete": false,
+        "result": "expected.append-incomplete.json"
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-cursor-exact",
+    "stream-idempotence"
+  ],
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  }
+}

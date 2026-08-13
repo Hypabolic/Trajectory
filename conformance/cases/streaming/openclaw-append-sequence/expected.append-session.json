@@ -1,0 +1,119 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "0ef4c28ff126bf86802a1c818e88341589dae49a5e182a87f6b687d3d40ce88e",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "openclaw",
+    "group_id": "stream-openclaw-append",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 129,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "dbf141c2bb6e032172cb48ae6b1ea408fbcfe3675bcdefedc7a31f99ee9050bc"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "openclaw",
+    "group_id": "stream-openclaw-append",
+    "revision": {
+      "revision": 0,
+      "revision_id": "0ef4c28ff126bf86802a1c818e88341589dae49a5e182a87f6b687d3d40ce88e",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "66bb315f80f897e8903bb0a5af3afc5894517256d63ec10a0130b337e11c81d3",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "openclaw",
+          "cwd": "/home/user/workspace",
+          "producer_version": "7",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "ac0ff2289ad0ca6aa38f98c366cbffdda8f3b02f68429f9a9796241f5708ef32",
+            "record_sha256": "dd2315a11284fa84c2ddcfb2ec64c84b4abfca8158440a83b4b5a23e2f978fb4"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "0ef4c28ff126bf86802a1c818e88341589dae49a5e182a87f6b687d3d40ce88e",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "66bb315f80f897e8903bb0a5af3afc5894517256d63ec10a0130b337e11c81d3",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "openclaw",
+            "cwd": "/home/user/workspace",
+            "producer_version": "7",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "ac0ff2289ad0ca6aa38f98c366cbffdda8f3b02f68429f9a9796241f5708ef32",
+              "record_sha256": "dd2315a11284fa84c2ddcfb2ec64c84b4abfca8158440a83b4b5a23e2f978fb4"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 1,
+    "bytes": 129,
+    "first_source_position": 0,
+    "last_source_position": 128
+  }
+}

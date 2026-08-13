@@ -1,0 +1,3052 @@
+using System.Collections;
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Hypabolic.Trajectory.Adapters.Hypabolic;
+
+namespace Hypabolic.Trajectory.Streaming;
+
+/// <summary>
+/// Pure stream algorithm: create, apply_snapshot, framing, stable-id diff.
+/// No filesystem watchers, network, or SQLite.
+/// </summary>
+public static class TrajectoryStream
+{
+    public const string SchemaId = "trajectory-stream-v1";
+
+    /// <summary>IEEE-754 binary64 safe integer domain (stream wire contract).</summary>
+    public const long JsonSafeIntegerMax = 9007199254740991L;
+
+    /// <summary>Minimum JSON-safe signed integer.</summary>
+    public const long JsonSafeIntegerMin = -9007199254740991L;
+
+    private const string MsgJsonSafeInteger = "Stream integer exceeds JSON safe integer domain.";
+    private const string MsgAhpSourceRequired = "AHP stream apply requires source ahp.";
+    private const string MsgHermesSourceRequired = "Hermes export stream apply requires source hermes.";
+    private const string MsgInvalidHermesExport = "Hermes export material is not valid session-export JSON.";
+    private const string MsgSequenceGap = "AHP action-log serverSeq gap requires snapshot resync.";
+    private const string MsgInvalidAhpActions = "AHP action batch could not be parsed.";
+    private const string MsgInvalidAhpSnapshot = "AHP snapshot material is not valid Shape A JSON.";
+
+    public static StreamState Create(StreamOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var groupId = string.IsNullOrEmpty(options.GroupId) ? "default" : options.GroupId;
+        var source = SourceWireName(options.Source);
+        StreamPosition position = options.Source switch
+        {
+            TrajectorySource.Ahp => new SnapshotRevisionPosition { Revision = "", ContentSha256 = null },
+            TrajectorySource.Hermes => new HermesRowPosition { DatabaseGeneration = "", LastRowId = null, ChangeToken = null },
+            _ => new BytePosition { NextByteOffset = 0, PendingByteLength = 0 },
+        };
+        return new StreamState
+        {
+            Options = options,
+            Cursor = new StreamCursor
+            {
+                Source = source,
+                GroupId = groupId,
+                Generation = 0,
+                Position = position,
+                SourceRevision = null,
+                PrefixSha256 = null,
+            },
+            Generation = 0,
+            NextRevision = 0,
+        };
+    }
+
+    /// <summary>Split LF-terminated committed prefix from pending incomplete tail.</summary>
+    public static (byte[] Committed, byte[] Pending) SplitCompleteLines(ReadOnlySpan<byte> data)
+    {
+        if (data.IsEmpty)
+        {
+            return (Array.Empty<byte>(), Array.Empty<byte>());
+        }
+
+        var lastLf = data.LastIndexOf((byte)'\n');
+        if (lastLf < 0)
+        {
+            return (Array.Empty<byte>(), data.ToArray());
+        }
+
+        return (data[..(lastLf + 1)].ToArray(), data[(lastLf + 1)..].ToArray());
+    }
+
+    public static string MatchKey(StreamRecord record)
+    {
+        if (!string.IsNullOrEmpty(record.ProvisionalId))
+        {
+            return record.ProvisionalId;
+        }
+
+        if (record.Record.TryGetValue("id", out var id) && id is string s && s.Length > 0)
+        {
+            return s;
+        }
+
+        throw new InvalidOperationException("stream record missing match key");
+    }
+
+    public static string MatchKey(JsonElement record)
+    {
+        if (record.TryGetProperty("provisional_id", out var pid) &&
+            pid.ValueKind == JsonValueKind.String &&
+            pid.GetString() is { Length: > 0 } provisional)
+        {
+            return provisional;
+        }
+
+        if (record.TryGetProperty("record", out var body) &&
+            body.TryGetProperty("id", out var id) &&
+            id.GetString() is { Length: > 0 } rid)
+        {
+            return rid;
+        }
+
+        throw new InvalidOperationException("stream record missing match key");
+    }
+
+    public static string DiagnosticKey(StreamDiagnostic d)
+    {
+        var line = d.InputLine?.ToString() ?? "-";
+        var index = d.RecordIndex?.ToString() ?? "-";
+        return $"{d.Code}|{line}|{index}";
+    }
+
+    public static (StreamState State, StreamUpdate Update) ApplySnapshot(
+        StreamState state,
+        ReadOnlyMemory<byte> material,
+        string sourceRevision,
+        StreamCursor? cursor = null)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        sourceRevision ??= "";
+
+        if (state.Finished)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", "Stream is already finished."));
+        }
+
+        if (cursor is not null)
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
+        }
+
+        var (committed, pending) = state.Options.RequireCompleteLines
+            ? SplitCompleteLines(material.Span)
+            : (material.ToArray(), Array.Empty<byte>());
+
+        if (state.Options.MaxPendingBytes is long maxPending)
+        {
+            if (maxPending < 0)
+            {
+                return (state, ErrorUpdate(
+                    state,
+                    "invalid_input",
+                    "Stream buffer limits must be non-negative int64 values."));
+            }
+
+            if (pending.LongLength > maxPending)
+            {
+                return (state, ErrorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."));
+            }
+        }
+
+        if (state.Options.MaxLineBytes is long maxLine)
+        {
+            if (maxLine < 0)
+            {
+                return (state, ErrorUpdate(
+                    state,
+                    "invalid_input",
+                    "Stream buffer limits must be non-negative int64 values."));
+            }
+
+            if (AnyLineTooLong(committed, maxLine) || pending.LongLength > maxLine)
+            {
+                return (state, ErrorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."));
+            }
+        }
+
+        var built = BuildRecords(state, committed);
+        if (built.Update is not null)
+        {
+            return (state, built.Update);
+        }
+
+        var records = built.Records!;
+        var diagnostics = built.Diagnostics!;
+        var groupId = built.GroupId!;
+
+        if (!state.Options.IncludeProvisional)
+        {
+            records = records.Where(r => r.Status != "provisional").ToList();
+        }
+
+        if (state.Snapshot is not null &&
+            state.Cursor.Position is BytePosition priorByte &&
+            committed.LongLength < priorByte.NextByteOffset)
+        {
+            var (reason, message) = ShrinkResetReason(state, committed);
+            if (TryAutoReset(state, reason, material, sourceRevision) is { } auto)
+            {
+                return auto;
+            }
+
+            return (state, ResetRequired(
+                state,
+                reason,
+                "stream_source_reset",
+                message));
+        }
+
+        var effectivePrefixSha = Sha256Hex(committed);
+
+        if (state.Snapshot is not null &&
+            state.Cursor.SourceRevision == sourceRevision &&
+            state.Cursor.PrefixSha256 == effectivePrefixSha &&
+            state.PendingBytes.AsSpan().SequenceEqual(pending))
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        var newState = Clone(state);
+        newState.GroupLocked = true;
+        var generation = newState.Generation;
+        var parentRevisionId = newState.Snapshot?.Revision.RevisionId;
+        var revisionNum = newState.NextRevision;
+        var recordIds = records
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .Where(s => s.Length > 0)
+            .ToArray();
+        var revisionId = RevisionId(
+            generation,
+            revisionNum,
+            newState.Cursor.Source,
+            groupId,
+            effectivePrefixSha,
+            recordIds);
+        var revision = new StreamRevision
+        {
+            Revision = revisionNum,
+            RevisionId = revisionId,
+            ParentRevisionId = parentRevisionId,
+            Complete = false,
+            Generation = generation,
+        };
+        var snapshot = new StreamSnapshot
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Revision = revision,
+            Records = records,
+            Diagnostics = diagnostics,
+            Complete = false,
+        };
+        var delta = DiffSnapshots(newState.Snapshot, snapshot, revision);
+        var (outSnap, outDelta) = ApplyDelivery(snapshot, delta, newState.Options.Delivery);
+        var newCursor = new StreamCursor
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Generation = generation,
+            Position = new BytePosition
+            {
+                NextByteOffset = committed.LongLength,
+                PendingByteLength = pending.LongLength,
+            },
+            SourceRevision = sourceRevision,
+            PrefixSha256 = effectivePrefixSha,
+        };
+        var provisionalIds = records
+            .Where(r => !string.IsNullOrEmpty(r.ProvisionalId))
+            .Select(r => r.ProvisionalId!)
+            .ToArray();
+        var update = new StreamUpdate
+        {
+            Kind = "updated",
+            Revision = revision,
+            Cursor = newCursor,
+            Snapshot = outSnap,
+            Delta = outDelta,
+            Diagnostics = diagnostics,
+            Provisional = new StreamProvisionalInfo
+            {
+                Include = state.Options.IncludeProvisional,
+                ProvisionalIds = provisionalIds,
+                FinalizedIds = Array.Empty<string>(),
+            },
+            Consumed = new StreamConsumed
+            {
+                CompleteRecords = (ulong)records.Count,
+                Bytes = (ulong)committed.LongLength,
+                FirstSourcePosition = committed.Length == 0 ? null : 0,
+                LastSourcePosition = committed.Length == 0 ? null : committed.LongLength - 1,
+            },
+        };
+        newState.Cursor = newCursor;
+        newState.Snapshot = snapshot;
+        newState.PendingBytes = pending;
+        newState.CommittedPrefix = committed;
+        newState.NextRevision = revisionNum + 1;
+        // Snapshot replaces committed material; clear append-replay fingerprint.
+        newState.LastAppendSegment = null;
+        newState.LastAppendPreOffset = null;
+        return (newState, update);
+    }
+
+    /// <summary>
+    /// Append complete-line segment for file JSONL sources.
+    /// Frames against the pending buffer, extends the committed prefix, then
+    /// re-normalizes the full committed prefix (oracle path). Append equals
+    /// full-prefix snapshot on every shared fixture. The oracle path is the
+    /// steady-state implementation (O(committed_prefix)); no separate incremental
+    /// decoder requires a performance fallback in this slice.
+    /// </summary>
+    public static (StreamState State, StreamUpdate Update) ApplyAppend(
+        StreamState state,
+        ReadOnlyMemory<byte> segment,
+        StreamCursor? cursor = null,
+        string? sourceRevision = null)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (state.Finished)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", "Stream is already finished."));
+        }
+
+        if (state.Options.MaxPendingBytes is long maxPending && maxPending < 0)
+        {
+            return (state, ErrorUpdate(
+                state,
+                "invalid_input",
+                "Stream buffer limits must be non-negative int64 values."));
+        }
+
+        if (state.Options.MaxLineBytes is long maxLine && maxLine < 0)
+        {
+            return (state, ErrorUpdate(
+                state,
+                "invalid_input",
+                "Stream buffer limits must be non-negative int64 values."));
+        }
+
+        if (segment.Length == 0 && state.PendingBytes.Length == 0)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        // True append replay: same segment re-supplied with the pre-apply cursor.
+        // Content equality alone is not enough — successive identical growth segments
+        // must both commit after the cursor advances.
+        var preOffset = ByteNextOffset(state.Cursor.Position);
+        if (state.LastAppendSegment is not null &&
+            state.LastAppendPreOffset is long lastPre &&
+            segment.Length == state.LastAppendSegment.Length &&
+            segment.Span.SequenceEqual(state.LastAppendSegment) &&
+            cursor is not null &&
+            cursor.Position is BytePosition replayPos &&
+            replayPos.NextByteOffset == lastPre &&
+            cursor.Source == state.Cursor.Source &&
+            cursor.Generation == state.Cursor.Generation &&
+            cursor.GroupId == state.Cursor.GroupId)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        if (cursor is not null)
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
+        }
+
+        var combined = new byte[state.PendingBytes.Length + segment.Length];
+        Buffer.BlockCopy(state.PendingBytes, 0, combined, 0, state.PendingBytes.Length);
+        segment.Span.CopyTo(combined.AsSpan(state.PendingBytes.Length));
+        var (complete, newPending) = SplitCompleteLines(combined);
+
+        if (state.Options.MaxPendingBytes is long maxP && newPending.LongLength > maxP)
+        {
+            return (state, ErrorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."));
+        }
+
+        if (state.Options.MaxLineBytes is long maxL &&
+            (AnyLineTooLong(complete, maxL) || newPending.LongLength > maxL))
+        {
+            return (state, ErrorUpdate(state, "stream_buffer_limit", "Stream buffer limit exceeded."));
+        }
+
+        // No complete lines: only pending advanced (incomplete line / mid-UTF-8).
+        // Visible records unchanged → kind=unchanged with patched pending cursor.
+        if (complete.Length == 0)
+        {
+            if (newPending.AsSpan().SequenceEqual(state.PendingBytes))
+            {
+                return (state, UnchangedUpdate(state));
+            }
+
+            var pendingOnly = Clone(state);
+            pendingOnly.PendingBytes = newPending;
+            pendingOnly.LastAppendSegment = segment.ToArray();
+            pendingOnly.LastAppendPreOffset = preOffset;
+            var priorByte = pendingOnly.Cursor.Position as BytePosition
+                ?? new BytePosition { NextByteOffset = 0, PendingByteLength = 0 };
+            pendingOnly.Cursor = pendingOnly.Cursor with
+            {
+                Position = priorByte with { PendingByteLength = newPending.LongLength },
+            };
+            return (pendingOnly, UnchangedUpdate(pendingOnly));
+        }
+
+        var newPrefix = new byte[state.CommittedPrefix.Length + complete.Length];
+        Buffer.BlockCopy(state.CommittedPrefix, 0, newPrefix, 0, state.CommittedPrefix.Length);
+        Buffer.BlockCopy(complete, 0, newPrefix, state.CommittedPrefix.Length, complete.Length);
+
+        var tmp = Clone(state);
+        tmp.PendingBytes = Array.Empty<byte>();
+        var rev = sourceRevision ?? state.Cursor.SourceRevision ?? "";
+        var (newState, update) = ApplySnapshot(tmp, newPrefix, rev, cursor: null);
+        // Failure-atomic: failed/reset snapshot leaves prior state and pending intact.
+        if (update.Kind is not ("updated" or "unchanged"))
+        {
+            return (state, update);
+        }
+
+        newState.PendingBytes = newPending;
+        newState.LastAppendSegment = segment.ToArray();
+        newState.LastAppendPreOffset = preOffset;
+        if (newState.Cursor.Position is BytePosition committedByte)
+        {
+            newState.Cursor = newState.Cursor with
+            {
+                Position = committedByte with { PendingByteLength = newPending.LongLength },
+            };
+        }
+
+        // Always copy patched cursor onto StreamUpdate (updated and unchanged).
+        update = update with { Cursor = newState.Cursor };
+        if (update.Kind == "updated")
+        {
+            var priorLen = state.CommittedPrefix.LongLength;
+            var completeLen = complete.LongLength;
+            update = update with
+            {
+                Consumed = new StreamConsumed
+                {
+                    CompleteRecords = update.Consumed.CompleteRecords,
+                    Bytes = (ulong)completeLen,
+                    FirstSourcePosition = completeLen > 0 ? priorLen : null,
+                    LastSourcePosition = completeLen > 0 ? priorLen + completeLen - 1 : null,
+                },
+            };
+        }
+
+        return (newState, update);
+    }
+
+    /// <summary>End-of-stream: optionally commit final unterminated line; finalize records.</summary>
+    public static (StreamState State, StreamUpdate Update) Finish(StreamState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (state.Finished)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        var material = state.CommittedPrefix;
+        var pending = state.PendingBytes;
+        if (pending.Length > 0 && !IsWhitespaceOnly(pending))
+        {
+            var withNl = new byte[material.Length + pending.Length + 1];
+            Buffer.BlockCopy(material, 0, withNl, 0, material.Length);
+            Buffer.BlockCopy(pending, 0, withNl, material.Length, pending.Length);
+            withNl[^1] = (byte)'\n';
+            material = withNl;
+            pending = Array.Empty<byte>();
+        }
+
+        var (midState, midUpdate) = ApplySnapshot(
+            state,
+            material,
+            state.Cursor.SourceRevision ?? "finish",
+            cursor: null);
+        if (midUpdate.Kind is not ("updated" or "unchanged"))
+        {
+            return (midState, midUpdate);
+        }
+
+        var baseSnapshot = midState.Snapshot;
+        if (baseSnapshot is null)
+        {
+            midState.Finished = true;
+            return (midState, midUpdate);
+        }
+
+        List<StreamRecord> finalized;
+        if (state.Options.FinalizeOnClose)
+        {
+            finalized = baseSnapshot.Records.Select(rec =>
+            {
+                if (rec.Status == "final")
+                {
+                    return rec;
+                }
+
+                return rec with
+                {
+                    Status = "final",
+                    FinalizesProvisionalId = rec.FinalizesProvisionalId ?? rec.ProvisionalId,
+                };
+            }).ToList();
+        }
+        else
+        {
+            finalized = baseSnapshot.Records.ToList();
+        }
+
+        var generation = midState.Generation;
+        var parentRevisionId = baseSnapshot.Revision.RevisionId;
+        var revisionNum = midState.NextRevision;
+        var prefixSha = midState.Cursor.PrefixSha256 ?? Sha256Hex(ReadOnlySpan<byte>.Empty);
+        var recordIds = finalized
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .Where(s => s.Length > 0)
+            .ToArray();
+        var revId = RevisionId(
+            generation,
+            revisionNum,
+            midState.Cursor.Source,
+            baseSnapshot.GroupId,
+            prefixSha,
+            recordIds);
+        var revision = new StreamRevision
+        {
+            Revision = revisionNum,
+            RevisionId = revId,
+            ParentRevisionId = parentRevisionId,
+            Complete = true,
+            Generation = generation,
+        };
+        var snapshot = new StreamSnapshot
+        {
+            Source = baseSnapshot.Source,
+            GroupId = baseSnapshot.GroupId,
+            Revision = revision,
+            Records = finalized,
+            Diagnostics = baseSnapshot.Diagnostics,
+            Complete = true,
+        };
+        var delta = DiffSnapshots(baseSnapshot, snapshot, revision);
+        var (outSnap, outDelta) = ApplyDelivery(snapshot, delta, state.Options.Delivery);
+        var newState = Clone(midState);
+        newState.Finished = true;
+        newState.PendingBytes = Array.Empty<byte>();
+        newState.CommittedPrefix = material;
+        newState.Snapshot = snapshot;
+        newState.Cursor = new StreamCursor
+        {
+            Source = midState.Cursor.Source,
+            GroupId = snapshot.GroupId,
+            Generation = generation,
+            Position = new BytePosition
+            {
+                NextByteOffset = material.LongLength,
+                PendingByteLength = 0,
+            },
+            SourceRevision = midState.Cursor.SourceRevision,
+            PrefixSha256 = Sha256Hex(material),
+        };
+        newState.NextRevision = revisionNum + 1;
+        var update = new StreamUpdate
+        {
+            Kind = "updated",
+            Revision = revision,
+            Cursor = newState.Cursor,
+            Snapshot = outSnap,
+            Delta = outDelta,
+            Diagnostics = snapshot.Diagnostics,
+            Provisional = new StreamProvisionalInfo
+            {
+                Include = state.Options.IncludeProvisional,
+                ProvisionalIds = Array.Empty<string>(),
+                FinalizedIds = finalized
+                    .Where(r => !string.IsNullOrEmpty(r.FinalizesProvisionalId))
+                    .Select(r => r.FinalizesProvisionalId!)
+                    .ToArray(),
+            },
+            Consumed = new StreamConsumed
+            {
+                CompleteRecords = (ulong)finalized.Count,
+                Bytes = (ulong)material.LongLength,
+            },
+        };
+        return (newState, update);
+    }
+
+    private static (StreamState State, StreamUpdate Update)? TryAutoReset(
+        StreamState state,
+        string reason,
+        ReadOnlyMemory<byte>? material,
+        string? sourceRevision)
+    {
+        if (state.Options.ResetPolicy != StreamResetPolicy.AutoReset)
+        {
+            return null;
+        }
+
+        if (material is null)
+        {
+            return null;
+        }
+
+        return Reset(state, new StreamResetRequest
+        {
+            Reason = reason,
+            SourceRevision = sourceRevision,
+            Material = material,
+        });
+    }
+
+    /// <summary>Install a new generation after reset-required or manual restart.</summary>
+    public static (StreamState State, StreamUpdate Update) Reset(
+        StreamState state,
+        StreamResetRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var generation = request.Generation ?? state.Generation + 1;
+        var groupId = state.Options.GroupId ?? state.Cursor.GroupId;
+        var newState = Clone(state);
+        newState.Generation = generation;
+        newState.NextRevision = 0;
+        newState.Finished = false;
+        newState.PendingBytes = Array.Empty<byte>();
+        newState.CommittedPrefix = Array.Empty<byte>();
+        newState.Snapshot = null;
+        newState.GroupLocked = false;
+        newState.LastAppendSegment = null;
+        newState.LastAppendPreOffset = null;
+        ClearAhpState(newState);
+        StreamPosition resetPos = state.Options.Source switch
+        {
+            TrajectorySource.Ahp => new SnapshotRevisionPosition
+            {
+                Revision = request.SourceRevision ?? "",
+                ContentSha256 = null,
+            },
+            TrajectorySource.Hermes => new HermesRowPosition
+            {
+                DatabaseGeneration = request.SourceRevision ?? "",
+                LastRowId = null,
+                ChangeToken = request.ChangeToken,
+            },
+            _ => new BytePosition { NextByteOffset = 0, PendingByteLength = 0 },
+        };
+        newState.Cursor = new StreamCursor
+        {
+            Source = state.Cursor.Source,
+            GroupId = groupId,
+            Generation = generation,
+            Position = resetPos,
+            SourceRevision = request.SourceRevision,
+            PrefixSha256 = null,
+        };
+
+        var dropped = state.Snapshot?.Records
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .Where(s => s.Length > 0)
+            .ToArray() ?? Array.Empty<string>();
+        var resetMeta = new StreamReset
+        {
+            Reason = request.Reason,
+            PriorCursor = request.PriorCursor ?? state.Cursor,
+            RequiresSnapshot = request.Material is null,
+            DroppedRecordIds = dropped,
+        };
+
+        if (request.Material is { } material)
+        {
+            var (applied, update) = state.Options.Source == TrajectorySource.Hermes
+                ? ApplyHermesExport(
+                    newState,
+                    material,
+                    request.ChangeToken,
+                    request.SourceRevision,
+                    request.SourceRevision,
+                    cursor: null)
+                : ApplySnapshot(
+                newState,
+                material,
+                request.SourceRevision ?? "",
+                cursor: null);
+            if (update.Kind is not ("updated" or "unchanged"))
+            {
+                return (applied, update);
+            }
+
+            StreamDelta? delta = update.Delta;
+            if (delta is not null)
+            {
+                var ops = new List<StreamDeltaOperation>
+                {
+                    new()
+                    {
+                        Op = "reset",
+                        Payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+                        {
+                            ["reset"] = ResetToDict(resetMeta),
+                        },
+                    },
+                };
+                ops.AddRange(delta.Operations);
+                delta = delta with { Operations = ops };
+            }
+
+            return (applied, update with { Delta = delta, Reset = resetMeta });
+        }
+
+        // Empty reset with no material → updated empty snapshot of new generation.
+        var emptySha = Sha256Hex(ReadOnlySpan<byte>.Empty);
+        var revision = new StreamRevision
+        {
+            Revision = 0,
+            RevisionId = RevisionId(generation, 0, newState.Cursor.Source, groupId, emptySha, Array.Empty<string>()),
+            ParentRevisionId = null,
+            Complete = false,
+            Generation = generation,
+        };
+        var snapshot = new StreamSnapshot
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Revision = revision,
+            Records = Array.Empty<StreamRecord>(),
+            Diagnostics = Array.Empty<StreamDiagnostic>(),
+            Complete = false,
+        };
+        var baseDelta = DiffSnapshots(null, snapshot, revision);
+        var resetOps = new List<StreamDeltaOperation>
+        {
+            new()
+            {
+                Op = "reset",
+                Payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["reset"] = ResetToDict(resetMeta),
+                },
+            },
+        };
+        resetOps.AddRange(baseDelta.Operations);
+        var fullDelta = baseDelta with { Operations = resetOps };
+        var (outSnap, outDelta) = ApplyDelivery(snapshot, fullDelta, state.Options.Delivery);
+        newState.Snapshot = snapshot;
+        newState.NextRevision = 1;
+        newState.Cursor = new StreamCursor
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Generation = generation,
+            Position = resetPos,
+            SourceRevision = request.SourceRevision,
+            PrefixSha256 = emptySha,
+        };
+        return (newState, new StreamUpdate
+        {
+            Kind = "updated",
+            Revision = revision,
+            Cursor = newState.Cursor,
+            Snapshot = outSnap,
+            Delta = outDelta,
+            Provisional = EmptyProvisional(state),
+            Consumed = EmptyConsumed(),
+            Reset = resetMeta,
+        });
+    }
+
+    /// <summary>Pure apply(state, input) → (state, update). Failed apply leaves state unchanged when possible.</summary>
+    public static (StreamState State, StreamUpdate Update) Apply(
+        StreamState state,
+        StreamInput input)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(input);
+
+        return input.Kind switch
+        {
+            "snapshot-bytes" => ApplySnapshot(
+                state,
+                input.Data ?? ReadOnlyMemory<byte>.Empty,
+                input.SourceRevision ?? "",
+                input.Cursor),
+            "append-bytes" => ApplyAppend(
+                state,
+                input.Data ?? ReadOnlyMemory<byte>.Empty,
+                input.Cursor,
+                input.SourceRevision),
+            "finish" => Finish(state),
+            "reset" => input.Reset is null
+                ? (state, ErrorUpdate(state, "invalid_input", "reset input requires a StreamResetRequest."))
+                : Reset(state, input.Reset),
+            "ahp-snapshot" => ApplyAhpSnapshot(
+                state,
+                input.Data ?? ReadOnlyMemory<byte>.Empty,
+                input.SourceRevision ?? "",
+                input.Cursor),
+            "ahp-actions" => ApplyAhpActions(
+                state,
+                input.Data ?? ReadOnlyMemory<byte>.Empty,
+                input.Cursor),
+            "hermes-export" => ApplyHermesExport(
+                state,
+                input.Data ?? ReadOnlyMemory<byte>.Empty,
+                input.ChangeToken,
+                input.DatabaseGeneration,
+                input.SourceRevision,
+                input.Cursor),
+            _ => (state, ErrorUpdate(state, "invalid_input", "Stream input kind is not supported for this source.")),
+        };
+    }
+
+    /// <summary>LS-07h: apply Hermes session export (array or {session, messages}).</summary>
+    public static (StreamState State, StreamUpdate Update) ApplyHermesExport(
+        StreamState state,
+        ReadOnlyMemory<byte> material,
+        string? changeToken = null,
+        string? databaseGeneration = null,
+        string? sourceRevision = null,
+        StreamCursor? cursor = null)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (state.Finished)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", "Stream is already finished."));
+        }
+
+        if (state.Options.Source != TrajectorySource.Hermes)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", MsgHermesSourceRequired));
+        }
+
+        if (cursor is not null)
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
+        }
+
+        var contentSha = Sha256Hex(material.Span);
+        if (!TryHermesExportMeta(material.Span, out var rowFps, out var lastRowId))
+        {
+            return (state, ErrorUpdate(state, "invalid_input", MsgInvalidHermesExport));
+        }
+
+        var gen = !string.IsNullOrEmpty(databaseGeneration)
+            ? databaseGeneration
+            : !string.IsNullOrEmpty(sourceRevision)
+                ? sourceRevision!
+                : "0";
+        var token = !string.IsNullOrEmpty(changeToken) ? changeToken! : contentSha;
+
+        if (state.Snapshot is not null &&
+            state.HermesLastExportSha == contentSha &&
+            state.Cursor.Position is HermesRowPosition priorPos &&
+            priorPos.DatabaseGeneration == gen &&
+            priorPos.ChangeToken == token)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        if (state.Snapshot is not null &&
+            state.Cursor.Position is HermesRowPosition genPos &&
+            !string.IsNullOrEmpty(genPos.DatabaseGeneration) &&
+            genPos.DatabaseGeneration != gen)
+        {
+            if (TryAutoReset(state, "source-replaced", material, sourceRevision ?? gen) is { } auto)
+            {
+                return auto;
+            }
+
+            return (state, ResetRequired(state, "source-replaced", "stream_source_reset",
+                "Source material was replaced relative to the committed cursor."));
+        }
+
+        var priorFps = state.HermesRowFingerprints;
+        if (state.Snapshot is not null && priorFps is not null)
+        {
+            var n = priorFps.Count;
+            if (rowFps.Count < n || !priorFps.SequenceEqual(rowFps.Take(n)))
+            {
+                if (TryAutoReset(state, "source-replaced", material, sourceRevision ?? gen) is { } auto)
+                {
+                    return auto;
+                }
+
+                return (state, ResetRequired(state, "source-replaced", "stream_source_reset",
+                    "Source material was replaced relative to the committed cursor."));
+            }
+        }
+
+        var built = BuildRecords(state, material.ToArray());
+        if (built.Update is not null)
+        {
+            return (state, built.Update);
+        }
+
+        var records = built.Records!;
+        var diagnostics = built.Diagnostics!;
+        var groupId = built.GroupId!;
+        if (!state.Options.IncludeProvisional)
+        {
+            records = records.Where(r => r.Status != "provisional").ToList();
+        }
+
+        var newState = Clone(state);
+        newState.GroupLocked = true;
+        var generation = newState.Generation;
+        var parentRevisionId = newState.Snapshot?.Revision.RevisionId;
+        var revisionNum = newState.NextRevision;
+        var recordIds = records
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .Where(s => s.Length > 0)
+            .ToArray();
+        var revisionId = RevisionId(
+            generation,
+            revisionNum,
+            newState.Cursor.Source,
+            groupId,
+            contentSha,
+            recordIds);
+        var revision = new StreamRevision
+        {
+            Revision = revisionNum,
+            RevisionId = revisionId,
+            ParentRevisionId = parentRevisionId,
+            Complete = false,
+            Generation = generation,
+        };
+        var snapshot = new StreamSnapshot
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Revision = revision,
+            Records = records,
+            Diagnostics = diagnostics,
+            Complete = false,
+        };
+        var delta = DiffSnapshots(newState.Snapshot, snapshot, revision);
+        var (outSnap, outDelta) = ApplyDelivery(snapshot, delta, state.Options.Delivery);
+        var cursorOut = new StreamCursor
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Generation = generation,
+            Position = new HermesRowPosition
+            {
+                DatabaseGeneration = gen,
+                LastRowId = lastRowId,
+                ChangeToken = token,
+            },
+            SourceRevision = sourceRevision ?? gen,
+            PrefixSha256 = contentSha,
+        };
+        var provisionalIds = records
+            .Select(r => r.ProvisionalId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Cast<string>()
+            .ToList();
+        var update = new StreamUpdate
+        {
+            Kind = "updated",
+            Revision = revision,
+            Cursor = cursorOut,
+            Snapshot = outSnap,
+            Delta = outDelta,
+            Diagnostics = diagnostics,
+            Provisional = new StreamProvisionalInfo
+            {
+                Include = state.Options.IncludeProvisional,
+                ProvisionalIds = provisionalIds,
+            },
+            Consumed = new StreamConsumed
+            {
+                CompleteRecords = (ulong)records.Count,
+                Bytes = (ulong)material.Length,
+                FirstSourcePosition = material.Length > 0 ? 0 : null,
+                LastSourcePosition = material.Length > 0 ? material.Length - 1 : null,
+            },
+        };
+        newState.Cursor = cursorOut;
+        newState.Snapshot = snapshot;
+        newState.NextRevision = revisionNum + 1;
+        newState.CommittedPrefix = Array.Empty<byte>();
+        newState.PendingBytes = Array.Empty<byte>();
+        newState.LastAppendSegment = null;
+        newState.LastAppendPreOffset = null;
+        newState.HermesRowFingerprints = rowFps;
+        newState.HermesLastExportSha = contentSha;
+        return (newState, update);
+    }
+
+    /// <summary>LS-06: successive AHP Shape A snapshots with provisional activeTurn.</summary>
+    public static (StreamState State, StreamUpdate Update) ApplyAhpSnapshot(
+        StreamState state,
+        ReadOnlyMemory<byte> material,
+        string sourceRevision,
+        StreamCursor? cursor = null)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        sourceRevision ??= "";
+
+        if (state.Finished)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", "Stream is already finished."));
+        }
+
+        if (state.Options.Source != TrajectorySource.Ahp)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", MsgAhpSourceRequired));
+        }
+
+        if (cursor is not null)
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
+        }
+
+        var contentSha = Sha256Hex(material.Span);
+        // Idempotent duplicate host revision (+ same content fingerprint).
+        if (state.Snapshot is not null &&
+            state.AhpLastSnapshotRevision == sourceRevision &&
+            state.AhpLastContentSha256 == contentSha)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        if (state.Snapshot is not null &&
+            state.Cursor.Position is SnapshotRevisionPosition snapPos &&
+            snapPos.Revision == sourceRevision &&
+            snapPos.ContentSha256 == contentSha)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        var built = BuildAhpRecords(state, material);
+        if (built.Update is not null)
+        {
+            return (state, built.Update);
+        }
+
+        var records = built.Records!;
+        var diagnostics = built.Diagnostics!;
+        var groupId = built.GroupId!;
+        var chatState = built.Chat!;
+        var session = built.Session;
+        var protocolVersion = built.ProtocolVersion;
+        var provisionalMap = built.ProvisionalMap ??
+            new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (!state.Options.IncludeProvisional)
+        {
+            records = records.Where(r => r.Status != "provisional").ToList();
+        }
+
+        var newState = Clone(state);
+        newState.AhpProvisionalMap = provisionalMap;
+        newState.GroupLocked = true;
+        var generation = newState.Generation;
+        var parentRevisionId = newState.Snapshot?.Revision.RevisionId;
+        var revisionNum = newState.NextRevision;
+        var recordIds = records
+            .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+            .Where(s => s.Length > 0)
+            .ToArray();
+        var revisionId = RevisionId(
+            generation,
+            revisionNum,
+            newState.Cursor.Source,
+            groupId,
+            contentSha,
+            recordIds);
+        var revision = new StreamRevision
+        {
+            Revision = revisionNum,
+            RevisionId = revisionId,
+            ParentRevisionId = parentRevisionId,
+            Complete = false,
+            Generation = generation,
+        };
+        var snapshot = new StreamSnapshot
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Revision = revision,
+            Records = records,
+            Diagnostics = diagnostics,
+            Complete = false,
+        };
+        var delta = DiffSnapshots(newState.Snapshot, snapshot, revision);
+        var (outSnap, outDelta) = ApplyDelivery(snapshot, delta, newState.Options.Delivery);
+
+        // Preserve server-seq authority when actions established it; otherwise snapshot-revision.
+        StreamPosition position;
+        if (newState.Cursor.Position is AhpServerSeqPosition || newState.AhpLastServerSeq is not null)
+        {
+            var lastSeq = newState.AhpLastServerSeq ?? -1;
+            position = new AhpServerSeqPosition
+            {
+                NextServerSeq = lastSeq + 1,
+                LastServerSeq = lastSeq,
+            };
+        }
+        else
+        {
+            position = new SnapshotRevisionPosition
+            {
+                Revision = sourceRevision,
+                ContentSha256 = contentSha,
+            };
+        }
+
+        var cursorOut = new StreamCursor
+        {
+            Source = newState.Cursor.Source,
+            GroupId = groupId,
+            Generation = generation,
+            Position = position,
+            SourceRevision = sourceRevision,
+            PrefixSha256 = contentSha,
+        };
+        var provisionalIds = records
+            .Where(r => !string.IsNullOrEmpty(r.ProvisionalId))
+            .Select(r => r.ProvisionalId!)
+            .ToArray();
+        var priorProvisional = new HashSet<string>(
+            (state.Snapshot?.Records ?? Array.Empty<StreamRecord>())
+                .Where(r => !string.IsNullOrEmpty(r.ProvisionalId))
+                .Select(r => r.ProvisionalId!),
+            StringComparer.Ordinal);
+        var finalizedIds = priorProvisional
+            .Where(pid => !provisionalIds.Contains(pid, StringComparer.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        var update = new StreamUpdate
+        {
+            Kind = "updated",
+            Revision = revision,
+            Cursor = cursorOut,
+            Snapshot = outSnap,
+            Delta = outDelta,
+            Diagnostics = diagnostics,
+            Provisional = new StreamProvisionalInfo
+            {
+                Include = state.Options.IncludeProvisional,
+                ProvisionalIds = provisionalIds,
+                FinalizedIds = finalizedIds,
+            },
+            Consumed = new StreamConsumed
+            {
+                CompleteRecords = (ulong)records.Count,
+                Bytes = (ulong)material.Length,
+                FirstSourcePosition = material.Length == 0 ? null : 0,
+                LastSourcePosition = material.Length == 0 ? null : material.Length - 1L,
+            },
+        };
+
+        newState.Cursor = cursorOut;
+        newState.Snapshot = snapshot;
+        newState.NextRevision = revisionNum + 1;
+        newState.AhpChatState = chatState;
+        newState.AhpSession = session;
+        newState.AhpProtocolVersion = protocolVersion;
+        newState.AhpTargetChannel = groupId.StartsWith("ahp-chat:", StringComparison.Ordinal)
+            ? groupId
+            : newState.AhpTargetChannel;
+        newState.AhpLastSnapshotRevision = sourceRevision;
+        newState.AhpLastContentSha256 = contentSha;
+        newState.CommittedPrefix = Array.Empty<byte>();
+        newState.PendingBytes = Array.Empty<byte>();
+        newState.LastAppendSegment = null;
+        newState.LastAppendPreOffset = null;
+        return (newState, update);
+    }
+
+    /// <summary>LS-07: AHP Shape B action-log apply with serverSeq cursor.</summary>
+    public static (StreamState State, StreamUpdate Update) ApplyAhpActions(
+        StreamState state,
+        ReadOnlyMemory<byte> data,
+        StreamCursor? cursor = null)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (state.Finished)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", "Stream is already finished."));
+        }
+
+        if (state.Options.Source != TrajectorySource.Ahp)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", MsgAhpSourceRequired));
+        }
+
+        var actionsSha = Sha256Hex(data.Span);
+        var preSeq = state.AhpLastServerSeq;
+
+        // Idempotent true-replay of the same batch (pre-apply cursor or already applied).
+        if (state.LastAhpActionsSha256 is not null &&
+            state.LastAhpActionsSha256 == actionsSha)
+        {
+            if (cursor is null)
+            {
+                return (state, UnchangedUpdate(state));
+            }
+
+            if (cursor.Position is AhpServerSeqPosition seqPos)
+            {
+                if (state.LastAhpActionsPreSeq is not null &&
+                    seqPos.LastServerSeq == state.LastAhpActionsPreSeq.Value)
+                {
+                    return (state, UnchangedUpdate(state));
+                }
+
+                // Post-apply cursor re-supply of the same batch: already committed.
+                if (state.Cursor.Position is AhpServerSeqPosition committedSeq &&
+                    seqPos.LastServerSeq == committedSeq.LastServerSeq)
+                {
+                    return (state, UnchangedUpdate(state));
+                }
+            }
+            else if (cursor.Position is SnapshotRevisionPosition)
+            {
+                // First action batch was applied from a snapshot-revision cursor.
+                if (state.LastAhpActionsPreSeq is null or -1)
+                {
+                    return (state, UnchangedUpdate(state));
+                }
+            }
+        }
+
+        // Cursor checks: only enforce when caller supplies ahp-server-seq that
+        // disagrees with committed authority. Snapshot-revision cursors are ignored
+        // once the stream is on server-seq (upgrade path / double-invoke pre-cursor).
+        if (cursor is not null && cursor.Position is AhpServerSeqPosition)
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
+        }
+        else if (cursor is not null &&
+                 cursor.Position is not (AhpServerSeqPosition or SnapshotRevisionPosition))
+        {
+            var conflict = CursorConflict(state, cursor);
+            if (conflict is not null)
+            {
+                return (state, conflict);
+            }
+        }
+
+        List<JsonObject> envelopes;
+        try
+        {
+            envelopes = AhpReducer.ParseActionBatch(data.Span);
+        }
+        catch (ArgumentException)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", MsgInvalidAhpActions));
+        }
+
+        if (envelopes.Count == 0)
+        {
+            return (state, UnchangedUpdate(state));
+        }
+
+        // Target channel locks only after group lock (first accepted material) or
+        // from the first ahp-chat envelope in the reducer — not from create-time
+        // options.GroupId alone (aligns with Python/TS/Rust).
+        var target = state.AhpTargetChannel;
+        if (target is null &&
+            state.GroupLocked &&
+            state.Cursor.GroupId.StartsWith("ahp-chat:", StringComparison.Ordinal))
+        {
+            target = state.Cursor.GroupId;
+        }
+
+        // reorder=reject: never silently reorder / accept non-monotonic batches.
+        var orderErr = AhpReducer.ValidateAhpBatchOrder(envelopes, target);
+        if (orderErr is not null)
+        {
+            return (state, ErrorUpdate(state, "invalid_input", orderErr));
+        }
+
+        var gap = AhpReducer.DetectSequenceGap(envelopes, state.AhpLastServerSeq, target);
+        if (gap is not null)
+        {
+            return (state, ResetRequired(
+                state,
+                "sequence-gap",
+                "stream_sequence_gap",
+                MsgSequenceGap));
+        }
+
+        var chatIn = state.AhpChatState ?? AhpReducer.EmptyChatState(target);
+        var reduced = AhpReducer.ReduceAhpActions(
+            chatIn,
+            envelopes,
+            target,
+            state.AhpLastServerSeq);
+
+        var protocol = state.AhpProtocolVersion
+            ?? state.Options.AhpProtocolVersion
+            ?? "0.7.0";
+        var material = AhpReducer.ShapeABytes(reduced.Chat, protocol, state.AhpSession);
+        var rev = reduced.LastServerSeq is not null
+            ? $"seq:{reduced.LastServerSeq}"
+            : state.Cursor.SourceRevision ?? "seq:0";
+
+        // Apply via snapshot path, then rewrite cursor to ahp-server-seq.
+        var snapState = Clone(state);
+        snapState.AhpChatState = reduced.Chat;
+        snapState.AhpLastServerSeq = reduced.LastServerSeq;
+        // Clear snapshot-revision idempotence keys so seq advances always emit.
+        snapState.AhpLastSnapshotRevision = null;
+        snapState.AhpLastContentSha256 = null;
+
+        var (newState, update) = ApplyAhpSnapshot(snapState, material, rev, cursor: null);
+        if (update.Kind is not ("updated" or "unchanged"))
+        {
+            return (state, update);
+        }
+
+        // Merge reducer diagnostics (unknown action / foreign channel).
+        // Sort by diagnostic_key so snapshot order matches key-sorted
+        // diagnostic_add ops under the delta-apply law (streaming.md §7).
+        // Project through the content-safe catalog (H2).
+        var extra = reduced.Diagnostics
+            .Select(d => StreamSafeDiagnostics.Project(d.Code, d.Message))
+            .ToList();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var mergedDiags = new List<StreamDiagnostic>();
+        foreach (var d in update.Diagnostics.Concat(extra))
+        {
+            var projected = StreamSafeDiagnostics.Project(
+                d.Code, d.Message, d.InputLine, d.RecordIndex, d.Count);
+            var key = DiagnosticKey(projected);
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            mergedDiags.Add(projected);
+        }
+
+        mergedDiags = mergedDiags
+            .OrderBy(DiagnosticKey, StringComparer.Ordinal)
+            .ToList();
+
+        var lastSeq = reduced.LastServerSeq ?? -1;
+        var seqCursor = new StreamCursor
+        {
+            Source = newState.Cursor.Source,
+            GroupId = newState.Cursor.GroupId,
+            Generation = newState.Cursor.Generation,
+            Position = new AhpServerSeqPosition
+            {
+                NextServerSeq = lastSeq + 1,
+                LastServerSeq = lastSeq,
+                NextByteOffset = data.Length > 0 ? data.Length : null,
+            },
+            SourceRevision = rev,
+            PrefixSha256 = newState.Cursor.PrefixSha256,
+        };
+        newState.Cursor = seqCursor;
+        newState.AhpLastServerSeq = reduced.LastServerSeq;
+        newState.AhpChatState = reduced.Chat;
+        newState.AhpTargetChannel = newState.Cursor.GroupId.StartsWith("ahp-chat:", StringComparison.Ordinal)
+            ? newState.Cursor.GroupId
+            : target;
+        newState.LastAhpActionsSha256 = actionsSha;
+        newState.LastAhpActionsPreSeq = preSeq ?? -1;
+
+        if (update.Kind == "unchanged" && extra.Count == 0)
+        {
+            return (newState, UnchangedUpdate(newState));
+        }
+
+        StreamSnapshot? outSnapshot = update.Snapshot;
+        StreamDelta? outDelta = update.Delta;
+        if (outSnapshot is not null)
+        {
+            var snapWithDiags = outSnapshot with { Diagnostics = mergedDiags };
+            var reDelta = DiffSnapshots(state.Snapshot, snapWithDiags, snapWithDiags.Revision);
+            var delivered = ApplyDelivery(snapWithDiags, reDelta, state.Options.Delivery);
+            outSnapshot = delivered.Snapshot;
+            outDelta = delivered.Delta;
+            newState.Snapshot = snapWithDiags;
+        }
+
+        return (newState, new StreamUpdate
+        {
+            Kind = "updated",
+            Revision = update.Revision,
+            Cursor = seqCursor,
+            Snapshot = outSnapshot,
+            Delta = outDelta,
+            Diagnostics = mergedDiags,
+            Provisional = update.Provisional,
+            Consumed = new StreamConsumed
+            {
+                CompleteRecords = update.Consumed.CompleteRecords,
+                Bytes = (ulong)data.Length,
+                FirstSourcePosition = data.Length == 0 ? null : 0,
+                LastSourcePosition = data.Length == 0 ? null : data.Length - 1L,
+            },
+        });
+    }
+
+    public static StreamDelta DiffSnapshots(
+        StreamSnapshot? prior,
+        StreamSnapshot current,
+        StreamRevision revision)
+    {
+        var priorRecords = prior?.Records ?? Array.Empty<StreamRecord>();
+        var currRecords = current.Records;
+        var priorByKey = priorRecords.ToDictionary(MatchKey, StringComparer.Ordinal);
+        var currByKey = currRecords.ToDictionary(MatchKey, StringComparer.Ordinal);
+        var ops = new List<StreamDeltaOperation>();
+
+        foreach (var key in priorByKey.Keys.Where(k => !currByKey.ContainsKey(k)).Order(StringComparer.Ordinal))
+        {
+            ops.Add(new StreamDeltaOperation
+            {
+                Op = "remove",
+                Payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["record_id"] = key,
+                    ["reason"] = "source-rewrite",
+                },
+            });
+        }
+
+        foreach (var rec in currRecords)
+        {
+            var key = MatchKey(rec);
+            if (!priorByKey.TryGetValue(key, out var prev) ||
+                !RecordBodyEqual(prev.Record, rec.Record))
+            {
+                ops.Add(new StreamDeltaOperation
+                {
+                    Op = "upsert",
+                    Payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["record"] = RecordToDict(rec),
+                    },
+                });
+            }
+            else if (prev.Status != rec.Status)
+            {
+                ops.Add(new StreamDeltaOperation
+                {
+                    Op = "state_change",
+                    Payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["record_id"] = key,
+                        ["status"] = rec.Status,
+                    },
+                });
+            }
+        }
+
+        var priorDiags = (prior?.Diagnostics ?? Array.Empty<StreamDiagnostic>())
+            .ToDictionary(DiagnosticKey, StringComparer.Ordinal);
+        var currDiags = current.Diagnostics.ToDictionary(DiagnosticKey, StringComparer.Ordinal);
+        foreach (var key in priorDiags.Keys.Where(k => !currDiags.ContainsKey(k)).Order(StringComparer.Ordinal))
+        {
+            ops.Add(new StreamDeltaOperation
+            {
+                Op = "diagnostic_remove",
+                Payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["diagnostic_key"] = key,
+                },
+            });
+        }
+
+        foreach (var key in currDiags.Keys.Order(StringComparer.Ordinal))
+        {
+            var d = currDiags[key];
+            if (!priorDiags.TryGetValue(key, out var prev) ||
+                !DiagnosticEqual(prev, d))
+            {
+                ops.Add(new StreamDeltaOperation
+                {
+                    Op = "diagnostic_add",
+                    Payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["diagnostic"] = DiagnosticToDict(d),
+                    },
+                });
+            }
+        }
+
+        return new StreamDelta
+        {
+            BaseRevisionId = prior?.Revision.RevisionId,
+            Revision = revision,
+            Operations = ops,
+        };
+    }
+
+    /// <summary>Apply delta ops to a prior snapshot dict (delta-apply law).</summary>
+    public static Dictionary<string, object?> ApplyDeltaToSnapshot(
+        Dictionary<string, object?>? prior,
+        Dictionary<string, object?> delta)
+    {
+        var baseSnap = prior is null
+            ? new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["schema_id"] = SchemaId,
+                ["records"] = new List<object?>(),
+                ["diagnostics"] = new List<object?>(),
+            }
+            : DeepClone(prior);
+
+        var records = (List<object?>)(baseSnap["records"] ??= new List<object?>());
+        var diagnostics = (List<object?>)(baseSnap["diagnostics"] ??= new List<object?>());
+        var ops = (IEnumerable<object?>)delta["operations"]!;
+
+        foreach (var opObj in ops)
+        {
+            var op = (Dictionary<string, object?>)opObj!;
+            var kind = (string)op["op"]!;
+            if (kind == "upsert")
+            {
+                var entry = (Dictionary<string, object?>)op["record"]!;
+                var key = MatchKeyDict(entry);
+                var idx = records.FindIndex(r => MatchKeyDict((Dictionary<string, object?>)r!) == key);
+                if (idx >= 0)
+                {
+                    records[idx] = entry;
+                }
+                else
+                {
+                    records.Add(entry);
+                }
+            }
+            else if (kind == "remove")
+            {
+                var rid = (string)op["record_id"]!;
+                records.RemoveAll(r => MatchKeyDict((Dictionary<string, object?>)r!) == rid);
+            }
+            else if (kind == "state_change")
+            {
+                var rid = (string)op["record_id"]!;
+                var status = (string)op["status"]!;
+                var idx = records.FindIndex(r => MatchKeyDict((Dictionary<string, object?>)r!) == rid);
+                if (idx >= 0)
+                {
+                    var clone = DeepClone((Dictionary<string, object?>)records[idx]!);
+                    clone["status"] = status;
+                    records[idx] = clone;
+                }
+            }
+            else if (kind == "diagnostic_add")
+            {
+                var d = (Dictionary<string, object?>)op["diagnostic"]!;
+                var key = DiagnosticKeyDict(d);
+                diagnostics.RemoveAll(x => DiagnosticKeyDict((Dictionary<string, object?>)x!) == key);
+                diagnostics.Add(d);
+            }
+            else if (kind == "diagnostic_remove")
+            {
+                var key = (string)op["diagnostic_key"]!;
+                diagnostics.RemoveAll(x => DiagnosticKeyDict((Dictionary<string, object?>)x!) == key);
+            }
+            else if (kind == "finalize")
+            {
+                var pid = (string)op["provisional_id"]!;
+                records.RemoveAll(r =>
+                {
+                    var dict = (Dictionary<string, object?>)r!;
+                    return (dict.TryGetValue("provisional_id", out var p) && p is string s && s == pid)
+                           || MatchKeyDict(dict) == pid;
+                });
+                var entry = (Dictionary<string, object?>)op["record"]!;
+                var key = MatchKeyDict(entry);
+                var idx = records.FindIndex(r => MatchKeyDict((Dictionary<string, object?>)r!) == key);
+                if (idx >= 0)
+                {
+                    records[idx] = entry;
+                }
+                else
+                {
+                    records.Add(entry);
+                }
+            }
+            else if (kind == "reset")
+            {
+                records.Clear();
+                diagnostics.Clear();
+            }
+            else
+            {
+                throw new TrajectoryNormalizationException(
+                    NormalizationErrorCode.InvalidInput,
+                    "Unknown stream delta operation.");
+            }
+        }
+
+        if (delta.TryGetValue("revision", out var rev) && rev is not null)
+        {
+            baseSnap["revision"] = rev;
+            if (rev is Dictionary<string, object?> revDict &&
+                revDict.TryGetValue("complete", out var complete))
+            {
+                baseSnap["complete"] = complete;
+            }
+        }
+
+        return baseSnap;
+    }
+
+    public static Dictionary<string, object?> SnapshotToDict(StreamSnapshot snapshot)
+    {
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["schema_id"] = snapshot.SchemaId,
+            ["source"] = snapshot.Source,
+            ["group_id"] = snapshot.GroupId,
+            ["revision"] = RevisionToDict(snapshot.Revision),
+            ["records"] = snapshot.Records.Select(RecordToDict).Cast<object?>().ToList(),
+            ["diagnostics"] = snapshot.Diagnostics.Select(DiagnosticToDict).Cast<object?>().ToList(),
+            ["complete"] = snapshot.Complete,
+        };
+    }
+
+    /// <summary>Serialize a stream update to wire snake_case JSON objects.</summary>
+    public static Dictionary<string, object?> UpdateToDict(StreamUpdate update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        var consumed = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["complete_records"] = JsonSafeUInt64(update.Consumed.CompleteRecords),
+            ["bytes"] = JsonSafeUInt64(update.Consumed.Bytes),
+        };
+        if (update.Consumed.FirstSourcePosition is not null)
+        {
+            consumed["first_source_position"] = JsonSafeInt(update.Consumed.FirstSourcePosition.Value);
+        }
+
+        if (update.Consumed.LastSourcePosition is not null)
+        {
+            consumed["last_source_position"] = JsonSafeInt(update.Consumed.LastSourcePosition.Value);
+        }
+
+        var provisional = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["include"] = update.Provisional.Include,
+            ["provisional_ids"] = update.Provisional.ProvisionalIds.ToList(),
+            ["finalized_ids"] = update.Provisional.FinalizedIds.ToList(),
+        };
+        var dict = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["kind"] = update.Kind,
+            ["revision"] = RevisionToDict(update.Revision),
+            ["cursor"] = CursorToDict(update.Cursor),
+            ["snapshot"] = update.Snapshot is null ? null : SnapshotToDict(update.Snapshot),
+            ["delta"] = update.Delta is null ? null : DeltaToDict(update.Delta),
+            ["diagnostics"] = update.Diagnostics.Select(DiagnosticToDict).Cast<object?>().ToList(),
+            ["provisional"] = provisional,
+            ["consumed"] = consumed,
+        };
+        if (update.Reset is not null)
+        {
+            dict["reset"] = ResetToDict(update.Reset);
+        }
+
+        if (update.Error is { } err)
+        {
+            dict["error"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["code"] = err.Code,
+                ["message"] = err.Message,
+            };
+        }
+
+        return dict;
+    }
+
+    public static Dictionary<string, object?> DeltaToDict(StreamDelta delta)
+    {
+        var ops = new List<object?>();
+        foreach (var op in delta.Operations)
+        {
+            var dict = new Dictionary<string, object?>(op.Payload, StringComparer.Ordinal)
+            {
+                ["op"] = op.Op,
+            };
+            ops.Add(dict);
+        }
+
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["schema_id"] = delta.SchemaId,
+            ["base_revision_id"] = delta.BaseRevisionId,
+            ["revision"] = RevisionToDict(delta.Revision),
+            ["operations"] = ops,
+        };
+    }
+
+    // ---- internals ----
+
+    private static (List<StreamRecord>? Records, List<StreamDiagnostic>? Diagnostics, string? GroupId, StreamUpdate? Update)
+        BuildRecords(StreamState state, byte[] committed)
+    {
+        var groupHint = state.GroupLocked ? state.Cursor.GroupId : state.Options.GroupId;
+        if (committed.Length == 0)
+        {
+            return ([], [], groupHint ?? state.Cursor.GroupId, null);
+        }
+
+        try
+        {
+            var engine = TrajectoryEngine.CreateDefault();
+            // Decode per LF-terminated line (strict UTF-8). Invalid complete lines
+            // become adapter invalid_json_line diagnostics rather than a whole-stream
+            // error, without U+FFFD substitution on valid wire bytes.
+            var transcript = DecodeCommittedLinesForNormalize(committed);
+
+            var ir = engine.NormalizeToIR(new NormalizeInput
+            {
+                Source = state.Options.Source,
+                Transcript = transcript,
+                SourceContext = new SourceContext
+                {
+                    GroupId = groupHint,
+                    BaseByteOffset = 0,
+                    Partial = true,
+                },
+                Options = state.Options.Normalize,
+            });
+
+            var hyp = engine.Project<HypabolicTrajectoryV1>(ir, OutputSchemaIds.HypabolicTrajectoryV1);
+            var hasBackendSynth = ir.Diagnostics.Any(d => d.Code == "backend_tool_result_synthesized");
+            var markProvisional = hasBackendSynth && state.Options.Source == TrajectorySource.GrokBuild;
+            var records = hyp.Records.Select(r =>
+            {
+                var dict = HypabolicRecordToDict(r);
+                if (markProvisional && IsSyntheticBackendToolResult(dict))
+                {
+                    var provisionalId = dict.TryGetValue("id", out var id) ? id?.ToString() : null;
+                    return new StreamRecord
+                    {
+                        Status = "provisional",
+                        Record = dict,
+                        ProvisionalId = string.IsNullOrEmpty(provisionalId) ? null : provisionalId,
+                    };
+                }
+
+                return new StreamRecord
+                {
+                    Status = "stable",
+                    Record = dict,
+                };
+            }).ToList();
+            var diagnostics = ir.Diagnostics.Select(d => StreamSafeDiagnostics.Project(
+                d.Code,
+                d.Message,
+                d.InputLine,
+                d.RecordIndex,
+                d.Count)).ToList();
+            return (records, diagnostics, ir.GroupId, null);
+        }
+        catch (TrajectoryNormalizationException ex) when (ex.Code == NormalizationErrorCode.SourceGroupConflict)
+        {
+            return (null, null, null, ResetRequired(
+                state,
+                "group-changed",
+                "stream_source_reset",
+                "Source group changed relative to the active stream."));
+        }
+        catch (TrajectoryNormalizationException ex)
+        {
+            var wire = ex.Code switch
+            {
+                NormalizationErrorCode.InvalidInput => "invalid_input",
+                NormalizationErrorCode.UnknownSource => "unknown_source",
+                NormalizationErrorCode.MissingUserRecords => "missing_user_records",
+                NormalizationErrorCode.MissingAssistantRecords => "missing_assistant_records",
+                NormalizationErrorCode.SourceGroupConflict => "source_group_conflict",
+                NormalizationErrorCode.SourceGroupRequired => "source_group_required",
+                _ => "invalid_input",
+            };
+            return (null, null, null, ErrorUpdate(state, wire, StreamSafeDiagnostics.ErrorMessage(wire, ex.Message)));
+        }
+    }
+
+    private sealed record AhpBuildResult(
+        List<StreamRecord>? Records,
+        List<StreamDiagnostic>? Diagnostics,
+        string? GroupId,
+        JsonObject? Chat,
+        JsonObject? Session,
+        string? ProtocolVersion,
+        Dictionary<string, string>? ProvisionalMap,
+        StreamUpdate? Update);
+
+    /// <summary>Normalize Shape A material with provisional activeTurn mapping.</summary>
+    private static AhpBuildResult BuildAhpRecords(StreamState state, ReadOnlyMemory<byte> material)
+    {
+        JsonObject root;
+        try
+        {
+            var text = Encoding.UTF8.GetString(material.Span);
+            var node = JsonNode.Parse(text);
+            if (node is not JsonObject obj || obj["chat"] is not JsonObject)
+            {
+                return new AhpBuildResult(
+                    null, null, null, null, null, null, null,
+                    ErrorUpdate(state, "invalid_input", MsgInvalidAhpSnapshot));
+            }
+
+            root = obj;
+        }
+        catch (Exception ex) when (ex is JsonException or DecoderFallbackException or ArgumentException)
+        {
+            return new AhpBuildResult(
+                null, null, null, null, null, null, null,
+                ErrorUpdate(state, "invalid_input", MsgInvalidAhpSnapshot));
+        }
+
+        var chat = (JsonObject)root["chat"]!;
+        var session = root["session"] as JsonObject;
+        var protocolVersion = root["ahpProtocolVersion"] is JsonValue pv &&
+                              pv.GetValueKind() == JsonValueKind.String
+            ? pv.GetValue<string>()
+            : null;
+        var activeIds = AhpActiveTurnNativeIds(chat["activeTurn"]);
+
+        // Do not pass stream group_id hint unless locked on a chat URI.
+        string? groupHint = null;
+        if (state.GroupLocked &&
+            state.Cursor.GroupId.StartsWith("ahp-chat:", StringComparison.Ordinal))
+        {
+            groupHint = state.Cursor.GroupId;
+        }
+
+        try
+        {
+            var engine = TrajectoryEngine.CreateDefault();
+            var transcript = Encoding.UTF8.GetString(material.Span);
+            var ir = engine.NormalizeToIR(new NormalizeInput
+            {
+                Source = TrajectorySource.Ahp,
+                Transcript = transcript,
+                SourceContext = new SourceContext
+                {
+                    GroupId = groupHint,
+                    BaseByteOffset = 0,
+                    Partial = true,
+                },
+                Options = state.Options.Normalize,
+            });
+
+            var hyp = engine.Project<HypabolicTrajectoryV1>(ir, OutputSchemaIds.HypabolicTrajectoryV1);
+            var provisionalMap = new Dictionary<string, string>(
+                state.AhpProvisionalMap,
+                StringComparer.Ordinal);
+            var fallbackN = provisionalMap.Keys.Count(static k => k.StartsWith("__fallback:", StringComparison.Ordinal));
+            var records = new List<StreamRecord>();
+            foreach (var r in hyp.Records)
+            {
+                var dict = HypabolicRecordToDict(r);
+                var role = dict.TryGetValue("role", out var roleObj) ? roleObj?.ToString() : null;
+                var isProv = role != "meta" && RecordFromActiveTurn(dict, activeIds);
+                if (isProv)
+                {
+                    var (provisionalId, nextMap, nextFb) =
+                        StableProvisionalId(dict, activeIds, provisionalMap, fallbackN);
+                    provisionalMap = nextMap;
+                    fallbackN = nextFb;
+                    records.Add(new StreamRecord
+                    {
+                        Status = "provisional",
+                        Record = dict,
+                        ProvisionalId = provisionalId,
+                    });
+                }
+                else
+                {
+                    records.Add(new StreamRecord
+                    {
+                        Status = "stable",
+                        Record = dict,
+                    });
+                }
+            }
+
+            var diagnostics = ir.Diagnostics
+                .Where(d => d.Code != DiagnosticCodes.AhpActiveTurnOmitted)
+                .Select(d => StreamSafeDiagnostics.Project(
+                    d.Code,
+                    d.Message,
+                    d.InputLine,
+                    d.RecordIndex,
+                    d.Count))
+                .ToList();
+
+            return new AhpBuildResult(
+                records,
+                diagnostics,
+                ir.GroupId,
+                (JsonObject)chat.DeepClone(),
+                session is null ? null : (JsonObject)session.DeepClone(),
+                protocolVersion,
+                provisionalMap,
+                null);
+        }
+        catch (TrajectoryNormalizationException ex) when (ex.Code == NormalizationErrorCode.SourceGroupConflict)
+        {
+            return new AhpBuildResult(
+                null, null, null, null, null, null, null,
+                ResetRequired(
+                    state,
+                    "group-changed",
+                    "stream_source_reset",
+                    "Source group changed relative to the active stream."));
+        }
+        catch (TrajectoryNormalizationException ex)
+        {
+            var wire = ex.Code switch
+            {
+                NormalizationErrorCode.InvalidInput => "invalid_input",
+                NormalizationErrorCode.UnknownSource => "unknown_source",
+                NormalizationErrorCode.MissingUserRecords => "missing_user_records",
+                NormalizationErrorCode.MissingAssistantRecords => "missing_assistant_records",
+                NormalizationErrorCode.SourceGroupConflict => "source_group_conflict",
+                NormalizationErrorCode.SourceGroupRequired => "source_group_required",
+                _ => "invalid_input",
+            };
+            return new AhpBuildResult(
+                null, null, null, null, null, null, null,
+                ErrorUpdate(state, wire, ex.Message));
+        }
+    }
+
+    private static HashSet<string> AhpActiveTurnNativeIds(JsonNode? active)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        if (active is not JsonObject a)
+        {
+            return ids;
+        }
+
+        if (a["id"] is JsonValue idVal &&
+            idVal.GetValueKind() == JsonValueKind.String &&
+            idVal.GetValue<string>() is { Length: > 0 } tid)
+        {
+            ids.Add(tid);
+        }
+
+        if (a["responseParts"] is JsonArray parts)
+        {
+            foreach (var partNode in parts)
+            {
+                if (partNode is not JsonObject part)
+                {
+                    continue;
+                }
+
+                if (part["id"] is JsonValue pid &&
+                    pid.GetValueKind() == JsonValueKind.String &&
+                    pid.GetValue<string>() is { Length: > 0 } partId)
+                {
+                    ids.Add(partId);
+                }
+
+                if (part["toolCall"] is JsonObject tc &&
+                    tc["toolCallId"] is JsonValue tcid &&
+                    tcid.GetValueKind() == JsonValueKind.String &&
+                    tcid.GetValue<string>() is { Length: > 0 } toolCallId)
+                {
+                    ids.Add(toolCallId);
+                }
+            }
+        }
+
+        return ids;
+    }
+
+    private static string? ActiveNativeKey(
+        Dictionary<string, object?> record,
+        HashSet<string> activeIds)
+    {
+        if (activeIds.Count == 0)
+        {
+            return null;
+        }
+
+        if (!record.TryGetValue("provenance", out var provObj) ||
+            provObj is not Dictionary<string, object?> prov)
+        {
+            return null;
+        }
+
+        foreach (var key in new[] { "native_record_id", "stable_source_record_id" })
+        {
+            if (prov.TryGetValue(key, out var val) &&
+                val is string s &&
+                s.Length > 0 &&
+                activeIds.Contains(s))
+            {
+                return s;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool RecordFromActiveTurn(
+        Dictionary<string, object?> record,
+        HashSet<string> activeIds) =>
+        ActiveNativeKey(record, activeIds) is not null;
+
+    private static (string ProvisionalId, Dictionary<string, string> Map, int FallbackN)
+        StableProvisionalId(
+            Dictionary<string, object?> record,
+            HashSet<string> activeIds,
+            Dictionary<string, string> provisionalMap,
+            int fallbackN)
+    {
+        var nativeKey = ActiveNativeKey(record, activeIds);
+        if (nativeKey is null)
+        {
+            fallbackN += 1;
+            nativeKey = $"__fallback:{fallbackN}";
+        }
+
+        if (provisionalMap.TryGetValue(nativeKey, out var existing))
+        {
+            return (existing, provisionalMap, fallbackN);
+        }
+
+        var provisionalId = $"prov-active:{nativeKey}";
+        var next = new Dictionary<string, string>(provisionalMap, StringComparer.Ordinal)
+        {
+            [nativeKey] = provisionalId,
+        };
+        return (provisionalId, next, fallbackN);
+    }
+
+    /// <summary>
+    /// Strict UTF-8 decode of each LF-terminated complete line. Invalid lines are
+    /// replaced with a non-JSON placeholder so adapters emit <c>invalid_json_line</c>
+    /// rather than failing the whole apply. Valid lines round-trip without U+FFFD.
+    /// </summary>
+    private static string DecodeCommittedLinesForNormalize(byte[] committed)
+    {
+        var utf8Strict = Encoding.GetEncoding(
+            "utf-8",
+            EncoderFallback.ExceptionFallback,
+            DecoderFallback.ExceptionFallback);
+        var sb = new StringBuilder(committed.Length);
+        var start = 0;
+        for (var i = 0; i < committed.Length; i++)
+        {
+            if (committed[i] != (byte)'\n')
+            {
+                continue;
+            }
+
+            var lineLen = i - start + 1;
+            try
+            {
+                sb.Append(utf8Strict.GetString(committed, start, lineLen));
+            }
+            catch (DecoderFallbackException)
+            {
+                // Non-whitespace invalid JSON token + LF keeps line numbering aligned.
+                sb.Append("!\n");
+            }
+
+            start = i + 1;
+        }
+
+        if (start < committed.Length)
+        {
+            // Framed committed prefixes end on LF; handle a trailing remainder strictly.
+            try
+            {
+                sb.Append(utf8Strict.GetString(committed, start, committed.Length - start));
+            }
+            catch (DecoderFallbackException)
+            {
+                sb.Append('!');
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private static Dictionary<string, object?> HypabolicRecordToDict(HypabolicRecordV1 record)
+    {
+        static string? Ts(DateTimeOffset? value) =>
+            value?.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'");
+
+        var dict = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = record.Id,
+            ["kind"] = record.Kind,
+            ["role"] = record.Role,
+            ["order"] = record.Order,
+            ["source_timestamp"] = Ts(record.SourceTimestamp),
+            ["timestamp"] = Ts(record.Timestamp),
+        };
+        if (record.SourceName is not null)
+        {
+            dict["source_name"] = record.SourceName;
+        }
+
+        if (record.Cwd is not null)
+        {
+            dict["cwd"] = record.Cwd;
+        }
+
+        if (record.GitBranch is not null)
+        {
+            dict["git_branch"] = record.GitBranch;
+        }
+
+        if (record.Model is not null)
+        {
+            dict["model"] = record.Model;
+        }
+
+        if (record.ProducerVersion is not null)
+        {
+            dict["producer_version"] = record.ProducerVersion;
+        }
+
+        if (record.Kind == "assistant_tool_calls")
+        {
+            dict["content"] = null;
+            dict["tool_calls"] = (record.ToolCalls ?? [])
+                .Select(call => new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["id"] = call.Id,
+                    ["name"] = call.Name,
+                    ["arguments_json"] = call.ArgumentsJson,
+                })
+                .Cast<object?>()
+                .ToList();
+        }
+        else if (record.Content is not null)
+        {
+            dict["content"] = record.Content;
+        }
+
+        if (record.ToolCallId is not null)
+        {
+            dict["tool_call_id"] = record.ToolCallId;
+        }
+
+        if (record.ToolName is not null)
+        {
+            dict["tool_name"] = record.ToolName;
+        }
+
+        if (record.IsError is { } isError)
+        {
+            dict["is_error"] = isError;
+        }
+
+        var provenance = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["stable_source_record_id"] = record.Provenance.StableSourceRecordId,
+            ["source_identity_kind"] = record.Provenance.SourceIdentityKind,
+            ["source_order_id"] = record.Provenance.SourceOrderId,
+            ["component_key"] = record.Provenance.ComponentKey,
+            ["component_index"] = record.Provenance.ComponentIndex,
+            ["component_type_ordinal"] = record.Provenance.ComponentTypeOrdinal,
+        };
+        if (record.Provenance.ProducerVersion is not null)
+        {
+            provenance["producer_version"] = record.Provenance.ProducerVersion;
+        }
+
+        if (record.Provenance.NativeRecordId is not null)
+        {
+            provenance["native_record_id"] = record.Provenance.NativeRecordId;
+        }
+
+        if (record.Provenance.SourceSequence is { } seq)
+        {
+            provenance["source_sequence"] = seq;
+        }
+
+        if (record.Provenance.SourceOffset is { } off)
+        {
+            provenance["source_offset"] = off;
+        }
+
+        if (record.Provenance.SourceAnchorKind is not null)
+        {
+            provenance["source_anchor_kind"] = record.Provenance.SourceAnchorKind;
+        }
+
+        dict["provenance"] = provenance;
+        dict["hashes"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["content_sha256"] = record.Hashes.ContentSha256,
+            ["record_sha256"] = record.Hashes.RecordSha256,
+        };
+        return dict;
+    }
+
+    private static StreamState Clone(StreamState state) =>
+        new()
+        {
+            Options = state.Options,
+            Cursor = state.Cursor,
+            PendingBytes = state.PendingBytes.ToArray(),
+            CommittedPrefix = state.CommittedPrefix.ToArray(),
+            Snapshot = state.Snapshot,
+            Generation = state.Generation,
+            NextRevision = state.NextRevision,
+            Finished = state.Finished,
+            GroupLocked = state.GroupLocked,
+            LastAppendSegment = state.LastAppendSegment is null
+                ? null
+                : state.LastAppendSegment.ToArray(),
+            LastAppendPreOffset = state.LastAppendPreOffset,
+            AhpChatState = state.AhpChatState is null
+                ? null
+                : (JsonObject)state.AhpChatState.DeepClone(),
+            AhpSession = state.AhpSession is null
+                ? null
+                : (JsonObject)state.AhpSession.DeepClone(),
+            AhpProtocolVersion = state.AhpProtocolVersion,
+            AhpLastServerSeq = state.AhpLastServerSeq,
+            AhpTargetChannel = state.AhpTargetChannel,
+            AhpLastSnapshotRevision = state.AhpLastSnapshotRevision,
+            AhpLastContentSha256 = state.AhpLastContentSha256,
+            LastAhpActionsSha256 = state.LastAhpActionsSha256,
+            LastAhpActionsPreSeq = state.LastAhpActionsPreSeq,
+            AhpProvisionalMap = new Dictionary<string, string>(
+                state.AhpProvisionalMap,
+                StringComparer.Ordinal),
+            HermesRowFingerprints = state.HermesRowFingerprints,
+            HermesLastExportSha = state.HermesLastExportSha,
+        };
+
+    private static void ClearAhpState(StreamState state)
+    {
+        state.AhpChatState = null;
+        state.AhpSession = null;
+        state.AhpProtocolVersion = null;
+        state.AhpLastServerSeq = null;
+        state.AhpTargetChannel = null;
+        state.AhpLastSnapshotRevision = null;
+        state.AhpLastContentSha256 = null;
+        state.LastAhpActionsSha256 = null;
+        state.LastAhpActionsPreSeq = null;
+        state.AhpProvisionalMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        state.HermesRowFingerprints = null;
+        state.HermesLastExportSha = null;
+    }
+
+    private static bool TryHermesExportMeta(
+        ReadOnlySpan<byte> material,
+        out List<string> rowFingerprints,
+        out long? lastRowId)
+    {
+        rowFingerprints = new List<string>();
+        lastRowId = null;
+        JsonNode? parsed;
+        try
+        {
+            parsed = JsonNode.Parse(Encoding.UTF8.GetString(material));
+        }
+        catch
+        {
+            return false;
+        }
+
+        JsonArray? messages = null;
+        if (parsed is JsonArray arr)
+        {
+            messages = arr;
+        }
+        else if (parsed is JsonObject obj && obj["messages"] is JsonArray msgs)
+        {
+            messages = msgs;
+        }
+        else
+        {
+            return false;
+        }
+
+        var active = new List<JsonObject>();
+        foreach (var item in messages)
+        {
+            if (item is not JsonObject row)
+            {
+                return false;
+            }
+
+            var activeFlag = row["active"];
+            if (activeFlag is JsonValue av)
+            {
+                if (av.TryGetValue<int>(out var ai) && ai == 0)
+                {
+                    continue;
+                }
+
+                if (av.TryGetValue<bool>(out var ab) && !ab)
+                {
+                    continue;
+                }
+
+                if (av.TryGetValue<string>(out var as_) && as_ == "0")
+                {
+                    continue;
+                }
+            }
+
+            active.Add(row);
+        }
+
+        if (active.Count > 0 && active.All(r => r["id"] is JsonValue jv && jv.TryGetValue<long>(out _)))
+        {
+            active = active
+                .Select((r, i) => (r, i, id: r["id"]!.GetValue<long>()))
+                .OrderBy(t => t.id)
+                .ThenBy(t => t.i)
+                .Select(t => t.r)
+                .ToList();
+            lastRowId = active[^1]["id"]!.GetValue<long>();
+        }
+
+        foreach (var row in active)
+        {
+            var subset = new JsonObject
+            {
+                ["id"] = row["id"]?.DeepClone(),
+                ["role"] = row["role"]?.DeepClone(),
+                ["content"] = row["content"]?.DeepClone(),
+                ["tool_call_id"] = row["tool_call_id"]?.DeepClone(),
+                ["tool_name"] = row["tool_name"]?.DeepClone(),
+                ["tool_calls"] = row["tool_calls"]?.DeepClone(),
+                ["finish_reason"] = row["finish_reason"]?.DeepClone(),
+                ["timestamp"] = row["timestamp"]?.DeepClone(),
+                ["active"] = row["active"]?.DeepClone() ?? 1,
+            };
+            rowFingerprints.Add(Sha256Hex(Encoding.UTF8.GetBytes(subset.ToJsonString(new JsonSerializerOptions
+            {
+                WriteIndented = false,
+            }))));
+        }
+
+        return true;
+    }
+
+    private static long ByteNextOffset(StreamPosition pos) =>
+        pos is BytePosition b ? b.NextByteOffset : 0L;
+
+    private static (StreamSnapshot? Snapshot, StreamDelta? Delta) ApplyDelivery(
+        StreamSnapshot snapshot,
+        StreamDelta delta,
+        StreamDelivery delivery) =>
+        delivery switch
+        {
+            StreamDelivery.Snapshot => (snapshot, null),
+            StreamDelivery.Delta => (null, delta),
+            _ => (snapshot, delta),
+        };
+
+    private static StreamProvisionalInfo EmptyProvisional(StreamState state) =>
+        new()
+        {
+            Include = state.Options.IncludeProvisional,
+            ProvisionalIds = Array.Empty<string>(),
+            FinalizedIds = Array.Empty<string>(),
+        };
+
+    private static StreamConsumed EmptyConsumed() => new();
+
+    /// <summary>True when any complete LF-terminated line exceeds <paramref name="maxLineBytes"/>.</summary>
+    internal static bool AnyLineTooLong(ReadOnlySpan<byte> data, long maxLineBytes)
+    {
+        var start = 0;
+        for (var i = 0; i < data.Length; i++)
+        {
+            if (data[i] == (byte)'\n')
+            {
+                var lineLen = i - start + 1L;
+                if (lineLen > maxLineBytes)
+                {
+                    return true;
+                }
+
+                start = i + 1;
+            }
+        }
+
+        return false;
+    }
+
+    private static StreamUpdate UnchangedUpdate(StreamState state) =>
+        new()
+        {
+            Kind = "unchanged",
+            Revision = state.Snapshot?.Revision ?? new StreamRevision
+            {
+                Revision = 0,
+                RevisionId = "unchanged",
+                ParentRevisionId = null,
+                Complete = state.Finished,
+                Generation = state.Generation,
+            },
+            Cursor = state.Cursor,
+            Provisional = EmptyProvisional(state),
+            Consumed = EmptyConsumed(),
+        };
+
+    private static StreamUpdate ErrorUpdate(StreamState state, string code, string message) =>
+        new()
+        {
+            Kind = "error",
+            Revision = state.Snapshot?.Revision ?? new StreamRevision
+            {
+                Revision = 0,
+                RevisionId = "error",
+                ParentRevisionId = null,
+                Complete = false,
+                Generation = state.Generation,
+            },
+            Cursor = state.Cursor,
+            Provisional = EmptyProvisional(state),
+            Consumed = EmptyConsumed(),
+            Error = (code, StreamSafeDiagnostics.ErrorMessage(code, message)),
+        };
+
+    private static StreamUpdate? CursorConflict(StreamState state, StreamCursor cursor)
+    {
+        if (cursor.Source != state.Cursor.Source ||
+            cursor.Generation != state.Cursor.Generation)
+        {
+            return ResetRequired(
+                state,
+                "cursor-mismatch",
+                "stream_cursor_conflict",
+                "Supplied stream cursor does not match stream state.");
+        }
+
+        if (state.GroupLocked && cursor.GroupId != state.Cursor.GroupId)
+        {
+            return ResetRequired(
+                state,
+                "group-changed",
+                "stream_cursor_conflict",
+                "Supplied stream cursor does not match stream state.");
+        }
+
+        // Domain: non-negative int64 byte positions (streaming-cursor-v1).
+        // Checked before position equality so out-of-domain offsets are invalid_input,
+        // not cursor-mismatch (parity with Python/TS).
+        if (cursor.Position is BytePosition bytePos &&
+            state.Cursor.Position is BytePosition)
+        {
+            if (bytePos.NextByteOffset < 0 || bytePos.PendingByteLength < 0)
+            {
+                return ErrorUpdate(
+                    state,
+                    "invalid_input",
+                    "Stream cursor byte positions must be non-negative int64 values.");
+            }
+
+            if (bytePos.NextByteOffset != ((BytePosition)state.Cursor.Position).NextByteOffset)
+            {
+                return ResetRequired(
+                    state,
+                    "cursor-mismatch",
+                    "stream_cursor_conflict",
+                    "Supplied stream cursor does not match stream state.");
+            }
+        }
+
+        if (cursor.Position is AhpServerSeqPosition ahpPos &&
+            state.Cursor.Position is AhpServerSeqPosition stateAhp)
+        {
+            if (ahpPos.NextServerSeq < 0 || ahpPos.LastServerSeq < 0)
+            {
+                return ErrorUpdate(
+                    state,
+                    "invalid_input",
+                    "Stream cursor serverSeq positions must be non-negative int64 values.");
+            }
+
+            if (ahpPos.LastServerSeq != stateAhp.LastServerSeq ||
+                ahpPos.NextServerSeq != stateAhp.NextServerSeq)
+            {
+                return ResetRequired(
+                    state,
+                    "cursor-mismatch",
+                    "stream_cursor_conflict",
+                    "Supplied stream cursor does not match stream state.");
+            }
+        }
+
+        if (cursor.Position is SnapshotRevisionPosition snapPos &&
+            state.Cursor.Position is SnapshotRevisionPosition stateSnap &&
+            snapPos.Revision != stateSnap.Revision)
+        {
+            return ResetRequired(
+                state,
+                "cursor-mismatch",
+                "stream_cursor_conflict",
+                "Supplied stream cursor does not match stream state.");
+        }
+
+        if (cursor.Position is HermesRowPosition hermesPos &&
+            state.Cursor.Position is HermesRowPosition stateHermes)
+        {
+            if (hermesPos.DatabaseGeneration != stateHermes.DatabaseGeneration ||
+                hermesPos.LastRowId != stateHermes.LastRowId ||
+                hermesPos.ChangeToken != stateHermes.ChangeToken)
+            {
+                return ResetRequired(
+                    state,
+                    "cursor-mismatch",
+                    "stream_cursor_conflict",
+                    "Supplied stream cursor does not match stream state.");
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsWhitespaceOnly(ReadOnlySpan<byte> data)
+    {
+        foreach (var b in data)
+        {
+            if (b is not (byte)' ' and not (byte)'\t' and not (byte)'\r' and not (byte)'\n')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static Dictionary<string, object?> ResetToDict(StreamReset reset) =>
+        new(StringComparer.Ordinal)
+        {
+            ["reason"] = reset.Reason,
+            ["prior_cursor"] = reset.PriorCursor is null ? null : CursorToDict(reset.PriorCursor),
+            ["requires_snapshot"] = reset.RequiresSnapshot,
+            ["dropped_record_ids"] = reset.DroppedRecordIds.ToList(),
+        };
+
+    /// <summary>Require a JSON-safe integer for stream wire fields.</summary>
+    public static long JsonSafeInt(long value, bool nonNegative = false)
+    {
+        var lo = nonNegative ? 0L : JsonSafeIntegerMin;
+        if (value < lo || value > JsonSafeIntegerMax)
+        {
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.InvalidInput,
+                MsgJsonSafeInteger);
+        }
+
+        return value;
+    }
+
+    /// <summary>Require a non-negative JSON-safe integer from a <see cref="ulong"/> wire field.</summary>
+    public static long JsonSafeUInt64(ulong value)
+    {
+        if (value > (ulong)JsonSafeIntegerMax)
+        {
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.InvalidInput,
+                MsgJsonSafeInteger);
+        }
+
+        return (long)value;
+    }
+
+    /// <summary>
+    /// Parse a boxed JSON number as a JSON-safe stream integer
+    /// (no decimal-string fallback).
+    /// </summary>
+    public static long JsonSafeFromNumber(object? value, bool nonNegative = false)
+    {
+        return value switch
+        {
+            byte b => JsonSafeInt(b, nonNegative),
+            sbyte sb => JsonSafeInt(sb, nonNegative),
+            short s => JsonSafeInt(s, nonNegative),
+            ushort us => JsonSafeInt(us, nonNegative),
+            int i => JsonSafeInt(i, nonNegative),
+            uint ui => JsonSafeInt(ui, nonNegative),
+            long l => JsonSafeInt(l, nonNegative),
+            ulong ul => JsonSafeUInt64(ul),
+            JsonElement { ValueKind: JsonValueKind.Number } el when el.TryGetInt64(out var parsed) =>
+                JsonSafeInt(parsed, nonNegative),
+            _ => throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.InvalidInput,
+                MsgJsonSafeInteger),
+        };
+    }
+
+    /// <summary>Serialize a stream cursor to wire snake_case JSON objects.</summary>
+    public static Dictionary<string, object?> CursorToDict(StreamCursor c)
+    {
+        ArgumentNullException.ThrowIfNull(c);
+        Dictionary<string, object?> position = c.Position switch
+        {
+            BytePosition b => new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["kind"] = "byte",
+                ["next_byte_offset"] = JsonSafeInt(b.NextByteOffset, nonNegative: true),
+                ["pending_byte_length"] = JsonSafeInt(b.PendingByteLength, nonNegative: true),
+            },
+            AhpServerSeqPosition a => BuildAhpSeqPositionDict(a),
+            SnapshotRevisionPosition s => BuildSnapshotRevisionPositionDict(s),
+            HermesRowPosition h => BuildHermesRowPositionDict(h),
+            _ => new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["kind"] = c.Position.Kind,
+            },
+        };
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["cursor_version"] = c.CursorVersion,
+            ["source"] = c.Source,
+            ["group_id"] = c.GroupId,
+            ["generation"] = JsonSafeUInt64(c.Generation),
+            ["position"] = position,
+            ["source_revision"] = c.SourceRevision,
+            ["prefix_sha256"] = c.PrefixSha256,
+        };
+    }
+
+    private static Dictionary<string, object?> BuildAhpSeqPositionDict(AhpServerSeqPosition a)
+    {
+        var position = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["kind"] = "ahp-server-seq",
+            ["next_server_seq"] = JsonSafeInt(a.NextServerSeq),
+            ["last_server_seq"] = JsonSafeInt(a.LastServerSeq),
+        };
+        if (a.NextByteOffset is not null)
+        {
+            position["next_byte_offset"] = JsonSafeInt(a.NextByteOffset.Value, nonNegative: true);
+        }
+
+        return position;
+    }
+
+    private static Dictionary<string, object?> BuildSnapshotRevisionPositionDict(
+        SnapshotRevisionPosition s)
+    {
+        var position = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["kind"] = "snapshot-revision",
+            ["revision"] = s.Revision,
+        };
+        if (s.ContentSha256 is not null)
+        {
+            position["content_sha256"] = s.ContentSha256;
+        }
+
+        return position;
+    }
+
+    private static Dictionary<string, object?> BuildHermesRowPositionDict(HermesRowPosition h)
+    {
+        var position = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["kind"] = "hermes-row",
+            ["database_generation"] = h.DatabaseGeneration,
+        };
+        if (h.LastRowId is not null)
+        {
+            position["last_row_id"] = JsonSafeInt(h.LastRowId.Value);
+        }
+
+        if (h.ChangeToken is not null)
+        {
+            position["change_token"] = h.ChangeToken;
+        }
+
+        return position;
+    }
+
+    /// <summary>
+    /// Classify shorter snapshot material: pure prefix → truncate; non-prefix
+    /// rewrite on Grok Build → compacted; other sources → replaced.
+    /// </summary>
+    private static (string Reason, string Message) ShrinkResetReason(StreamState state, byte[] committed)
+    {
+        if (StartsWith(state.CommittedPrefix, committed))
+        {
+            return ("source-truncated", "Source material is shorter than the committed cursor.");
+        }
+
+        if (state.Options.Source == TrajectorySource.GrokBuild)
+        {
+            return ("source-compacted", "Source material was compacted relative to the committed cursor.");
+        }
+
+        return ("source-replaced", "Source material was replaced relative to the committed cursor.");
+    }
+
+    private static bool StartsWith(byte[] haystack, byte[] prefix)
+    {
+        if (prefix.Length > haystack.Length)
+        {
+            return false;
+        }
+
+        return haystack.AsSpan(0, prefix.Length).SequenceEqual(prefix);
+    }
+
+    private static bool IsSyntheticBackendToolResult(IReadOnlyDictionary<string, object?> record)
+    {
+        if (!record.TryGetValue("role", out var role) || role is not string roleStr || roleStr != "tool")
+        {
+            return false;
+        }
+
+        if (!record.TryGetValue("content", out var content) || content is not string text)
+        {
+            return false;
+        }
+
+        return text.StartsWith("[backend ", StringComparison.Ordinal);
+    }
+
+    private static StreamUpdate ResetRequired(
+        StreamState state,
+        string reason,
+        string code,
+        string message) =>
+        new()
+        {
+            Kind = "reset-required",
+            Revision = state.Snapshot?.Revision ?? new StreamRevision
+            {
+                Revision = 0,
+                RevisionId = "reset-required",
+                ParentRevisionId = null,
+                Complete = false,
+                Generation = state.Generation,
+            },
+            Cursor = state.Cursor,
+            Diagnostics =
+            [
+                new StreamDiagnostic { Code = code, Message = message },
+            ],
+            Provisional = EmptyProvisional(state),
+            Consumed = EmptyConsumed(),
+            Reset = new StreamReset
+            {
+                Reason = reason,
+                PriorCursor = state.Cursor,
+                RequiresSnapshot = true,
+                DroppedRecordIds = state.Snapshot?.Records
+                    .Select(r => r.Record.TryGetValue("id", out var id) ? id?.ToString() ?? "" : "")
+                    .Where(s => s.Length > 0)
+                    .ToArray() ?? Array.Empty<string>(),
+            },
+        };
+
+    private static string RevisionId(
+        ulong generation,
+        ulong revision,
+        string source,
+        string groupId,
+        string prefixSha,
+        IReadOnlyList<string> recordIds) =>
+        DeterministicIdentity.Sha256Hex($"{generation}|{revision}|{source}|{groupId}|{prefixSha}|{string.Join(",", recordIds)}");
+
+    private static string Sha256Hex(ReadOnlySpan<byte> data) =>
+        DeterministicIdentity.Sha256Hex(data);
+
+    private static string SourceWireName(TrajectorySource source) =>
+        source switch
+        {
+            TrajectorySource.Pi => "pi",
+            TrajectorySource.ClaudeCode => "claude-code",
+            TrajectorySource.Codex => "codex",
+            TrajectorySource.OpenClaw => "openclaw",
+            TrajectorySource.Hermes => "hermes",
+            TrajectorySource.Ahp => "ahp",
+            TrajectorySource.GrokBuild => "grok-build",
+            _ => source.ToString().ToLowerInvariant(),
+        };
+
+    private static Dictionary<string, object?> RecordToDict(StreamRecord r)
+    {
+        var d = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["status"] = r.Status,
+            ["record"] = r.Record,
+        };
+        if (r.ProvisionalId is not null)
+        {
+            d["provisional_id"] = r.ProvisionalId;
+        }
+
+        return d;
+    }
+
+    private static Dictionary<string, object?> DiagnosticToDict(StreamDiagnostic d)
+    {
+        var dict = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["code"] = d.Code,
+            ["message"] = d.Message,
+        };
+        if (d.InputLine is not null)
+        {
+            dict["input_line"] = d.InputLine;
+        }
+
+        if (d.RecordIndex is not null)
+        {
+            dict["record_index"] = d.RecordIndex;
+        }
+
+        if (d.Count is not null)
+        {
+            dict["count"] = d.Count;
+        }
+
+        return dict;
+    }
+
+    private static Dictionary<string, object?> RevisionToDict(StreamRevision r) =>
+        new(StringComparer.Ordinal)
+        {
+            ["revision"] = JsonSafeUInt64(r.Revision),
+            ["revision_id"] = r.RevisionId,
+            ["parent_revision_id"] = r.ParentRevisionId,
+            ["complete"] = r.Complete,
+            ["generation"] = JsonSafeUInt64(r.Generation),
+        };
+
+    private static string MatchKeyDict(Dictionary<string, object?> record)
+    {
+        if (record.TryGetValue("provisional_id", out var p) && p is string pid && pid.Length > 0)
+        {
+            return pid;
+        }
+
+        if (record.TryGetValue("record", out var body) &&
+            body is Dictionary<string, object?> b &&
+            b.TryGetValue("id", out var id) &&
+            id is string s)
+        {
+            return s;
+        }
+
+        throw new InvalidOperationException("stream record missing match key");
+    }
+
+    private static string DiagnosticKeyDict(Dictionary<string, object?> d)
+    {
+        var code = d["code"]?.ToString() ?? "";
+        var line = d.TryGetValue("input_line", out var l) && l is not null ? l.ToString() : "-";
+        var index = d.TryGetValue("record_index", out var i) && i is not null ? i.ToString() : "-";
+        return $"{code}|{line}|{index}";
+    }
+
+    private static bool RecordBodyEqual(Dictionary<string, object?> a, Dictionary<string, object?> b) =>
+        DeepValueEqual(a, b);
+
+    private static bool DeepValueEqual(object? left, object? right)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return true;
+        }
+
+        if (left is null || right is null)
+        {
+            return false;
+        }
+
+        if (left is Dictionary<string, object?> ld && right is Dictionary<string, object?> rd)
+        {
+            if (ld.Count != rd.Count)
+            {
+                return false;
+            }
+
+            foreach (var (key, lv) in ld)
+            {
+                if (!rd.TryGetValue(key, out var rv) || !DeepValueEqual(lv, rv))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        if (left is IList ll && right is IList rl && left is not string && right is not string)
+        {
+            if (ll.Count != rl.Count)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < ll.Count; i++)
+            {
+                if (!DeepValueEqual(ll[i], rl[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        if (left is JsonElement jl && right is JsonElement jr)
+        {
+            return jl.ToString() == jr.ToString();
+        }
+
+        return left.Equals(right) ||
+               string.Equals(Convert.ToString(left, CultureInfo.InvariantCulture),
+                   Convert.ToString(right, CultureInfo.InvariantCulture),
+                   StringComparison.Ordinal);
+    }
+
+    private static bool DiagnosticEqual(StreamDiagnostic a, StreamDiagnostic b) =>
+        a.Code == b.Code && a.Message == b.Message && a.InputLine == b.InputLine &&
+        a.RecordIndex == b.RecordIndex && a.Count == b.Count;
+
+    private static Dictionary<string, object?> DeepClone(Dictionary<string, object?> source)
+    {
+        var clone = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var (key, value) in source)
+        {
+            clone[key] = DeepCloneValue(value);
+        }
+
+        return clone;
+    }
+
+    private static object? DeepCloneValue(object? value) =>
+        value switch
+        {
+            null => null,
+            Dictionary<string, object?> dict => DeepClone(dict),
+            List<object?> list => list.Select(DeepCloneValue).ToList(),
+            IList<object?> list => list.Select(DeepCloneValue).Cast<object?>().ToList(),
+            JsonElement el => JsonElementToObject(el),
+            _ => value,
+        };
+
+    private static object? JsonElementToObject(JsonElement el) =>
+        el.ValueKind switch
+        {
+            JsonValueKind.Object => el.EnumerateObject()
+                .ToDictionary(p => p.Name, p => JsonElementToObject(p.Value), StringComparer.Ordinal),
+            JsonValueKind.Array => el.EnumerateArray().Select(JsonElementToObject).Cast<object?>().ToList(),
+            JsonValueKind.String => el.GetString(),
+            JsonValueKind.Number => el.TryGetInt64(out var l) ? l : el.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => el.ToString(),
+        };
+}
+
+/// <summary>Mutable façade over <see cref="StreamState"/>.</summary>
+public sealed class TrajectoryStreamSession
+{
+    private StreamState _state;
+
+    private TrajectoryStreamSession(StreamState state) => _state = state;
+
+    public static TrajectoryStreamSession Create(StreamOptions options) =>
+        new(TrajectoryStream.Create(options));
+
+    public StreamCursor Cursor => _state.Cursor;
+    public StreamState State => _state;
+
+    public StreamUpdate ApplySnapshot(
+        ReadOnlyMemory<byte> prefix,
+        string sourceRevision,
+        StreamCursor? cursor = null)
+    {
+        var (state, update) = TrajectoryStream.ApplySnapshot(_state, prefix, sourceRevision, cursor);
+        _state = state;
+        return update;
+    }
+
+    public StreamUpdate ApplyAppend(
+        ReadOnlyMemory<byte> segment,
+        StreamCursor? cursor = null,
+        string? sourceRevision = null)
+    {
+        var (state, update) = TrajectoryStream.ApplyAppend(_state, segment, cursor, sourceRevision);
+        _state = state;
+        return update;
+    }
+
+    public StreamUpdate ApplyHermesExport(
+        ReadOnlyMemory<byte> material,
+        string? changeToken = null,
+        string? databaseGeneration = null,
+        string? sourceRevision = null,
+        StreamCursor? cursor = null)
+    {
+        var (state, update) = TrajectoryStream.ApplyHermesExport(
+            _state, material, changeToken, databaseGeneration, sourceRevision, cursor);
+        _state = state;
+        return update;
+    }
+
+    public StreamUpdate Finish()
+    {
+        var (state, update) = TrajectoryStream.Finish(_state);
+        _state = state;
+        return update;
+    }
+
+    public StreamUpdate Reset(StreamResetRequest request)
+    {
+        var (state, update) = TrajectoryStream.Reset(_state, request);
+        _state = state;
+        return update;
+    }
+
+    public StreamUpdate Apply(StreamInput input)
+    {
+        var (state, update) = TrajectoryStream.Apply(_state, input);
+        _state = state;
+        return update;
+    }
+}

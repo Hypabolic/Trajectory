@@ -15,8 +15,17 @@
         "project-openai",
         "project-minimal-jsonl",
         "project-otel",
-        "list-trajectories"
-      ]
+        "list-trajectories",
+        "stream-sequence",
+        "stream-replay",
+        "stream-apply-append",
+        "stream-apply-snapshot",
+        "stream-apply-ahp-actions",
+        "stream-apply-ahp-snapshot",
+        "stream-finish",
+        "stream-reset"
+      ],
+      "description": "Batch normalize/list ops plus LS-02 stream ops. stream-sequence/stream-replay run ordered multi-step streaming cases; per-step apply ops are reserved for engines (LS-04+) and may return unsupported until claimed."
     },
     "repository_root": { "type": "string", "minLength": 1 }
   }

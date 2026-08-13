@@ -104,6 +104,27 @@ from hypabolic_trajectory.api import (
     serialize_projection,
 )
 from hypabolic_trajectory.engine import TrajectoryEngine
+from hypabolic_trajectory.streaming import (
+    AhpServerSeqPosition,
+    BytePosition,
+    HermesRowPosition,
+    SnapshotRevisionPosition,
+    StreamCursor,
+    StreamOptions,
+    StreamState,
+    StreamUpdate,
+    TrajectoryStream,
+    apply_ahp_actions,
+    apply_ahp_snapshot,
+    apply_append,
+    apply_delta_to_snapshot,
+    apply_hermes_export,
+    apply_snapshot,
+    apply_stream,
+    create_stream,
+    finish_stream,
+    reset_stream,
+)
 
 # Import-time registration hooks for built-in sources/listers.
 # Per-source owners self-register from submodules imported here (side effect).
@@ -189,4 +210,24 @@ __all__ = [
     "ModelInvocation",
     "ModelTokenUsage",
     "WorkflowInvocation",
+    # Streaming (LS-03 / LS-04 / LS-06 / LS-07 / LS-07h)
+    "AhpServerSeqPosition",
+    "BytePosition",
+    "HermesRowPosition",
+    "SnapshotRevisionPosition",
+    "StreamCursor",
+    "StreamOptions",
+    "StreamState",
+    "StreamUpdate",
+    "TrajectoryStream",
+    "apply_ahp_actions",
+    "apply_ahp_snapshot",
+    "apply_append",
+    "apply_delta_to_snapshot",
+    "apply_hermes_export",
+    "apply_snapshot",
+    "apply_stream",
+    "create_stream",
+    "finish_stream",
+    "reset_stream",
 ]

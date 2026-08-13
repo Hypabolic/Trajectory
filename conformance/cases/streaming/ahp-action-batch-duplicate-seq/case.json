@@ -1,0 +1,50 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/ahp-action-batch-duplicate-seq",
+  "description": "Duplicate serverSeq in one batch is rejected without advancing cursor.",
+  "source": "ahp",
+  "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000c2",
+  "required_capabilities": [
+    "stream-core",
+    "stream-ahp-action-log",
+    "stream-cursor-v1"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required",
+    "ahp_protocol_version": "0.7.0"
+  },
+  "steps": [
+    {
+      "id": "bad",
+      "input": {
+        "kind": "ahp-actions",
+        "material": "step-bad.jsonl"
+      },
+      "expected": {
+        "update_kind": "error",
+        "result": "expected.bad.json",
+        "cursor_position_kind": "snapshot-revision"
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-cursor-exact",
+    "stream-idempotence"
+  ],
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  }
+}

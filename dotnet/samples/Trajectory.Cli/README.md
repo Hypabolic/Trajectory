@@ -7,9 +7,13 @@ Local sample TUI for browsing agent sessions with [`Hypabolic.Trajectory`](../..
 
 - Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes, Grok Build)
 - Normalizes AHP Shape A offline snapshots via `show --path` (no default store)
-- Interactively pick a session and normalize it
+- Interactively pick a session, then Watch live or Show snapshot
 - Prints privacy-safe summaries (record counts, roles, tool calls, diagnostics)
 - Optional `--show-content` (prints a clear privacy warning)
+- **`stream`**: follow a JSONL session file (optional file I/O → core stream apply)
+- **`ahp-stream`**: demo optional AHP client with in-memory `fake://` FakeAhpHost
+
+This sample is a **consumer process**, not a Trajectory daemon.
 
 Default store roots (override with `--root` or env):
 
@@ -44,6 +48,22 @@ dotnet run --project dotnet/samples/Trajectory.Cli -- show --source pi --path pa
 dotnet run --project dotnet/samples/Trajectory.Cli -- browse
 # or default interactive command:
 dotnet run --project dotnet/samples/Trajectory.Cli
+
+# Watch a live local session (pick, then Watch live)
+dotnet run --project dotnet/samples/Trajectory.Cli -- browse --source grok-build --watch --show-content
+
+# File stream (one-shot poll; default emit snapshot+delta)
+dotnet run --project dotnet/samples/Trajectory.Cli -- stream \
+  --source pi \
+  --path conformance/cases/pi/tool-calls/input.jsonl \
+  --max-updates 1
+
+# AHP stream demo (FakeAhpHost only in this sample)
+dotnet run --project dotnet/samples/Trajectory.Cli -- ahp-stream \
+  --url fake://demo \
+  --chat ahp-chat:/00000000-0000-4000-8000-0000000000c1 \
+  --actions-path conformance/cases/streaming/ahp-action-turn-flow/step-actions.jsonl \
+  --max-updates 1
 ```
 
 Against a conformance fixture:
@@ -71,16 +91,31 @@ dotnet run --project dotnet/samples/Trajectory.Cli -- show \
 
 | Command | Purpose |
 | --- | --- |
-| `browse` (default) | Interactive source → session → summary flow |
+| `browse` (default) | Interactive source → session → Watch live or Show snapshot |
 | `list` | Print a table of discovered sessions |
 | `show` | Normalize one path/id and print summary |
+| `stream` | Follow a JSONL file via optional file I/O + core stream |
+| `ahp-stream` | Optional AHP client demo (`fake://` FakeAhpHost) |
 
 Shared flags: `--source`, `--root`, `--limit`, `--show-content`.
+`browse` accepts `--watch` (follow immediately), `--id`, `--emit`, `--interval`,
+`--max-updates`.
+
+Stream flags: `--emit snapshot+delta|snapshot|delta` (default `snapshot+delta`),
+`--follow`, `--interval`, `--max-updates`, `--path` / `--id` (+ explicit `--root`
+for listing). File stream sources: `pi`, `claude-code`, `codex`, `openclaw`,
+`grok-build`.
+
+AHP stream flags: `--url` (sample: `fake://…`), `--chat`, `--from-seq`,
+`--token` / `TRAJECTORY_AHP_TOKEN`, `--snapshot-path`, `--actions-path`.
 
 ## Notes
 
 - Empty stores print a friendly message and exit 0.
 - Normalization failures surface typed `TrajectoryNormalizationException` codes without panicking.
+- Stream follow is **not** a background daemon; process exit stops it.
+- Sample `ahp-stream` uses in-memory FakeAhpHost only. Live WebSocket hosts:
+  inject `IAhpTransport` in your app (`docs/ahp-client.md`).
 - Sample is intentionally unpublished (`IsPackable=false`).
 
 ## Related

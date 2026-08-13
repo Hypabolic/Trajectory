@@ -96,12 +96,53 @@ packaging, conformance, and work-breakdown plan:
 [python-implementation-spec.md](python-implementation-spec.md). Status:
 [python-impl-status.md](python-impl-status.md).
 
+## Post-v1 scheduled: live session streaming
+
+Full-feature library streaming for consumer applications (file JSONL + AHP
+snapshot/action-log + optional Hermes provider; snapshot and delta delivery;
+all four runtimes). Trajectory does not become a daemon; pure algorithm in
+core, optional I/O/clients.
+
+| Doc | Role |
+| --- | --- |
+| [live-session-streaming.md](live-session-streaming.md) | Locked product + technical specification |
+| [live-session-streaming-plan.md](live-session-streaming-plan.md) | Slices LS-00 … LS-12 |
+| [live-session-streaming-status.md](live-session-streaming-status.md) | Shipped vs remaining (tip packaging) |
+
+| Slice | Outcome | Status |
+| --- | --- | --- |
+| LS-00 … LS-02 | Product freeze, contracts/schemas, stream conformance protocol + fixtures | **In-tree** |
+| LS-03 … LS-05 | Stream state/cursor, snapshot apply + delta, JSONL append (×4) | **In-tree** |
+| LS-06 … LS-07 | AHP Shape A snapshot stream + Shape B action-log reducer in core (×4) | **In-tree** |
+| **LS-08** | **Full stream matrix gate** — shared `conformance/cases/streaming/**` green on all four runtimes; per-step goldens; append ≡ prefix oracle; batch still green | **In-tree on tip** |
+| LS-09 | Optional file I/O packages (×4) | **In-tree on tip** (`streaming-file-io.md`) |
+| LS-10 | Optional AHP client packages (×4) | **In-tree on tip** (`ahp-client.md`) |
+| LS-11 | Sample CLIs (`stream` / `ahp-stream` ×4) | **In-tree on tip** |
+| **LS-12** | **Capability advertising + release gate** — honest core `stream-*` claims; optional package caps only on I/O / AHP / Hermes packages; privacy + multi-runtime parity docs | **In-tree on tip** |
+
+### LS-08 / LS-12 definition of done (core matrix + claims)
+
+- One shared corpus under `conformance/cases/streaming/` is authority (no
+  runtime-private stream goldens).
+- `python3 conformance/verify.py --operation stream-sequence -- <runner>` is
+  green for .NET, TypeScript, Rust, and Python with
+  `stream_unsupported_skips: 0` for the landed input kinds.
+- `stream-oracle-parity` / `append_equals_prefix` covers file-JSONL growth
+  cases; `action_equals_snapshot` covers AHP action≡snapshot.
+- Batch tip verify and identity baseline remain green.
+- Core `stream-*` capabilities are claimed in `compatibility.json` required and
+  all four `runtime-capabilities.json`; optional package caps only on those
+  packages’ `package-capabilities.json`.
+
+This supersedes the informal “AHP Shape B / live host later” note as a concrete
+roadmap; live session streaming is complete on tip at LS-12.
+
 ## Post-v1 ideas (not scheduled)
 
-Further source families, store backends, AHP Shape B / listing / live host, or
-other post-AHP work may be added later as multi-runtime slices with shared
-fixtures. They are not advertised as historical v1 capabilities and must not be
-backfilled into published `0.1.0` notes.
+Further source families, store backends, or other post-streaming work may be
+added later as multi-runtime slices with shared fixtures. They are not
+advertised as historical v1 capabilities and must not be backfilled into
+published `0.1.0` notes.
 
 ## Non-goals (still)
 

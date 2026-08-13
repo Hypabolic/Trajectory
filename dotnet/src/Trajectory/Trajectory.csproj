@@ -26,5 +26,8 @@
     <None Include="../../../contracts/schemas/*.json"
           Pack="true"
           PackagePath="contentFiles/any/any/contracts/schemas/" />
+    <None Include="runtime-capabilities.json"
+          Pack="true"
+          PackagePath="contentFiles/any/any/" />
   </ItemGroup>
 </Project>

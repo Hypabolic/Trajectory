@@ -1,0 +1,212 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 1,
+    "revision_id": "bdcae4febe1b3fc95313cf20f9202213a199b73956f0632d78d2d0e16f9b0bb7",
+    "parent_revision_id": "6581eb3a918cc0e595a71b7bdfd797a8f19bf4bbd3219eda3ad865e12f3f71d4",
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-diagnostic-add-remove",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 458,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "e19833ac5000d22fd4e1394af83f216701f60437b802410179f72037b9bcb6ff"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "pi",
+    "group_id": "stream-diagnostic-add-remove",
+    "revision": {
+      "revision": 1,
+      "revision_id": "bdcae4febe1b3fc95313cf20f9202213a199b73956f0632d78d2d0e16f9b0bb7",
+      "parent_revision_id": "6581eb3a918cc0e595a71b7bdfd797a8f19bf4bbd3219eda3ad865e12f3f71d4",
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "99381093f2485e74318e71b7ed3b3c6ebfd669940297c1b886fce622e6e45836",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "pi",
+          "cwd": "/workspace/demo",
+          "producer_version": "3",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "1388ada6b0d0cd9a4b29e993627fa273947e11fc5330ca4ad770723cea66e013",
+            "record_sha256": "e1b8c4833a9305e86a6b952171b82f196d8cbe19517d45f6f6ae027a41ce20d5"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "a3ab5f25fdabe5ad9a8503a67870d6e0f0832c014f1e1b741b7e7e282eea2681",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-01-01T00:00:01.000Z",
+          "timestamp": "2026-01-01T00:00:01.000Z",
+          "content": "ok",
+          "provenance": {
+            "stable_source_record_id": "msg-ok",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-01-01T00:00:01.000Z|00000000000000000001|msg-ok",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "msg-ok",
+            "source_sequence": 1,
+            "source_offset": 130,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "f1187c09f6290b39ceb74dcf0ab97116b231ec5e0adc5200947f2bc0fd9e1224",
+            "record_sha256": "452100a2235e22f465e31cd5a673ddc3399fde890cbfc765841797009a6d8baa"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "dad4d253646974cc79e238fd7a948b028079ca12a61967e2fd4bb0723b02962d",
+          "kind": "message",
+          "role": "assistant",
+          "order": 1,
+          "source_timestamp": "2026-01-01T00:00:02.000Z",
+          "timestamp": "2026-01-01T00:00:02.000Z",
+          "content": "repaired continues",
+          "provenance": {
+            "stable_source_record_id": "msg-extra",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-01-01T00:00:02.000Z|00000000000000000002|msg-extra",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "msg-extra",
+            "source_sequence": 2,
+            "source_offset": 282,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "cdd5acc1781ff27e678882c3da857ed1322e7a83b5d6f553319d8ba2d1bedad0",
+            "record_sha256": "0399140509d5080af3a2c549206427a6f29414c5fe26963c8eb8c20a45aad7de"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "6581eb3a918cc0e595a71b7bdfd797a8f19bf4bbd3219eda3ad865e12f3f71d4",
+    "revision": {
+      "revision": 1,
+      "revision_id": "bdcae4febe1b3fc95313cf20f9202213a199b73956f0632d78d2d0e16f9b0bb7",
+      "parent_revision_id": "6581eb3a918cc0e595a71b7bdfd797a8f19bf4bbd3219eda3ad865e12f3f71d4",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "a3ab5f25fdabe5ad9a8503a67870d6e0f0832c014f1e1b741b7e7e282eea2681",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": "2026-01-01T00:00:01.000Z",
+            "timestamp": "2026-01-01T00:00:01.000Z",
+            "content": "ok",
+            "provenance": {
+              "stable_source_record_id": "msg-ok",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-01-01T00:00:01.000Z|00000000000000000001|msg-ok",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "msg-ok",
+              "source_sequence": 1,
+              "source_offset": 130,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "f1187c09f6290b39ceb74dcf0ab97116b231ec5e0adc5200947f2bc0fd9e1224",
+              "record_sha256": "452100a2235e22f465e31cd5a673ddc3399fde890cbfc765841797009a6d8baa"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "dad4d253646974cc79e238fd7a948b028079ca12a61967e2fd4bb0723b02962d",
+            "kind": "message",
+            "role": "assistant",
+            "order": 1,
+            "source_timestamp": "2026-01-01T00:00:02.000Z",
+            "timestamp": "2026-01-01T00:00:02.000Z",
+            "content": "repaired continues",
+            "provenance": {
+              "stable_source_record_id": "msg-extra",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-01-01T00:00:02.000Z|00000000000000000002|msg-extra",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "msg-extra",
+              "source_sequence": 2,
+              "source_offset": 282,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "cdd5acc1781ff27e678882c3da857ed1322e7a83b5d6f553319d8ba2d1bedad0",
+              "record_sha256": "0399140509d5080af3a2c549206427a6f29414c5fe26963c8eb8c20a45aad7de"
+            }
+          }
+        }
+      },
+      {
+        "op": "diagnostic_remove",
+        "diagnostic_key": "invalid_json_line|2|-"
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 3,
+    "bytes": 458,
+    "first_source_position": 0,
+    "last_source_position": 457
+  }
+}

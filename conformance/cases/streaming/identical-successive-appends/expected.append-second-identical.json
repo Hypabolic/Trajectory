@@ -1,0 +1,89 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 1,
+    "revision_id": "4ffd4c8ea10d21f9d3872b7016e0e9c22a3a039272113ddb58b1e4f182aed516",
+    "parent_revision_id": "3d9192c3d576a17bda75af79794978341bc83fb4d6d0d74b38dd948c7592a354",
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "pi",
+    "group_id": "stream-identical-successive-appends",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 274,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "eae75d4051ccda116087a0a3d0b6c9b5ae6af41504aced3785a489e0b2c50699"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "pi",
+    "group_id": "stream-identical-successive-appends",
+    "revision": {
+      "revision": 1,
+      "revision_id": "4ffd4c8ea10d21f9d3872b7016e0e9c22a3a039272113ddb58b1e4f182aed516",
+      "parent_revision_id": "3d9192c3d576a17bda75af79794978341bc83fb4d6d0d74b38dd948c7592a354",
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "4399eddb5f8e3098a5510db2a02ecd19a933c35fdf2a30b242f537b1b1abcf29",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "pi",
+          "cwd": "/workspace/demo",
+          "producer_version": "3",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "1388ada6b0d0cd9a4b29e993627fa273947e11fc5330ca4ad770723cea66e013",
+            "record_sha256": "e1b8c4833a9305e86a6b952171b82f196d8cbe19517d45f6f6ae027a41ce20d5"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "3d9192c3d576a17bda75af79794978341bc83fb4d6d0d74b38dd948c7592a354",
+    "revision": {
+      "revision": 1,
+      "revision_id": "4ffd4c8ea10d21f9d3872b7016e0e9c22a3a039272113ddb58b1e4f182aed516",
+      "parent_revision_id": "3d9192c3d576a17bda75af79794978341bc83fb4d6d0d74b38dd948c7592a354",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": []
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 1,
+    "bytes": 137,
+    "first_source_position": 137,
+    "last_source_position": 273
+  }
+}

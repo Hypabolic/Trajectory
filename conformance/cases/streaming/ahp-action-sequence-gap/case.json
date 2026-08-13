@@ -1,0 +1,64 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/ahp-action-sequence-gap",
+  "description": "AHP action-log serverSeq gap returns reset-required without advancing the cursor.",
+  "source": "ahp",
+  "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000c1",
+  "required_capabilities": [
+    "stream-core",
+    "stream-ahp-action-log",
+    "stream-reset",
+    "stream-cursor-v1"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required",
+    "ahp_protocol_version": "0.7.0"
+  },
+  "steps": [
+    {
+      "id": "baseline",
+      "input": {
+        "kind": "ahp-actions",
+        "material": "step-baseline.jsonl"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false,
+        "result": "expected.baseline.json"
+      },
+      "double_invoke": true
+    },
+    {
+      "id": "gap",
+      "input": {
+        "kind": "ahp-actions",
+        "material": "step-gap.jsonl"
+      },
+      "expected": {
+        "update_kind": "reset-required",
+        "reset_reason": "sequence-gap",
+        "result": "expected.gap.json"
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-cursor-exact",
+    "stream-idempotence"
+  ],
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  }
+}

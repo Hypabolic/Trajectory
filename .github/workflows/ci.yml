@@ -55,7 +55,7 @@ jobs:
         run: >-
           dotnet test dotnet/tests/Trajectory.Tests/Trajectory.Tests.csproj
           -c Release --no-build
-          --filter FullyQualifiedName~ContractsAndConformanceTests
+          --filter "FullyQualifiedName~ContractsAndConformanceTests|FullyQualifiedName~StreamingSchemaVectorTests"
 
   conformance:
     name: Shared conformance / .NET
@@ -72,11 +72,51 @@ jobs:
           dotnet build
           dotnet/tests/Trajectory.Conformance/Trajectory.Conformance.csproj
           -c Release --no-restore
+      - name: Validate .NET capability manifest
+        run: |
+          jq -e '
+            .runtime == "dotnet"
+            and .slice == "ML13"
+            and .normalizer_contract_version == "0.2.0"
+            and .sources == ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"]
+            and .outputs == [
+              "letta-trajectory-v1",
+              "letta-canonical-v1",
+              "hypabolic-trajectory-v1",
+              "openai-chat-messages",
+              "jsonl-minimal",
+              "otel-genai-spans-v1"
+            ]
+            and .capabilities == [
+              "normalize",
+              "normalize-partial",
+              "list-explicit-root",
+              "typed-diagnostics",
+              "typed-fatal-errors",
+              "deterministic-rerun",
+              "stream-core",
+              "stream-cursor-v1",
+              "stream-jsonl-framing",
+              "stream-apply-snapshot",
+              "stream-apply-append",
+              "stream-full-snapshot",
+              "stream-record-delta",
+              "stream-reset",
+              "stream-provisional-records",
+              "stream-deterministic-replay",
+              "stream-file-jsonl",
+              "stream-ahp-snapshot",
+              "stream-ahp-action-log"
+            ]
+          ' dotnet/src/Trajectory/runtime-capabilities.json > /dev/null
       - name: Run every shared case twice
-        run: >-
-          python3 conformance/verify.py --repository-root . --
-          dotnet
-          dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll
+        run: |
+          summary=$(python3 conformance/verify.py --repository-root . \
+            --capabilities-file dotnet/src/Trajectory/runtime-capabilities.json -- \
+            dotnet \
+            dotnet/tests/Trajectory.Conformance/bin/Release/net10.0/trajectory-conformance.dll)
+          echo "$summary"
+          echo "$summary" | jq -e '.status == "success" and .stream_unsupported_skips == 0'
       - name: Upload unaccepted conformance candidates
         if: failure()
         uses: actions/upload-artifact@v4
@@ -205,11 +245,35 @@ jobs:
               "jsonl-minimal",
               "otel-genai-spans-v1"
             ]
+            and .capabilities == [
+              "normalize",
+              "normalize-partial",
+              "list-explicit-root",
+              "typed-diagnostics",
+              "typed-fatal-errors",
+              "deterministic-rerun",
+              "stream-core",
+              "stream-cursor-v1",
+              "stream-jsonl-framing",
+              "stream-apply-snapshot",
+              "stream-apply-append",
+              "stream-full-snapshot",
+              "stream-record-delta",
+              "stream-reset",
+              "stream-provisional-records",
+              "stream-deterministic-replay",
+              "stream-file-jsonl",
+              "stream-ahp-snapshot",
+              "stream-ahp-action-log"
+            ]
           ' typescript/packages/trajectory/runtime-capabilities.json > /dev/null
       - name: Run every advertised shared case twice
-        run: >-
-          python3 conformance/verify.py --repository-root . --
-          node typescript/packages/trajectory-testing/dist/cli.js
+        run: |
+          summary=$(python3 conformance/verify.py --repository-root . \
+            --capabilities-file typescript/packages/trajectory/runtime-capabilities.json -- \
+            node typescript/packages/trajectory-testing/dist/cli.js)
+          echo "$summary"
+          echo "$summary" | jq -e '.status == "success" and .stream_unsupported_skips == 0'
       - name: Upload unaccepted conformance candidates
         if: failure()
         uses: actions/upload-artifact@v4
@@ -329,7 +393,20 @@ jobs:
               "list-explicit-root",
               "typed-diagnostics",
               "typed-fatal-errors",
-              "deterministic-rerun"
+              "deterministic-rerun",
+              "stream-core",
+              "stream-cursor-v1",
+              "stream-jsonl-framing",
+              "stream-apply-snapshot",
+              "stream-apply-append",
+              "stream-full-snapshot",
+              "stream-record-delta",
+              "stream-reset",
+              "stream-provisional-records",
+              "stream-deterministic-replay",
+              "stream-file-jsonl",
+              "stream-ahp-snapshot",
+              "stream-ahp-action-log"
             ]
           ' python/runtime-capabilities.json > /dev/null
       - name: Check progressive argv maps (claimed ⊆ verified; tip equality)
@@ -344,10 +421,13 @@ jobs:
           ' > /dev/null
       - name: Run every advertised shared case twice (unfiltered tip)
         # No --source/--operation: verify defaults to compatibility tip matrix.
-        run: >-
-          python conformance/verify.py --repository-root .
-          --
-          env PYTHONPATH=python/tools python -m trajectory_conformance
+        # LS-08: stream_unsupported_skips must be 0 (unsupported-as-skip must not green CI).
+        run: |
+          summary=$(python conformance/verify.py --repository-root . \
+            --capabilities-file python/runtime-capabilities.json -- \
+            env PYTHONPATH=python/tools python -m trajectory_conformance)
+          echo "$summary"
+          echo "$summary" | jq -e '.status == "success" and .stream_unsupported_skips == 0'
       - name: Upload unaccepted conformance candidates
         if: failure()
         uses: actions/upload-artifact@v4
@@ -459,11 +539,35 @@ jobs:
               "jsonl-minimal",
               "otel-genai-spans-v1"
             ]
+            and .capabilities == [
+              "normalize",
+              "normalize-partial",
+              "list-explicit-root",
+              "typed-diagnostics",
+              "typed-fatal-errors",
+              "deterministic-rerun",
+              "stream-core",
+              "stream-cursor-v1",
+              "stream-jsonl-framing",
+              "stream-apply-snapshot",
+              "stream-apply-append",
+              "stream-full-snapshot",
+              "stream-record-delta",
+              "stream-reset",
+              "stream-provisional-records",
+              "stream-deterministic-replay",
+              "stream-file-jsonl",
+              "stream-ahp-snapshot",
+              "stream-ahp-action-log"
+            ]
           ' rust/crates/hypabolic-trajectory/runtime-capabilities.json > /dev/null
       - name: Run every advertised shared case and output twice
-        run: >-
-          python3 conformance/verify.py --repository-root . --
-          rust/target/release/trajectory-conformance
+        run: |
+          summary=$(python3 conformance/verify.py --repository-root . \
+            --capabilities-file rust/crates/hypabolic-trajectory/runtime-capabilities.json -- \
+            rust/target/release/trajectory-conformance)
+          echo "$summary"
+          echo "$summary" | jq -e '.status == "success" and .stream_unsupported_skips == 0'
       - name: Prove checked-in identity goldens are unchanged
         run: sha256sum --check conformance/identity-baseline.sha256
       - name: Reject fixture mutation

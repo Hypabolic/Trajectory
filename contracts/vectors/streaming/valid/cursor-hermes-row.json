@@ -1,0 +1,17 @@
+{
+  "schema": "streaming-cursor-v1.schema.json",
+  "instance": {
+    "cursor_version": 1,
+    "source": "hermes",
+    "group_id": "hermes-session-synthetic",
+    "generation": 0,
+    "position": {
+      "kind": "hermes-row",
+      "database_generation": "db-gen-1",
+      "last_row_id": 17,
+      "change_token": "tok-abc"
+    },
+    "source_revision": "db-gen-1",
+    "prefix_sha256": null
+  }
+}

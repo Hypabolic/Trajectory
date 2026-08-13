@@ -1,0 +1,178 @@
+{
+  "kind": "updated",
+  "revision": {
+    "revision": 0,
+    "revision_id": "46c8aeb6dd62ae0752b8138174905b5c3df65c627496922a1f1d26a5ef99dd61",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "claude-code",
+    "group_id": "stream-claude-code-append-sequence",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 205,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "9f316baf49b96018d536f7bfe196925256a56f738a88e123c574d8cc781fae73"
+  },
+  "snapshot": {
+    "schema_id": "trajectory-stream-v1",
+    "source": "claude-code",
+    "group_id": "stream-claude-code-append-sequence",
+    "revision": {
+      "revision": 0,
+      "revision_id": "46c8aeb6dd62ae0752b8138174905b5c3df65c627496922a1f1d26a5ef99dd61",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "records": [
+      {
+        "status": "stable",
+        "record": {
+          "id": "49b7d5ac2ef11c8fc4a406147876b84f8df509aa9da40ca8915aa8b98ebeba10",
+          "kind": "meta",
+          "role": "meta",
+          "order": -1,
+          "source_timestamp": null,
+          "timestamp": null,
+          "source_name": "claude-code",
+          "cwd": "/workspace/project",
+          "git_branch": "main",
+          "producer_version": "unknown",
+          "provenance": {
+            "stable_source_record_id": "meta",
+            "source_identity_kind": "synthetic",
+            "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+            "component_key": "meta",
+            "component_index": 0,
+            "component_type_ordinal": 0
+          },
+          "hashes": {
+            "content_sha256": "f552207d880a6e1112ea84c5556cfbda7d32979f241d35b4246de027eeede079",
+            "record_sha256": "97b674f1da0c8615fb0d34cb6624a9f6d88002a4c85b0c388071156b4ea9e3a4"
+          }
+        }
+      },
+      {
+        "status": "stable",
+        "record": {
+          "id": "be01a7f1709bc2efe73a4e2ffc3d8fbd02cb2b6404a594c11b9bbf09465d75c6",
+          "kind": "message",
+          "role": "user",
+          "order": 0,
+          "source_timestamp": "2026-03-06T14:15:22.394Z",
+          "timestamp": "2026-03-06T14:15:22.394Z",
+          "content": "hello claude",
+          "provenance": {
+            "stable_source_record_id": "cc-u1",
+            "source_identity_kind": "native",
+            "source_order_id": "1|2026-03-06T14:15:22.394Z|00000000000000000000|cc-u1",
+            "component_key": "message:0",
+            "component_index": 0,
+            "component_type_ordinal": 0,
+            "native_record_id": "cc-u1",
+            "source_offset": 0,
+            "source_anchor_kind": "byte"
+          },
+          "hashes": {
+            "content_sha256": "1d8ab3e77ec7d023182642a369096bea7b213e48feb0c75ea9e76951966c26a4",
+            "record_sha256": "0f376fd735c46d1afbaffe8233c2110efb6c9384c867ff91d1af3be61c3c706b"
+          }
+        }
+      }
+    ],
+    "diagnostics": [],
+    "complete": false
+  },
+  "delta": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 0,
+      "revision_id": "46c8aeb6dd62ae0752b8138174905b5c3df65c627496922a1f1d26a5ef99dd61",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "49b7d5ac2ef11c8fc4a406147876b84f8df509aa9da40ca8915aa8b98ebeba10",
+            "kind": "meta",
+            "role": "meta",
+            "order": -1,
+            "source_timestamp": null,
+            "timestamp": null,
+            "source_name": "claude-code",
+            "cwd": "/workspace/project",
+            "git_branch": "main",
+            "producer_version": "unknown",
+            "provenance": {
+              "stable_source_record_id": "meta",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "0|0000-00-00T00:00:00.000Z|00000000000000000000|meta",
+              "component_key": "meta",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "f552207d880a6e1112ea84c5556cfbda7d32979f241d35b4246de027eeede079",
+              "record_sha256": "97b674f1da0c8615fb0d34cb6624a9f6d88002a4c85b0c388071156b4ea9e3a4"
+            }
+          }
+        }
+      },
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "be01a7f1709bc2efe73a4e2ffc3d8fbd02cb2b6404a594c11b9bbf09465d75c6",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": "2026-03-06T14:15:22.394Z",
+            "timestamp": "2026-03-06T14:15:22.394Z",
+            "content": "hello claude",
+            "provenance": {
+              "stable_source_record_id": "cc-u1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-03-06T14:15:22.394Z|00000000000000000000|cc-u1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "cc-u1",
+              "source_offset": 0,
+              "source_anchor_kind": "byte"
+            },
+            "hashes": {
+              "content_sha256": "1d8ab3e77ec7d023182642a369096bea7b213e48feb0c75ea9e76951966c26a4",
+              "record_sha256": "0f376fd735c46d1afbaffe8233c2110efb6c9384c867ff91d1af3be61c3c706b"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": [],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 2,
+    "bytes": 205,
+    "first_source_position": 0,
+    "last_source_position": 204
+  }
+}

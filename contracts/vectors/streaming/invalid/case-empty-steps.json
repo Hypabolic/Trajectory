@@ -1,0 +1,18 @@
+{
+  "schema": "streaming-case-v1.schema.json",
+  "instance": {
+    "case_version": 1,
+    "id": "streaming/bad",
+    "source": "pi",
+    "required_capabilities": ["stream-core"],
+    "options": {
+      "delivery": "both",
+      "include_provisional": true,
+      "require_complete_lines": true,
+      "finalize_on_close": true,
+      "reset_policy": "return-reset-required"
+    },
+    "steps": [],
+    "comparison": ["stream-json-exact"]
+  }
+}

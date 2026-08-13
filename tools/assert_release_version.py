@@ -55,6 +55,8 @@ def main() -> None:
         root / "typescript/packages/trajectory/package.json",
         root / "typescript/packages/trajectory-node/package.json",
         root / "typescript/packages/trajectory-otel/package.json",
+        root / "typescript/packages/trajectory-ahp/package.json",
+        root / "typescript/packages/trajectory-hermes/package.json",
     ]
     for path in npm_paths:
         package = load_json(path)
@@ -71,6 +73,9 @@ def main() -> None:
         root / "dotnet/src/Trajectory/Trajectory.csproj",
         root / "dotnet/src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj",
         root / "dotnet/src/Trajectory.Testing/Trajectory.Testing.csproj",
+        root / "dotnet/src/Trajectory.IO/Trajectory.IO.csproj",
+        root / "dotnet/src/Trajectory.Ahp/Trajectory.Ahp.csproj",
+        root / "dotnet/src/Trajectory.Hermes/Trajectory.Hermes.csproj",
     ]
     for path in projects:
         project_version = ET.parse(path).findtext(".//Version")
@@ -89,6 +94,15 @@ def main() -> None:
                 f"(got {py_version!r})."
             )
         pypi_packages.append("hypabolic-trajectory")
+        # Optional stream extras are install maps only (same wheel).
+        pypi_packages.extend(
+            [
+                "hypabolic-trajectory[io]",
+                "hypabolic-trajectory[ahp]",
+                "hypabolic-trajectory[hermes]",
+                "hypabolic-trajectory[otel]",
+            ]
+        )
 
     package_map = {
         "status": "success",
@@ -98,15 +112,23 @@ def main() -> None:
             "Hypabolic.Trajectory",
             "Hypabolic.Trajectory.OpenTelemetry",
             "Hypabolic.Trajectory.Testing",
+            "Hypabolic.Trajectory.IO",
+            "Hypabolic.Trajectory.Ahp",
+            "Hypabolic.Trajectory.Hermes",
         ],
         "npm": [
             "@hypabolic/trajectory",
             "@hypabolic/trajectory-node",
             "@hypabolic/trajectory-otel",
+            "@hypabolic/trajectory-ahp",
+            "@hypabolic/trajectory-hermes",
         ],
         "crates": [
             "hypabolic-trajectory",
             "hypabolic-trajectory-opentelemetry",
+            "hypabolic-trajectory-io",
+            "hypabolic-trajectory-ahp",
+            "hypabolic-trajectory-hermes",
         ],
     }
     if pypi_packages:

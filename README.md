@@ -14,22 +14,31 @@ suite in every ecosystem.
 | .NET | [`Hypabolic.Trajectory`](https://www.nuget.org/packages/Hypabolic.Trajectory) | `dotnet add package Hypabolic.Trajectory` |
 | TypeScript | [`@hypabolic/trajectory`](https://www.npmjs.com/package/@hypabolic/trajectory) | `npm install @hypabolic/trajectory` |
 | Rust | [`hypabolic-trajectory`](https://crates.io/crates/hypabolic-trajectory) | `cargo add hypabolic-trajectory` |
-| Python | [`hypabolic-trajectory`](https://pypi.org/project/hypabolic-trajectory/) (first public cut with next multi-registry tag) | `pip install hypabolic-trajectory==<tag-semver>` |
+| Python | [`hypabolic-trajectory`](https://pypi.org/project/hypabolic-trajectory/) | `pip install hypabolic-trajectory` |
 
 Optional OpenTelemetry: `Hypabolic.Trajectory.OpenTelemetry`,
 `@hypabolic/trajectory-otel`, `hypabolic-trajectory-opentelemetry`, and Python
 extra `hypabolic-trajectory[otel]` (SDK sinks only — pure OTEL project is in core).
 
+Optional live-session stream packages (**tip / Unreleased**; not yet on a
+registry tag): `Hypabolic.Trajectory.IO` / `.Ahp` / `.Hermes`,
+`@hypabolic/trajectory-node` (file I/O) / `trajectory-ahp` / `trajectory-hermes`,
+`hypabolic-trajectory-io` / `-ahp` / `-hermes`, and Python extras
+`hypabolic-trajectory[io]` / `[ahp]` / `[hermes]`.
+
 Releases use the **git tag as the version** (same model as Hypa): push
 `vX.Y.Z` and CI stamps packages, publishes NuGet/npm/crates/PyPI, and creates a
 GitHub Release. See [docs/publishing.md](docs/publishing.md).
 
-> **Published vs this tree:** NuGet / npm / crates at **`0.1.0`** include Pi, Claude
-> Code, Codex, OpenClaw, and Hermes only (**no** AHP, **no** PyPI yet). **AHP**
-> Shape A offline snapshot ingest and the **Python** runtime are implemented
-> **in this repository tip** and ship under the **next** synchronized package
-> version (a new tag after `v0.1.0`). Install unversioned NuGet/npm/crates
-> commands resolve to latest published `0.1.0` until that cut.
+> **Published vs this tree:** Latest synchronized registry cut is **`0.1.2`**
+> (NuGet / npm / crates / PyPI): Pi, Claude Code, Codex, OpenClaw, Hermes, **AHP**
+> Shape A offline snapshots, **Grok Build**, and the **Python** runtime. Historical
+> **`0.1.0`** stopped at Hermes (no AHP, no PyPI); **`0.1.1`** added Python + AHP
+> Shape A. **Tip-only (Unreleased / this branch):** live-session streaming core
+> APIs + capability claims, optional I/O / AHP client / Hermes provider packages,
+> and sample `stream` / `ahp-stream` CLIs — see CHANGELOG `[Unreleased]`. Install
+> commands **without a version pin** resolve to the latest *published* tag, which
+> is **not** necessarily this tip.
 
 ## What you get
 
@@ -42,6 +51,11 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
   optional OpenTelemetry GenAI spans
 - **Local store listing** with explicit roots and pagination
 - **Partial / chunked input** where the source supports append-only sessions
+- **Live session streaming (library, not a daemon)** — pure core
+  `StreamState` / apply APIs with snapshot + delta envelopes, JSONL append,
+  AHP snapshot + action-log, optional file follow / AHP client / Hermes
+  provider packages, and sample `stream` / `ahp-stream` CLIs (tip;
+  capability-advertised as core `stream-*` plus optional package caps)
 - **Native AOT–friendly .NET**, ESM TypeScript (Node 22+), Rust 2024 (MSRV 1.85),
   Python 3.11+
 
@@ -51,21 +65,36 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
 # .NET
 dotnet add package Hypabolic.Trajectory
 # optional: dotnet add package Hypabolic.Trajectory.OpenTelemetry
+# optional stream packages (tip / Unreleased — not yet on a registry tag):
+#   dotnet add package Hypabolic.Trajectory.IO
+#   dotnet add package Hypabolic.Trajectory.Ahp
+#   dotnet add package Hypabolic.Trajectory.Hermes
 
 # TypeScript
 npm install @hypabolic/trajectory
-npm install @hypabolic/trajectory-node   # local listing
+npm install @hypabolic/trajectory-node   # local listing + stream file I/O
 # optional: npm install @hypabolic/trajectory-otel
+# optional stream packages (tip / Unreleased — not yet on a registry tag):
+#   npm install @hypabolic/trajectory-ahp
+#   npm install @hypabolic/trajectory-hermes
 
 # Rust
 cargo add hypabolic-trajectory
 # optional: cargo add hypabolic-trajectory-opentelemetry
+# optional stream packages (tip / Unreleased — not yet on a registry tag):
+#   cargo add hypabolic-trajectory-io
+#   cargo add hypabolic-trajectory-ahp
+#   cargo add hypabolic-trajectory-hermes
 
-# Python (first public PyPI cut ships with the next multi-registry tag after 0.1.0)
-pip install hypabolic-trajectory==<tag-semver>
+# Python (published from 0.1.1; pin a tag when you need a fixed cut)
+pip install hypabolic-trajectory
 # optional SDK sinks only:
-pip install 'hypabolic-trajectory[otel]==<tag-semver>'
-# monorepo / pre-publish:
+pip install 'hypabolic-trajectory[otel]'
+# optional stream extras (same wheel; tip surface under Unreleased):
+#   pip install 'hypabolic-trajectory[io]'
+#   pip install 'hypabolic-trajectory[ahp]'
+#   pip install 'hypabolic-trajectory[hermes]'
+# monorepo / tip checkout:
 #   python -m pip install -e './python[dev]'
 ```
 
@@ -234,9 +263,10 @@ CLIs, or pass an explicit root to listing APIs.
 
 ## Sample CLIs (try your local sessions)
 
-Unpublished developer tools that list agent stores on disk and normalize a
+Unpublished developer tools that list agent stores on disk, normalize a
 selected session into a **privacy-safe summary** (counts, roles, tools,
-diagnostics—no transcript body by default).
+diagnostics—no transcript body by default), or **watch a live JSONL session**
+as it grows.
 
 <img width="607" height="278" alt="image" src="https://github.com/user-attachments/assets/abfa4f1e-273f-4be9-9141-b38f0fa3751f" />
 <img width="1471" height="717" alt="image" src="https://github.com/user-attachments/assets/c39d80b3-519d-4513-b988-df285369f4c8" />
@@ -253,9 +283,11 @@ diagnostics—no transcript body by default).
 
 | Command | Purpose |
 | --- | --- |
-| `browse` (default) | Interactive: pick source → session → print summary |
+| `browse` (default) | Interactive: pick source → session → Watch live or Show snapshot |
 | `list` | Table of sessions for one source |
 | `show` | Normalize one `--path` or listing `--id` |
+| `stream` | Follow a JSONL session file (optional file I/O + core stream) |
+| `ahp-stream` | Optional AHP client demo (`fake://` FakeAhpHost) |
 
 Shared flags:
 
@@ -266,7 +298,15 @@ Shared flags:
 | `--limit <n>` | Listing page size (default 50) |
 | `--format <f>` | `both` (default), `messages`, or `hypabolic` |
 | `--show-content` | Include text snippets (**private data**; prints a warning) |
-| `--path` / `--id` | `show` only: file path or listing id |
+| `--path` / `--id` | `show` / `stream` / `browse`: file path or listing id |
+| `--emit` | `stream` / `browse --watch` / `ahp-stream`: `snapshot+delta` (default), `snapshot`, or `delta` |
+| `--follow` | `stream`: keep polling until process exit (not a daemon) |
+| `--watch` | `browse`: after picking a session, follow it live (skip the action prompt) |
+| `--url` / `--chat` | `ahp-stream`: host URL (`fake://` in samples) and chat URI |
+
+These CLIs are **consumer processes**, not Trajectory daemons. Stream follow ends
+when the process exits; sample `ahp-stream` uses in-memory FakeAhpHost only
+(wire your own WebSocket `AhpTransport` for live hosts).
 
 ### Run examples
 
@@ -296,12 +336,28 @@ cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- show \
   --source ahp \
   --path conformance/cases/ahp/tool-calls/input.json
 
-# Python (unpublished sample; requires editable install or PYTHONPATH=python/src:python/samples)
+# Python (unpublished sample)
+# Prefer editable install so hypabolic_trajectory resolves without hand-rolled PYTHONPATH:
+python -m pip install -e './python[dev]'
+# (Alternatively: PYTHONPATH=python/src:python/samples …)
 PYTHONPATH=python/samples python -m trajectory_cli list --source pi
 PYTHONPATH=python/samples python -m trajectory_cli show \
   --source pi \
   --path conformance/cases/pi/tool-calls/input.jsonl
 PYTHONPATH=python/samples python -m trajectory_cli browse
+
+# Watch a live local session (pick from the store, then Watch live)
+dotnet run --project dotnet/samples/Trajectory.Cli -- browse --source grok-build
+# or skip the action prompt:
+dotnet run --project dotnet/samples/Trajectory.Cli -- browse --source grok-build --watch --show-content
+cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- browse --source grok-build --watch --show-content
+
+# Stream a fixture once (all four CLIs; default emit snapshot+delta)
+# After editable install above (or PYTHONPATH=python/src:python/samples):
+PYTHONPATH=python/samples python -m trajectory_cli stream \
+  --source pi \
+  --path conformance/cases/pi/tool-calls/input.jsonl \
+  --max-updates 1
 ```
 
 **Notes**
@@ -310,6 +366,8 @@ PYTHONPATH=python/samples python -m trajectory_cli browse
 - Hermes listing in core returns empty (no SQLite dependency); export JSON and
   `show --path`.
 - AHP listing is Phase 3; normalize Shape A snapshots with `show --path`.
+- Live streaming sample commands compose optional file I/O / AHP client packages;
+  core stays free of watchers, network, and SQLite. Not a background daemon.
 - These CLIs are **not** published NuGet/npm/crates packages.
 
 ## How it works

@@ -6,6 +6,8 @@ No runtime owns or copies a shared input or golden.
 
 ## Case layout
 
+### Batch normalize / list
+
 Each `cases/<source>/<name>/case.json` declares the native input, source
 context, normalization options, mode, required capabilities, expected outcome,
 and one or more operations. Every operation names an immutable checked-in
@@ -21,7 +23,59 @@ Fatal cases compare the typed `{ "code", "message" }` object. Listing cases
 reference a declarative fixture under `stores/`; the runner builds a temporary
 explicit root and replaces its path with `$ROOT` before comparison.
 
+### Live stream sequences (LS-02+)
+
+Multi-step stream fixtures live under `cases/streaming/<name>/` and use
+[`streaming-case-v1.schema.json`](../contracts/schemas/streaming-case-v1.schema.json)
+(not the batch `conformance-case-v1` shape). Each case is an **ordered sequence
+of steps** with explicit input kinds (`append-bytes`, `snapshot-bytes`,
+`ahp-actions`, `ahp-snapshot`, `hermes-export`, `finish`, `reset`).
+
+Protocol:
+
+- Request operation `stream-sequence` (or synonym `stream-replay`) runs the
+  entire step list in one runner process. Per-step library ops
+  (`stream-apply-append`, …) remain in the protocol enum for dedicated harnesses.
+- Response status may be `success`, `fatal-error`, `protocol-error`, or
+  `unsupported`. **`unsupported` is a skip only for unclaimed optional
+  capabilities** (`stream-file-io`, `stream-hermes-provider`,
+  `stream-ahp-client`, `stream-async-iterator`, `stream-file-watch`,
+  `stream-ahp-list-sessions`). When the invoked runner advertises any
+  required core `stream-*` capability that the case lists (default advertised
+  set: `contracts/compatibility.json` `capabilities.required`; override with
+  `--capabilities-file path/to/runtime-capabilities.json`), `unsupported`
+  is a **failure**. The four core runners claim the full required core stream
+  set, so CI `stream-sequence` must report `stream_unsupported_skips: 0`.
+  Hermes `hermes-export` steps exercise core `apply_hermes_export` (shared
+  `hermes-provider-*` cases). Optional SQLite/query I/O
+  (`stream-hermes-provider`) remains package-test-gated and is not required
+  for core `stream-sequence` success.
+- Runners double-invoke each step when `double_invoke` is true (default) and
+  report `idempotent: true` in the step result.
+
+Stream comparison modes (from `contracts/spec/streaming.md`):
+
+| Mode | Checks |
+| --- | --- |
+| `stream-json-exact` | Per-step `StreamUpdate` vs golden (`expected.result`) |
+| `stream-cursor-exact` | Cursor fields vs golden cursor |
+| `stream-delta-apply` | Applying delta to prior snapshot yields new snapshot |
+| `stream-diagnostics-by-step` | `expected.diagnostic_codes` per step |
+| `stream-idempotence` | Double-apply parity (`idempotent: true`) |
+| `stream-oracle-parity` | Append path equals prefix re-normalize, or AHP action path equals independent Shape A snapshot (`case.oracle`) |
+
+**LS-08 / LS-12:** per-step `expected.result` goldens are checked in for the full
+streaming corpus. `stream-oracle-parity` is enabled on file-JSONL growth and
+reset cases (and AHP action≡snapshot where materials exist). Core `stream-*`
+capabilities are claimed in `contracts/compatibility.json` and the four
+runtime capability manifests; optional package caps only on those packages.
+
+Privacy: every stream case should list `privacy.forbidden_substrings` (plus
+defaults in `verify.py`). Diagnostics, errors, and goldens are scanned.
+
 ## Adding a case
+
+### Batch normalize / list
 
 1. Choose the smallest sanitized native fixture that exposes one behavior.
 2. Add `case.json` and the native input.
@@ -31,6 +85,24 @@ explicit root and replaces its path with `$ROOT` before comparison.
 5. Validate the manifest and schemas, then run all implementations.
 6. If the behavior changes identity, hashes, diagnostics, or existing bytes,
    version the affected contract before accepting the change.
+
+### Stream sequence
+
+1. Add `cases/streaming/<name>/case.json` conforming to `streaming-case-v1`.
+2. Prefer synthetic `inline_utf8` for tiny steps; use `material` relative paths
+   for multi-line JSONL / AHP JSON.
+3. Declare `required_capabilities` with the `stream-*` names the case needs
+   (must match claimed core or optional package capabilities).
+4. List comparison modes including `stream-oracle-parity` when append or AHP
+   action≡snapshot applies; set `oracle` flags accordingly.
+5. Produce `expected.<step-id>.json` goldens from a trusted runner, review by
+   hand, check in, and wire `expected.result`. Candidates may land under
+   `artifacts/conformance-candidates/` during review.
+6. Run `python3 conformance/verify.py --operation stream-sequence -- <runner>`
+   on **all four** runtimes before merging. Pass
+   `--capabilities-file <runtime-capabilities.json>` so the advertised set
+   is explicit (default is `contracts/compatibility.json` required). Expect
+   `stream_unsupported_skips: 0` for the four core runners.
 
 Implementation-specific parser/unit fixtures belong under that runtime, not
 here. Shared cases are copied directly into runtime test output only for test

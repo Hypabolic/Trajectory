@@ -8,35 +8,37 @@ Trajectory follows the same release model as **Hypabolic/Hypa**:
 
 | Ecosystem | Packages |
 | --- | --- |
-| NuGet | `Hypabolic.Trajectory`, `.OpenTelemetry`, `.Testing` |
-| npm | `@hypabolic/trajectory`, `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
-| crates.io | `hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry` |
-| PyPI | `hypabolic-trajectory` (core includes pure OTEL project + `hypabolic_trajectory.otel`; optional extra `[otel]` for SDK sinks only) |
+| NuGet | `Hypabolic.Trajectory`, `.OpenTelemetry`, `.Testing`, `.IO`, `.Ahp`, `.Hermes` |
+| npm | `@hypabolic/trajectory`, `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel`, `@hypabolic/trajectory-ahp`, `@hypabolic/trajectory-hermes` |
+| crates.io | `hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry`, `hypabolic-trajectory-io`, `hypabolic-trajectory-ahp`, `hypabolic-trajectory-hermes` |
+| PyPI | `hypabolic-trajectory` (core includes pure OTEL project + `hypabolic_trajectory.otel`; optional extras `[otel]` SDK sinks, `[io]` / `[ahp]` / `[hermes]` stream modules — same wheel) |
 
 Cross-ecosystem package map (core vs optional):
 
 | Ecosystem | Core | Optional |
 | --- | --- | --- |
-| .NET | `Hypabolic.Trajectory` | `.OpenTelemetry`, `.Testing` |
-| TypeScript | `@hypabolic/trajectory` | `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel` |
-| Rust | `hypabolic-trajectory` | `hypabolic-trajectory-opentelemetry` |
-| Python | `hypabolic-trajectory` | `[otel]` SDK sinks only |
+| .NET | `Hypabolic.Trajectory` | `.OpenTelemetry`, `.Testing`, `.IO`, `.Ahp`, `.Hermes` |
+| TypeScript | `@hypabolic/trajectory` | `@hypabolic/trajectory-node`, `@hypabolic/trajectory-otel`, `@hypabolic/trajectory-ahp`, `@hypabolic/trajectory-hermes` |
+| Rust | `hypabolic-trajectory` | `hypabolic-trajectory-opentelemetry`, `hypabolic-trajectory-io`, `hypabolic-trajectory-ahp`, `hypabolic-trajectory-hermes` |
+| Python | `hypabolic-trajectory` | `[otel]` SDK sinks; `[io]` / `[ahp]` / `[hermes]` stream modules (stdlib) |
 
 ## Create a release (normal path)
 
 `v0.1.0` is **already published** on NuGet / npm / crates (sources through
-`hermes` only). Capability additions such as **AHP** Shape A require a **new**
-tag (`v0.1.1`, `v0.2.0`, …). Do not retag `v0.1.0`. skip-duplicate / OIDC re-runs
-will not replace existing package contents with AHP.
+`hermes` only). Checked-in `VERSION` is **`0.1.2`** (Grok Build + AHP tip;
+**do not retag `v0.1.2`**). The live-session stream cut and first PyPI upload
+require a **new** synchronized tag **strictly after `0.1.2`** (`v0.1.3`,
+`v0.2.0`, …). skip-duplicate / OIDC re-runs will not replace existing package
+contents with stream APIs.
 
 ```bash
 git checkout main
 git pull origin main
 
 # Tag the commit you want to ship (must already be green on CI).
-# Example for the next cut after 0.1.0:
-git tag -a v0.1.1 -m "Trajectory 0.1.1"
-git push origin v0.1.1
+# Example: stream cut after checked-in 0.1.2 — never retag v0.1.2.
+git tag -a v0.1.3 -m "Trajectory 0.1.3"
+git push origin v0.1.3
 ```
 
 That is the whole developer step. The **Release** workflow then:
@@ -54,7 +56,7 @@ That is the whole developer step. The **Release** workflow then:
 
 | Input | Meaning |
 | --- | --- |
-| `tag` | Required, e.g. `v0.1.1` (tag should already exist, or push it first; `v0.1.0` is already cut) |
+| `tag` | Required, e.g. `v0.1.3` (tag should already exist, or push it first; never retag `v0.1.0` / `v0.1.2`) |
 | `dry_run` | Pack only (no publish / no GitHub Release) |
 | `npm_auth` | `oidc` (default) or `token` |
 
@@ -112,7 +114,9 @@ The Release job uses `NuGet/login@v1` with `user: hypabolic` and
 ### crates.io Trusted Publishing
 
 On [crates.io](https://crates.io/docs/trusted-publishing), for **each** crate
-(`hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry`):
+(`hypabolic-trajectory`, `hypabolic-trajectory-opentelemetry`,
+`hypabolic-trajectory-io`, `hypabolic-trajectory-ahp`,
+`hypabolic-trajectory-hermes`):
 
 | Field | Value |
 | --- | --- |
@@ -171,6 +175,11 @@ cargo add hypabolic-trajectory@0.1.0
 # Python first ships on the next multi-registry tag (not published at 0.1.0):
 pip install hypabolic-trajectory==<tag-semver>
 pip install 'hypabolic-trajectory[otel]==<tag-semver>'   # optional OpenTelemetry SDK sinks
+# Stream optional packages / extras (next tag; not in published 0.1.0):
+#   NuGet: Hypabolic.Trajectory.IO | .Ahp | .Hermes
+#   npm:   @hypabolic/trajectory-node | trajectory-ahp | trajectory-hermes
+#   crates: hypabolic-trajectory-io | -ahp | -hermes
+#   PyPI:  hypabolic-trajectory[io] | [ahp] | [hermes]
 ```
 
 ## Comparison with Hypa
@@ -191,13 +200,13 @@ pip install 'hypabolic-trajectory[otel]==<tag-semver>'   # optional OpenTelemetr
 | Symptom | Action |
 | --- | --- |
 | CI gate failed | Fix main, retag or move tag to a green commit |
-| NuGet already published | `--skip-duplicate` makes re-run a no-op (does **not** replace package contents — new capability such as AHP needs a new version) |
-| npm already published | Workflow continues if version exists on registry (same: new features need a new version) |
-| crates already uploaded | Treated as success (same: new features need a new version) |
-| PyPI already published | `skip-existing: true` makes re-run a no-op (same: new features need a new version) |
+| NuGet already published | `--skip-duplicate` then `tools/verify_published_stream_artifact.py` downloads the registry nupkg and **fails** unless it contains stream capability manifests/APIs (a reused `0.1.2` is not a stream ship) |
+| npm already published | Same content/digest check against the npm tarball; missing `stream-*` manifests fails the job |
+| crates already uploaded | Same content check against the crates.io `.crate`; missing stream APIs fails (not retried as index lag) |
+| PyPI already published | `skip-existing: true` then the same verifier against the PyPI wheel; a pre-stream artifact fails |
 | OIDC 404 / NuGet login fail | Match Trusted Publisher: owner `hypabolic`, workflow `release.yml`, env `release` |
-| crates.io OIDC auth fail | Match Trusted Publishing on **both** crates; workflow `release.yml`, env `release` |
-| npm OIDC 404 | Fix Trusted Publisher or bootstrap package once |
+| crates.io OIDC auth fail | Match Trusted Publishing on **all** published crates (core + otel + io/ahp/hermes); workflow `release.yml`, env `release` |
+| npm OIDC 404 | Fix Trusted Publisher or bootstrap package once (including `trajectory-ahp` / `trajectory-hermes`) |
 | PyPI OIDC / pending publisher fail | Match pending publisher: org `Hypabolic`, package `hypabolic-trajectory`, workflow `release.yml`, env `release`; ensure environment protection allows the run |
 
 ## Related

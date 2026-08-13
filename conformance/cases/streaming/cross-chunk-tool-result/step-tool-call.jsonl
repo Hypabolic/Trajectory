@@ -1,0 +1,3 @@
+{"type":"session","version":3,"id":"stream-cross-chunk-tool-result","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/workspace/demo"}
+{"type":"message","id":"user-1","timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":"read file","timestamp":"2026-01-01T00:00:01.000Z"}}
+{"type":"message","id":"assistant-tools-1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":null,"toolCalls":[{"id":"call-read-1","name":"read","arguments":{"path":"/workspace/demo/a.txt"}}],"timestamp":"2026-01-01T00:00:02.000Z"}}

@@ -1,0 +1,65 @@
+{
+  "kind": "reset-required",
+  "revision": {
+    "revision": 0,
+    "revision_id": "4a6c7582f59339b5a845d499b8866e5f61b0f3f5ee88630d2bed24f2c048ab49",
+    "parent_revision_id": null,
+    "complete": false,
+    "generation": 0
+  },
+  "cursor": {
+    "cursor_version": 1,
+    "source": "grok-build",
+    "group_id": "stream-file-compaction-reset",
+    "generation": 0,
+    "position": {
+      "kind": "byte",
+      "next_byte_offset": 402,
+      "pending_byte_length": 0
+    },
+    "source_revision": "gen-0",
+    "prefix_sha256": "afb7ae2446613507cda42ae38e0acc38ca224608dfea50aa8d4b91654c3a43d1"
+  },
+  "snapshot": null,
+  "delta": null,
+  "diagnostics": [
+    {
+      "code": "stream_source_reset",
+      "message": "Source material was compacted relative to the committed cursor."
+    }
+  ],
+  "provisional": {
+    "include": true,
+    "provisional_ids": [],
+    "finalized_ids": []
+  },
+  "consumed": {
+    "complete_records": 0,
+    "bytes": 0
+  },
+  "reset": {
+    "reason": "source-compacted",
+    "prior_cursor": {
+      "cursor_version": 1,
+      "source": "grok-build",
+      "group_id": "stream-file-compaction-reset",
+      "generation": 0,
+      "position": {
+        "kind": "byte",
+        "next_byte_offset": 402,
+        "pending_byte_length": 0
+      },
+      "source_revision": "gen-0",
+      "prefix_sha256": "afb7ae2446613507cda42ae38e0acc38ca224608dfea50aa8d4b91654c3a43d1"
+    },
+    "requires_snapshot": true,
+    "dropped_record_ids": [
+      "3514af8697c53212a63ce4d529f8237770bd87742827a1f77b6a647daf49ab97",
+      "ac38c11fa10dd52dfb3975a5c76086829f3e5fb69b6ab514154cdb4ec69611a0",
+      "76a83d12785a0924aff61ddfe76cfba3016a0990c7761dec5e9f8ecb2ef2052a",
+      "d5a419dad9b47a53286ea86e382d9b795b82731bf75687824c8ae2cae1b6c448",
+      "13d236a246b961ff57f4f370edd4d2b9e27bd31729f5597f1af518ce9129953e",
+      "610e8041c32ff3899afe67a053dc9a9c1d4805c68107e121d2b5f696e6569a53"
+    ]
+  }
+}

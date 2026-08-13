@@ -6,12 +6,25 @@ using System.Text.Json;
 using Hypabolic.Trajectory;
 using Hypabolic.Trajectory.Listing;
 using Hypabolic.Trajectory.OpenTelemetry;
+using Hypabolic.Trajectory.Streaming;
 
 return await ConformanceProgram.RunAsync(args);
 
 internal static class ConformanceProgram
 {
     private const string ProtocolVersion = "1";
+
+    private static readonly HashSet<string> StreamOperations = new(StringComparer.Ordinal)
+    {
+        "stream-sequence",
+        "stream-replay",
+        "stream-apply-append",
+        "stream-apply-snapshot",
+        "stream-apply-ahp-actions",
+        "stream-apply-ahp-snapshot",
+        "stream-finish",
+        "stream-reset",
+    };
 
     public static async Task<int> RunAsync(string[] args)
     {
@@ -74,7 +87,59 @@ internal static class ConformanceProgram
         if (!string.Equals(RequiredString(manifest, "id"), request.Case, StringComparison.Ordinal))
             throw new ProtocolException("The requested case does not match its manifest ID.");
 
-        var operations = manifest.GetProperty("operation");
+        // LS-05: multi-step stream sequence via core ApplyAppend / ApplySnapshot.
+        if (StreamOperations.Contains(request.Operation))
+        {
+            if (!manifest.TryGetProperty("steps", out var steps) ||
+                steps.ValueKind != JsonValueKind.Array ||
+                steps.GetArrayLength() == 0)
+            {
+                throw new ProtocolException(
+                    $"Stream operation '{request.Operation}' requires a streaming case with steps[].");
+            }
+
+            if (request.Operation is "stream-sequence" or "stream-replay")
+            {
+                try
+                {
+                    var output = await ExecuteStreamSequenceAsync(caseDirectory, manifest);
+                    return new ConformanceResponse(
+                        request.Case,
+                        request.Operation,
+                        "success",
+                        output,
+                        [],
+                        null);
+                }
+                catch (StreamEngineUnsupportedException ex)
+                {
+                    return new ConformanceResponse(
+                        request.Case,
+                        request.Operation,
+                        "unsupported",
+                        null,
+                        [],
+                        new FatalError("capability_unsupported", ex.Message));
+                }
+            }
+
+            return new ConformanceResponse(
+                request.Case,
+                request.Operation,
+                "unsupported",
+                null,
+                [],
+                new FatalError(
+                    "capability_unsupported",
+                    "Per-step stream apply ops are not implemented yet."));
+        }
+
+        if (!manifest.TryGetProperty("operation", out var operations) ||
+            operations.ValueKind != JsonValueKind.Object)
+        {
+            throw new ProtocolException("Case field 'operation' must be an object.");
+        }
+
         if (!operations.TryGetProperty(request.Operation, out _))
             throw new ProtocolException(
                 $"Case '{request.Case}' does not declare operation '{request.Operation}'.");
@@ -230,6 +295,622 @@ internal static class ConformanceProgram
                 Directory.Delete(temporaryRoot, recursive: true);
         }
     }
+
+    private sealed class StreamEngineUnsupportedException : Exception
+    {
+        public StreamEngineUnsupportedException(string message) : base(message)
+        {
+        }
+    }
+
+    private static async Task<string> ExecuteStreamSequenceAsync(
+        string caseDirectory,
+        JsonElement manifest)
+    {
+        if (!manifest.TryGetProperty("steps", out var stepsEl) ||
+            stepsEl.ValueKind != JsonValueKind.Array)
+        {
+            throw new ProtocolException("Stream sequence requires steps[].");
+        }
+
+        var state = TrajectoryStream.Create(StreamOptionsFromManifest(manifest));
+        var stepResults = new List<object?>();
+        foreach (var step in stepsEl.EnumerateArray())
+        {
+            var stepId = step.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String
+                ? idEl.GetString()!
+                : "step";
+            var stepInput = step.GetProperty("input");
+            var doubleInvoke = !step.TryGetProperty("double_invoke", out var di) ||
+                di.ValueKind != JsonValueKind.False;
+            var preCursor = state.Cursor;
+            var (next, update) = await ApplyStreamStepAsync(state, caseDirectory, stepInput);
+            state = next;
+            var idempotent = true;
+            if (doubleInvoke)
+            {
+                StreamState after;
+                StreamUpdate update2;
+                // True-replay: re-supply with the cursor that governed the first apply.
+                var stepKind = RequiredString(stepInput, "kind");
+                if (stepKind == "append-bytes" &&
+                    update.Kind is "updated" or "unchanged")
+                {
+                    var replayCursor = ParseStreamCursor(stepInput) ?? preCursor;
+                    var data = await LoadStepBytesAsync(caseDirectory, stepInput);
+                    var sourceRevision = OptionalString(stepInput, "source_revision");
+                    (after, update2) = TrajectoryStream.ApplyAppend(
+                        state,
+                        data,
+                        replayCursor,
+                        sourceRevision);
+                }
+                else
+                {
+                    // AHP steps: re-apply as written (fingerprint idempotence when
+                    // the step omits a cursor). Append alone uses pre-apply cursor.
+                    (after, update2) = await ApplyStreamStepAsync(state, caseDirectory, stepInput);
+                }
+
+                if (update.Kind is "updated" or "unchanged")
+                {
+                    idempotent = update2.Kind == "unchanged" ||
+                        (update2.Kind == "updated" && StreamStateEquivalent(state, after));
+                }
+                else
+                {
+                    idempotent = update2.Kind == update.Kind && StreamStateEquivalent(state, after);
+                }
+
+                state = after;
+            }
+
+            stepResults.Add(new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["id"] = stepId,
+                ["update"] = TrajectoryStream.UpdateToDict(update),
+                ["idempotent"] = idempotent,
+            });
+        }
+
+        var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["steps"] = stepResults,
+        };
+        if (manifest.TryGetProperty("oracle", out var oracle) &&
+            oracle.ValueKind == JsonValueKind.Object)
+        {
+            var wantAppend = oracle.TryGetProperty("append_equals_prefix", out var ae) &&
+                ae.ValueKind == JsonValueKind.True;
+            var wantPrefix = oracle.TryGetProperty("prefix_re_normalize", out var pr) &&
+                pr.ValueKind == JsonValueKind.True;
+            var wantAction = oracle.TryGetProperty("action_equals_snapshot", out var aes) &&
+                aes.ValueKind == JsonValueKind.True;
+            if (wantAppend || wantPrefix || wantAction)
+            {
+                var section = new Dictionary<string, object?>(StringComparer.Ordinal);
+                if (wantAppend || wantPrefix)
+                {
+                    var oracleState = TrajectoryStream.Create(StreamOptionsFromManifest(manifest));
+                    var rev = state.Cursor.SourceRevision ?? "oracle";
+                    StreamUpdate snap;
+                    (oracleState, snap) = TrajectoryStream.ApplySnapshot(
+                        oracleState,
+                        state.CommittedPrefix,
+                        rev);
+                    // When the append path finished (stable→final), mirror finish so
+                    // oracle finality matches (LS-08 stable-to-final).
+                    if (snap.Kind is "updated" or "unchanged" && state.Finished)
+                    {
+                        (oracleState, snap) = TrajectoryStream.Finish(oracleState);
+                    }
+
+                    var ok = snap.Kind is "updated" or "unchanged" &&
+                        OracleSnapshotsMatch(
+                            state.Snapshot,
+                            snap.Snapshot,
+                            state.Cursor,
+                            snap.Cursor);
+                    if (wantAppend)
+                    {
+                        section["append_equals_prefix"] = ok;
+                    }
+
+                    if (wantPrefix)
+                    {
+                        section["prefix_re_normalize"] = ok;
+                    }
+                }
+
+                if (wantAction)
+                {
+                    var materialName =
+                        oracle.TryGetProperty("snapshot_material", out var sm) &&
+                        sm.ValueKind == JsonValueKind.String
+                            ? sm.GetString()!
+                            : "step-snapshot.json";
+                    var snapRev =
+                        oracle.TryGetProperty("snapshot_source_revision", out var sr) &&
+                        sr.ValueKind == JsonValueKind.String
+                            ? sr.GetString()!
+                            : "ahp-equiv-1";
+                    try
+                    {
+                        var materialPath = Path.GetFullPath(Path.Combine(caseDirectory, materialName));
+                        if (!materialPath.StartsWith(
+                                Path.GetFullPath(caseDirectory) + Path.DirectorySeparatorChar,
+                                StringComparison.Ordinal) &&
+                            materialPath != Path.GetFullPath(caseDirectory))
+                        {
+                            section["action_equals_snapshot"] = false;
+                        }
+                        else
+                        {
+                            var material = await File.ReadAllBytesAsync(materialPath);
+                            var (_, snap) = TrajectoryStream.ApplyAhpSnapshot(
+                                TrajectoryStream.Create(StreamOptionsFromManifest(manifest)),
+                                material,
+                                snapRev);
+                            section["action_equals_snapshot"] =
+                                snap.Kind is "updated" or "unchanged" &&
+                                ActionSnapshotParity(state.Snapshot, snap.Snapshot);
+                        }
+                    }
+                    catch
+                    {
+                        section["action_equals_snapshot"] = false;
+                    }
+                }
+
+                payload["oracle"] = section;
+            }
+        }
+
+        return SerializeWireObject(payload);
+    }
+
+    private static bool ActionSnapshotParity(StreamSnapshot? actionSnap, StreamSnapshot? snapshotSnap)
+    {
+        if (actionSnap is null || snapshotSnap is null)
+        {
+            return actionSnap is null && snapshotSnap is null;
+        }
+
+        if (actionSnap.Records.Count != snapshotSnap.Records.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < actionSnap.Records.Count; i++)
+        {
+            var a = actionSnap.Records[i];
+            var o = snapshotSnap.Records[i];
+            var aId = a.Record.TryGetValue("id", out var aid) ? aid?.ToString() : null;
+            var oId = o.Record.TryGetValue("id", out var oid) ? oid?.ToString() : null;
+            if (aId != oId || a.Status != o.Status)
+            {
+                return false;
+            }
+
+            var aRole = a.Record.TryGetValue("role", out var ar) ? ar?.ToString() : null;
+            var oRole = o.Record.TryGetValue("role", out var orole) ? orole?.ToString() : null;
+            if (aRole == "meta" && oRole == "meta")
+            {
+                continue;
+            }
+
+            var aContent = a.Record.TryGetValue("content", out var ac) ? ac?.ToString() : null;
+            var oContent = o.Record.TryGetValue("content", out var oc) ? oc?.ToString() : null;
+            if (aRole != oRole || aContent != oContent)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool OracleSnapshotsMatch(
+        StreamSnapshot? appendSnap,
+        StreamSnapshot? oracleSnap,
+        StreamCursor appendCursor,
+        StreamCursor oracleCursor)
+    {
+        // Missing snapshot (never updated — pure pending) ≡ empty incomplete snapshot.
+        var aRecords = appendSnap?.Records ?? Array.Empty<StreamRecord>();
+        var oRecords = oracleSnap?.Records ?? Array.Empty<StreamRecord>();
+        if (aRecords.Count != oRecords.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < aRecords.Count; i++)
+        {
+            var a = aRecords[i];
+            var o = oRecords[i];
+            var aId = a.Record.TryGetValue("id", out var aid) ? aid?.ToString() ?? "" : "";
+            var oId = o.Record.TryGetValue("id", out var oid) ? oid?.ToString() ?? "" : "";
+            if (aId != oId ||
+                a.Status != o.Status ||
+                a.ProvisionalId != o.ProvisionalId ||
+                a.ReplacesProvisionalId != o.ReplacesProvisionalId ||
+                a.FinalizesProvisionalId != o.FinalizesProvisionalId)
+            {
+                return false;
+            }
+        }
+
+        var aDiags = appendSnap?.Diagnostics ?? Array.Empty<StreamDiagnostic>();
+        var oDiags = oracleSnap?.Diagnostics ?? Array.Empty<StreamDiagnostic>();
+        if (aDiags.Count != oDiags.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < aDiags.Count; i++)
+        {
+            var a = aDiags[i];
+            var o = oDiags[i];
+            if (a.Code != o.Code ||
+                a.Message != o.Message ||
+                a.InputLine != o.InputLine ||
+                a.RecordIndex != o.RecordIndex ||
+                a.Count != o.Count)
+            {
+                return false;
+            }
+        }
+
+        var aComplete = appendSnap?.Complete ?? false;
+        var oComplete = oracleSnap?.Complete ?? false;
+        if (aComplete != oComplete)
+        {
+            return false;
+        }
+
+        return PositionsEqual(appendCursor.Position, oracleCursor.Position) &&
+            appendCursor.PrefixSha256 == oracleCursor.PrefixSha256;
+    }
+
+    private static string SerializeWireObject(object? value)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using var writer = NewWriter(buffer);
+        WriteWireValue(writer, value);
+        writer.Flush();
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
+    private static void WriteWireValue(Utf8JsonWriter writer, object? value)
+    {
+        switch (value)
+        {
+            case null:
+                writer.WriteNullValue();
+                break;
+            case string s:
+                writer.WriteStringValue(s);
+                break;
+            case bool b:
+                writer.WriteBooleanValue(b);
+                break;
+            case byte by:
+                writer.WriteNumberValue(by);
+                break;
+            case sbyte sb:
+                writer.WriteNumberValue(sb);
+                break;
+            case short sh:
+                writer.WriteNumberValue(sh);
+                break;
+            case ushort ush:
+                writer.WriteNumberValue(ush);
+                break;
+            case int i:
+                writer.WriteNumberValue(i);
+                break;
+            case uint ui:
+                writer.WriteNumberValue(ui);
+                break;
+            case long l:
+                writer.WriteNumberValue(l);
+                break;
+            case ulong ul:
+                writer.WriteNumberValue(ul);
+                break;
+            case float f:
+                writer.WriteNumberValue(f);
+                break;
+            case double d:
+                writer.WriteNumberValue(d);
+                break;
+            case decimal m:
+                writer.WriteNumberValue(m);
+                break;
+            case IDictionary<string, object?> dict:
+                writer.WriteStartObject();
+                foreach (var (key, item) in dict)
+                {
+                    writer.WritePropertyName(key);
+                    WriteWireValue(writer, item);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case System.Collections.IEnumerable list when value is not string:
+                writer.WriteStartArray();
+                foreach (var item in list)
+                {
+                    WriteWireValue(writer, item);
+                }
+
+                writer.WriteEndArray();
+                break;
+            default:
+                writer.WriteStringValue(Convert.ToString(value, CultureInfo.InvariantCulture));
+                break;
+        }
+    }
+
+    private static StreamOptions StreamOptionsFromManifest(JsonElement manifest)
+    {
+        var source = ParseSource(RequiredString(manifest, "source"));
+        var groupId = OptionalString(manifest, "group_id");
+        var opts = new StreamOptions { Source = source, GroupId = groupId };
+        if (!manifest.TryGetProperty("options", out var options) ||
+            options.ValueKind != JsonValueKind.Object)
+        {
+            return opts;
+        }
+
+        if (options.TryGetProperty("delivery", out var delivery) &&
+            delivery.ValueKind == JsonValueKind.String)
+        {
+            opts = opts with
+            {
+                Delivery = delivery.GetString() switch
+                {
+                    "snapshot" => StreamDelivery.Snapshot,
+                    "delta" => StreamDelivery.Delta,
+                    _ => StreamDelivery.Both,
+                },
+            };
+        }
+
+        if (options.TryGetProperty("include_provisional", out var ip) &&
+            ip.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            opts = opts with { IncludeProvisional = ip.GetBoolean() };
+        }
+
+        if (options.TryGetProperty("require_complete_lines", out var rcl) &&
+            rcl.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            opts = opts with { RequireCompleteLines = rcl.GetBoolean() };
+        }
+
+        if (options.TryGetProperty("finalize_on_close", out var foc) &&
+            foc.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            opts = opts with { FinalizeOnClose = foc.GetBoolean() };
+        }
+
+        if (options.TryGetProperty("max_pending_bytes", out var mpb) &&
+            mpb.ValueKind == JsonValueKind.Number)
+        {
+            opts = opts with { MaxPendingBytes = mpb.GetInt64() };
+        }
+
+        if (options.TryGetProperty("max_line_bytes", out var mlb) &&
+            mlb.ValueKind == JsonValueKind.Number)
+        {
+            opts = opts with { MaxLineBytes = mlb.GetInt64() };
+        }
+
+        if (options.TryGetProperty("ahp_protocol_version", out var apv) &&
+            apv.ValueKind == JsonValueKind.String)
+        {
+            opts = opts with { AhpProtocolVersion = apv.GetString() };
+        }
+
+        if (options.TryGetProperty("reset_policy", out var rp) &&
+            rp.ValueKind == JsonValueKind.String &&
+            rp.GetString() == "auto-reset")
+        {
+            opts = opts with { ResetPolicy = StreamResetPolicy.AutoReset };
+        }
+
+        return opts;
+    }
+
+    private static async Task<byte[]> LoadStepBytesAsync(
+        string caseDirectory,
+        JsonElement input)
+    {
+        if (input.TryGetProperty("inline_utf8", out var inline) &&
+            inline.ValueKind == JsonValueKind.String)
+        {
+            return Encoding.UTF8.GetBytes(inline.GetString() ?? "");
+        }
+
+        var material = RequiredString(input, "material");
+        var path = Path.GetFullPath(Path.Combine(caseDirectory, material));
+        if (!IsWithin(path, caseDirectory))
+        {
+            throw new ProtocolException("Step material escapes its case directory.");
+        }
+
+        return await File.ReadAllBytesAsync(path);
+    }
+
+    private static StreamCursor? ParseStreamCursor(JsonElement input)
+    {
+        if (!input.TryGetProperty("cursor", out var cursor) ||
+            cursor.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var position = cursor.GetProperty("position");
+        var kind = OptionalString(position, "kind") ?? "byte";
+        StreamPosition streamPosition = kind switch
+        {
+            "byte" => new BytePosition
+            {
+                NextByteOffset = position.TryGetProperty("next_byte_offset", out var nbo)
+                    ? TrajectoryStream.JsonSafeFromNumber(nbo, nonNegative: true)
+                    : 0,
+                PendingByteLength = position.TryGetProperty("pending_byte_length", out var pbl)
+                    ? TrajectoryStream.JsonSafeFromNumber(pbl, nonNegative: true)
+                    : 0,
+            },
+            "ahp-server-seq" => new AhpServerSeqPosition
+            {
+                NextServerSeq = position.TryGetProperty("next_server_seq", out var nss)
+                    ? TrajectoryStream.JsonSafeFromNumber(nss)
+                    : 0,
+                LastServerSeq = position.TryGetProperty("last_server_seq", out var lss)
+                    ? TrajectoryStream.JsonSafeFromNumber(lss)
+                    : 0,
+                NextByteOffset = position.TryGetProperty("next_byte_offset", out var abo)
+                    ? TrajectoryStream.JsonSafeFromNumber(abo, nonNegative: true)
+                    : null,
+            },
+            "snapshot-revision" => new SnapshotRevisionPosition
+            {
+                Revision = OptionalString(position, "revision") ?? "",
+                ContentSha256 = OptionalString(position, "content_sha256"),
+            },
+            "hermes-row" => new HermesRowPosition
+            {
+                DatabaseGeneration = OptionalString(position, "database_generation") ?? "",
+                LastRowId = position.TryGetProperty("last_row_id", out var lri) &&
+                    lri.ValueKind == JsonValueKind.Number
+                    ? TrajectoryStream.JsonSafeFromNumber(lri)
+                    : null,
+                ChangeToken = OptionalString(position, "change_token"),
+            },
+            _ => throw new ProtocolException($"Unsupported stream cursor position kind '{kind}'."),
+        };
+
+        return new StreamCursor
+        {
+            Source = RequiredString(cursor, "source"),
+            GroupId = RequiredString(cursor, "group_id"),
+            Generation = cursor.TryGetProperty("generation", out var gen)
+                ? (ulong)TrajectoryStream.JsonSafeFromNumber(gen, nonNegative: true)
+                : 0,
+            Position = streamPosition,
+            SourceRevision = OptionalString(cursor, "source_revision"),
+            PrefixSha256 = OptionalString(cursor, "prefix_sha256"),
+        };
+    }
+
+    private static async Task<(StreamState State, StreamUpdate Update)> ApplyStreamStepAsync(
+        StreamState state,
+        string caseDirectory,
+        JsonElement stepInput)
+    {
+        var kind = RequiredString(stepInput, "kind");
+        var sourceRevision = OptionalString(stepInput, "source_revision");
+        var cursor = ParseStreamCursor(stepInput);
+        return kind switch
+        {
+            "append-bytes" => TrajectoryStream.ApplyAppend(
+                state,
+                await LoadStepBytesAsync(caseDirectory, stepInput),
+                cursor,
+                sourceRevision),
+            "snapshot-bytes" => TrajectoryStream.ApplySnapshot(
+                state,
+                await LoadStepBytesAsync(caseDirectory, stepInput),
+                sourceRevision ?? "",
+                cursor),
+            "ahp-snapshot" => TrajectoryStream.ApplyAhpSnapshot(
+                state,
+                await LoadStepBytesAsync(caseDirectory, stepInput),
+                sourceRevision ?? "",
+                cursor),
+            "ahp-actions" => TrajectoryStream.ApplyAhpActions(
+                state,
+                await LoadStepBytesAsync(caseDirectory, stepInput),
+                cursor),
+            "finish" => TrajectoryStream.Finish(state),
+            "reset" => await ApplyResetStepAsync(state, caseDirectory, stepInput),
+            "hermes-export" => TrajectoryStream.ApplyHermesExport(
+                state,
+                await LoadStepBytesAsync(caseDirectory, stepInput),
+                OptionalString(stepInput, "change_token"),
+                OptionalString(stepInput, "database_generation") ?? sourceRevision,
+                sourceRevision,
+                cursor),
+            _ => throw new ProtocolException($"Unsupported stream input kind '{kind}'."),
+        };
+    }
+
+    private static async Task<(StreamState State, StreamUpdate Update)> ApplyResetStepAsync(
+        StreamState state,
+        string caseDirectory,
+        JsonElement stepInput)
+    {
+        if (!stepInput.TryGetProperty("reset", out var reset) ||
+            reset.ValueKind != JsonValueKind.Object)
+        {
+            throw new ProtocolException("reset step requires reset object.");
+        }
+
+        byte[]? material = null;
+        if (reset.TryGetProperty("material", out _) || reset.TryGetProperty("inline_utf8", out _))
+        {
+            material = await LoadStepBytesAsync(caseDirectory, reset);
+        }
+
+        var request = new StreamResetRequest
+        {
+            Reason = RequiredString(reset, "reason"),
+            Generation = reset.TryGetProperty("generation", out var gen)
+                ? (ulong)TrajectoryStream.JsonSafeFromNumber(gen, nonNegative: true)
+                : null,
+            SourceRevision = OptionalString(reset, "source_revision"),
+            Material = material,
+        };
+        return TrajectoryStream.Reset(state, request);
+    }
+
+    private static bool StreamStateEquivalent(StreamState a, StreamState b) =>
+        a.Finished == b.Finished &&
+        a.Generation == b.Generation &&
+        a.CommittedPrefix.AsSpan().SequenceEqual(b.CommittedPrefix) &&
+        a.PendingBytes.AsSpan().SequenceEqual(b.PendingBytes) &&
+        a.Cursor.Source == b.Cursor.Source &&
+        a.Cursor.GroupId == b.Cursor.GroupId &&
+        a.Cursor.Generation == b.Cursor.Generation &&
+        a.Cursor.SourceRevision == b.Cursor.SourceRevision &&
+        a.Cursor.PrefixSha256 == b.Cursor.PrefixSha256 &&
+        PositionsEqual(a.Cursor.Position, b.Cursor.Position) &&
+        a.AhpLastServerSeq == b.AhpLastServerSeq &&
+        a.AhpLastSnapshotRevision == b.AhpLastSnapshotRevision &&
+        a.AhpLastContentSha256 == b.AhpLastContentSha256;
+
+    private static bool PositionsEqual(StreamPosition a, StreamPosition b) =>
+        (a, b) switch
+        {
+            (BytePosition ba, BytePosition bb) =>
+                ba.NextByteOffset == bb.NextByteOffset &&
+                ba.PendingByteLength == bb.PendingByteLength,
+            (AhpServerSeqPosition aa, AhpServerSeqPosition ab) =>
+                aa.NextServerSeq == ab.NextServerSeq &&
+                aa.LastServerSeq == ab.LastServerSeq &&
+                aa.NextByteOffset == ab.NextByteOffset,
+            (SnapshotRevisionPosition sa, SnapshotRevisionPosition sb) =>
+                sa.Revision == sb.Revision &&
+                sa.ContentSha256 == sb.ContentSha256,
+            (HermesRowPosition ha, HermesRowPosition hb) =>
+                ha.DatabaseGeneration == hb.DatabaseGeneration &&
+                ha.LastRowId == hb.LastRowId &&
+                ha.ChangeToken == hb.ChangeToken,
+            _ => false,
+        };
 
     private static SourceContext ReadSourceContext(JsonElement element) => new()
     {

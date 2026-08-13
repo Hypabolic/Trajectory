@@ -1,0 +1,66 @@
+{
+  "schema": "streaming-delta-v1.schema.json",
+  "comment": "Pin for conformance delta-apply law (streaming.md §7): finalize uses provisional_id + record (remove-then-upsert); subsequent state_change matches by match_key (body id after finalize). Consumers reconstruct snapshots via apply_delta_to_snapshot. See python/tests/test_stream_delta_apply.py.",
+  "instance": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": "rev-4",
+    "revision": {
+      "revision": 5,
+      "revision_id": "rev-5",
+      "parent_revision_id": "rev-4",
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "finalize",
+        "provisional_id": "prov-active:part-md-active-1",
+        "record": {
+          "status": "stable",
+          "finalizes_provisional_id": "prov-active:part-md-active-1",
+          "record": {
+            "id": "2222222222222222222222222222222222222222222222222222222222222222",
+            "kind": "message",
+            "role": "assistant",
+            "order": 2,
+            "source_timestamp": "2026-01-01T00:00:01.000Z",
+            "timestamp": "2026-01-01T00:00:01.000Z",
+            "content": "done",
+            "provenance": {
+              "stable_source_record_id": "native-2",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-01-01T00:00:01.000Z|00000000000000000002|native-2",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0,
+              "native_record_id": "native-2"
+            },
+            "hashes": {
+              "content_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+              "record_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+            }
+          }
+        }
+      },
+      {
+        "op": "state_change",
+        "record_id": "2222222222222222222222222222222222222222222222222222222222222222",
+        "status": "final"
+      },
+      {
+        "op": "diagnostic_add",
+        "diagnostic": {
+          "code": "orphan_tool_result",
+          "message": "Tool result without matching tool call.",
+          "input_line": 10,
+          "record_index": 2,
+          "count": 1
+        }
+      },
+      {
+        "op": "diagnostic_remove",
+        "diagnostic_key": "orphan_tool_result|10|2"
+      }
+    ]
+  }
+}

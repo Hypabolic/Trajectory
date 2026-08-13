@@ -1,0 +1,71 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/file-source-replaced-reset",
+  "description": "Shorter non-prefix rewrite on non-grok JSONL sources requires reset (source-replaced).",
+  "source": "pi",
+  "group_id": "stream-file-source-replaced-reset",
+  "required_capabilities": [
+    "stream-core",
+    "stream-apply-snapshot",
+    "stream-reset",
+    "stream-cursor-v1",
+    "stream-file-jsonl"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required"
+  },
+  "steps": [
+    {
+      "id": "snapshot-original",
+      "input": {
+        "kind": "snapshot-bytes",
+        "material": "step-original.jsonl",
+        "source_revision": "gen-0"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false,
+        "result": "expected.snapshot-original.json"
+      },
+      "double_invoke": true
+    },
+    {
+      "id": "snapshot-replaced",
+      "input": {
+        "kind": "snapshot-bytes",
+        "material": "step-replaced.jsonl",
+        "source_revision": "gen-replaced"
+      },
+      "expected": {
+        "update_kind": "reset-required",
+        "reset_reason": "source-replaced",
+        "result": "expected.snapshot-replaced.json"
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-cursor-exact",
+    "stream-idempotence",
+    "stream-oracle-parity"
+  ],
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  },
+  "oracle": {
+    "append_equals_prefix": true,
+    "prefix_re_normalize": true
+  }
+}

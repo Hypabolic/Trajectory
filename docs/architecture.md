@@ -119,9 +119,37 @@ Technical schema IDs are versioned under `contracts/`; see
 
 There is no shared native core, FFI bridge, or cross-language subprocess.
 
+## Live session streaming (core + optional packages)
+
+One-shot normalize and listing remain the shipped batch path. A **library**
+streaming surface (not a Trajectory daemon) is complete on tip (LS-00–LS-12):
+
+- pure stream state machine in each core package (cursor, apply, snapshot +
+  delta, provisional records, reset, AHP Shape A/B reducer, Hermes export apply);
+- optional file I/O packages (LS-09; poll/follow only; explicit root);
+- optional AHP client packages (LS-10; transport + auth callback; fake-host tested);
+- optional Hermes provider packages (LS-07h; SQLite/query; core stays SQLite-free);
+- sample CLI `stream` / `ahp-stream` demos (LS-11; process-owned, not a daemon);
+- shared `trajectory-stream-v1` contracts and multi-runtime conformance;
+- honest capability claims (LS-12): core `stream-*` on
+  `compatibility.json` + four `runtime-capabilities.json`; optional package
+  caps only on those packages’ `package-capabilities.json`.
+
+Normative design: [live-session-streaming.md](live-session-streaming.md).  
+Wire contract: [streaming.md](../contracts/spec/streaming.md).  
+File I/O: [streaming-file-io.md](streaming-file-io.md).  
+AHP client: [ahp-client.md](ahp-client.md).  
+Hermes provider: [streaming-hermes-provider.md](streaming-hermes-provider.md).  
+Delivery slices: [live-session-streaming-plan.md](live-session-streaming-plan.md).  
+Tip status: [live-session-streaming-status.md](live-session-streaming-status.md).
+
 ## Further reading
 
 - [Normative normalization](../contracts/spec/normalization.md)
 - [Identity](../contracts/spec/identity.md)
 - [Diagnostics](../contracts/spec/diagnostics.md)
+- [Streaming contract](../contracts/spec/streaming.md)
+- [Live session streaming (product)](live-session-streaming.md)
+- [Live session streaming plan](live-session-streaming-plan.md)
+- [Live session streaming status](live-session-streaming-status.md)
 - [Publishing](publishing.md)

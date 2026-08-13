@@ -1,0 +1,38 @@
+{
+  "name": "@hypabolic/trajectory-hermes",
+  "version": "0.1.2",
+  "description": "Optional Hermes SQLite/provider streaming for Hypabolic Trajectory (query rows; never byte-tail state.db)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hypabolic/Trajectory.git",
+    "directory": "typescript/packages/trajectory-hermes"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "package-capabilities.json"
+  ],
+  "dependencies": {
+    "@hypabolic/trajectory": "0.1.2"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "tsc --build --clean tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "author": "Hypabolic"
+}

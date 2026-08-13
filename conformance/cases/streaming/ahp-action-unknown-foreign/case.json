@@ -1,0 +1,70 @@
+{
+  "$schema": "../../../../contracts/schemas/streaming-case-v1.schema.json",
+  "case_version": 1,
+  "id": "streaming/ahp-action-unknown-foreign",
+  "description": "Unknown AHP actions emit content-safe diagnostics; foreign channels are ignored.",
+  "source": "ahp",
+  "group_id": "ahp-chat:/00000000-0000-4000-8000-0000000000c1",
+  "required_capabilities": [
+    "stream-core",
+    "stream-ahp-action-log",
+    "stream-cursor-v1"
+  ],
+  "options": {
+    "delivery": "both",
+    "include_provisional": true,
+    "require_complete_lines": true,
+    "finalize_on_close": true,
+    "reorder": "reject",
+    "reset_policy": "return-reset-required",
+    "ahp_protocol_version": "0.7.0"
+  },
+  "steps": [
+    {
+      "id": "baseline",
+      "input": {
+        "kind": "ahp-actions",
+        "material": "step-baseline.jsonl"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false,
+        "result": "expected.baseline.json",
+        "diagnostic_codes": []
+      },
+      "double_invoke": true
+    },
+    {
+      "id": "unknown-and-foreign",
+      "input": {
+        "kind": "ahp-actions",
+        "material": "step-mixed.jsonl"
+      },
+      "expected": {
+        "update_kind": "updated",
+        "complete": false,
+        "result": "expected.unknown-and-foreign.json",
+        "diagnostic_codes": [
+          "ahp_foreign_channel",
+          "ahp_unknown_action"
+        ]
+      },
+      "double_invoke": true
+    }
+  ],
+  "comparison": [
+    "stream-json-exact",
+    "stream-delta-apply",
+    "stream-diagnostics-by-step",
+    "stream-cursor-exact",
+    "stream-idempotence"
+  ],
+  "privacy": {
+    "forbidden_substrings": [
+      "SECRET_TOKEN_xyz",
+      "/Users/real-user/",
+      "sk-live-",
+      "auth.json"
+    ]
+  }
+}

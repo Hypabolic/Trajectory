@@ -1,0 +1,43 @@
+{
+  "schema": "streaming-delta-v1.schema.json",
+  "reason": "streamRecordBody kind=message requires content (same hypabolic kind-conditional as batch).",
+  "instance": {
+    "schema_id": "trajectory-stream-v1",
+    "base_revision_id": null,
+    "revision": {
+      "revision": 1,
+      "revision_id": "rev-1",
+      "parent_revision_id": null,
+      "complete": false,
+      "generation": 0
+    },
+    "operations": [
+      {
+        "op": "upsert",
+        "record": {
+          "status": "stable",
+          "record": {
+            "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "message",
+            "role": "user",
+            "order": 0,
+            "source_timestamp": "2026-01-01T00:00:00.000Z",
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "provenance": {
+              "stable_source_record_id": "native-1",
+              "source_identity_kind": "native",
+              "source_order_id": "1|2026-01-01T00:00:00.000Z|00000000000000000001|native-1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "record_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -40,6 +40,8 @@ DIAG_AHP_INPUT_REQUEST_SKIPPED: Final[str] = "ahp_input_request_skipped"
 DIAG_AHP_REASONING_OMITTED: Final[str] = "ahp_reasoning_omitted"
 DIAG_AHP_SYSTEM_AS_ASSISTANT: Final[str] = "ahp_system_as_assistant"
 DIAG_AHP_UNRESOLVED_CONTENT_REF: Final[str] = "ahp_unresolved_content_ref"
+DIAG_AHP_UNKNOWN_ACTION: Final[str] = "ahp_unknown_action"
+DIAG_AHP_FOREIGN_CHANNEL: Final[str] = "ahp_foreign_channel"
 
 # Grok Build source diagnostics (docs/grok-build-source-spec.md).
 DIAG_IMAGE_CONTENT_DROPPED: Final[str] = "image_content_dropped"
@@ -78,6 +80,8 @@ DIAGNOSTIC_CODES: Final[frozenset[str]] = frozenset(
         DIAG_AHP_REASONING_OMITTED,
         DIAG_AHP_SYSTEM_AS_ASSISTANT,
         DIAG_AHP_UNRESOLVED_CONTENT_REF,
+        DIAG_AHP_UNKNOWN_ACTION,
+        DIAG_AHP_FOREIGN_CHANNEL,
         DIAG_IMAGE_CONTENT_DROPPED,
         DIAG_BACKEND_TOOL_RESULT_SYNTHESIZED,
         DIAG_ENCRYPTED_REASONING_INCLUDED,

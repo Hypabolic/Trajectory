@@ -1,0 +1,121 @@
+{
+  "schema": "trajectory-stream-v1.schema.json",
+  "comment": "Provisional lifecycle on the wire: status=provisional, provisional_id set, provisional.provisional_ids non-empty.",
+  "instance": {
+    "kind": "updated",
+    "revision": {
+      "revision": 2,
+      "revision_id": "rev-2",
+      "parent_revision_id": "rev-1",
+      "complete": false,
+      "generation": 0
+    },
+    "cursor": {
+      "cursor_version": 1,
+      "source": "ahp",
+      "group_id": "ahp-chat-1",
+      "generation": 0,
+      "position": {
+        "kind": "ahp-server-seq",
+        "next_server_seq": 5,
+        "last_server_seq": 4
+      },
+      "source_revision": "shape-a-r2",
+      "prefix_sha256": null
+    },
+    "snapshot": {
+      "schema_id": "trajectory-stream-v1",
+      "source": "ahp",
+      "group_id": "ahp-chat-1",
+      "revision": {
+        "revision": 2,
+        "revision_id": "rev-2",
+        "parent_revision_id": "rev-1",
+        "complete": false,
+        "generation": 0
+      },
+      "records": [
+        {
+          "status": "provisional",
+          "provisional_id": "prov-active:part-md-active-1",
+          "record": {
+            "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "message",
+            "role": "assistant",
+            "order": 1,
+            "source_timestamp": "2026-01-01T00:00:00.000Z",
+            "timestamp": "2026-01-01T00:00:00.000Z",
+            "content": "partial",
+            "provenance": {
+              "stable_source_record_id": "active-turn-1",
+              "source_identity_kind": "synthetic",
+              "source_order_id": "1|2026-01-01T00:00:00.000Z|00000000000000000001|active-turn-1",
+              "component_key": "message:0",
+              "component_index": 0,
+              "component_type_ordinal": 0
+            },
+            "hashes": {
+              "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "record_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+          }
+        }
+      ],
+      "diagnostics": [],
+      "complete": false
+    },
+    "delta": {
+      "schema_id": "trajectory-stream-v1",
+      "base_revision_id": "rev-1",
+      "revision": {
+        "revision": 2,
+        "revision_id": "rev-2",
+        "parent_revision_id": "rev-1",
+        "complete": false,
+        "generation": 0
+      },
+      "operations": [
+        {
+          "op": "upsert",
+          "record": {
+            "status": "provisional",
+            "provisional_id": "prov-active:part-md-active-1",
+            "record": {
+              "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "kind": "message",
+              "role": "assistant",
+              "order": 1,
+              "source_timestamp": "2026-01-01T00:00:00.000Z",
+              "timestamp": "2026-01-01T00:00:00.000Z",
+              "content": "partial",
+              "provenance": {
+                "stable_source_record_id": "active-turn-1",
+                "source_identity_kind": "synthetic",
+                "source_order_id": "1|2026-01-01T00:00:00.000Z|00000000000000000001|active-turn-1",
+                "component_key": "message:0",
+                "component_index": 0,
+                "component_type_ordinal": 0
+              },
+              "hashes": {
+                "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "record_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "diagnostics": [],
+    "provisional": {
+      "include": true,
+      "provisional_ids": ["prov-active:part-md-active-1"],
+      "finalized_ids": []
+    },
+    "consumed": {
+      "complete_records": 0,
+      "bytes": 0,
+      "first_source_position": 4,
+      "last_source_position": 4
+    }
+  }
+}

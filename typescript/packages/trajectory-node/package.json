@@ -1,7 +1,7 @@
 {
   "name": "@hypabolic/trajectory-node",
   "version": "0.1.2",
-  "description": "Explicit-root local trajectory listing for Node.js",
+  "description": "Explicit-root local trajectory listing and optional file stream I/O for Node.js",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -23,7 +23,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "package-capabilities.json"
   ],
   "dependencies": {
     "@hypabolic/trajectory": "0.1.2"

@@ -9,4 +9,5 @@ public static class OutputSchemaIds
     public const string OpenAiChatMessages = "openai-chat-messages";
     public const string JsonlMinimal = "jsonl-minimal";
     public const string OtelGenAiSpansV1 = "otel-genai-spans-v1";
+    public const string TrajectoryStreamV1 = "trajectory-stream-v1";
 }

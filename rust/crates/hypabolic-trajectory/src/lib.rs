@@ -1,11 +1,13 @@
 #![forbid(unsafe_code)]
 #![doc = "Native Rust implementation of the language-neutral Trajectory contracts."]
 
+mod ahp_reducer;
 mod canonical;
 mod listing;
 mod model;
 mod normalize;
 mod projection;
+mod streaming;
 
 pub use canonical::{canonical_json, relaxed_json};
 pub use listing::{
@@ -30,6 +32,19 @@ pub use projection::{
     opentelemetry_value, project_canonical, project_hypabolic, project_letta,
     project_minimal_jsonl, project_openai, project_opentelemetry, project_schema,
     serialize_projection, write_minimal_jsonl, write_schema,
+};
+pub use streaming::{
+    AhpServerSeqPosition, BytePosition, HermesRowPosition, JSON_SAFE_INTEGER_MAX,
+    JSON_SAFE_INTEGER_MIN, STREAM_SCHEMA_ID, SnapshotRevisionPosition, StreamConsumed,
+    StreamCursor, StreamDelivery, StreamDelta, StreamDeltaOperation, StreamDiagnostic, StreamInput,
+    StreamInputKind, StreamOptions, StreamPosition, StreamProvisionalInfo, StreamRecord,
+    StreamReset, StreamResetPolicy, StreamResetRequest, StreamRevision, StreamSnapshot,
+    StreamState, StreamUpdate, TrajectoryStream, apply_ahp_actions, apply_ahp_snapshot,
+    apply_append, apply_delta_to_snapshot, apply_hermes_export, apply_snapshot, apply_stream,
+    create_stream, cursor_to_value, delta_to_value, diagnostic_key, diff_snapshots, finish_stream,
+    json_safe_from_value, json_safe_int, json_safe_u64, match_key_value, project_stream_diagnostic,
+    reset_stream, snapshot_to_value, split_complete_lines, stream_diagnostic_message,
+    stream_error_message, update_to_value,
 };
 
 /// Language-neutral normalizer contract version.
