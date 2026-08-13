@@ -5,6 +5,16 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **Streaming review-fix (H1–H4, M1–M8):** Codex Luna deep-review findings
+  are closed on tip (see `docs/live-session-streaming-status.md`). Shared
+  stream matrix is **41** cases. High: AHP `reorder=reject`, diagnostic
+  catalog sanitization, stable `prov-active:{native_id}`, transactional
+  file-host finish flush. Medium: `auto-reset` + replacement material,
+  same-size file identity, unknown delta-op reject, JSON-safe integers,
+  .NET AOT/Hermes claims, verifier honesty for advertised stream caps,
+  Hermes `hermes-provider-*` corpus, post-`0.1.2` publish + artifact
+  verify. No root `VERSION` bump.
+
 - **Streaming M7/M8 residuals:** LS-07h plan status matches the shipped
   `hermes-provider-*` export-apply corpus (SQLite/query I/O stays
   package-test-gated). Release workflow examples use a post-`0.1.2` tag

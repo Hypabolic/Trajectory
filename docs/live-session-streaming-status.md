@@ -19,6 +19,34 @@ stream matrix is green on all four runtimes
 honestly; optional package caps only on those packages. Remaining items below
 are **post-LS-12** engineering / product follow-ons, not open plan slices.
 
+### Review-fix note (Codex Luna deep review)
+
+The post-LS-12 deep review (34-case matrix at review time; **41** cases now)
+listed merge blockers **H1–H4** and mediums **M1–M8**. All are **addressed
+on tip** — no residual high findings. Authority remains
+[`contracts/spec/streaming.md`](../contracts/spec/streaming.md) and
+[live-session-streaming.md](live-session-streaming.md) privacy / reset /
+framing rules. Four-runtime parity is required for core algorithm changes.
+
+| ID | Finding | Resolution on tip |
+| --- | --- | --- |
+| **H1** | AHP reducers silently sorted/reordered batches | `reorder=reject` on original envelope order; reject non-monotonic / duplicate `serverSeq` and mixed sequenced+unsequenced batches without advancing the cursor. Shared negatives: `ahp-action-batch-reorder`, `ahp-action-batch-duplicate-seq`, `ahp-action-batch-mixed-seq`. |
+| **H2** | Stream projection forwarded raw normalizer diagnostic messages (source IDs / paths / AHP body) | Projection uses a stream diagnostic catalog + safe structural fields only. Sentinel tests cover snapshot, top-level diagnostics, delta diagnostic ops, and stream errors. |
+| **H3** | Active-turn provisional IDs were ordinal (`prov-active-turn-N`) | IDs are `prov-active:{native_id}` (turn/part/tool) with mapping persisted in `StreamState`. Shared `ahp-snapshot-active-turn-multipart` covers growth + finalize. |
+| **H4** | Python / TypeScript / .NET file hosts dropped pending flush results on `finish()` | Host pending is transactional: retain until core `apply_append` succeeds; do not `finish()` after a failed flush. |
+| **M1** | `reset_policy=auto-reset` declared but ignored / missing on some runtimes | Implemented on all four: default `return-reset-required`; `auto-reset` atomically installs a new generation when the same call supplies replacement material. |
+| **M2** | Default file poll missed same-size in-place replacement | Hosts track inode/device + mtime (`.NET` `VolumeSerial`/`FileIndex` from `GetFileInformationByHandle` / Unix `stat`) even when `reconcile_every=0`. |
+| **M3** | Rust delta apply accepted unknown operations | Unknown ops are `invalid_input`; prior snapshot state is unchanged. |
+| **M4** | TypeScript bigint-as-string vs schema `integer` | Wire integers constrained to JSON safe-integer domain (`±9007199254740991`); overflow is `invalid_input` (no decimal-string fallback). |
+| **M5** | Optional .NET AOT/trim claims and Hermes SQLite advisory | `Trajectory.Ahp` stays trim/AOT-clean (`JsonNode.WriteTo`; `IL2026`/`IL3050` as errors). `Trajectory.Hermes` **does not claim** AOT/trim (native SQLite) and pins `SQLitePCLRaw.lib.e_sqlite3` 3.50.3. |
+| **M6** | Verifier treated advertised-core `unsupported` as a skip | `conformance/verify.py` fails `unsupported` when the runner advertises required core `stream-*` capabilities. |
+| **M7** | Hermes provider had no shared stream corpus | Shared `hermes-provider-append` / `hermes-provider-soft-delete` / `hermes-provider-invalidation` exercise core `apply_hermes_export`. SQLite/query I/O stays package-test-gated. |
+| **M8** | Next-tag / already-published wording could retag `0.1.2` | Next registry publish is a **new** synchronized tag after `0.1.2` (example `v0.1.3`). `skip-duplicate` / already-published fallbacks fail unless `tools/verify_published_stream_artifact.py` proves the artifact contains stream APIs. |
+
+Low nits **L1** (AHP optional `next_byte_offset` provenance) and **L2**
+(public option-name symmetry) are non-blocking; L2 is largely closed by the
+aligned `reset_policy` / `reorder` surfaces.
+
 ---
 
 ## Shipped (in-tree on tip)
