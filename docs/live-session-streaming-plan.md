@@ -289,7 +289,8 @@ core `stream-ahp-snapshot` claimed at LS-12).
 
 **Status: done on tip** (core `apply_hermes_export` + optional provider packages
 ×4; `stream-hermes-provider` claimed on those packages only at LS-12;
-shared `hermes-provider-*` stream-sequence corpus still deferred — package-test-gated).
+shared `hermes-provider-*` cases cover core `apply_hermes_export`; only optional
+SQLite/query I/O remains package-test-gated).
 
 | Area | Deliverable |
 | --- | --- |

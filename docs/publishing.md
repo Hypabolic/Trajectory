@@ -56,7 +56,7 @@ That is the whole developer step. The **Release** workflow then:
 
 | Input | Meaning |
 | --- | --- |
-| `tag` | Required, e.g. `v0.1.1` (tag should already exist, or push it first; `v0.1.0` is already cut) |
+| `tag` | Required, e.g. `v0.1.3` (tag should already exist, or push it first; never retag `v0.1.0` / `v0.1.2`) |
 | `dry_run` | Pack only (no publish / no GitHub Release) |
 | `npm_auth` | `oidc` (default) or `token` |
 
@@ -200,10 +200,10 @@ pip install 'hypabolic-trajectory[otel]==<tag-semver>'   # optional OpenTelemetr
 | Symptom | Action |
 | --- | --- |
 | CI gate failed | Fix main, retag or move tag to a green commit |
-| NuGet already published | `--skip-duplicate` makes re-run a no-op (does **not** replace package contents — new capability such as AHP needs a new version) |
-| npm already published | Workflow continues if version exists on registry (same: new features need a new version) |
-| crates already uploaded | Treated as success (same: new features need a new version) |
-| PyPI already published | `skip-existing: true` makes re-run a no-op (same: new features need a new version) |
+| NuGet already published | `--skip-duplicate` then `tools/verify_published_stream_artifact.py` downloads the registry nupkg and **fails** unless it contains stream capability manifests/APIs (a reused `0.1.2` is not a stream ship) |
+| npm already published | Same content/digest check against the npm tarball; missing `stream-*` manifests fails the job |
+| crates already uploaded | Same content check against the crates.io `.crate`; missing stream APIs fails (not retried as index lag) |
+| PyPI already published | `skip-existing: true` then the same verifier against the PyPI wheel; a pre-stream artifact fails |
 | OIDC 404 / NuGet login fail | Match Trusted Publisher: owner `hypabolic`, workflow `release.yml`, env `release` |
 | crates.io OIDC auth fail | Match Trusted Publishing on **all** published crates (core + otel + io/ahp/hermes); workflow `release.yml`, env `release` |
 | npm OIDC 404 | Fix Trusted Publisher or bootstrap package once (including `trajectory-ahp` / `trajectory-hermes`) |

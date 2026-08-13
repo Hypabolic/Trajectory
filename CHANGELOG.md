@@ -5,6 +5,13 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **Streaming M7/M8 residuals:** LS-07h plan status matches the shipped
+  `hermes-provider-*` export-apply corpus (SQLite/query I/O stays
+  package-test-gated). Release workflow examples use a post-`0.1.2` tag
+  (`v0.1.3`). `skip-duplicate` / already-published / `skip-existing` fallbacks
+  now fail unless `tools/verify_published_stream_artifact.py` proves the
+  registry artifact contains stream capability manifests and APIs.
+
 - **Streaming M5–M8:** .NET `Trajectory.Ahp` stays trim/AOT-clean (`JsonNode.WriteTo`,
   `IL2026`/`IL3050` as errors). `Trajectory.Hermes` **stops claiming**
   AOT/trim compatibility (native SQLite) and pins
