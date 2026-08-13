@@ -29,12 +29,13 @@ test("TypeScript runner passes every advertised shared operation deterministical
     ],
     { encoding: "utf8" },
   );
-  // Batch + stream cases including LS-06/07 AHP snapshot/action-log fixtures.
+  // Batch + stream cases including LS-06/07 AHP snapshot/action-log fixtures
+  // and H1/H3 adversarial AHP reorder + stable provisional-id cases.
   assert.deepEqual(JSON.parse(output), {
     protocol_version: "1",
     status: "success",
-    cases: 77,
-    operations: 104,
+    cases: 80,
+    operations: 107,
     stream_unsupported_skips: 0,
   });
 });
