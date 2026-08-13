@@ -58,6 +58,7 @@ test("help mentions stream and not a daemon", async () => {
   assert.match(stdout, /stream/);
   assert.match(stdout, /ahp-stream/);
   assert.match(stdout.toLowerCase(), /not a daemon/);
+  assert.match(stdout, /--watch/);
 });
 
 test("stream temp file emits snapshot+delta, privacy default", async () => {
@@ -81,6 +82,7 @@ test("stream temp file emits snapshot+delta, privacy default", async () => {
   assert.match(stdout, /stream update/);
   assert.match(stdout, /snapshot/);
   assert.match(stdout, /delta/);
+  assert.match(stdout, /live tail/);
   assert.match(stdout, /Content omitted/);
   assert.match(stdout.toLowerCase(), /not a daemon/);
   assert.doesNotMatch(stdout, /hello/);
@@ -117,6 +119,56 @@ test("ahp-stream fake host actions", async () => {
   assert.match(stdout, /snapshot|delta/);
   assert.match(stdout, /Content omitted/);
   assert.doesNotMatch(stdout, /test-token/);
+});
+
+test("browse --watch listed session", async () => {
+  const root = await mkdtemp(join(tmpdir(), "traj-ls11-browse-"));
+  const dir = join(root, "sessions", "demo");
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, "watch-me.jsonl");
+  await writeFile(path, SESSION_LINE + USER_LINE);
+  const { code, stdout, stderr } = await runCli([
+    "browse",
+    "--source",
+    "pi",
+    "--root",
+    root,
+    "--id",
+    "watch-me",
+    "--watch",
+    "--emit",
+    "snapshot+delta",
+    "--max-updates",
+    "1",
+  ]);
+  assert.equal(code, 0, stderr);
+  assert.match(stdout, /stream update/);
+  assert.match(stdout, /snapshot/);
+  assert.match(stdout, /delta/);
+  assert.match(stdout, /live tail/);
+  assert.match(stdout.toLowerCase(), /not a daemon/);
+  assert.doesNotMatch(stdout, /hello/);
+});
+
+test("browse --watch rejects ahp", async () => {
+  const { code, stderr } = await runCli([
+    "browse",
+    "--source",
+    "ahp",
+    "--root",
+    "/tmp",
+    "--id",
+    "x",
+    "--watch",
+  ]);
+  assert.equal(code, 2);
+  assert.match(stderr, /invalid_input/);
+});
+
+test("stream without path or id requires tty", async () => {
+  const { code, stderr } = await runCli(["stream", "--source", "pi"]);
+  assert.equal(code, 2);
+  assert.match(stderr, /invalid_input/);
 });
 
 test("ahp-stream rejects ws url", async () => {

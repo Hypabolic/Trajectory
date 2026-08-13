@@ -96,6 +96,8 @@ def test_help_mentions_stream_and_not_daemon(capsys: pytest.CaptureFixture[str])
     assert "ahp-stream" in out
     assert "daemon" in out.lower()
     assert "Not a daemon" in out or "not a daemon" in out.lower()
+    assert "--watch" in out
+    assert "Watch live" in out or "watch" in out.lower()
 
 
 def test_stream_temp_file_snapshot_delta(
@@ -126,6 +128,7 @@ def test_stream_temp_file_snapshot_delta(
     assert "stream update" in out
     assert "snapshot" in out
     assert "delta" in out
+    assert "live tail" in out
     assert "Content omitted" in out
     assert "not a daemon" in out.lower()
     # Privacy default: no user prose from fixture
@@ -274,6 +277,72 @@ def test_ahp_stream_requires_chat(capsys: pytest.CaptureFixture[str]) -> None:
     assert code == 2
     err = capsys.readouterr().err
     assert "chat" in err.lower()
+
+
+def _write_pi_store(root: Path, session_id: str, body: bytes) -> Path:
+    session_dir = root / "sessions" / "demo"
+    session_dir.mkdir(parents=True)
+    path = session_dir / f"{session_id}.jsonl"
+    path.write_bytes(body)
+    return path
+
+
+def test_parse_args_watch_flag() -> None:
+    args = trajectory_cli.parse_args(["browse", "--source", "pi", "--watch", "--id", "abc"])
+    assert args.command == "browse"
+    assert args.watch is True
+    assert args.id == "abc"
+
+
+def test_browse_watch_listed_session(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "agent"
+    _write_pi_store(root, "watch-me", SESSION_LINE + USER_LINE)
+    code = trajectory_cli.main(
+        [
+            "browse",
+            "--source",
+            "pi",
+            "--root",
+            str(root),
+            "--id",
+            "watch-me",
+            "--watch",
+            "--emit",
+            "snapshot+delta",
+            "--max-updates",
+            "1",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "stream update" in out
+    assert "snapshot" in out
+    assert "delta" in out
+    assert "live tail" in out
+    assert "not a daemon" in out.lower()
+    assert "hello" not in out
+
+
+def test_browse_watch_rejects_ahp(capsys: pytest.CaptureFixture[str]) -> None:
+    code = trajectory_cli.main(
+        ["browse", "--source", "ahp", "--root", "/tmp", "--id", "x", "--watch"]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "invalid_input" in err
+    assert "file JSONL" in err or "Watch live" in err or "watch" in err.lower()
+
+
+def test_stream_without_path_or_id_requires_tty(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = trajectory_cli.main(["stream", "--source", "pi"])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "invalid_input" in err
+    assert "TTY" in err or "path" in err.lower()
 
 
 def test_stream_fixture_pi_path_parent_root(

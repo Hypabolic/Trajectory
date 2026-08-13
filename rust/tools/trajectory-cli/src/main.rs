@@ -8,12 +8,12 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
-use std::io::{self, Write as _};
+use std::io::{self, IsTerminal, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::rc::Rc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use dialoguer::{Confirm, Select, theme::ColorfulTheme};
@@ -107,7 +107,7 @@ impl EmitArg {
 #[command(
     name = "trajectory",
     about = "Local sample TUI for Hypabolic Trajectory (unpublished)",
-    long_about = "Browse local agent session stores, normalize a selected transcript, follow a live JSONL file, or demo an AHP stream client.\n\nNot a daemon — the calling process owns lifetime.\nContent is omitted unless --show-content is passed (with an explicit privacy warning)."
+    long_about = "Browse local agent session stores, pick a session to snapshot or watch live, follow a JSONL file, or demo an AHP stream client.\n\nNot a daemon — the calling process owns lifetime.\nContent is omitted unless --show-content is passed (with an explicit privacy warning).\nbrowse: pick a session, then Watch live or Show snapshot. --watch follows immediately."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -128,12 +128,32 @@ struct Cli {
     /// Include record content snippets. WARNING: may contain private data.
     #[arg(long, global = true, default_value_t = false)]
     show_content: bool,
+
+    /// browse: after selecting a session, follow it live (skip the action prompt).
+    #[arg(long, global = true, default_value_t = false)]
+    watch: bool,
+
+    /// stream/browse --watch: delivery (default snapshot+delta).
+    #[arg(long, global = true, value_enum, default_value_t = EmitArg::SnapshotDelta)]
+    emit: EmitArg,
+
+    /// stream/browse --watch: poll interval seconds when following (default 0.05).
+    #[arg(long, global = true, default_value_t = 0.05)]
+    interval: f64,
+
+    /// stream/browse --watch / ahp-stream: stop after N stream updates.
+    #[arg(long, global = true)]
+    max_updates: Option<usize>,
 }
 
 #[derive(Subcommand, Debug, Clone)]
 enum Commands {
-    /// Interactive source → session → summary browser (default).
-    Browse,
+    /// Interactive source → session → snapshot or live follow (default).
+    Browse {
+        /// Session id from listing; skip the picker.
+        #[arg(long)]
+        id: Option<String>,
+    },
     /// List discovered local sessions.
     List,
     /// Normalize a session file and print a privacy-safe summary.
@@ -148,7 +168,7 @@ enum Commands {
         #[arg(long, value_enum, default_value_t = FormatArg::Both)]
         format: FormatArg,
     },
-    /// Follow a JSONL session file (optional file I/O + core stream; not a daemon).
+    /// Follow a JSONL session (pick from the store, or --path/--id; not a daemon).
     Stream {
         /// Path to a JSONL session file.
         #[arg(short, long)]
@@ -156,18 +176,9 @@ enum Commands {
         /// Session id from listing; requires --root.
         #[arg(long)]
         id: Option<String>,
-        /// Delivery: snapshot+delta (default), snapshot, or delta.
-        #[arg(long, value_enum, default_value_t = EmitArg::SnapshotDelta)]
-        emit: EmitArg,
         /// Keep polling until Ctrl-C or --max-updates.
         #[arg(long, default_value_t = false)]
         follow: bool,
-        /// Poll interval seconds when --follow.
-        #[arg(long, default_value_t = 0.05)]
-        interval: f64,
-        /// Stop after N stream updates (tests/demos).
-        #[arg(long)]
-        max_updates: Option<usize>,
     },
     /// Demo optional AHP client with <fake://> `FakeAhpHost` (not a daemon).
     #[command(name = "ahp-stream")]
@@ -190,30 +201,17 @@ enum Commands {
         /// <fake://>: `ActionEnvelope` JSONL for `FakeAhpHost`.
         #[arg(long)]
         actions_path: Option<PathBuf>,
-        /// Delivery: snapshot+delta (default), snapshot, or delta.
-        #[arg(long, value_enum, default_value_t = EmitArg::SnapshotDelta)]
-        emit: EmitArg,
-        /// Stop after N stream updates (tests/demos).
-        #[arg(long)]
-        max_updates: Option<usize>,
     },
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let command = cli.command.clone().unwrap_or(Commands::Browse);
+    let command = cli.command.clone().unwrap_or(Commands::Browse { id: None });
     let result = match command {
-        Commands::Browse => run_browse(&cli),
+        Commands::Browse { id } => run_browse(&cli, id),
         Commands::List => run_list(&cli),
         Commands::Show { path, id, format } => run_show(&cli, path, id, format),
-        Commands::Stream {
-            path,
-            id,
-            emit,
-            follow,
-            interval,
-            max_updates,
-        } => run_stream(&cli, path, id, emit, follow, interval, max_updates),
+        Commands::Stream { path, id, follow } => run_stream(&cli, path, id, follow),
         Commands::AhpStream {
             url,
             chat,
@@ -221,8 +219,6 @@ fn main() -> ExitCode {
             token,
             snapshot_path,
             actions_path,
-            emit,
-            max_updates,
         } => run_ahp_stream(
             &cli,
             &url,
@@ -231,8 +227,6 @@ fn main() -> ExitCode {
             token,
             snapshot_path,
             actions_path,
-            emit,
-            max_updates,
         ),
     };
     match result {
@@ -275,10 +269,7 @@ fn run_stream(
     cli: &Cli,
     path: Option<PathBuf>,
     id: Option<String>,
-    emit: EmitArg,
     follow: bool,
-    interval: f64,
-    max_updates: Option<usize>,
 ) -> Result<ExitCode, TrajectoryError> {
     let source = cli.source.unwrap_or(SourceArg::Pi);
     if !is_stream_file_source(source) {
@@ -287,15 +278,44 @@ fn run_stream(
             "stream supports file JSONL sources only: pi, claude-code, codex, openclaw, grok-build. Use ahp-stream for AHP.",
         ));
     }
-    let (root, path, group_id) = resolve_stream_target(source, cli, path, id)?;
+    let (root, path, group_id, follow) = if path.is_none() && id.is_none() {
+        match pick_listed_session(source, cli, None, true)? {
+            Some(picked) => (picked.0, picked.1, picked.2, true),
+            None => return Ok(ExitCode::SUCCESS),
+        }
+    } else {
+        let (root, path, group_id) = resolve_stream_target(source, cli, path, id)?;
+        (root, path, group_id, follow)
+    };
+    follow_file_session(cli, source, &root, &path, group_id, follow)
+}
+
+fn follow_file_session(
+    cli: &Cli,
+    source: SourceArg,
+    root: &Path,
+    path: &Path,
+    group_id: Option<String>,
+    follow: bool,
+) -> Result<ExitCode, TrajectoryError> {
+    let emit = cli.emit;
+    let interval = cli.interval;
+    let max_updates = cli.max_updates;
     let delivery = emit.delivery();
+    // Grok history lines do not embed the session id; listing id is the group.
+    // Other file sources lock group from the transcript.
+    let group_id = if matches!(source, SourceArg::GrokBuild) {
+        group_id
+    } else {
+        None
+    };
     let mut stream_opts = StreamOptions::new(source_to_trajectory(source));
     stream_opts.delivery = delivery;
     if let Some(ref g) = group_id {
         stream_opts = stream_opts.with_group_id(g.clone());
     }
 
-    println!("Trajectory stream  sample file follow (not a daemon)");
+    println!("Trajectory stream  live file follow (not a daemon)");
     println!("source   {}", source.wire_name());
     println!("root     {}", root.display());
     println!("path     {}", path.display());
@@ -304,11 +324,23 @@ fn run_stream(
     if !cli.show_content {
         println!("Privacy: content hidden unless --show-content.");
     }
+    if follow {
+        println!();
+        println!(
+            "Following live. Showing the latest records (tail), not the start of the session."
+        );
+        if matches!(source, SourceArg::GrokBuild) {
+            println!(
+                "Grok chat_history.jsonl grows when a conversation item is committed (not token-by-token updates.jsonl)."
+            );
+        }
+        println!("Ctrl-C stops. A watching line ticks while waiting for new complete lines.");
+    }
     println!();
 
     let mut fs = FileTrajectoryStream::open(FileStreamOptions {
-        root: root.clone(),
-        path: path.clone(),
+        root: root.to_path_buf(),
+        path: path.to_path_buf(),
         source: source_to_trajectory(source),
         group_id,
         stream: Some(stream_opts),
@@ -319,10 +351,17 @@ fn run_stream(
     .map_err(|error| host_to_trajectory(&error))?;
 
     let mut seen = 0usize;
+    let mut last_beat = Instant::now()
+        .checked_sub(Duration::from_secs(2))
+        .unwrap_or_else(Instant::now);
+    let tty = io::stdout().is_terminal();
     loop {
         let update = fs.poll().map_err(|error| host_to_trajectory(&error))?;
         if let Some(update) = update {
             if update.kind != "unchanged" {
+                if follow && tty {
+                    println!();
+                }
                 seen += 1;
                 print_stream_update(&update, cli.show_content, emit, seen);
                 if max_updates.is_some_and(|m| seen >= m) {
@@ -336,17 +375,66 @@ fn run_stream(
         if max_updates.is_some_and(|m| seen >= m) {
             break;
         }
+        if last_beat.elapsed() >= Duration::from_secs(1) {
+            last_beat = Instant::now();
+            let size_label = fs::metadata(path)
+                .map_or_else(|_| "—".to_owned(), |meta| format!("{} B", meta.len()));
+            let seen_label = if seen == 0 {
+                "—".to_owned()
+            } else {
+                seen.to_string()
+            };
+            let line = format!(
+                "watching  {}  file={size_label}  last update #{seen_label}  waiting for new complete lines",
+                utc_stamp()
+            );
+            if tty {
+                print!("\r{line:<100}");
+                let _ = io::stdout().flush();
+            } else {
+                println!("{line}");
+            }
+        }
         if interval > 0.0 {
             thread::sleep(Duration::from_secs_f64(interval));
         }
     }
 
+    if follow && tty {
+        println!();
+    }
     if seen == 0 {
         println!("No stream updates (empty or unchanged prefix).");
     } else {
         println!("Emitted {seen} update(s). Process exit ends follow (not a daemon).");
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn pick_listed_session(
+    source: SourceArg,
+    cli: &Cli,
+    id: Option<String>,
+    require_tty: bool,
+) -> Result<Option<(PathBuf, PathBuf, Option<String>)>, TrajectoryError> {
+    let root = resolve_root(source, cli.root.as_deref());
+    if let Some(id) = id {
+        let (path, _) = resolve_path(source, &root, None, Some(id.clone()), cli.limit)?;
+        return Ok(Some((root, path, Some(id))));
+    }
+    if require_tty && !io::stdin().is_terminal() {
+        return Err(TrajectoryError::new(
+            "invalid_input",
+            "stream without --path/--id needs a TTY to pick a session, or pass --path / --id --root. Use browse --watch to pick from the store UI.",
+        ));
+    }
+    let page = list_source(source, &root, cli.limit)?;
+    if page.items.is_empty() {
+        print_empty(source);
+        return Ok(None);
+    }
+    let selected = prompt_session_choice(&page.items)?;
+    Ok(selected.map(|item| (root, item.path.clone(), Some(item.id.clone()))))
 }
 
 fn resolve_stream_target(
@@ -391,8 +479,6 @@ fn run_ahp_stream(
     token: Option<String>,
     snapshot_path: Option<PathBuf>,
     actions_path: Option<PathBuf>,
-    emit: EmitArg,
-    max_updates: Option<usize>,
 ) -> Result<ExitCode, TrajectoryError> {
     let chat = chat.trim();
     if chat.is_empty() {
@@ -401,6 +487,8 @@ fn run_ahp_stream(
             "ahp-stream requires --chat <ahp-chat:/…>.",
         ));
     }
+    let emit = cli.emit;
+    let max_updates = cli.max_updates;
     let delivery = emit.delivery();
     println!("Trajectory ahp-stream  sample client demo (not a daemon)");
     println!("url      {url}");
@@ -531,18 +619,35 @@ fn run_ahp_stream(
     Ok(ExitCode::SUCCESS)
 }
 
+fn record_time_label(record: &Value) -> String {
+    let raw = record
+        .get("timestamp")
+        .or_else(|| record.get("source_timestamp"))
+        .and_then(Value::as_str);
+    let Some(raw) = raw else {
+        return "—".to_owned();
+    };
+    chrono::DateTime::parse_from_rfc3339(raw).map_or_else(
+        |_| truncate(raw, 20),
+        |parsed| parsed.format("%H:%M:%SZ").to_string(),
+    )
+}
+
 fn print_stream_update(update: &StreamUpdate, show_content: bool, emit: EmitArg, index: usize) {
-    println!("── stream update #{index} ──");
+    println!("── {}  stream update #{index}  (just now) ──", utc_stamp());
     println!("kind       {}", update.kind);
     println!(
         "revision   {} id={} gen={}",
         update.revision.revision, update.revision.revision_id, update.revision.generation
     );
     let pos_kind = match &update.cursor.position {
-        hypabolic_trajectory::StreamPosition::Byte(_) => "byte",
-        hypabolic_trajectory::StreamPosition::AhpServerSeq(_) => "ahp-server-seq",
-        hypabolic_trajectory::StreamPosition::SnapshotRevision(_) => "snapshot-revision",
-        hypabolic_trajectory::StreamPosition::HermesRow(_) => "hermes-row",
+        hypabolic_trajectory::StreamPosition::Byte(pos) => format!(
+            "byte next={} pending={}",
+            pos.next_byte_offset, pos.pending_byte_length
+        ),
+        hypabolic_trajectory::StreamPosition::AhpServerSeq(_) => "ahp-server-seq".to_owned(),
+        hypabolic_trajectory::StreamPosition::SnapshotRevision(_) => "snapshot-revision".to_owned(),
+        hypabolic_trajectory::StreamPosition::HermesRow(_) => "hermes-row".to_owned(),
     };
     println!(
         "cursor     source={} group={} gen={} pos={pos_kind}",
@@ -587,10 +692,18 @@ fn print_stream_update(update: &StreamUpdate, show_content: bool, emit: EmitArg,
     if let Some((code, message)) = &update.error {
         println!("error      {code}: {message}");
     }
-    if show_content {
-        if let Some(snapshot) = &update.snapshot {
-            println!("\nWARNING: --show-content prints transcript-derived text. Treat as private.");
-            for (i, stream_rec) in snapshot.records.iter().enumerate().take(40) {
+    if let Some(snapshot) = &update.snapshot {
+        if !snapshot.records.is_empty() {
+            let total = snapshot.records.len();
+            let start = total.saturating_sub(20);
+            let tail = &snapshot.records[start..];
+            println!("latest {} of {total} records (live tail):", tail.len());
+            if show_content {
+                println!(
+                    "WARNING: --show-content prints transcript-derived text. Treat as private."
+                );
+            }
+            for (offset, stream_rec) in tail.iter().enumerate() {
                 let role = stream_rec
                     .record
                     .get("role")
@@ -602,24 +715,33 @@ fn print_stream_update(update: &StreamUpdate, show_content: bool, emit: EmitArg,
                     .or_else(|| stream_rec.record.get("type"))
                     .and_then(Value::as_str)
                     .unwrap_or("?");
-                let snip = stream_rec
-                    .record
-                    .get("content")
-                    .and_then(Value::as_str)
-                    .map_or_else(
-                        || truncate(&stream_rec.record.to_string(), 80),
-                        |c| truncate(c, 80),
-                    );
+                let when = record_time_label(&stream_rec.record);
+                let snip = if show_content {
+                    stream_rec
+                        .record
+                        .get("content")
+                        .and_then(Value::as_str)
+                        .map_or_else(
+                            || truncate(&stream_rec.record.to_string(), 80),
+                            |content| truncate(content, 80),
+                        )
+                } else {
+                    "(content hidden)".to_owned()
+                };
                 println!(
-                    "  {:>3}  {:<12} {:<10} {:<20} {snip}",
-                    i + 1,
+                    "  {:>3}  {:<9}  {:<12} {:<10} {:<20} {snip}",
+                    start + offset + 1,
+                    when,
                     stream_rec.status,
                     role,
                     kind
                 );
             }
+            if !show_content {
+                println!("Content omitted (privacy). Re-run with --show-content for snippets.");
+            }
         }
-    } else {
+    } else if !show_content {
         println!("Content omitted (privacy). Re-run with --show-content for snippets.");
     }
     println!();
@@ -659,7 +781,7 @@ fn run_show(
     print_summary(source, &path, group_id.as_deref(), cli.show_content, format)
 }
 
-fn run_browse(cli: &Cli) -> Result<ExitCode, TrajectoryError> {
+fn run_browse(cli: &Cli, id: Option<String>) -> Result<ExitCode, TrajectoryError> {
     println!("Trajectory  local sample TUI (unpublished)");
     println!("Privacy: content is hidden unless --show-content.\n");
 
@@ -667,6 +789,12 @@ fn run_browse(cli: &Cli) -> Result<ExitCode, TrajectoryError> {
         Some(value) => value,
         None => prompt_source()?,
     };
+    if cli.watch && !is_stream_file_source(source) {
+        return Err(TrajectoryError::new(
+            "invalid_input",
+            "Watch live supports file JSONL sources only: pi, claude-code, codex, openclaw, grok-build. Use show for Hermes exports; ahp-stream for AHP.",
+        ));
+    }
     let root = resolve_root(source, cli.root.as_deref());
     println!(
         "Default for {}: {}",
@@ -678,6 +806,9 @@ fn run_browse(cli: &Cli) -> Result<ExitCode, TrajectoryError> {
     let page = list_source(source, &root, cli.limit)?;
     if page.items.is_empty() {
         print_empty(source);
+        if cli.watch || id.is_some() {
+            return Ok(ExitCode::SUCCESS);
+        }
         let confirm = Confirm::with_theme(&ColorfulTheme::default())
             .with_prompt("Normalize a transcript file by path instead?")
             .default(false)
@@ -699,41 +830,129 @@ fn run_browse(cli: &Cli) -> Result<ExitCode, TrajectoryError> {
         return Ok(ExitCode::SUCCESS);
     }
 
-    let mut labels: Vec<String> = page
-        .items
+    let selected = if let Some(id) = id {
+        page.items
+            .iter()
+            .find(|item| item.id == id)
+            .cloned()
+            .ok_or_else(|| {
+                TrajectoryError::new(
+                    "invalid_input",
+                    format!("Session id '{id}' not found under {}.", root.display()),
+                )
+            })?
+    } else {
+        match prompt_session_choice(&page.items)? {
+            Some(item) => item,
+            None => return Ok(ExitCode::SUCCESS),
+        }
+    };
+
+    println!();
+    view_selected_session(cli, source, &root, &selected)
+}
+
+fn prompt_session_choice(
+    items: &[TrajectoryListing],
+) -> Result<Option<TrajectoryListing>, TrajectoryError> {
+    let ordered = sort_sessions_by_active(items);
+    let now_ms = unix_now_ms();
+    let mut labels: Vec<String> = ordered
         .iter()
-        .map(|item| {
-            format!(
-                "{} | {} | {} | {}",
-                item.id,
-                item.updated_at,
-                format_bytes(item.size_bytes),
-                item.path.display()
-            )
-        })
+        .map(|item| format_session_choice(item, now_ms))
         .collect();
     labels.push("(quit)".to_owned());
 
     let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt(format!("Select a session ({} shown)", page.items.len()))
+        .with_prompt(format!(
+            "Select a session ({} shown, most recently active first)",
+            ordered.len()
+        ))
         .items(&labels)
         .default(0)
         .interact()
         .map_err(|error| io_error("Could not read selection.", &error))?;
 
-    if selection >= page.items.len() {
-        return Ok(ExitCode::SUCCESS);
+    if selection >= ordered.len() {
+        return Ok(None);
     }
+    Ok(Some(ordered[selection].clone()))
+}
 
-    println!();
-    let selected = &page.items[selection];
-    print_summary(
-        source,
-        &selected.path,
-        Some(selected.id.as_str()),
-        cli.show_content,
-        FormatArg::Both,
-    )
+fn prompt_view_action(can_watch: bool) -> Result<&'static str, TrajectoryError> {
+    let mut labels = Vec::new();
+    if can_watch {
+        labels.push("Watch live (follow as it grows)");
+    }
+    labels.push("Show snapshot (one-shot normalize)");
+    labels.push("(quit)");
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("How do you want to view this session?")
+        .items(&labels)
+        .default(0)
+        .interact()
+        .map_err(|error| io_error("Could not read selection.", &error))?;
+    let chosen = labels[selection];
+    if chosen.starts_with("Watch") {
+        return Ok("watch");
+    }
+    if chosen.starts_with("Show") {
+        return Ok("snapshot");
+    }
+    Ok("quit")
+}
+
+fn view_selected_session(
+    cli: &Cli,
+    source: SourceArg,
+    root: &Path,
+    selected: &TrajectoryListing,
+) -> Result<ExitCode, TrajectoryError> {
+    let can_watch = is_stream_file_source(source);
+    if cli.watch {
+        if !can_watch {
+            return Err(TrajectoryError::new(
+                "invalid_input",
+                "Watch live supports file JSONL sources only: pi, claude-code, codex, openclaw, grok-build. Use show for Hermes exports; ahp-stream for AHP.",
+            ));
+        }
+        return follow_file_session(
+            cli,
+            source,
+            root,
+            &selected.path,
+            Some(selected.id.clone()),
+            true,
+        );
+    }
+    if !io::stdin().is_terminal() {
+        return print_summary(
+            source,
+            &selected.path,
+            Some(selected.id.as_str()),
+            cli.show_content,
+            FormatArg::Both,
+        );
+    }
+    let action = prompt_view_action(can_watch)?;
+    match action {
+        "watch" => follow_file_session(
+            cli,
+            source,
+            root,
+            &selected.path,
+            Some(selected.id.clone()),
+            true,
+        ),
+        "snapshot" => print_summary(
+            source,
+            &selected.path,
+            Some(selected.id.as_str()),
+            cli.show_content,
+            FormatArg::Both,
+        ),
+        _ => Ok(ExitCode::SUCCESS),
+    }
 }
 
 fn resolve_path(
@@ -1076,14 +1295,102 @@ fn prompt_source() -> Result<SourceArg, TrajectoryError> {
     Ok(SourceArg::ALL[selection])
 }
 
+fn utc_stamp() -> String {
+    let secs = unix_now_ms().div_euclid(1000);
+    chrono::DateTime::from_timestamp(secs, 0).map_or_else(
+        || "—".to_owned(),
+        |value| value.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+    )
+}
+
+fn unix_now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+        .unwrap_or(0)
+}
+
+fn parse_listing_millis(value: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|parsed| parsed.timestamp_millis())
+}
+
+fn format_relative_time_from_millis(then_ms: i64, now_ms: i64) -> Option<String> {
+    let seconds = (now_ms - then_ms) / 1000;
+    if seconds < 5 {
+        return Some("just now".to_owned());
+    }
+    if seconds < 60 {
+        return Some(format!("{seconds}s ago"));
+    }
+    let minutes = seconds / 60;
+    if minutes < 60 {
+        return Some(format!("{minutes}m ago"));
+    }
+    let hours = minutes / 60;
+    if hours < 24 {
+        return Some(format!("{hours}h ago"));
+    }
+    let days = hours / 24;
+    if days < 7 {
+        return Some(format!("{days}d ago"));
+    }
+    None
+}
+
+fn format_relative_time(value: &str, now_ms: i64) -> String {
+    let Some(then) = parse_listing_millis(value) else {
+        return "—".to_owned();
+    };
+    format_relative_time_from_millis(then, now_ms).unwrap_or_else(|| {
+        chrono::DateTime::parse_from_rfc3339(value)
+            .map_or_else(|_| "—".to_owned(), |parsed| parsed.date_naive().to_string())
+    })
+}
+
+fn sort_sessions_by_active(items: &[TrajectoryListing]) -> Vec<TrajectoryListing> {
+    let mut ordered = items.to_vec();
+    ordered.sort_by(|left, right| {
+        let left_ms = parse_listing_millis(&left.updated_at).unwrap_or(i64::MIN);
+        let right_ms = parse_listing_millis(&right.updated_at).unwrap_or(i64::MIN);
+        right_ms.cmp(&left_ms).then_with(|| left.id.cmp(&right.id))
+    });
+    ordered
+}
+
+fn format_session_choice(item: &TrajectoryListing, now_ms: i64) -> String {
+    let rel = format!("{:<10}", format_relative_time(&item.updated_at, now_ms));
+    let title = item
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map_or_else(|| "—".to_owned(), |value| truncate(value, 48));
+    format!("{rel}  {title}  {}", item.id)
+}
+
 fn print_listing(items: &[TrajectoryListing]) {
-    println!("{:<36}  {:<24}  {:>8}  Path", "Id", "Updated (UTC)", "Size");
-    println!("{}", "-".repeat(90));
-    for item in items {
+    let ordered = sort_sessions_by_active(items);
+    let now_ms = unix_now_ms();
+    println!(
+        "{:<10}  {:<36}  {:<32}  {:>8}  Path",
+        "Active", "Id", "Title", "Size"
+    );
+    println!("{}", "-".repeat(110));
+    for item in ordered {
+        let title = item
+            .title
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map_or_else(|| "—".to_owned(), |value| truncate(value, 32));
         println!(
-            "{:<36}  {:<24}  {:>8}  {}",
+            "{:<10}  {:<36}  {:<32}  {:>8}  {}",
+            format_relative_time(&item.updated_at, now_ms),
             truncate(&item.id, 36),
-            item.updated_at,
+            title,
             format_bytes(item.size_bytes),
             item.path.display()
         );
@@ -1181,5 +1488,68 @@ fn kind_name(kind: RecordKind) -> &'static str {
         RecordKind::Message => "message",
         RecordKind::AssistantToolCalls => "assistant_tool_calls",
         RecordKind::ToolResult => "tool_result",
+    }
+}
+
+#[cfg(test)]
+mod relative_time_tests {
+    use super::{
+        format_relative_time, format_relative_time_from_millis, parse_listing_millis,
+        sort_sessions_by_active,
+    };
+    use hypabolic_trajectory::TrajectoryListing;
+    use std::path::PathBuf;
+
+    #[test]
+    fn relative_labels() {
+        let now = 1_776_000_000_000;
+        assert_eq!(
+            format_relative_time_from_millis(now - 2_000, now).as_deref(),
+            Some("just now")
+        );
+        assert_eq!(
+            format_relative_time_from_millis(now - 12_000, now).as_deref(),
+            Some("12s ago")
+        );
+        assert_eq!(
+            format_relative_time_from_millis(now - 5 * 60_000, now).as_deref(),
+            Some("5m ago")
+        );
+        assert_eq!(
+            format_relative_time_from_millis(now - 3 * 3_600_000, now).as_deref(),
+            Some("3h ago")
+        );
+        assert_eq!(
+            format_relative_time_from_millis(now - 2 * 86_400_000, now).as_deref(),
+            Some("2d ago")
+        );
+        assert_eq!(
+            format_relative_time_from_millis(now - 14 * 86_400_000, now),
+            None
+        );
+    }
+
+    #[test]
+    fn sorts_most_recent_active_first() {
+        let older = TrajectoryListing {
+            id: "older".into(),
+            path: PathBuf::from("/o"),
+            updated_at: "2026-08-13T11:00:00.000Z".into(),
+            title: Some("Old".into()),
+            size_bytes: 1,
+        };
+        let newer = TrajectoryListing {
+            id: "newer".into(),
+            path: PathBuf::from("/n"),
+            updated_at: "2026-08-13T11:59:00.000Z".into(),
+            title: Some("New".into()),
+            size_bytes: 1,
+        };
+        let ordered = sort_sessions_by_active(&[older, newer]);
+        assert_eq!(ordered[0].id, "newer");
+        assert_eq!(ordered[1].id, "older");
+        let now = parse_listing_millis("2026-08-13T12:00:00.000Z").expect("now");
+        let label = format_relative_time("2026-08-13T11:59:00.000Z", now);
+        assert_eq!(label, "1m ago");
     }
 }

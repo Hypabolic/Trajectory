@@ -622,6 +622,7 @@ dependencies = [
 name = "trajectory-cli"
 version = "0.1.2"
 dependencies = [
+ "chrono",
  "clap",
  "dialoguer",
  "hypabolic-trajectory",

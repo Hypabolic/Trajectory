@@ -139,6 +139,11 @@ fn help_mentions_stream_and_not_a_daemon() {
         "help missing daemon note:\n{}",
         out.stdout
     );
+    assert!(
+        text.contains("watch"),
+        "help missing watch:\n{}",
+        out.stdout
+    );
 }
 
 #[test]
@@ -169,6 +174,11 @@ fn stream_temp_file_emits_snapshot_delta_privacy_default() {
     assert!(
         lower.contains("stream update"),
         "missing stream update:\n{}",
+        out.stdout
+    );
+    assert!(
+        lower.contains("live tail"),
+        "missing live tail:\n{}",
         out.stdout
     );
     assert!(
@@ -255,6 +265,90 @@ fn ahp_stream_fake_host_actions() {
         !out.stdout.contains("List the files"),
         "action prose leaked:\n{}",
         out.stdout
+    );
+}
+
+fn write_pi_store(root: &Path, session_id: &str, body: &str) -> PathBuf {
+    let dir = root.join("sessions").join("demo");
+    fs::create_dir_all(&dir).expect("create pi store");
+    let path = dir.join(format!("{session_id}.jsonl"));
+    fs::write(&path, body).expect("write session");
+    path
+}
+
+#[test]
+fn browse_watch_listed_session() {
+    let root = env::temp_dir().join(format!("traj-ls11-browse-rs-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    write_pi_store(&root, "watch-me", &format!("{SESSION_LINE}{USER_LINE}"));
+
+    let out = run_cli(&[
+        "browse",
+        "--source",
+        "pi",
+        "--root",
+        root.to_str().expect("utf8 root"),
+        "--id",
+        "watch-me",
+        "--watch",
+        "--emit",
+        "snapshot+delta",
+        "--max-updates",
+        "1",
+    ]);
+    let _ = fs::remove_dir_all(&root);
+
+    assert_eq!(out.code, 0, "stderr={}\nstdout={}", out.stderr, out.stdout);
+    let lower = out.stdout.to_ascii_lowercase();
+    assert!(
+        lower.contains("stream update"),
+        "missing stream update:\n{}",
+        out.stdout
+    );
+    assert!(
+        lower.contains("live tail"),
+        "missing live tail:\n{}",
+        out.stdout
+    );
+    assert!(
+        lower.contains("snapshot"),
+        "missing snapshot:\n{}",
+        out.stdout
+    );
+    assert!(lower.contains("delta"), "missing delta:\n{}", out.stdout);
+    assert!(
+        lower.contains("not a daemon"),
+        "missing not a daemon:\n{}",
+        out.stdout
+    );
+    assert!(
+        !out.stdout.contains("hello"),
+        "privacy leak of user prose:\n{}",
+        out.stdout
+    );
+}
+
+#[test]
+fn browse_watch_rejects_ahp() {
+    let out = run_cli(&[
+        "browse", "--source", "ahp", "--root", "/tmp", "--id", "x", "--watch",
+    ]);
+    assert_eq!(out.code, 2, "stdout={}\nstderr={}", out.stdout, out.stderr);
+    let combined = format!("{}\n{}", out.stdout, out.stderr).to_ascii_lowercase();
+    assert!(
+        combined.contains("invalid_input"),
+        "expected invalid_input:\n{combined}"
+    );
+}
+
+#[test]
+fn stream_without_path_or_id_requires_tty() {
+    let out = run_cli(&["stream", "--source", "pi"]);
+    assert_eq!(out.code, 2, "stdout={}\nstderr={}", out.stdout, out.stderr);
+    let combined = format!("{}\n{}", out.stdout, out.stderr).to_ascii_lowercase();
+    assert!(
+        combined.contains("invalid_input"),
+        "expected invalid_input:\n{combined}"
     );
 }
 

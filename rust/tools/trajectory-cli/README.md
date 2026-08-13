@@ -9,7 +9,7 @@ Local sample TUI for browsing agent sessions with
 
 - Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes, Grok Build)
 - Normalizes AHP Shape A offline snapshots via `show --path` (no default store)
-- Interactive browse with `dialoguer` selection prompts
+- Interactive browse with `dialoguer` selection prompts, then Watch live or Show snapshot
 - Privacy-safe summaries (record counts, roles, tool calls, diagnostics)
 - Optional `--show-content` with an explicit privacy warning
 - **`stream`**: follow a JSONL session file (optional file I/O → core stream apply)
@@ -52,6 +52,9 @@ cargo run -p trajectory-cli -- show \
   --path ../conformance/cases/ahp/tool-calls/input.json
 cargo run -p trajectory-cli -- browse
 
+# Watch a live local session (pick, then Watch live)
+cargo run -p trajectory-cli -- browse --source grok-build --watch --show-content
+
 # File stream (one-shot poll; default emit snapshot+delta)
 cargo run -p trajectory-cli -- stream \
   --source pi \
@@ -86,13 +89,14 @@ cargo run -p trajectory-cli -- show \
 
 | Command | Purpose |
 | --- | --- |
-| `browse` (default) | Interactive source → session → summary |
+| `browse` (default) | Interactive source → session → Watch live or Show snapshot |
 | `list` | Print discovered sessions |
 | `show` | Normalize one path/id |
 | `stream` | Follow a JSONL file via optional file I/O + core stream |
 | `ahp-stream` | Optional AHP client demo (`fake://` FakeAhpHost) |
 
-Shared flags: `--source`, `--root`, `--limit`, `--show-content`.
+Shared flags: `--source`, `--root`, `--limit`, `--show-content`, `--watch`,
+`--emit`, `--interval`, `--max-updates`.
 
 Stream flags: `--emit snapshot+delta|snapshot|delta` (default `snapshot+delta`),
 `--follow`, `--interval`, `--max-updates`, `--path` / `--id` (+ explicit `--root`

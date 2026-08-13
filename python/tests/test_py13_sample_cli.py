@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -103,6 +104,51 @@ def test_openclaw_falls_back_to_clawdbot(
     monkeypatch.delenv("OPENCLAW_STATE_DIR", raising=False)
     monkeypatch.delenv("CLAWDBOT_STATE_DIR", raising=False)
     assert trajectory_cli.default_root("openclaw") == str(tmp_path / ".clawdbot")
+
+
+def test_format_relative_time_and_sort() -> None:
+    now = datetime(2026, 8, 13, 12, 0, 0, tzinfo=timezone.utc)
+    assert (
+        trajectory_cli.format_relative_time("2026-08-13T12:00:00.000Z", now=now)
+        == "just now"
+    )
+    assert (
+        trajectory_cli.format_relative_time("2026-08-13T11:59:48.000Z", now=now)
+        == "12s ago"
+    )
+    assert (
+        trajectory_cli.format_relative_time("2026-08-13T11:55:00.000Z", now=now)
+        == "5m ago"
+    )
+    assert (
+        trajectory_cli.format_relative_time("2026-08-13T09:00:00.000Z", now=now)
+        == "3h ago"
+    )
+    assert (
+        trajectory_cli.format_relative_time("2026-08-11T12:00:00.000Z", now=now)
+        == "2d ago"
+    )
+    assert (
+        trajectory_cli.format_relative_time("2026-07-01T00:00:00.000Z", now=now)
+        == "2026-07-01"
+    )
+    assert trajectory_cli.format_relative_time(None, now=now) == "—"
+
+    from hypabolic_trajectory import TrajectoryListing
+
+    older = TrajectoryListing(
+        id="older", path="/o", updated_at="2026-08-13T11:00:00.000Z", title="Old"
+    )
+    newer = TrajectoryListing(
+        id="newer", path="/n", updated_at="2026-08-13T11:59:00.000Z", title="New"
+    )
+    missing = TrajectoryListing(id="missing", path="/m", updated_at=None)
+    ordered = trajectory_cli.sort_sessions_by_active([older, missing, newer])
+    assert [item.id for item in ordered] == ["newer", "older", "missing"]
+    label = trajectory_cli.format_session_choice(newer, now=now)
+    assert label.startswith("1m ago")
+    assert "New" in label
+    assert "newer" in label
 
 
 def test_format_bytes_and_truncate() -> None:

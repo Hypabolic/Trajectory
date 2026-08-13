@@ -688,6 +688,7 @@ AHP clients:
 ## 11. Sample CLI shape (documentation contract)
 
 ```text
+trajectory browse --source <name> [--watch] [--show-content]
 trajectory stream --source <name> --path <file> --emit snapshot+delta [--follow]
 trajectory stream --source <name> --id <listing-id> --root <store> --follow
 trajectory ahp-stream --url <ws> --chat <chat-uri> [--from-seq N]

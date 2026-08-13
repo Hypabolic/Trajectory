@@ -11,7 +11,7 @@ install of the core package).
 
 - Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes, Grok Build)
 - Normalizes AHP Shape A offline snapshots via `show --path` (no default store)
-- Interactive browse with numbered selection prompts
+- Interactive browse with numbered selection prompts, then Watch live or Show snapshot
 - Privacy-safe summaries (record counts, roles, tool calls, diagnostics)
 - Optional `--show-content` with an explicit privacy warning
 - **`stream`**: follow a JSONL session file (optional file I/O → core stream apply)
@@ -58,6 +58,9 @@ PYTHONPATH=python/samples python -m trajectory_cli show \
   --path conformance/cases/ahp/tool-calls/input.json
 PYTHONPATH=python/samples python -m trajectory_cli browse
 
+# Watch a live local session (pick, then Watch live)
+PYTHONPATH=python/samples python -m trajectory_cli browse --source grok-build --watch --show-content
+
 # File stream (one-shot poll; default emit snapshot+delta)
 PYTHONPATH=python/samples python -m trajectory_cli stream \
   --source pi \
@@ -91,7 +94,7 @@ PYTHONPATH=python/samples python -m trajectory_cli show \
 
 | Command | Purpose |
 | --- | --- |
-| `browse` (default) | Interactive source → session → summary |
+| `browse` (default) | Interactive source → session → Watch live or Show snapshot |
 | `list` | Print discovered sessions |
 | `show` | Normalize one path/id |
 | `stream` | Follow a JSONL file via optional file I/O + core stream |
@@ -99,6 +102,8 @@ PYTHONPATH=python/samples python -m trajectory_cli show \
 
 Shared flags: `--source`, `--root`, `--limit`, `--show-content`.
 `show` also accepts `--format both|messages|hypabolic` and `--path` / `--id`.
+`browse` accepts `--watch` (follow immediately), `--id`, `--emit`, `--interval`,
+`--max-updates`.
 
 Stream flags: `--emit snapshot+delta|snapshot|delta` (default `snapshot+delta`),
 `--follow`, `--interval`, `--max-updates`, `--path` / `--id` (+ explicit `--root`

@@ -263,9 +263,10 @@ CLIs, or pass an explicit root to listing APIs.
 
 ## Sample CLIs (try your local sessions)
 
-Unpublished developer tools that list agent stores on disk and normalize a
+Unpublished developer tools that list agent stores on disk, normalize a
 selected session into a **privacy-safe summary** (counts, roles, tools,
-diagnostics—no transcript body by default).
+diagnostics—no transcript body by default), or **watch a live JSONL session**
+as it grows.
 
 <img width="607" height="278" alt="image" src="https://github.com/user-attachments/assets/abfa4f1e-273f-4be9-9141-b38f0fa3751f" />
 <img width="1471" height="717" alt="image" src="https://github.com/user-attachments/assets/c39d80b3-519d-4513-b988-df285369f4c8" />
@@ -282,7 +283,7 @@ diagnostics—no transcript body by default).
 
 | Command | Purpose |
 | --- | --- |
-| `browse` (default) | Interactive: pick source → session → print summary |
+| `browse` (default) | Interactive: pick source → session → Watch live or Show snapshot |
 | `list` | Table of sessions for one source |
 | `show` | Normalize one `--path` or listing `--id` |
 | `stream` | Follow a JSONL session file (optional file I/O + core stream) |
@@ -297,9 +298,10 @@ Shared flags:
 | `--limit <n>` | Listing page size (default 50) |
 | `--format <f>` | `both` (default), `messages`, or `hypabolic` |
 | `--show-content` | Include text snippets (**private data**; prints a warning) |
-| `--path` / `--id` | `show` / `stream`: file path or listing id |
-| `--emit` | `stream` / `ahp-stream`: `snapshot+delta` (default), `snapshot`, or `delta` |
+| `--path` / `--id` | `show` / `stream` / `browse`: file path or listing id |
+| `--emit` | `stream` / `browse --watch` / `ahp-stream`: `snapshot+delta` (default), `snapshot`, or `delta` |
 | `--follow` | `stream`: keep polling until process exit (not a daemon) |
+| `--watch` | `browse`: after picking a session, follow it live (skip the action prompt) |
 | `--url` / `--chat` | `ahp-stream`: host URL (`fake://` in samples) and chat URI |
 
 These CLIs are **consumer processes**, not Trajectory daemons. Stream follow ends
@@ -343,6 +345,12 @@ PYTHONPATH=python/samples python -m trajectory_cli show \
   --source pi \
   --path conformance/cases/pi/tool-calls/input.jsonl
 PYTHONPATH=python/samples python -m trajectory_cli browse
+
+# Watch a live local session (pick from the store, then Watch live)
+dotnet run --project dotnet/samples/Trajectory.Cli -- browse --source grok-build
+# or skip the action prompt:
+dotnet run --project dotnet/samples/Trajectory.Cli -- browse --source grok-build --watch --show-content
+cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- browse --source grok-build --watch --show-content
 
 # Stream a fixture once (all four CLIs; default emit snapshot+delta)
 # After editable install above (or PYTHONPATH=python/src:python/samples):

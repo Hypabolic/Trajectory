@@ -9,7 +9,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { homedir } from "node:os";
 import { dirname, join, basename, resolve as resolvePath } from "node:path";
 import { readFile, access } from "node:fs/promises";
-import { constants as fsConstants, existsSync } from "node:fs";
+import { constants as fsConstants, existsSync, statSync } from "node:fs";
 
 import {
   normalizeToIR,
@@ -66,6 +66,7 @@ interface CliArgs {
   format: "both" | "messages" | "hypabolic";
   emit: EmitMode;
   follow: boolean;
+  watch: boolean;
   interval: number;
   maxUpdates?: number;
   url?: string;
@@ -102,6 +103,7 @@ function parseArgs(argv: string[]): CliArgs {
     format: "both",
     emit: "snapshot+delta",
     follow: false,
+    watch: false,
     interval: 0.05,
   };
 
@@ -170,6 +172,11 @@ function parseArgs(argv: string[]): CliArgs {
     }
     if (token === "--follow") {
       args.follow = true;
+      i += 1;
+      continue;
+    }
+    if (token === "--watch") {
+      args.watch = true;
       i += 1;
       continue;
     }
@@ -374,9 +381,29 @@ async function runStream(args: CliArgs): Promise<number> {
       `stream supports file JSONL sources only: ${STREAM_FILE_SOURCES.join(", ")}. Use ahp-stream for AHP.`,
     );
   }
-  const target = await resolveStreamTarget(source, args);
+  let target: { root: string; path: string; groupId?: string };
+  let follow = args.follow;
+  if (!args.path && !args.id) {
+    const picked = await pickListedSession(source, args, { requireTty: true });
+    if (!picked) return 0;
+    target = picked;
+    follow = true;
+  } else {
+    target = await resolveStreamTarget(source, args);
+  }
+  return followFileSession(source, target, { ...args, follow });
+}
+
+async function followFileSession(
+  source: SourceName,
+  target: { root: string; path: string; groupId?: string },
+  args: CliArgs,
+): Promise<number> {
   const delivery = emitToDelivery(args.emit);
-  console.log(`${BOLD}${CYAN}Trajectory stream${RESET}  ${DIM}sample file follow (not a daemon)${RESET}`);
+  // Grok history lines do not embed the session id; listing id is the group.
+  // Other file sources lock group from the transcript.
+  const groupId = source === "grok-build" ? target.groupId : undefined;
+  console.log(`${BOLD}${CYAN}Trajectory stream${RESET}  ${DIM}live file follow (not a daemon)${RESET}`);
   console.log(`${DIM}source${RESET}   ${source}`);
   console.log(`${DIM}root${RESET}     ${target.root}`);
   console.log(`${DIM}path${RESET}     ${target.path}`);
@@ -385,23 +412,37 @@ async function runStream(args: CliArgs): Promise<number> {
   if (!args.showContent) {
     console.log(`${DIM}Privacy: content hidden unless --show-content.${RESET}`);
   }
+  if (args.follow) {
+    console.log();
+    console.log(
+      `${BOLD}Following live.${RESET} Showing the latest records (tail), not the start of the session.`,
+    );
+    if (source === "grok-build") {
+      console.log(
+        `${DIM}Grok chat_history.jsonl grows when a conversation item is committed (not token-by-token updates.jsonl).${RESET}`,
+      );
+    }
+    console.log(
+      `${DIM}Ctrl-C stops. A watching line ticks while waiting for new complete lines.${RESET}`,
+    );
+  }
   console.log();
 
   const fs = FileTrajectoryStream.open({
     root: target.root,
     path: target.path,
     source: source as StreamFileSource,
-    ...(target.groupId === undefined ? {} : { groupId: target.groupId }),
+    ...(groupId === undefined ? {} : { groupId }),
     stream: {
       source: source as TrajectorySource,
-      ...(target.groupId === undefined ? {} : { groupId: target.groupId }),
+      ...(groupId === undefined ? {} : { groupId }),
       delivery,
     },
     pollInterval: Math.max(0, args.interval),
   });
 
   try {
-    return await consumeFileStream(fs, args);
+    return await consumeFileStream(fs, args, target.path);
   } finally {
     fs.close();
   }
@@ -435,21 +476,76 @@ async function resolveStreamTarget(
   return { root: args.root, path: resolved.path, groupId: args.id };
 }
 
-async function consumeFileStream(fs: FileTrajectoryStream, args: CliArgs): Promise<number> {
+async function pickListedSession(
+  source: SourceName,
+  args: CliArgs,
+  options: { requireTty: boolean },
+): Promise<{ root: string; path: string; groupId?: string } | undefined> {
+  const root = args.root ?? defaultRoot(source);
+  if (args.id) {
+    const resolved = await resolveListingPath(source, root, undefined, args.id, args.limit);
+    if (!resolved) {
+      throw new TrajectoryNormalizationError(
+        "invalid_input",
+        `Session id '${args.id}' not found under ${root}.`,
+      );
+    }
+    return { root, path: resolved.path, groupId: args.id };
+  }
+  if (options.requireTty && !process.stdin.isTTY) {
+    throw new TrajectoryNormalizationError(
+      "invalid_input",
+      "stream without --path/--id needs a TTY to pick a session, or pass --path / --id --root. Use browse --watch to pick from the store UI.",
+    );
+  }
+  const page = await listForSource(source, root, args.limit);
+  if (page.items.length === 0) {
+    printEmpty(source);
+    return undefined;
+  }
+  const selected = await promptSession(page.items);
+  if (!selected) return undefined;
+  return { root, path: selected.path, groupId: selected.id };
+}
+
+async function consumeFileStream(
+  fs: FileTrajectoryStream,
+  args: CliArgs,
+  path: string,
+): Promise<number> {
   let seen = 0;
+  let lastBeat = 0;
   for (;;) {
     const update = await fs.poll();
     if (update !== null && update.kind !== "unchanged") {
+      if (args.follow && process.stdout.isTTY) process.stdout.write("\n");
       seen += 1;
       printStreamUpdate(update, args.showContent, args.emit, seen);
       if (args.maxUpdates !== undefined && seen >= args.maxUpdates) break;
     }
     if (!args.follow) break;
     if (args.maxUpdates !== undefined && seen >= args.maxUpdates) break;
+    const now = Date.now();
+    if (now - lastBeat >= 1000) {
+      lastBeat = now;
+      let sizeLabel = "—";
+      try {
+        sizeLabel = `${statSync(path).size} B`;
+      } catch {
+        // missing file during follow
+      }
+      const line = `watching  ${utcStamp()}  file=${sizeLabel}  last update #${seen || "—"}  waiting for new complete lines`;
+      if (process.stdout.isTTY) {
+        process.stdout.write(`\r${line.padEnd(100)}`);
+      } else {
+        console.log(`${DIM}${line}${RESET}`);
+      }
+    }
     if (args.interval > 0) {
       await new Promise((r) => setTimeout(r, args.interval * 1000));
     }
   }
+  if (args.follow && process.stdout.isTTY) process.stdout.write("\n");
   if (seen === 0) {
     console.log(`${DIM}No stream updates (empty or unchanged prefix).${RESET}`);
   } else {
@@ -590,21 +686,35 @@ async function openAhpDemoTransport(
   return { transport: pair.client, host };
 }
 
+function cursorOffsetLabel(position: StreamUpdate["cursor"]["position"]): string {
+  if (position.kind === "byte") {
+    return `byte next=${position.nextByteOffset.toString()} pending=${position.pendingByteLength.toString()}`;
+  }
+  return position.kind;
+}
+
+function recordTimeLabel(rec: Record<string, unknown>): string {
+  const raw = rec.timestamp ?? rec.source_timestamp;
+  if (typeof raw !== "string") return "—";
+  const ms = Date.parse(raw);
+  if (!Number.isFinite(ms)) return truncate(raw, 20);
+  return new Date(ms).toISOString().slice(11, 19) + "Z";
+}
+
 function printStreamUpdate(
   update: StreamUpdate,
   showContent: boolean,
   emit: EmitMode,
   index: number,
 ): void {
-  console.log(`${BOLD}── stream update #${index} ──${RESET}`);
+  console.log(`${BOLD}── ${utcStamp()}  stream update #${index}  (just now) ──${RESET}`);
   console.log(`${DIM}kind${RESET}       ${update.kind}`);
   console.log(
     `${DIM}revision${RESET}   ${update.revision.revision} id=${update.revision.revisionId} gen=${update.revision.generation}`,
   );
   const cursor = update.cursor;
-  const posKind = cursor.position.kind;
   console.log(
-    `${DIM}cursor${RESET}     source=${cursor.source} group=${truncate(cursor.groupId, 40)} gen=${cursor.generation} pos=${posKind}`,
+    `${DIM}cursor${RESET}     source=${cursor.source} group=${truncate(cursor.groupId, 40)} gen=${cursor.generation} pos=${cursorOffsetLabel(cursor.position)}`,
   );
   if (update.snapshot) {
     console.log(
@@ -639,20 +749,30 @@ function printStreamUpdate(
   if (update.error) {
     console.log(`${RED}error${RESET}      ${update.error.code}: ${update.error.message}`);
   }
-  if (showContent && update.snapshot) {
-    console.log(
-      `\n${RED}${BOLD}WARNING${RESET}${RED}: --show-content prints transcript-derived text. Treat as private.${RESET}`,
-    );
-    let i = 0;
-    for (const streamRec of update.snapshot.records.slice(0, 40)) {
-      i += 1;
+  if (update.snapshot && update.snapshot.records.length > 0) {
+    const records = update.snapshot.records;
+    const tail = records.slice(-20);
+    const start = records.length - tail.length + 1;
+    console.log(`${DIM}latest ${tail.length} of ${records.length} records (live tail):${RESET}`);
+    if (showContent) {
+      console.log(
+        `${RED}${BOLD}WARNING${RESET}${RED}: --show-content prints transcript-derived text. Treat as private.${RESET}`,
+      );
+    }
+    tail.forEach((streamRec, offset) => {
       const rec = streamRec.record as Record<string, unknown>;
       const role = String(rec.role ?? "?");
       const kind = String(rec.kind ?? rec.type ?? "?");
-      const content = typeof rec.content === "string" ? rec.content : JSON.stringify(rec).slice(0, 120);
+      const when = recordTimeLabel(rec);
+      const snip = showContent
+        ? truncate(typeof rec.content === "string" ? rec.content : JSON.stringify(rec).slice(0, 120), 80)
+        : "(content hidden)";
       console.log(
-        `  ${String(i).padStart(3)}  ${streamRec.status.padEnd(12)} ${role.padEnd(10)} ${kind.padEnd(20)} ${truncate(content, 80)}`,
+        `  ${String(start + offset).padStart(3)}  ${when.padEnd(9)}  ${streamRec.status.padEnd(12)} ${role.padEnd(10)} ${kind.padEnd(20)} ${snip}`,
       );
+    });
+    if (!showContent) {
+      console.log(`${DIM}Content omitted (privacy). Re-run with --show-content for snippets.${RESET}`);
     }
   } else if (!showContent) {
     console.log(`${DIM}Content omitted (privacy). Re-run with --show-content for snippets.${RESET}`);
@@ -665,6 +785,12 @@ async function runBrowse(args: CliArgs): Promise<number> {
   console.log(`${DIM}Privacy: content is hidden unless --show-content.${RESET}\n`);
 
   const source = args.source ?? (await promptSource());
+  if (args.watch && !(STREAM_FILE_SOURCES as readonly string[]).includes(source)) {
+    throw new TrajectoryNormalizationError(
+      "invalid_input",
+      `Watch live supports file JSONL sources only: ${STREAM_FILE_SOURCES.join(", ")}. Use show for Hermes exports; ahp-stream for AHP.`,
+    );
+  }
   const root = args.root ?? defaultRoot(source);
   console.log(`${DIM}Default for ${source}:${RESET} ${describeDefault(source)}`);
   console.log(`${DIM}Using root${RESET} ${root}\n`);
@@ -672,6 +798,7 @@ async function runBrowse(args: CliArgs): Promise<number> {
   const page = await listForSource(source, root, args.limit);
   if (page.items.length === 0) {
     printEmpty(source);
+    if (args.watch || args.id) return 0;
     const rl = createInterface({ input, output });
     try {
       const answer = (await rl.question("Normalize a transcript file by path instead? [y/N] ")).trim().toLowerCase();
@@ -685,9 +812,79 @@ async function runBrowse(args: CliArgs): Promise<number> {
     return 0;
   }
 
-  const selected = await promptSession(page.items);
-  if (!selected) return 0;
+  let selected: TrajectoryListing | undefined;
+  if (args.id) {
+    selected = page.items.find((item) => item.id === args.id);
+    if (!selected) {
+      throw new TrajectoryNormalizationError(
+        "invalid_input",
+        `Session id '${args.id}' not found under ${root}.`,
+      );
+    }
+  } else {
+    selected = await promptSession(page.items);
+    if (!selected) return 0;
+  }
   console.log();
+  return viewSelectedSession(source, root, selected, args);
+}
+
+async function promptViewAction(canWatch: boolean): Promise<"watch" | "snapshot" | "quit"> {
+  const rl = createInterface({ input, output });
+  try {
+    console.log("How do you want to view this session?");
+    if (canWatch) console.log("   1) Watch live (follow as it grows)");
+    console.log(`   ${canWatch ? "2" : "1"}) Show snapshot (one-shot normalize)`);
+    console.log("   0) Quit");
+    const defaultKey = "1";
+    const defaultAction = canWatch ? "watch" : "snapshot";
+    for (;;) {
+      const answer = (await rl.question(`Select view [${defaultKey}=default, 0 quits]: `)).trim().toLowerCase();
+      if (answer === "" || answer === defaultKey) return defaultAction;
+      if (answer === "0" || answer === "q" || answer === "quit") return "quit";
+      if ((answer === "w" || answer === "watch" || answer === "live") && canWatch) return "watch";
+      if (answer === "s" || answer === "snapshot" || answer === "show") return "snapshot";
+      if (canWatch && answer === "2") return "snapshot";
+      if (!canWatch && answer === "1") return "snapshot";
+      console.log(`${YELLOW}Invalid choice.${RESET}`);
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+async function viewSelectedSession(
+  source: SourceName,
+  root: string,
+  selected: TrajectoryListing,
+  args: CliArgs,
+): Promise<number> {
+  const canWatch = (STREAM_FILE_SOURCES as readonly string[]).includes(source);
+  if (args.watch) {
+    if (!canWatch) {
+      throw new TrajectoryNormalizationError(
+        "invalid_input",
+        `Watch live supports file JSONL sources only: ${STREAM_FILE_SOURCES.join(", ")}. Use show for Hermes exports; ahp-stream for AHP.`,
+      );
+    }
+    return followFileSession(
+      source,
+      { root, path: selected.path, groupId: selected.id },
+      { ...args, follow: true },
+    );
+  }
+  if (args.id && !process.stdin.isTTY) {
+    return printSummary(source, selected.path, args.showContent, args.format, selected.id);
+  }
+  const action = await promptViewAction(canWatch);
+  if (action === "quit") return 0;
+  if (action === "watch") {
+    return followFileSession(
+      source,
+      { root, path: selected.path, groupId: selected.id },
+      { ...args, follow: true },
+    );
+  }
   return printSummary(source, selected.path, args.showContent, args.format, selected.id);
 }
 
@@ -857,14 +1054,56 @@ function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, Math.max(0, max - 1))}…`;
 }
 
+function parseListingTime(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
+function utcStamp(nowMs = Date.now()): string {
+  return new Date(nowMs).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function formatRelativeTime(value: string | undefined, nowMs = Date.now()): string {
+  const then = parseListingTime(value);
+  if (then === undefined) return "—";
+  const seconds = Math.trunc((nowMs - then) / 1000);
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.trunc(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.trunc(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.trunc(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(then).toISOString().slice(0, 10);
+}
+
+function sortSessionsByActive(items: readonly TrajectoryListing[]): TrajectoryListing[] {
+  return [...items].sort((left, right) => {
+    const leftMs = parseListingTime(left.updatedAt) ?? Number.NEGATIVE_INFINITY;
+    const rightMs = parseListingTime(right.updatedAt) ?? Number.NEGATIVE_INFINITY;
+    if (rightMs !== leftMs) return rightMs - leftMs;
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  });
+}
+
+function formatSessionChoice(item: TrajectoryListing, nowMs = Date.now()): string {
+  const rel = formatRelativeTime(item.updatedAt, nowMs).padEnd(10);
+  const title = item.title?.trim() ? truncate(item.title.trim(), 48) : "—";
+  return `${rel}  ${title}  ${item.id}`;
+}
+
 function printListingTable(items: readonly TrajectoryListing[]): void {
-  const idW = Math.min(36, Math.max(8, ...items.map((i) => i.id.length)));
-  const header = `${"Id".padEnd(idW)}  ${"Updated (UTC)".padEnd(24)}  ${"Size".padStart(8)}  Path`;
+  const ordered = sortSessionsByActive(items);
+  const idW = Math.min(36, Math.max(8, ...ordered.map((i) => i.id.length)));
+  const header = `${"Active".padEnd(10)}  ${"Id".padEnd(idW)}  ${"Title".padEnd(32)}  ${"Size".padStart(8)}  Path`;
   console.log(header);
-  console.log("-".repeat(Math.min(100, header.length + 20)));
-  for (const item of items) {
+  console.log("-".repeat(Math.min(120, header.length + 20)));
+  for (const item of ordered) {
+    const title = truncate(item.title?.trim() || "—", 32);
     console.log(
-      `${item.id.padEnd(idW)}  ${item.updatedAt.padEnd(24)}  ${formatBytes(item.sizeBytes).padStart(8)}  ${item.path}`,
+      `${formatRelativeTime(item.updatedAt).padEnd(10)}  ${item.id.padEnd(idW)}  ${title.padEnd(32)}  ${formatBytes(item.sizeBytes).padStart(8)}  ${item.path}`,
     );
   }
 }
@@ -912,24 +1151,23 @@ async function promptSource(): Promise<SourceName> {
 }
 
 async function promptSession(items: readonly TrajectoryListing[]): Promise<TrajectoryListing | undefined> {
-  console.log(`Sessions (${items.length}):`);
-  items.forEach((item, index) => {
-    console.log(
-      `  ${String(index + 1).padStart(2)}) ${item.id}  ${DIM}${item.updatedAt}${RESET}  ${formatBytes(item.sizeBytes)}  ${item.path}`,
-    );
+  const ordered = sortSessionsByActive(items);
+  console.log(`Sessions (${ordered.length}, most recently active first):`);
+  ordered.forEach((item, index) => {
+    console.log(`  ${String(index + 1).padStart(2)}) ${formatSessionChoice(item)}`);
   });
   console.log(`   0) quit`);
 
   const rl = createInterface({ input, output });
   try {
     while (true) {
-      const answer = (await rl.question(`Select session [0-${items.length}]: `)).trim();
+      const answer = (await rl.question(`Select session [0-${ordered.length}]: `)).trim();
       const asNumber = Number(answer);
       if (asNumber === 0) return undefined;
-      if (Number.isInteger(asNumber) && asNumber >= 1 && asNumber <= items.length) {
-        return items[asNumber - 1];
+      if (Number.isInteger(asNumber) && asNumber >= 1 && asNumber <= ordered.length) {
+        return ordered[asNumber - 1];
       }
-      const byId = items.find((item) => item.id === answer);
+      const byId = ordered.find((item) => item.id === answer);
       if (byId) return byId;
       console.log(`${YELLOW}Invalid choice.${RESET}`);
     }
@@ -957,10 +1195,11 @@ function printHelp(): void {
 Not a daemon. The calling process owns lifetime, store roots, and AHP transport.
 
 Usage:
-  trajectory [browse] [--source <src>] [--root <path>] [--limit N] [--show-content]
+  trajectory [browse] [--source <src>] [--root <path>] [--limit N] [--show-content] \\
+             [--watch] [--id <id>] [--max-updates N]
   trajectory list --source <src> [--root <path>] [--limit N]
   trajectory show --source <src> (--path <file> | --id <id>) [--root <path>] [--show-content]
-  trajectory stream --source <src> (--path <file> | --id <id> --root <store>) \\
+  trajectory stream --source <src> [--path <file> | --id <id> --root <store>] \\
                     [--emit snapshot+delta|snapshot|delta] [--follow] [--max-updates N]
   trajectory ahp-stream --url fake://demo --chat <ahp-chat:/…> \\
                         [--from-seq N] [--token T] [--snapshot-path F] [--actions-path F]
@@ -981,6 +1220,9 @@ Default roots:
 Root overrides: --root or TRAJECTORY_<SOURCE>_ROOT (e.g. TRAJECTORY_PI_ROOT).
 OpenClaw also honors OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR.
 Grok Build also honors GROK_HOME (sessions under GROK_HOME/sessions).
+browse: pick a session, then Watch live or Show snapshot. --watch skips the
+prompt and follows immediately. stream without --path/--id picks from the
+store on a TTY and follows (not a daemon).
 Privacy: content is omitted unless --show-content (prints a warning).
 Stream delivery default is snapshot+delta. Sample ahp-stream uses fake:// only.
 `);

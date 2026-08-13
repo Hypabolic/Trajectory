@@ -28,11 +28,11 @@ public static class Program
             config.AddCommand<ShowCommand>("show")
                 .WithDescription("Normalize a session file and print a privacy-safe summary.");
             config.AddCommand<StreamCommand>("stream")
-                .WithDescription("Follow a JSONL session file (optional file I/O + core stream; not a daemon).");
+                .WithDescription("Follow a JSONL session (pick from the store, or --path/--id; not a daemon).");
             config.AddCommand<AhpStreamCommand>("ahp-stream")
                 .WithDescription("Demo optional AHP client with fake:// FakeAhpHost (not a daemon).");
             config.AddCommand<InteractiveCommand>("browse")
-                .WithDescription("Interactive session browser (default when no command is given).");
+                .WithDescription("Interactive source → session → snapshot or live follow (default).");
         });
 
         try
@@ -199,6 +199,54 @@ internal static class CliFormat
 
     public static string Truncate(string value, int max) =>
         value.Length <= max ? value : value[..Math.Max(0, max - 1)] + "…";
+
+    public static string FormatRelativeTime(DateTimeOffset? value, DateTimeOffset? now = null)
+    {
+        if (value is null)
+        {
+            return "—";
+        }
+
+        var clock = now ?? DateTimeOffset.UtcNow;
+        var seconds = (long)(clock - value.Value).TotalSeconds;
+        if (seconds < 5)
+        {
+            return "just now";
+        }
+
+        if (seconds < 60)
+        {
+            return $"{seconds}s ago";
+        }
+
+        var minutes = seconds / 60;
+        if (minutes < 60)
+        {
+            return $"{minutes}m ago";
+        }
+
+        var hours = minutes / 60;
+        if (hours < 24)
+        {
+            return $"{hours}h ago";
+        }
+
+        var days = hours / 24;
+        return days < 7 ? $"{days}d ago" : value.Value.UtcDateTime.ToString("yyyy-MM-dd");
+    }
+
+    public static IReadOnlyList<TrajectoryListing> SortByActive(IEnumerable<TrajectoryListing> items) =>
+        items
+            .OrderByDescending(static item => item.UpdatedAt ?? DateTimeOffset.MinValue)
+            .ThenBy(static item => item.Id, StringComparer.Ordinal)
+            .ToList();
+
+    public static string FormatSessionChoice(TrajectoryListing item, DateTimeOffset? now = null)
+    {
+        var rel = FormatRelativeTime(item.UpdatedAt, now);
+        var title = string.IsNullOrWhiteSpace(item.Title) ? "—" : Truncate(item.Title.Trim(), 48);
+        return $"{rel,-10}  {title}  {item.Id}";
+    }
 }
 
 internal static class StreamCli
@@ -232,14 +280,37 @@ internal static class StreamCli
         _ => delivery.ToString(),
     };
 
+    public static string UtcStamp(DateTimeOffset? now = null) =>
+        (now ?? DateTimeOffset.UtcNow).ToString("yyyy-MM-ddTHH:mm:ssZ");
+
+    public static string CursorOffsetLabel(StreamPosition position) =>
+        position is BytePosition bytePos
+            ? $"byte next={bytePos.NextByteOffset} pending={bytePos.PendingByteLength}"
+            : position.Kind;
+
+    public static string RecordTimeLabel(IReadOnlyDictionary<string, object?> rec)
+    {
+        var raw = rec.TryGetValue("timestamp", out var ts) ? ts?.ToString()
+            : rec.TryGetValue("source_timestamp", out var src) ? src?.ToString()
+            : null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "—";
+        }
+
+        return DateTimeOffset.TryParse(raw, out var parsed)
+            ? parsed.ToUniversalTime().ToString("HH:mm:ssZ")
+            : CliFormat.Truncate(raw, 20);
+    }
+
     public static void PrintUpdate(StreamUpdate update, bool showContent, StreamDelivery emit, int index)
     {
-        AnsiConsole.MarkupLine($"[bold]── stream update #{index} ──[/]");
+        AnsiConsole.MarkupLine($"[bold]── {UtcStamp()}  stream update #{index}  (just now) ──[/]");
         AnsiConsole.MarkupLine($"[grey]kind[/]       {Markup.Escape(update.Kind)}");
         AnsiConsole.MarkupLine(
             $"[grey]revision[/]   {update.Revision.Revision} id={Markup.Escape(update.Revision.RevisionId)} gen={update.Revision.Generation}");
         AnsiConsole.MarkupLine(
-            $"[grey]cursor[/]     source={Markup.Escape(update.Cursor.Source)} group={Markup.Escape(CliFormat.Truncate(update.Cursor.GroupId, 40))} gen={update.Cursor.Generation} pos={Markup.Escape(update.Cursor.Position.Kind)}");
+            $"[grey]cursor[/]     source={Markup.Escape(update.Cursor.Source)} group={Markup.Escape(CliFormat.Truncate(update.Cursor.GroupId, 40))} gen={update.Cursor.Generation} pos={Markup.Escape(CursorOffsetLabel(update.Cursor.Position))}");
         if (update.Snapshot is not null)
         {
             AnsiConsole.MarkupLine(
@@ -283,25 +354,41 @@ internal static class StreamCli
                 $"[red]error[/]      {Markup.Escape(err.Code)}: {Markup.Escape(err.Message)}");
         }
 
-        if (showContent && update.Snapshot is not null)
+        if (update.Snapshot is { Records.Count: > 0 })
         {
-            AnsiConsole.WriteLine();
+            var records = update.Snapshot.Records;
+            var tail = records.TakeLast(20).ToList();
+            var start = records.Count - tail.Count + 1;
             AnsiConsole.MarkupLine(
-                "[red bold]WARNING[/][red]: --show-content prints transcript-derived text. Treat as private.[/]");
-            var order = 0;
-            foreach (var streamRec in update.Snapshot.Records.Take(40))
+                $"[grey]latest {tail.Count} of {records.Count} records (live tail):[/]");
+            if (showContent)
             {
-                order++;
+                AnsiConsole.MarkupLine(
+                    "[red bold]WARNING[/][red]: --show-content prints transcript-derived text. Treat as private.[/]");
+            }
+
+            var order = start;
+            foreach (var streamRec in tail)
+            {
                 var rec = streamRec.Record;
                 var role = rec.TryGetValue("role", out var roleVal) ? roleVal?.ToString() ?? "?" : "?";
                 var kind = rec.TryGetValue("kind", out var kindVal)
                     ? kindVal?.ToString() ?? "?"
                     : rec.TryGetValue("type", out var typeVal) ? typeVal?.ToString() ?? "?" : "?";
-                var content = rec.TryGetValue("content", out var contentVal) && contentVal is string s
-                    ? s
-                    : JsonSerializer.Serialize(rec);
+                var when = RecordTimeLabel(rec);
+                var snip = showContent
+                    ? rec.TryGetValue("content", out var contentVal) && contentVal is string s
+                        ? s
+                        : JsonSerializer.Serialize(rec)
+                    : "(content hidden)";
                 AnsiConsole.MarkupLine(
-                    $"  {order,3}  {Markup.Escape(streamRec.Status),-12} {Markup.Escape(role),-10} {Markup.Escape(kind),-20} {Markup.Escape(CliFormat.Truncate(content, 80))}");
+                    $"  {order,3}  {Markup.Escape(when),-9}  {Markup.Escape(streamRec.Status),-12} {Markup.Escape(role),-10} {Markup.Escape(kind),-20} {Markup.Escape(CliFormat.Truncate(snip, 80))}");
+                order++;
+            }
+
+            if (!showContent)
+            {
+                AnsiConsole.MarkupLine("[grey]Content omitted (privacy). Re-run with --show-content for snippets.[/]");
             }
         }
         else if (!showContent)
@@ -310,6 +397,139 @@ internal static class StreamCli
         }
 
         AnsiConsole.WriteLine();
+    }
+
+    public static async Task<int> FollowAsync(
+        TrajectorySource source,
+        string root,
+        string path,
+        string? groupId,
+        StreamDelivery delivery,
+        bool follow,
+        double interval,
+        int? maxUpdates,
+        bool showContent)
+    {
+        AnsiConsole.MarkupLine("[bold deepskyblue1]Trajectory stream[/]  [grey]live file follow (not a daemon)[/]");
+        AnsiConsole.MarkupLine($"[grey]source[/]   {Sources.WireName(source)}");
+        AnsiConsole.MarkupLine($"[grey]root[/]     {Markup.Escape(root)}");
+        AnsiConsole.MarkupLine($"[grey]path[/]     {Markup.Escape(path)}");
+        AnsiConsole.MarkupLine($"[grey]emit[/]     {EmitLabel(delivery)} (delivery={delivery.ToString().ToLowerInvariant()})");
+        AnsiConsole.MarkupLine($"[grey]follow[/]   {follow}");
+        if (!showContent)
+        {
+            AnsiConsole.MarkupLine("[grey]Privacy: content hidden unless --show-content.[/]");
+        }
+
+        if (follow)
+        {
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine(
+                "[bold]Following live.[/] Showing the latest records (tail), not the start of the session.");
+            if (source == TrajectorySource.GrokBuild)
+            {
+                AnsiConsole.MarkupLine(
+                    "[grey]Grok chat_history.jsonl grows when a conversation item is committed (not token-by-token updates.jsonl).[/]");
+            }
+
+            AnsiConsole.MarkupLine(
+                "[grey]Ctrl-C stops. A watching line ticks while waiting for new complete lines.[/]");
+        }
+
+        AnsiConsole.WriteLine();
+
+        // Grok history lines do not embed the session id; listing id is the group.
+        // Other file sources lock group from the transcript.
+        if (source != TrajectorySource.GrokBuild)
+        {
+            groupId = null;
+        }
+
+        using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+        {
+            Root = root,
+            Path = path,
+            Source = source,
+            GroupId = groupId,
+            Stream = new StreamOptions
+            {
+                Source = source,
+                GroupId = groupId,
+                Delivery = delivery,
+            },
+            PollInterval = TimeSpan.FromSeconds(Math.Max(0, interval)),
+        });
+
+        var seen = 0;
+        var lastBeat = DateTime.UtcNow - TimeSpan.FromSeconds(2);
+        var tty = !Console.IsOutputRedirected;
+        while (true)
+        {
+            var update = stream.Poll();
+            if (update is not null && update.Kind != "unchanged")
+            {
+                if (follow && tty)
+                {
+                    Console.WriteLine();
+                }
+
+                seen++;
+                PrintUpdate(update, showContent, delivery, seen);
+                if (maxUpdates is int max && seen >= max)
+                {
+                    break;
+                }
+            }
+
+            if (!follow)
+            {
+                break;
+            }
+
+            if (maxUpdates is int max2 && seen >= max2)
+            {
+                break;
+            }
+
+            if (DateTime.UtcNow - lastBeat >= TimeSpan.FromSeconds(1))
+            {
+                lastBeat = DateTime.UtcNow;
+                var sizeLabel = File.Exists(path) ? $"{new FileInfo(path).Length} B" : "—";
+                var seenLabel = seen == 0 ? "—" : seen.ToString();
+                var line =
+                    $"watching  {UtcStamp()}  file={sizeLabel}  last update #{seenLabel}  waiting for new complete lines";
+                if (tty)
+                {
+                    Console.Write($"\r{line,-100}");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine($"[grey]{Markup.Escape(line)}[/]");
+                }
+            }
+
+            if (interval > 0)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(interval)).ConfigureAwait(false);
+            }
+        }
+
+        if (follow && tty)
+        {
+            Console.WriteLine();
+        }
+
+        if (seen == 0)
+        {
+            AnsiConsole.MarkupLine("[grey]No stream updates (empty or unchanged prefix).[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine(
+                $"[grey]Emitted {seen} update(s). Process exit ends follow (not a daemon).[/]");
+        }
+
+        return 0;
     }
 }
 
@@ -362,19 +582,19 @@ internal sealed class ListCommand : AsyncCommand<ListCommand.Settings>
         }
 
         var table = new Table().Border(TableBorder.Rounded);
+        table.AddColumn("Active");
         table.AddColumn("Id");
-        table.AddColumn("Updated (UTC)");
-        table.AddColumn("Size");
         table.AddColumn("Title");
+        table.AddColumn("Size");
         table.AddColumn("Path");
 
-        foreach (var item in page.Items)
+        foreach (var item in CliFormat.SortByActive(page.Items))
         {
             table.AddRow(
+                Markup.Escape(CliFormat.FormatRelativeTime(item.UpdatedAt)),
                 Markup.Escape(item.Id),
-                item.UpdatedAt?.ToString("u") ?? "—",
+                Markup.Escape(string.IsNullOrWhiteSpace(item.Title) ? "—" : item.Title),
                 item.SizeBytes is null ? "—" : CliFormat.FormatBytes(item.SizeBytes.Value),
-                Markup.Escape(item.Title ?? "—"),
                 Markup.Escape(item.Path));
         }
 
@@ -461,9 +681,35 @@ internal sealed class ShowCommand : AsyncCommand<ShowCommand.Settings>
     }
 }
 
-internal sealed class InteractiveCommand : AsyncCommand<GlobalSettings>
+internal sealed class InteractiveCommand : AsyncCommand<InteractiveCommand.Settings>
 {
-    public override async Task<int> ExecuteAsync(CommandContext context, GlobalSettings settings)
+    public sealed class Settings : GlobalSettings
+    {
+        [CommandOption("--id <ID>")]
+        [Description("Session id from listing; skip the picker.")]
+        public string? Id { get; init; }
+
+        [CommandOption("--watch")]
+        [Description("After selecting a session, follow it live (skip the action prompt).")]
+        [DefaultValue(false)]
+        public bool Watch { get; init; }
+
+        [CommandOption("--emit <MODE>")]
+        [Description("Watch delivery: snapshot+delta (default), snapshot, or delta.")]
+        [DefaultValue("snapshot+delta")]
+        public string Emit { get; init; } = "snapshot+delta";
+
+        [CommandOption("--interval <SECONDS>")]
+        [Description("Poll interval seconds when watching (default 0.05).")]
+        [DefaultValue(0.05)]
+        public double Interval { get; init; } = 0.05;
+
+        [CommandOption("--max-updates <N>")]
+        [Description("Stop after N stream updates (tests/demos).")]
+        public int? MaxUpdates { get; init; }
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
         AnsiConsole.Write(new FigletText("Trajectory").Color(Color.DeepSkyBlue1));
         AnsiConsole.MarkupLine("[grey]Local sample TUI — Privacy: content is hidden unless --show-content.[/]");
@@ -476,6 +722,13 @@ internal sealed class InteractiveCommand : AsyncCommand<GlobalSettings>
                     .PageSize(10)
                     .AddChoices(Sources.Names));
         var source = Sources.Parse(sourceName);
+        if (settings.Watch && !StreamCli.FileSources.Contains(Sources.WireName(source), StringComparer.Ordinal))
+        {
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.InvalidInput,
+                $"Watch live supports file JSONL sources only: {string.Join(", ", StreamCli.FileSources)}. Use show for Hermes exports; ahp-stream for AHP.");
+        }
+
         var root = StoreRoots.Resolve(source, settings.Root);
 
         AnsiConsole.MarkupLine(
@@ -512,6 +765,11 @@ internal sealed class InteractiveCommand : AsyncCommand<GlobalSettings>
                 AnsiConsole.MarkupLine("[grey]Create a session with the agent, or pass --root to another store.[/]");
             }
 
+            if (settings.Watch || !string.IsNullOrWhiteSpace(settings.Id))
+            {
+                return 0;
+            }
+
             if (AnsiConsole.Confirm("Normalize a transcript file by path instead?", defaultValue: false))
             {
                 var filePath = AnsiConsole.Ask<string>("Path to transcript:");
@@ -521,26 +779,111 @@ internal sealed class InteractiveCommand : AsyncCommand<GlobalSettings>
             return 0;
         }
 
-        var choices = page.Items
-            .Select(FormatChoice)
-            .ToList();
-        choices.Add("(quit)");
+        TrajectoryListing listing;
+        if (!string.IsNullOrWhiteSpace(settings.Id))
+        {
+            var match = page.Items.FirstOrDefault(item =>
+                string.Equals(item.Id, settings.Id, StringComparison.Ordinal));
+            if (match is null)
+            {
+                throw new TrajectoryNormalizationException(
+                    NormalizationErrorCode.InvalidInput,
+                    $"Session id '{settings.Id}' not found under {root}.");
+            }
 
-        var selected = AnsiConsole.Prompt(
+            listing = match;
+        }
+        else
+        {
+            var ordered = CliFormat.SortByActive(page.Items);
+            var choices = ordered
+                .Select(static item => CliFormat.FormatSessionChoice(item))
+                .ToList();
+            choices.Add("(quit)");
+
+            var selected = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title($"Select a session ({ordered.Count} shown, most recently active first)")
+                    .PageSize(Math.Min(20, choices.Count))
+                    .MoreChoicesText("[grey](move up/down)[/]")
+                    .AddChoices(choices));
+
+            if (selected == "(quit)")
+            {
+                return 0;
+            }
+
+            listing = ordered[choices.IndexOf(selected)];
+        }
+
+        AnsiConsole.WriteLine();
+        return await ViewSelectedSessionAsync(source, root, listing, settings).ConfigureAwait(false);
+    }
+
+    private static async Task<int> ViewSelectedSessionAsync(
+        TrajectorySource source,
+        string root,
+        TrajectoryListing listing,
+        Settings settings)
+    {
+        var canWatch = StreamCli.FileSources.Contains(Sources.WireName(source), StringComparer.Ordinal);
+        if (settings.Watch)
+        {
+            if (!canWatch)
+            {
+                throw new TrajectoryNormalizationException(
+                    NormalizationErrorCode.InvalidInput,
+                    $"Watch live supports file JSONL sources only: {string.Join(", ", StreamCli.FileSources)}. Use show for Hermes exports; ahp-stream for AHP.");
+            }
+
+            return await StreamCli.FollowAsync(
+                source,
+                root,
+                listing.Path,
+                listing.Id,
+                StreamCli.ParseEmit(settings.Emit),
+                follow: true,
+                settings.Interval,
+                settings.MaxUpdates,
+                settings.ShowContent).ConfigureAwait(false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(settings.Id) && Console.IsInputRedirected)
+        {
+            return SessionSummary.Print(
+                source,
+                listing.Path,
+                settings.ShowContent,
+                "both",
+                groupId: listing.Id);
+        }
+
+        var actions = canWatch
+            ? new[] { "Watch live (follow as it grows)", "Show snapshot (one-shot normalize)", "(quit)" }
+            : new[] { "Show snapshot (one-shot normalize)", "(quit)" };
+        var action = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
-                .Title($"Select a session ({page.Items.Count} shown)")
-                .PageSize(Math.Min(20, choices.Count))
-                .MoreChoicesText("[grey](move up/down)[/]")
-                .AddChoices(choices));
-
-        if (selected == "(quit)")
+                .Title("How do you want to view this session?")
+                .AddChoices(actions));
+        if (action == "(quit)")
         {
             return 0;
         }
 
-        var index = choices.IndexOf(selected);
-        var listing = page.Items[index];
-        AnsiConsole.WriteLine();
+        if (action.StartsWith("Watch", StringComparison.Ordinal))
+        {
+            return await StreamCli.FollowAsync(
+                source,
+                root,
+                listing.Path,
+                listing.Id,
+                StreamCli.ParseEmit(settings.Emit),
+                follow: true,
+                settings.Interval,
+                settings.MaxUpdates,
+                settings.ShowContent).ConfigureAwait(false);
+        }
+
         return SessionSummary.Print(
             source,
             listing.Path,
@@ -549,13 +892,6 @@ internal sealed class InteractiveCommand : AsyncCommand<GlobalSettings>
             groupId: listing.Id);
     }
 
-    private static string FormatChoice(TrajectoryListing item)
-    {
-        var updated = item.UpdatedAt?.ToString("u") ?? "—";
-        var title = string.IsNullOrWhiteSpace(item.Title) ? string.Empty : $" | {item.Title}";
-        var size = item.SizeBytes is null ? string.Empty : $" | {CliFormat.FormatBytes(item.SizeBytes.Value)}";
-        return $"{item.Id} | {updated}{size}{title} | {item.Path}";
-    }
 }
 
 internal static class SessionSummary
@@ -775,76 +1111,75 @@ internal sealed class StreamCommand : AsyncCommand<StreamCommand.Settings>
         }
 
         var delivery = StreamCli.ParseEmit(settings.Emit);
-        var (root, path, groupId) = await ResolveStreamTargetAsync(source, settings);
-        AnsiConsole.MarkupLine("[bold deepskyblue1]Trajectory stream[/]  [grey]sample file follow (not a daemon)[/]");
-        AnsiConsole.MarkupLine($"[grey]source[/]   {wire}");
-        AnsiConsole.MarkupLine($"[grey]root[/]     {Markup.Escape(root)}");
-        AnsiConsole.MarkupLine($"[grey]path[/]     {Markup.Escape(path)}");
-        AnsiConsole.MarkupLine($"[grey]emit[/]     {StreamCli.EmitLabel(delivery)} (delivery={delivery.ToString().ToLowerInvariant()})");
-        AnsiConsole.MarkupLine($"[grey]follow[/]   {settings.Follow}");
-        if (!settings.ShowContent)
+        string root;
+        string path;
+        string? groupId;
+        var follow = settings.Follow;
+        if (string.IsNullOrWhiteSpace(settings.Path) && string.IsNullOrWhiteSpace(settings.Id))
         {
-            AnsiConsole.MarkupLine("[grey]Privacy: content hidden unless --show-content.[/]");
-        }
-
-        AnsiConsole.WriteLine();
-
-        using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
-        {
-            Root = root,
-            Path = path,
-            Source = source,
-            GroupId = groupId,
-            Stream = new StreamOptions
+            var picked = await PickListedSessionAsync(source, settings).ConfigureAwait(false);
+            if (picked is null)
             {
-                Source = source,
-                GroupId = groupId,
-                Delivery = delivery,
-            },
-            PollInterval = TimeSpan.FromSeconds(Math.Max(0, settings.Interval)),
-        });
-
-        var seen = 0;
-        while (true)
-        {
-            var update = stream.Poll();
-            if (update is not null && update.Kind != "unchanged")
-            {
-                seen++;
-                StreamCli.PrintUpdate(update, settings.ShowContent, delivery, seen);
-                if (settings.MaxUpdates is int max && seen >= max)
-                {
-                    break;
-                }
+                return 0;
             }
 
-            if (!settings.Follow)
-            {
-                break;
-            }
-
-            if (settings.MaxUpdates is int max2 && seen >= max2)
-            {
-                break;
-            }
-
-            if (settings.Interval > 0)
-            {
-                await Task.Delay(TimeSpan.FromSeconds(settings.Interval)).ConfigureAwait(false);
-            }
-        }
-
-        if (seen == 0)
-        {
-            AnsiConsole.MarkupLine("[grey]No stream updates (empty or unchanged prefix).[/]");
+            (root, path, groupId) = picked.Value;
+            follow = true;
         }
         else
         {
-            AnsiConsole.MarkupLine(
-                $"[grey]Emitted {seen} update(s). Process exit ends follow (not a daemon).[/]");
+            (root, path, groupId) = await ResolveStreamTargetAsync(source, settings).ConfigureAwait(false);
         }
 
-        return 0;
+        return await StreamCli.FollowAsync(
+            source,
+            root,
+            path,
+            groupId,
+            delivery,
+            follow,
+            settings.Interval,
+            settings.MaxUpdates,
+            settings.ShowContent).ConfigureAwait(false);
+    }
+
+    private static async Task<(string Root, string Path, string? GroupId)?> PickListedSessionAsync(
+        TrajectorySource source,
+        Settings settings)
+    {
+        if (Console.IsInputRedirected)
+        {
+            throw new TrajectoryNormalizationException(
+                NormalizationErrorCode.InvalidInput,
+                "stream without --path/--id needs a TTY to pick a session, or pass --path / --id --root. Use browse --watch to pick from the store UI.");
+        }
+
+        var root = StoreRoots.Resolve(source, settings.Root);
+        var page = await TrajectoryConverter.ListTrajectoriesAsync(source, root, limit: settings.Limit)
+            .ConfigureAwait(false);
+        if (page.Items.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No sessions found.[/] Empty or missing store is not an error.");
+            return null;
+        }
+
+        var ordered = CliFormat.SortByActive(page.Items);
+        var choices = ordered
+            .Select(static item => CliFormat.FormatSessionChoice(item))
+            .ToList();
+        choices.Add("(quit)");
+        var selected = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title($"Select a session to follow ({ordered.Count} shown, most recently active first)")
+                .PageSize(Math.Min(20, choices.Count))
+                .AddChoices(choices));
+        if (selected == "(quit)")
+        {
+            return null;
+        }
+
+        var listing = ordered[choices.IndexOf(selected)];
+        return (root, listing.Path, listing.Id);
     }
 
     private static async Task<(string Root, string Path, string? GroupId)> ResolveStreamTargetAsync(

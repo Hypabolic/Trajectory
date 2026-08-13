@@ -85,6 +85,7 @@ public sealed class SampleCliStreamTests
         var psi = new ProcessStartInfo
         {
             FileName = "dotnet",
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -115,6 +116,7 @@ public sealed class SampleCliStreamTests
         };
 
         Assert.True(process.Start(), "failed to start trajectory CLI process");
+        process.StandardInput.Close();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         var exited = process.WaitForExit(60_000);
@@ -147,6 +149,7 @@ public sealed class SampleCliStreamTests
         Assert.Contains("ahp-stream", stdout, StringComparison.OrdinalIgnoreCase);
         // Spectre lists command descriptions; stream/ahp-stream descriptions say "not a daemon".
         Assert.Contains("not a daemon", stdout, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("watch", stdout, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -171,6 +174,7 @@ public sealed class SampleCliStreamTests
             Assert.Contains("stream update", stdout, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("snapshot", stdout, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("delta", stdout, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("live tail", stdout, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("Content omitted", stdout, StringComparison.Ordinal);
             Assert.Contains("not a daemon", stdout, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("hello", stdout, StringComparison.Ordinal);
@@ -237,6 +241,76 @@ public sealed class SampleCliStreamTests
         Assert.Contains("Content omitted", stdout, StringComparison.Ordinal);
         Assert.DoesNotContain("test-token", stdout, StringComparison.Ordinal);
         Assert.DoesNotContain("List the files", stdout, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BrowseWatchListedSession()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "traj-ls11-browse-dotnet-" + Guid.NewGuid().ToString("N"));
+        var sessionDir = Path.Combine(root, "sessions", "demo");
+        Directory.CreateDirectory(sessionDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(sessionDir, "watch-me.jsonl"), SessionLine + UserLine);
+
+            var (code, stdout, stderr) = RunCli(
+                "browse",
+                "--source", "pi",
+                "--root", root,
+                "--id", "watch-me",
+                "--watch",
+                "--emit", "snapshot+delta",
+                "--max-updates", "1");
+
+            Assert.True(code == 0, $"exit={code}\nstderr={stderr}\nstdout={stdout}");
+            Assert.Contains("stream update", stdout, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("snapshot", stdout, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("delta", stdout, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("live tail", stdout, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("not a daemon", stdout, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("hello", stdout, StringComparison.Ordinal);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // best-effort cleanup
+            }
+        }
+    }
+
+    [Fact]
+    public void BrowseWatchRejectsAhp()
+    {
+        var (code, stdout, stderr) = RunCli(
+            "browse",
+            "--source", "ahp",
+            "--root", Path.GetTempPath(),
+            "--id", "x",
+            "--watch");
+
+        Assert.Equal(2, code);
+        var combined = stdout + "\n" + stderr;
+        Assert.True(
+            combined.Contains("invalid_input", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("InvalidInput", StringComparison.Ordinal),
+            $"expected invalid_input in:\n{combined}");
+    }
+
+    [Fact]
+    public void StreamWithoutPathOrIdRequiresTty()
+    {
+        var (code, stdout, stderr) = RunCli("stream", "--source", "pi");
+        Assert.Equal(2, code);
+        var combined = stdout + "\n" + stderr;
+        Assert.True(
+            combined.Contains("invalid_input", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("InvalidInput", StringComparison.Ordinal),
+            $"expected invalid_input in:\n{combined}");
     }
 
     [Fact]

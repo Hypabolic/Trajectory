@@ -5,6 +5,30 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+## 0.1.3 — 2026-08-13
+
+Live session streaming cut. Pure library engines on all four runtimes, optional
+file I/O / AHP client / Hermes provider packages, honest `stream-*` capability
+claims, and sample CLI follow of real local sessions. **Do not retag `v0.1.2`.**
+This is the first synchronized multi-registry publish of the stream surface
+(NuGet / npm / crates / PyPI).
+
+- **Sample CLI live watch tail:** `stream` / `browse --watch` print the latest
+  records (tail) with wall-clock and record timestamps, plus a ticking
+  `watching` heartbeat while waiting for new complete JSONL lines. The previous
+  view showed the first 40 snapshot records and then went silent, so a long
+  live session looked historical.
+
+- **Sample CLI picker last-active times:** session pickers and `list` tables
+  show relative last-active labels (`just now`, `5m ago`, …) and keep most
+  recently active sessions first (title + id; no huge native paths in the
+  picker). Same shape on all four unpublished sample CLIs.
+
+- **Sample CLI live-session picker:** `browse` asks Watch live / Show snapshot
+  after you pick a session (file JSONL sources). `--watch` skips the prompt and
+  follows immediately. `stream` without `--path`/`--id` picks from the resolved
+  store on a TTY and follows. Same shape on all four unpublished sample CLIs.
+
 - **Streaming review-fix (H1–H4, M1–M8):** Codex Luna deep-review findings
   are closed on tip (see `docs/live-session-streaming-status.md`). Shared
   stream matrix is **41** cases. High: AHP `reorder=reject`, diagnostic

@@ -5,10 +5,10 @@ Not published — depends on an editable / PYTHONPATH install of
 listing API always requires an explicit root.
 
 Commands match peer sample CLIs (.NET / TypeScript / Rust):
-  browse (default)  interactive source → session → summary
+  browse (default)  interactive source → session → snapshot or live follow
   list              table of sessions for one source
   show              normalize one --path or listing --id
-  stream            follow a JSONL session file (optional file I/O + core stream)
+  stream            follow a JSONL session (pick from the store, or --path/--id)
   ahp-stream        optional AHP live-host client demo (fake host or injected transport)
 
 This sample is a **consumer process**, not a Trajectory daemon. The library
@@ -23,6 +23,7 @@ import os
 import sys
 import time
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Final, Literal, Sequence
 
@@ -166,7 +167,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--id",
         dest="id",
         default=None,
-        help="show/stream: session id from listing (resolved under the store root).",
+        help="browse/show/stream: session id from listing (resolved under the store root).",
     )
     parser.add_argument(
         "--limit",
@@ -200,6 +201,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         dest="follow",
         action="store_true",
         help="stream: keep polling until Ctrl-C or --max-updates.",
+    )
+    parser.add_argument(
+        "--watch",
+        dest="watch",
+        action="store_true",
+        help="browse: after selecting a session, follow it live (skip the action prompt).",
     )
     parser.add_argument(
         "--interval",
@@ -297,6 +304,7 @@ def _empty_namespace(*, command: str) -> argparse.Namespace:
         show_content=False,
         emit="snapshot+delta",
         follow=False,
+        watch=False,
         interval=0.05,
         max_updates=None,
         url=None,
@@ -460,41 +468,27 @@ def run_stream(args: argparse.Namespace) -> int:
             f"Use ahp-stream for AHP; Hermes uses the optional provider path.",
         )
 
-    root, path, group_id = resolve_stream_target(source, args)
-    delivery = emit_to_delivery(args.emit)
-    stream_opts = StreamOptions(source=source, group_id=group_id, delivery=delivery)
+    if not args.path and not args.id:
+        picked = pick_listed_session(source, args, require_tty=True)
+        if picked is None:
+            return 0
+        root, path, group_id = picked
+        follow = True
+    else:
+        root, path, group_id = resolve_stream_target(source, args)
+        follow = bool(args.follow)
 
-    print(f"{BOLD}{CYAN}Trajectory stream{RESET}  {DIM}sample file follow (not a daemon){RESET}")
-    print(f"{DIM}source{RESET}   {source}")
-    print(f"{DIM}root{RESET}     {root}")
-    print(f"{DIM}path{RESET}     {path}")
-    print(f"{DIM}emit{RESET}     {args.emit} (delivery={delivery})")
-    print(f"{DIM}follow{RESET}   {bool(args.follow)}")
-    if not args.show_content:
-        print(f"{DIM}Privacy: content hidden unless --show-content.{RESET}")
-    print()
-
-    fs = FileTrajectoryStream.open(
-        FileStreamOptions(
-            root=root,
-            path=path,
-            source=source,
-            group_id=group_id,
-            stream=stream_opts,
-            poll_interval=max(0.0, float(args.interval)),
-        )
+    return follow_file_session(
+        source,
+        root,
+        path,
+        group_id,
+        emit=args.emit,
+        follow=follow,
+        interval=max(0.0, float(args.interval)),
+        max_updates=args.max_updates,
+        show_content=bool(args.show_content),
     )
-    try:
-        return _consume_file_stream(
-            fs,
-            follow=bool(args.follow),
-            interval=max(0.0, float(args.interval)),
-            max_updates=args.max_updates,
-            show_content=bool(args.show_content),
-            emit=args.emit,
-        )
-    finally:
-        fs.close()
 
 
 def resolve_stream_target(
@@ -526,9 +520,118 @@ def resolve_stream_target(
     return root, path, args.id
 
 
+def pick_listed_session(
+    source: str,
+    args: argparse.Namespace,
+    *,
+    require_tty: bool,
+) -> tuple[str, str, str | None] | None:
+    """List the store and pick one session. None means the user quit."""
+    root = resolve_root(source, args.root)
+    if args.id:
+        path = resolve_path(source, root, None, args.id, args.limit)
+        return root, path, args.id
+    if require_tty and not sys.stdin.isatty():
+        raise TrajectoryError(
+            "invalid_input",
+            "stream without --path/--id needs a TTY to pick a session, "
+            "or pass --path / --id --root. Use browse --watch to pick from the store UI.",
+        )
+    page = list_trajectories(source=source, root=root, limit=args.limit)
+    if not page.items:
+        print_empty(source)
+        return None
+    selected = prompt_session(page.items)
+    if selected is None:
+        return None
+    return root, selected.path, selected.id
+
+
+def follow_file_session(
+    source: str,
+    root: str,
+    path: str,
+    group_id: str | None,
+    *,
+    emit: EmitMode,
+    follow: bool,
+    interval: float,
+    max_updates: int | None,
+    show_content: bool,
+) -> int:
+    """Follow one JSONL file. Caller owns process lifetime (not a daemon)."""
+    # Grok history lines do not embed the session id; listing id is the group.
+    # Other file sources lock group from the transcript — a listing stem that
+    # disagrees with the session record would reset instead of showing a tail.
+    if source != "grok-build":
+        group_id = None
+    delivery = emit_to_delivery(emit)
+    stream_opts = StreamOptions(source=source, group_id=group_id, delivery=delivery)
+
+    print(f"{BOLD}{CYAN}Trajectory stream{RESET}  {DIM}live file follow (not a daemon){RESET}")
+    print(f"{DIM}source{RESET}   {source}")
+    print(f"{DIM}root{RESET}     {root}")
+    print(f"{DIM}path{RESET}     {path}")
+    print(f"{DIM}emit{RESET}     {emit} (delivery={delivery})")
+    print(f"{DIM}follow{RESET}   {follow}")
+    if not show_content:
+        print(f"{DIM}Privacy: content hidden unless --show-content.{RESET}")
+    if follow:
+        print()
+        print(
+            f"{BOLD}Following live.{RESET} Showing the latest records (tail), "
+            f"not the start of the session."
+        )
+        if source == "grok-build":
+            print(
+                f"{DIM}Grok chat_history.jsonl grows when a conversation item is committed "
+                f"(not token-by-token updates.jsonl).{RESET}"
+            )
+        print(f"{DIM}Ctrl-C stops. A watching line ticks while waiting for new complete lines.{RESET}")
+    print()
+
+    fs = FileTrajectoryStream.open(
+        FileStreamOptions(
+            root=root,
+            path=path,
+            source=source,
+            group_id=group_id,
+            stream=stream_opts,
+            poll_interval=max(0.0, float(interval)),
+        )
+    )
+    try:
+        return _consume_file_stream(
+            fs,
+            path=path,
+            follow=follow,
+            interval=max(0.0, float(interval)),
+            max_updates=max_updates,
+            show_content=show_content,
+            emit=emit,
+        )
+    finally:
+        fs.close()
+
+
+def _file_size_bytes(path: str) -> int | None:
+    try:
+        return Path(path).stat().st_size
+    except OSError:
+        return None
+
+
+def utc_stamp(now: datetime | None = None) -> str:
+    clock = now if now is not None else datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    return clock.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _consume_file_stream(
     fs: FileTrajectoryStream,
     *,
+    path: str,
     follow: bool,
     interval: float,
     max_updates: int | None,
@@ -536,10 +639,13 @@ def _consume_file_stream(
     emit: EmitMode,
 ) -> int:
     seen = 0
+    last_beat = 0.0
     # Always poll at least once for the initial snapshot / current prefix.
     while True:
         update = fs.poll()
         if update is not None and update.kind != "unchanged":
+            if follow and sys.stdout.isatty():
+                print()
             seen += 1
             print_stream_update(update, show_content=show_content, emit=emit, index=seen)
             if max_updates is not None and seen >= max_updates:
@@ -548,9 +654,24 @@ def _consume_file_stream(
             break
         if max_updates is not None and seen >= max_updates:
             break
+        now = time.monotonic()
+        if now - last_beat >= 1.0:
+            last_beat = now
+            size = _file_size_bytes(path)
+            size_label = f"{size} B" if size is not None else "—"
+            line = (
+                f"watching  {utc_stamp()}  file={size_label}  "
+                f"last update #{seen or '—'}  waiting for new complete lines"
+            )
+            if sys.stdout.isatty():
+                print(f"\r{line:<100}", end="", flush=True)
+            else:
+                print(f"{DIM}{line}{RESET}")
         if interval > 0:
             time.sleep(interval)
 
+    if follow and sys.stdout.isatty():
+        print()
     if seen == 0:
         print(f"{DIM}No stream updates (empty or unchanged prefix).{RESET}")
     else:
@@ -699,6 +820,26 @@ def _open_ahp_demo_transport(
     return pair.client, host
 
 
+def _cursor_offset_label(position: Any) -> str:
+    kind = getattr(position, "kind", type(position).__name__)
+    nxt = getattr(position, "next_byte_offset", None)
+    pending = getattr(position, "pending_byte_length", None)
+    if nxt is not None:
+        pending_n = pending if pending is not None else 0
+        return f"{kind} next={nxt} pending={pending_n}"
+    return str(kind)
+
+
+def _record_time_label(rec: dict[str, Any]) -> str:
+    raw = rec.get("timestamp") or rec.get("source_timestamp")
+    if not isinstance(raw, str):
+        return "—"
+    parsed = parse_listing_time(raw)
+    if parsed is None:
+        return truncate(raw, 20)
+    return parsed.strftime("%H:%M:%SZ")
+
+
 def print_stream_update(
     update: StreamUpdate,
     *,
@@ -707,7 +848,8 @@ def print_stream_update(
     index: int,
 ) -> None:
     """Privacy-safe stream update summary. Content opt-in only."""
-    print(f"{BOLD}── stream update #{index} ──{RESET}")
+    stamp = utc_stamp()
+    print(f"{BOLD}── {stamp}  stream update #{index}  (just now) ──{RESET}")
     print(f"{DIM}kind{RESET}       {update.kind}")
     print(
         f"{DIM}revision{RESET}   {update.revision.revision} "
@@ -715,10 +857,9 @@ def print_stream_update(
     )
     cursor = update.cursor
     pos = cursor.position
-    pos_kind = getattr(pos, "kind", type(pos).__name__)
     print(
         f"{DIM}cursor{RESET}     source={cursor.source} group={truncate(cursor.group_id, 40)} "
-        f"gen={cursor.generation} pos={pos_kind}"
+        f"gen={cursor.generation} pos={_cursor_offset_label(pos)}"
     )
     if update.snapshot is not None:
         n = len(update.snapshot.records)
@@ -742,23 +883,37 @@ def print_stream_update(
     if update.error is not None:
         print(f"{RED}error{RESET}      {update.error.code}: {update.error.message}")
 
-    if show_content and update.snapshot is not None:
+    if update.snapshot is not None and update.snapshot.records:
+        records = update.snapshot.records
+        tail = records[-20:]
+        start = len(records) - len(tail) + 1
         print(
-            f"\n{RED}{BOLD}WARNING{RESET}{RED}: --show-content prints "
-            f"transcript-derived text. Treat as private.{RESET}"
+            f"{DIM}latest {len(tail)} of {len(records)} records (live tail):{RESET}"
         )
-        for i, stream_rec in enumerate(update.snapshot.records[:40], start=1):
+        if show_content:
+            print(
+                f"{RED}{BOLD}WARNING{RESET}{RED}: --show-content prints "
+                f"transcript-derived text. Treat as private.{RESET}"
+            )
+        for offset, stream_rec in enumerate(tail):
             rec = stream_rec.record
             role = str(rec.get("role") or "?")
             kind = str(rec.get("kind") or rec.get("type") or "?")
-            content = rec.get("content")
-            if isinstance(content, str):
-                snip = truncate(content, 80)
+            when = _record_time_label(rec if isinstance(rec, dict) else {})
+            if show_content:
+                content = rec.get("content") if isinstance(rec, dict) else None
+                if isinstance(content, str):
+                    snip = truncate(content, 80)
+                else:
+                    snip = truncate(json.dumps(rec, ensure_ascii=False)[:120], 80)
             else:
-                snip = truncate(json.dumps(rec, ensure_ascii=False)[:120], 80)
-            print(f"  {i:>3}  {stream_rec.status:<12} {role:<10} {kind:<20} {snip}")
-        if len(update.snapshot.records) > 40:
-            print(f"{DIM}Showing first 40 of {len(update.snapshot.records)} records.{RESET}")
+                snip = "(content hidden)"
+            print(
+                f"  {start + offset:>3}  {when:<9}  {stream_rec.status:<12} "
+                f"{role:<10} {kind:<20} {snip}"
+            )
+        if not show_content:
+            print(f"{DIM}Content omitted (privacy). Re-run with --show-content for snippets.{RESET}")
     elif not show_content:
         print(f"{DIM}Content omitted (privacy). Re-run with --show-content for snippets.{RESET}")
     print()
@@ -769,6 +924,13 @@ def run_browse(args: argparse.Namespace) -> int:
     print(f"{DIM}Privacy: content is hidden unless --show-content.{RESET}\n")
 
     source = args.source if args.source is not None else prompt_source()
+    if args.watch and source not in STREAM_FILE_SOURCES:
+        raise TrajectoryError(
+            "invalid_input",
+            "Watch live supports file JSONL sources only: "
+            f"{', '.join(STREAM_FILE_SOURCES)}. Use show for Hermes exports; "
+            "ahp-stream for AHP.",
+        )
     root = resolve_root(source, args.root)
     print(f"{DIM}Default for {source}:{RESET} {describe_default(source)}")
     print(f"{DIM}Using root{RESET} {root}\n")
@@ -776,17 +938,27 @@ def run_browse(args: argparse.Namespace) -> int:
     page = list_trajectories(source=source, root=root, limit=args.limit)
     if not page.items:
         print_empty(source)
+        if args.watch or args.id:
+            return 0
         answer = input("Normalize a transcript file by path instead? [y/N] ").strip().lower()
         if answer in ("y", "yes"):
             file_path = expand_home(input("Path to transcript: ").strip())
             return print_summary(source, file_path, args.show_content, args.format)
         return 0
 
-    selected = prompt_session(page.items)
-    if selected is None:
-        return 0
+    if args.id:
+        selected = next((item for item in page.items if item.id == args.id), None)
+        if selected is None:
+            raise TrajectoryError(
+                "invalid_input",
+                f"Session id '{args.id}' not found under {root}.",
+            )
+    else:
+        selected = prompt_session(page.items)
+        if selected is None:
+            return 0
     print()
-    return print_summary(source, selected.path, args.show_content, args.format)
+    return view_selected_session(source, root, selected, args)
 
 
 def resolve_path(
@@ -947,15 +1119,90 @@ def truncate(value: str, max_len: int) -> str:
     return value[: max_len - 1] + "…"
 
 
+def parse_listing_time(value: str | None) -> datetime | None:
+    """Parse a listing ``updated_at`` as UTC. Returns None when missing/invalid."""
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def format_relative_time(
+    value: str | None,
+    *,
+    now: datetime | None = None,
+) -> str:
+    """Human last-active label for the picker (just now / 5m ago / date)."""
+    parsed = parse_listing_time(value)
+    if parsed is None:
+        return "—"
+    clock = now if now is not None else datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    seconds = int((clock - parsed).total_seconds())
+    if seconds < 5:
+        return "just now"
+    if seconds < 60:
+        return f"{seconds}s ago"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    if days < 7:
+        return f"{days}d ago"
+    return parsed.date().isoformat()
+
+
+def sort_sessions_by_active(
+    items: Sequence[TrajectoryListing],
+) -> list[TrajectoryListing]:
+    """Most recently active first; missing timestamps last; id ordinal tie-break."""
+
+    def key(item: TrajectoryListing) -> tuple[float, str]:
+        parsed = parse_listing_time(item.updated_at)
+        epoch = parsed.timestamp() if parsed is not None else float("-inf")
+        return (-epoch, item.id)
+
+    return sorted(items, key=key)
+
+
+def format_session_choice(
+    item: TrajectoryListing,
+    *,
+    now: datetime | None = None,
+) -> str:
+    rel = format_relative_time(item.updated_at, now=now)
+    title = (item.title or "").strip()
+    label = truncate(title, 48) if title else "—"
+    return f"{rel:<10}  {label}  {item.id}"
+
+
 def print_listing(items: Sequence[TrajectoryListing]) -> None:
-    id_w = min(36, max(8, max((len(item.id) for item in items), default=8)))
-    header = f"{'Id':<{id_w}}  {'Updated (UTC)':<24}  {'Size':>8}  Path"
+    ordered = sort_sessions_by_active(items)
+    id_w = min(36, max(8, max((len(item.id) for item in ordered), default=8)))
+    header = f"{'Active':<10}  {'Id':<{id_w}}  {'Title':<32}  {'Size':>8}  Path"
     print(header)
-    print("-" * min(100, len(header) + 20))
-    for item in items:
-        updated = item.updated_at or "—"
+    print("-" * min(120, len(header) + 20))
+    for item in ordered:
+        title = truncate((item.title or "").strip() or "—", 32)
         size = format_bytes(item.size_bytes) if item.size_bytes is not None else "—"
-        print(f"{item.id:<{id_w}}  {updated:<24}  {size:>8}  {item.path}")
+        print(
+            f"{format_relative_time(item.updated_at):<10}  {item.id:<{id_w}}  "
+            f"{title:<32}  {size:>8}  {item.path}"
+        )
 
 
 def format_bytes(size: int) -> str:
@@ -1008,28 +1255,99 @@ def prompt_source() -> str:
 
 
 def prompt_session(items: Sequence[TrajectoryListing]) -> TrajectoryListing | None:
-    print(f"Sessions ({len(items)}):")
-    for index, item in enumerate(items, start=1):
-        updated = item.updated_at or "—"
-        size = (
-            format_bytes(item.size_bytes) if item.size_bytes is not None else "—"
-        )
-        print(
-            f"  {index:>2}) {item.id}  {DIM}{updated}{RESET}  {size}  {item.path}"
-        )
+    ordered = sort_sessions_by_active(items)
+    print(f"Sessions ({len(ordered)}, most recently active first):")
+    for index, item in enumerate(ordered, start=1):
+        print(f"  {index:>2}) {format_session_choice(item)}")
     print("   0) quit")
     while True:
-        answer = input(f"Select session [0-{len(items)}]: ").strip()
+        answer = input(f"Select session [0-{len(ordered)}]: ").strip()
         if answer == "0":
             return None
         if answer.isdigit():
             n = int(answer)
-            if 1 <= n <= len(items):
-                return items[n - 1]
-        by_id = next((item for item in items if item.id == answer), None)
+            if 1 <= n <= len(ordered):
+                return ordered[n - 1]
+        by_id = next((item for item in ordered if item.id == answer), None)
         if by_id is not None:
             return by_id
         print(f"{YELLOW}Invalid choice.{RESET}")
+
+
+def prompt_view_action(*, can_watch: bool) -> str:
+    """Ask Watch live / Show snapshot / Quit. Returns watch|snapshot|quit."""
+    print("How do you want to view this session?")
+    choices: list[tuple[str, str, str]] = []
+    if can_watch:
+        choices.append(("1", "watch", "Watch live (follow as it grows)"))
+    choices.append((str(len(choices) + 1), "snapshot", "Show snapshot (one-shot normalize)"))
+    print("   0) Quit")
+    for key, _action, label in choices:
+        print(f"   {key}) {label}")
+    default = "watch" if can_watch else "snapshot"
+    default_key = "1"
+    while True:
+        answer = input(f"Select view [{default_key}=default, 0 quits]: ").strip().lower()
+        if answer in ("", default_key):
+            return default
+        if answer in ("0", "q", "quit"):
+            return "quit"
+        if answer in ("w", "watch", "live") and can_watch:
+            return "watch"
+        if answer in ("s", "snapshot", "show"):
+            return "snapshot"
+        for key, action, _label in choices:
+            if answer == key:
+                return action
+        print(f"{YELLOW}Invalid choice.{RESET}")
+
+
+def view_selected_session(
+    source: str,
+    root: str,
+    selected: TrajectoryListing,
+    args: argparse.Namespace,
+) -> int:
+    can_watch = source in STREAM_FILE_SOURCES
+    if args.watch:
+        if not can_watch:
+            raise TrajectoryError(
+                "invalid_input",
+                "Watch live supports file JSONL sources only: "
+                f"{', '.join(STREAM_FILE_SOURCES)}. Use show for Hermes exports; "
+                "ahp-stream for AHP.",
+            )
+        return follow_file_session(
+            source,
+            root,
+            selected.path,
+            selected.id,
+            emit=args.emit,
+            follow=True,
+            interval=max(0.0, float(args.interval)),
+            max_updates=args.max_updates,
+            show_content=bool(args.show_content),
+        )
+    # Scripted --id without --watch stays a one-shot snapshot (no TTY prompt).
+    if args.id and not sys.stdin.isatty():
+        return print_summary(source, selected.path, args.show_content, args.format)
+
+    action = prompt_view_action(can_watch=can_watch)
+    if action == "quit":
+        return 0
+    if action == "watch":
+        return follow_file_session(
+            source,
+            root,
+            selected.path,
+            selected.id,
+            emit=args.emit,
+            follow=True,
+            interval=max(0.0, float(args.interval)),
+            max_updates=args.max_updates,
+            show_content=bool(args.show_content),
+        )
+    return print_summary(source, selected.path, args.show_content, args.format)
 
 
 def print_help() -> None:
@@ -1039,11 +1357,12 @@ def print_help() -> None:
 Not a daemon. The calling process owns lifetime, store roots, and AHP transport.
 
 Usage:
-  trajectory [browse] [--source <src>] [--root <path>] [--limit N] [--show-content]
+  trajectory [browse] [--source <src>] [--root <path>] [--limit N] [--show-content] \\
+             [--watch] [--id <id>] [--max-updates N]
   trajectory list --source <src> [--root <path>] [--limit N]
   trajectory show --source <src> (--path <file> | --id <id>) [--root <path>] \\
                   [--format both|messages|hypabolic] [--show-content]
-  trajectory stream --source <src> (--path <file> | --id <id> --root <store>) \\
+  trajectory stream --source <src> [--path <file> | --id <id> --root <store>] \\
                     [--emit snapshot+delta|snapshot|delta] [--follow] \\
                     [--interval 0.05] [--max-updates N] [--show-content]
   trajectory ahp-stream --url fake://demo --chat <ahp-chat:/…> \\
@@ -1059,6 +1378,10 @@ Sources: """
 File stream sources: """
         + ", ".join(STREAM_FILE_SOURCES)
         + """
+
+browse: pick a session, then Watch live or Show snapshot. --watch skips the
+prompt and follows immediately. stream without --path/--id picks from the
+store on a TTY and follows (not a daemon).
 
 Default roots:
   pi           ~/.pi/agent

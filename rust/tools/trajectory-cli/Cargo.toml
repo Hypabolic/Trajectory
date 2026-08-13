@@ -13,6 +13,7 @@ name = "trajectory"
 path = "src/main.rs"
 
 [dependencies]
+chrono.workspace = true
 clap = { version = "4.5.28", features = ["derive", "env"] }
 dialoguer = { version = "0.11.0", default-features = true }
 hypabolic-trajectory = { path = "../../crates/hypabolic-trajectory" }
