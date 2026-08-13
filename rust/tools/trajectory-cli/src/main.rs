@@ -169,13 +169,13 @@ enum Commands {
         #[arg(long)]
         max_updates: Option<usize>,
     },
-    /// Demo optional AHP client with fake:// FakeAhpHost (not a daemon).
+    /// Demo optional AHP client with <fake://> `FakeAhpHost` (not a daemon).
     #[command(name = "ahp-stream")]
     AhpStream {
-        /// Host URL. Sample supports fake:// only.
+        /// Host URL. Sample supports <fake://> only.
         #[arg(long, default_value = "fake://demo")]
         url: String,
-        /// AHP chat channel URI (ahp-chat:/…).
+        /// AHP chat channel URI (`ahp-chat:/`…).
         #[arg(long)]
         chat: String,
         /// Optional subscribe fromSeq.
@@ -184,10 +184,10 @@ enum Commands {
         /// Auth token for callback (never stored on stream state).
         #[arg(long)]
         token: Option<String>,
-        /// fake://: Shape A snapshot JSON for FakeAhpHost.
+        /// <fake://>: Shape A snapshot JSON for `FakeAhpHost`.
         #[arg(long)]
         snapshot_path: Option<PathBuf>,
-        /// fake://: ActionEnvelope JSONL for FakeAhpHost.
+        /// <fake://>: `ActionEnvelope` JSONL for `FakeAhpHost`.
         #[arg(long)]
         actions_path: Option<PathBuf>,
         /// Delivery: snapshot+delta (default), snapshot, or delta.
@@ -244,7 +244,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn host_to_trajectory(error: HostError) -> TrajectoryError {
+fn host_to_trajectory(error: &HostError) -> TrajectoryError {
     TrajectoryError::new(error.code, error.message)
 }
 
@@ -316,11 +316,11 @@ fn run_stream(
         reconcile_every: 0,
         source_revision: "file-0".into(),
     })
-    .map_err(host_to_trajectory)?;
+    .map_err(|error| host_to_trajectory(&error))?;
 
     let mut seen = 0usize;
     loop {
-        let update = fs.poll().map_err(host_to_trajectory)?;
+        let update = fs.poll().map_err(|error| host_to_trajectory(&error))?;
         if let Some(update) = update {
             if update.kind != "unchanged" {
                 seen += 1;
@@ -416,8 +416,7 @@ fn run_ahp_stream(
 
     let scheme = url
         .split_once(':')
-        .map(|(s, _)| s.to_ascii_lowercase())
-        .unwrap_or_else(|| url.to_ascii_lowercase());
+        .map_or_else(|| url.to_ascii_lowercase(), |(s, _)| s.to_ascii_lowercase());
     if scheme != "fake" && scheme != "memory" && scheme != "test" {
         return Err(TrajectoryError::new(
             "invalid_input",

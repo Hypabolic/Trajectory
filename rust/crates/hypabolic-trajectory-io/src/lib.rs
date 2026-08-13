@@ -146,20 +146,17 @@ impl FileTrajectoryStream {
             });
         }
 
-        let stream_opts = match options.stream {
-            Some(mut opts) => {
-                if options.group_id.is_some() && opts.group_id.is_none() {
-                    opts.group_id = options.group_id.clone();
-                }
-                opts
+        let stream_opts = if let Some(mut opts) = options.stream {
+            if options.group_id.is_some() && opts.group_id.is_none() {
+                opts.group_id.clone_from(&options.group_id);
             }
-            None => {
-                let mut opts = StreamOptions::new(options.source);
-                if let Some(g) = options.group_id {
-                    opts = opts.with_group_id(g);
-                }
-                opts
+            opts
+        } else {
+            let mut opts = StreamOptions::new(options.source);
+            if let Some(g) = options.group_id {
+                opts = opts.with_group_id(g);
             }
+            opts
         };
 
         Ok(Self {
@@ -361,7 +358,7 @@ impl FileTrajectoryStream {
     fn stat_identity(&self) -> Result<(u64, FileIdentity), HostError> {
         match fs::metadata(&self.path) {
             Ok(meta) => Ok((meta.len(), file_identity(&meta))),
-            Err(err) => Err(map_io_error(err, &self.path)),
+            Err(err) => Err(map_io_error(&err, &self.path)),
         }
     }
 
@@ -369,16 +366,17 @@ impl FileTrajectoryStream {
         if end <= start {
             return Ok(Vec::new());
         }
-        let mut file = File::open(&self.path).map_err(|e| map_io_error(e, &self.path))?;
+        let mut file = File::open(&self.path).map_err(|e| map_io_error(&e, &self.path))?;
         file.seek(SeekFrom::Start(start))
-            .map_err(|e| map_io_error(e, &self.path))?;
-        let mut buf = vec![0_u8; (end - start) as usize];
+            .map_err(|e| map_io_error(&e, &self.path))?;
+        let len = usize::try_from(end - start).unwrap_or(usize::MAX);
+        let mut buf = vec![0_u8; len];
         let mut read = 0;
         while read < buf.len() {
             match file.read(&mut buf[read..]) {
                 Ok(0) => break,
                 Ok(n) => read += n,
-                Err(e) => return Err(map_io_error(e, &self.path)),
+                Err(e) => return Err(map_io_error(&e, &self.path)),
             }
         }
         buf.truncate(read);
@@ -462,7 +460,7 @@ fn stream_error_from_core(state: &StreamState, err: TrajectoryError) -> StreamUp
     }
 }
 
-fn map_io_error(err: std::io::Error, path: &Path) -> HostError {
+fn map_io_error(err: &std::io::Error, path: &Path) -> HostError {
     let code = match err.kind() {
         std::io::ErrorKind::NotFound => HOST_IO_NOT_FOUND,
         std::io::ErrorKind::PermissionDenied => HOST_IO_PERMISSION,
@@ -485,9 +483,7 @@ fn canonicalize_or_abs(path: &Path) -> PathBuf {
         let abs = if path.is_absolute() {
             path.to_path_buf()
         } else {
-            std::env::current_dir()
-                .map(|cwd| cwd.join(path))
-                .unwrap_or_else(|_| path.to_path_buf())
+            std::env::current_dir().map_or_else(|_| path.to_path_buf(), |cwd| cwd.join(path))
         };
         // Canonicalize fails for non-existent paths; still collapse ".." / "." so
         // Path::starts_with cannot treat {root}/../outside as under root (LS-09).
@@ -495,7 +491,7 @@ fn canonicalize_or_abs(path: &Path) -> PathBuf {
     })
 }
 
-/// Collapse `.` / `..` without touching the filesystem (parity with GetFullPath / path.resolve).
+/// Collapse `.` / `..` without touching the filesystem (parity with `GetFullPath` / `path.resolve`).
 fn normalize_lexically(path: &Path) -> PathBuf {
     use std::path::Component;
     let mut out: Vec<Component<'_>> = Vec::new();
@@ -510,7 +506,7 @@ fn normalize_lexically(path: &Path) -> PathBuf {
                     out.pop();
                 }
                 // Already at root/prefix: drop `..` (absolute paths cannot escape).
-                Some(Component::RootDir) | Some(Component::Prefix(_)) => {}
+                Some(Component::RootDir | Component::Prefix(_)) => {}
                 // Relative path that still needs a leading `..`.
                 Some(Component::ParentDir) | None => out.push(Component::ParentDir),
                 Some(Component::CurDir) => unreachable!("CurDir is never retained"),
@@ -531,27 +527,26 @@ fn file_identity(meta: &fs::Metadata) -> FileIdentity {
         .modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_nanos());
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        return FileIdentity {
+        FileIdentity {
             dev: meta.dev(),
             ino: meta.ino(),
             mtime_ns,
-        };
+        }
     }
     #[cfg(windows)]
     {
         // file_index()/volume_serial_number() require unstable windows_by_handle.
         // Stable identity: size + creation + write timestamps (M2 same-size replace).
         use std::os::windows::fs::MetadataExt;
-        return FileIdentity {
+        FileIdentity {
             dev: meta.creation_time(),
             ino: meta.file_size() ^ meta.last_write_time(),
             mtime_ns,
-        };
+        }
     }
     #[cfg(not(any(unix, windows)))]
     {
@@ -895,7 +890,7 @@ mod tests {
         let mut original = SESSION_LINE.to_vec();
         original.extend_from_slice(USER_LINE);
         let mut replaced = SESSION_LINE.to_vec();
-        let hallo = USER_LINE.iter().copied().collect::<Vec<u8>>();
+        let hallo = USER_LINE.to_vec();
         let hallo = String::from_utf8(hallo)
             .unwrap()
             .replace("\"hello\"", "\"hallo\"");

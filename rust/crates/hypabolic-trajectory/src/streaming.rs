@@ -1,5 +1,5 @@
 //! Live session streaming core (LS-03 / LS-04 / LS-05 / LS-06 / LS-07).
-//! Pure algorithm: no filesystem watchers, network, or SQLite.
+//! Pure algorithm: no filesystem watchers, network, or `SQLite`.
 
 use serde_json::{Map, Value};
 
@@ -70,10 +70,21 @@ pub fn json_safe_int(value: i64, non_negative: bool) -> Result<i64, TrajectoryEr
 
 /// Require a non-negative JSON-safe integer from a `u64` wire field.
 pub fn json_safe_u64(value: u64) -> Result<i64, TrajectoryError> {
-    if value > JSON_SAFE_INTEGER_MAX as u64 {
-        return Err(TrajectoryError::new("invalid_input", MSG_JSON_SAFE_INTEGER));
-    }
-    Ok(value as i64)
+    let value = i64::try_from(value)
+        .map_err(|_| TrajectoryError::new("invalid_input", MSG_JSON_SAFE_INTEGER))?;
+    json_safe_int(value, true)
+}
+
+/// Convert `usize` to `i64`, saturating at [`i64::MAX`] when the value does not fit.
+#[must_use]
+pub(crate) fn usize_to_i64(value: usize) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
+}
+
+/// Convert a non-negative `i64` to `u64`, saturating at [`u64::MAX`].
+#[must_use]
+fn i64_to_u64(value: i64) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 /// Parse a JSON number as a JSON-safe stream integer (no decimal-string fallback).
@@ -269,7 +280,7 @@ pub struct StreamRevision {
     pub generation: u64,
 }
 
-/// Stream diagnostic (snake_case wire fields).
+/// Stream diagnostic (`snake_case` wire fields).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamDiagnostic {
     /// Code.
@@ -624,7 +635,7 @@ pub struct StreamState {
     pub finished: bool,
     /// Whether group is locked from material.
     pub group_locked: bool,
-    /// Last accepted append-bytes segment + pre-apply next_byte_offset.
+    /// Last accepted append-bytes segment + pre-apply `next_byte_offset`.
     /// True replay requires re-supply with that pre-apply cursor (not content alone).
     pub last_append_segment: Option<Vec<u8>>,
     /// `next_byte_offset` observed before the last accepted append.
@@ -647,7 +658,7 @@ pub struct StreamState {
     pub last_ahp_actions_sha256: Option<String>,
     /// `ahp_last_server_seq` before the last accepted action batch.
     pub last_ahp_actions_pre_seq: Option<i64>,
-    /// Stable provisional-id mapping for AHP activeTurn native keys → provisional_id.
+    /// Stable provisional-id mapping for AHP `activeTurn` native keys → `provisional_id`.
     pub ahp_provisional_map: std::collections::BTreeMap<String, String>,
     /// Ordered active-row fingerprints of last Hermes export (LS-07h).
     pub hermes_row_fingerprints: Option<Vec<String>>,
@@ -757,7 +768,7 @@ pub fn snapshot_to_value(s: &StreamSnapshot) -> Result<Value, TrajectoryError> {
     Ok(Value::Object(map))
 }
 
-/// Serialize stream update to JSON value (wire snake_case).
+/// Serialize stream update to JSON value (wire `snake_case`).
 pub fn update_to_value(u: &StreamUpdate) -> Result<Value, TrajectoryError> {
     let mut map = Map::new();
     map.insert("kind".into(), Value::String(u.kind.clone()));
@@ -862,7 +873,7 @@ pub fn diff_snapshots(
     current: &StreamSnapshot,
     revision: &StreamRevision,
 ) -> StreamDelta {
-    let prior_records = prior.map(|s| s.records.as_slice()).unwrap_or(&[]);
+    let prior_records = prior.map_or(&[][..], |s| s.records.as_slice());
     let mut prior_keys: Vec<(String, &StreamRecord)> = prior_records
         .iter()
         .filter_map(|r| {
@@ -933,8 +944,7 @@ pub fn diff_snapshots(
     }
 
     let prior_diags: std::collections::BTreeMap<String, &StreamDiagnostic> = prior
-        .map(|s| s.diagnostics.as_slice())
-        .unwrap_or(&[])
+        .map_or(&[][..], |s| s.diagnostics.as_slice())
         .iter()
         .map(|d| (diagnostic_key(&d.code, d.input_line, d.record_index), d))
         .collect();
@@ -1332,7 +1342,7 @@ fn any_line_too_long(data: &[u8], max_line_bytes: i64) -> bool {
     let mut start = 0usize;
     for (i, b) in data.iter().enumerate() {
         if *b == b'\n' {
-            let line_len = (i - start + 1) as i64;
+            let line_len = usize_to_i64(i - start + 1);
             if line_len > max_line_bytes {
                 return true;
             }
@@ -1380,7 +1390,7 @@ fn reset_to_value(reset: &StreamReset) -> Result<Value, TrajectoryError> {
     Ok(Value::Object(map))
 }
 
-/// Serialize a stream cursor to wire snake_case JSON.
+/// Serialize a stream cursor to wire `snake_case` JSON.
 pub fn cursor_to_value(c: &StreamCursor) -> Result<Value, TrajectoryError> {
     let pos = match &c.position {
         StreamPosition::Byte(p) => {
@@ -1707,9 +1717,9 @@ pub fn apply_snapshot(
             .map(|d| {
                 project_stream_diagnostic(
                     &d.code,
-                    d.input_line.map(|n| n as i64),
-                    d.record_index.map(|n| n as i64),
-                    d.count.map(|n| n as i64),
+                    d.input_line.map(usize_to_i64),
+                    d.record_index.map(usize_to_i64),
+                    d.count.map(usize_to_i64),
                 )
             })
             .collect();
@@ -1823,7 +1833,7 @@ pub fn apply_snapshot(
         },
         consumed: StreamConsumed {
             complete_records: records.len() as u64,
-            bytes: committed_len as u64,
+            bytes: i64_to_u64(committed_len),
             first_source_position: if committed.is_empty() { None } else { Some(0) },
             last_source_position: if committed.is_empty() {
                 None
@@ -1850,7 +1860,7 @@ pub fn apply_snapshot(
 /// Frames against the pending buffer, extends the committed prefix, then
 /// re-normalizes the full committed prefix (oracle path). Append equals
 /// full-prefix snapshot on every shared fixture. The oracle path *is* the
-/// steady-state implementation (O(committed_prefix)); no separate incremental
+/// steady-state implementation (O(`committed_prefix`)); no separate incremental
 /// decoder requires a performance fallback in this slice.
 pub fn apply_append(
     state: &StreamState,
@@ -2004,11 +2014,11 @@ pub fn apply_append(
     // Always copy patched cursor onto StreamUpdate (updated and unchanged).
     update.cursor = new_state.cursor.clone();
     if update.kind == "updated" {
-        let prior_len = state.committed_prefix.len() as i64;
-        let complete_len = complete.len() as i64;
+        let prior_len = usize_to_i64(state.committed_prefix.len());
+        let complete_len = usize_to_i64(complete.len());
         update.consumed = StreamConsumed {
             complete_records: update.consumed.complete_records,
-            bytes: complete_len as u64,
+            bytes: i64_to_u64(complete_len),
             first_source_position: if complete_len > 0 {
                 Some(prior_len)
             } else {
@@ -2205,7 +2215,7 @@ pub fn apply_ahp_snapshot(
         .collect();
     finalized_ids.sort();
 
-    let material_len = material.len() as i64;
+    let material_len = usize_to_i64(material.len());
     let update = StreamUpdate {
         kind: "updated".into(),
         revision,
@@ -2305,28 +2315,18 @@ pub fn apply_ahp_actions(
 
     // Cursor checks: only enforce when caller supplies ahp-server-seq.
     if let Some(c) = cursor {
-        if matches!(c.position, StreamPosition::AhpServerSeq(_)) {
-            if let Some(conflict) = cursor_conflict(state, Some(c)) {
-                return Ok((state.clone(), conflict));
-            }
-        } else if !matches!(
-            c.position,
-            StreamPosition::AhpServerSeq(_) | StreamPosition::SnapshotRevision(_)
-        ) {
+        if !matches!(c.position, StreamPosition::SnapshotRevision(_)) {
             if let Some(conflict) = cursor_conflict(state, Some(c)) {
                 return Ok((state.clone(), conflict));
             }
         }
     }
 
-    let envelopes = match parse_action_batch(data) {
-        Ok(e) => e,
-        Err(_) => {
-            return Ok((
-                state.clone(),
-                error_update(state, "invalid_input", MSG_INVALID_AHP_ACTIONS),
-            ));
-        }
+    let Ok(envelopes) = parse_action_batch(data) else {
+        return Ok((
+            state.clone(),
+            error_update(state, "invalid_input", MSG_INVALID_AHP_ACTIONS),
+        ));
     };
     if envelopes.is_empty() {
         return Ok((state.clone(), unchanged(state)));
@@ -2433,7 +2433,7 @@ pub fn apply_ahp_actions(
     let extra_count = reduced.diagnostics.len();
 
     let last_seq = reduced.last_server_seq.unwrap_or(-1);
-    let data_len = data.len() as i64;
+    let data_len = usize_to_i64(data.len());
     let seq_cursor = StreamCursor {
         cursor_version: 1,
         source: new_state.cursor.source.clone(),
@@ -2468,9 +2468,11 @@ pub fn apply_ahp_actions(
     }
 
     let (out_snapshot, out_delta) = if let Some(snap) = &update.snapshot {
-        if diagnostics != snap.diagnostics {
+        if diagnostics == snap.diagnostics {
+            (update.snapshot.clone(), update.delta.clone())
+        } else {
             let mut snap2 = snap.clone();
-            snap2.diagnostics = diagnostics.clone();
+            snap2.diagnostics.clone_from(&diagnostics);
             let delta = diff_snapshots(state.snapshot.as_ref(), &snap2, &snap2.revision);
             let delivered = match state.options.delivery {
                 StreamDelivery::Both => (Some(snap2.clone()), Some(delta)),
@@ -2479,15 +2481,13 @@ pub fn apply_ahp_actions(
             };
             new_state.snapshot = Some(snap2);
             delivered
-        } else {
-            (update.snapshot.clone(), update.delta.clone())
         }
     } else {
         (update.snapshot.clone(), update.delta.clone())
     };
 
     if let Some(snap) = new_state.snapshot.as_mut() {
-        snap.diagnostics = diagnostics.clone();
+        snap.diagnostics.clone_from(&diagnostics);
     }
 
     let final_update = StreamUpdate {
@@ -2524,6 +2524,7 @@ struct AhpBuilt {
     provisional_map: std::collections::BTreeMap<String, String>,
 }
 
+#[allow(clippy::result_large_err)]
 fn build_ahp_records(state: &StreamState, material: &[u8]) -> Result<AhpBuilt, StreamUpdate> {
     let root: Value = match serde_json::from_slice(material) {
         Ok(v) => v,
@@ -2627,9 +2628,9 @@ fn build_ahp_records(state: &StreamState, material: &[u8]) -> Result<AhpBuilt, S
         .map(|d| {
             project_stream_diagnostic(
                 &d.code,
-                d.input_line.map(|n| n as i64),
-                d.record_index.map(|n| n as i64),
-                d.count.map(|n| n as i64),
+                d.input_line.map(usize_to_i64),
+                d.record_index.map(usize_to_i64),
+                d.count.map(usize_to_i64),
             )
         })
         .collect();
@@ -2707,12 +2708,11 @@ fn stable_provisional_id(
     mut provisional_map: std::collections::BTreeMap<String, String>,
     mut fallback_n: usize,
 ) -> (String, std::collections::BTreeMap<String, String>, usize) {
-    let native_key = match active_native_key(record, active_ids) {
-        Some(k) => k,
-        None => {
-            fallback_n += 1;
-            format!("__fallback:{fallback_n}")
-        }
+    let native_key = if let Some(k) = active_native_key(record, active_ids) {
+        k
+    } else {
+        fallback_n += 1;
+        format!("__fallback:{fallback_n}")
     };
     if let Some(existing) = provisional_map.get(&native_key) {
         return (existing.clone(), provisional_map, fallback_n);
@@ -2868,7 +2868,7 @@ pub fn finish_stream(state: &StreamState) -> Result<(StreamState, StreamUpdate),
         },
         consumed: StreamConsumed {
             complete_records: finalized.len() as u64,
-            bytes: material_len as u64,
+            bytes: i64_to_u64(material_len),
             first_source_position: None,
             last_source_position: None,
         },
@@ -3192,8 +3192,7 @@ pub fn apply_hermes_export(
         .to_string();
     let token = change_token
         .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| content_sha.clone());
+        .map_or_else(|| content_sha.clone(), str::to_string);
 
     if state.snapshot.is_some()
         && state.hermes_last_export_sha.as_deref() == Some(content_sha.as_str())
@@ -3319,9 +3318,9 @@ pub fn apply_hermes_export(
             .map(|d| {
                 project_stream_diagnostic(
                     &d.code,
-                    d.input_line.map(|n| n as i64),
-                    d.record_index.map(|n| n as i64),
-                    d.count.map(|n| n as i64),
+                    d.input_line.map(usize_to_i64),
+                    d.record_index.map(usize_to_i64),
+                    d.count.map(usize_to_i64),
                 )
             })
             .collect();
@@ -3415,7 +3414,7 @@ pub fn apply_hermes_export(
             last_source_position: if material.is_empty() {
                 None
             } else {
-                Some(material.len() as i64 - 1)
+                Some(usize_to_i64(material.len()) - 1)
             },
         },
         reset: None,
@@ -3440,7 +3439,7 @@ fn hermes_export_meta(material: &[u8]) -> Option<(Vec<String>, Option<i64>)> {
         Value::Object(o) => o.get("messages")?.as_array()?.clone(),
         _ => return None,
     };
-    if !messages.iter().all(|m| m.is_object()) {
+    if !messages.iter().all(Value::is_object) {
         return None;
     }
     let mut active: Vec<Value> = messages
@@ -3783,11 +3782,11 @@ mod tests {
         assert_eq!(update.kind, "unchanged");
         assert_eq!(
             state.cursor.position.pending_byte_length(),
-            incomplete.len() as i64
+            usize_to_i64(incomplete.len())
         );
         assert_eq!(
             update.cursor.position.pending_byte_length(),
-            incomplete.len() as i64
+            usize_to_i64(incomplete.len())
         );
         assert_eq!(state.pending_bytes, incomplete);
 
@@ -3800,7 +3799,7 @@ mod tests {
         assert_eq!(update.kind, "unchanged");
         assert_eq!(
             update.cursor.position.pending_byte_length(),
-            partial.len() as i64
+            usize_to_i64(partial.len())
         );
         let (state, update) = apply_append(&state, &tail, None, Some("gen-0")).unwrap();
         assert_eq!(update.kind, "updated");
@@ -3921,7 +3920,7 @@ mod tests {
         assert_eq!(state2.committed_prefix.len(), line.len() * 2);
         assert_eq!(
             state2.cursor.position.next_byte_offset(),
-            (line.len() * 2) as i64
+            usize_to_i64(line.len() * 2)
         );
     }
 
@@ -4352,7 +4351,7 @@ mod tests {
         let body = format!(r#"{{"not-valid":"{secret_ahp}"}}"#);
         let (_, u3) = apply_ahp_snapshot(&state, body.as_bytes(), "gen-0", None).unwrap();
         assert_eq!(u3.kind, "error");
-        let err_msg = u3.error.as_ref().map(|(_, m)| m.as_str()).unwrap_or("");
+        let err_msg = u3.error.as_ref().map_or("", |(_, m)| m.as_str());
         assert!(!err_msg.contains(secret_ahp));
     }
 
@@ -4373,7 +4372,7 @@ mod tests {
         assert!(!u2.reset.as_ref().unwrap().requires_snapshot);
         assert_eq!(
             state2.cursor.position.next_byte_offset(),
-            short.len() as i64
+            usize_to_i64(short.len())
         );
     }
 

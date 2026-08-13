@@ -1,7 +1,7 @@
 //! LS-11 sample CLI stream / ahp-stream coverage (Rust).
 //!
 //! Spawns the unpublished `trajectory` binary against temp stores and
-//! FakeAhpHost fixtures only (mirrors python/tests/test_ls11_sample_cli_stream.py).
+//! `FakeAhpHost` fixtures only (mirrors `python/tests/test_ls11_sample_cli_stream.py`).
 
 #![allow(missing_docs)]
 

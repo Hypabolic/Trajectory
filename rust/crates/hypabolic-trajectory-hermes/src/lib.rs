@@ -240,7 +240,7 @@ impl HermesStore for MemoryHermesStore {
     }
 }
 
-/// SQLite Hermes provider (optional feature).
+/// `SQLite` Hermes provider (optional feature).
 #[cfg(feature = "sqlite")]
 pub struct SqliteHermesProvider {
     path: PathBuf,
@@ -351,7 +351,7 @@ impl SqliteHermesProvider {
             Some(v) => Some(v.to_string()),
             None => None,
         };
-        let active = if is_inactive(row) { 0 } else { 1 };
+        let active = i32::from(!is_inactive(row));
         conn.execute(
             "INSERT INTO messages
              (id, session_id, role, content, tool_call_id, tool_calls, tool_name,
@@ -551,6 +551,7 @@ pub struct HermesProviderStream {
 }
 
 impl HermesProviderStream {
+    #[must_use]
     pub fn open(options: HermesProviderOptions) -> Self {
         let group = options
             .group_id
@@ -675,7 +676,7 @@ mod tests {
                 json!({"id": 1, "role": "user", "content": "hi", "timestamp": 101.0, "active": 1}),
             )
             .unwrap();
-        let mut stream = HermesProviderStream::open(HermesProviderOptions {
+        let stream = HermesProviderStream::open(HermesProviderOptions {
             session_id: "sess-mem".into(),
             store: Box::new(store),
             stream: None,

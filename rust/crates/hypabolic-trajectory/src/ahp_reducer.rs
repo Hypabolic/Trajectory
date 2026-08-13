@@ -1,5 +1,5 @@
 //! AHP Shape B action-log reducer (LS-07).
-//! Pure function: reduce ActionEnvelope batches into ChatState-like JSON,
+//! Pure function: reduce `ActionEnvelope` batches into `ChatState`-like JSON,
 //! then decode via existing Shape A path. No network. Protocol pin: 0.7.x.
 
 use serde_json::{Map, Value, json};
@@ -45,7 +45,7 @@ fn is_known_chat(action_type: &str) -> bool {
     KNOWN_CHAT.contains(&action_type)
 }
 
-/// Create a minimal empty ChatState-like object.
+/// Create a minimal empty `ChatState`-like object.
 #[must_use]
 pub fn empty_chat_state(resource: Option<&str>) -> Value {
     json!({
@@ -149,7 +149,14 @@ fn parse_seq(v: Option<&Value>) -> Option<i64> {
         Some(Value::Number(n)) => n
             .as_i64()
             .or_else(|| n.as_u64().and_then(|u| i64::try_from(u).ok()))
-            .or_else(|| n.as_f64().map(|f| f as i64)),
+            .or_else(|| {
+                n.as_f64().map(|f| {
+                    #[allow(clippy::cast_possible_truncation)]
+                    {
+                        f as i64
+                    }
+                })
+            }),
         _ => None,
     }
 }
@@ -298,7 +305,7 @@ pub fn reduce_ahp_actions(
             .and_then(Value::as_str)
             .map(str::to_string)
     });
-    if channel.is_some() && state.get("resource").map_or(true, Value::is_null) {
+    if channel.is_some() && state.get("resource").is_none_or(Value::is_null) {
         if let Some(ch) = &channel {
             if let Some(obj) = state.as_object_mut() {
                 obj.insert("resource".into(), Value::String(ch.clone()));
@@ -395,7 +402,7 @@ pub fn reduce_ahp_actions(
     }
 }
 
-/// Serialize reduced ChatState as Shape A export bytes.
+/// Serialize reduced `ChatState` as Shape A export bytes.
 #[must_use]
 pub fn shape_a_bytes(chat: &Value, protocol_version: &str, session: Option<&Value>) -> Vec<u8> {
     let mut envelope = Map::new();
@@ -547,8 +554,7 @@ fn apply_chat_action(state: &Value, action: &Map<String, Value>) -> Value {
                     "completed".into()
                 }),
             );
-            if tc.get("confirmed").map_or(true, Value::is_null) && status == "pending-confirmation"
-            {
+            if tc.get("confirmed").is_none_or(Value::is_null) && status == "pending-confirmation" {
                 tc.insert("confirmed".into(), Value::String("not-needed".into()));
             }
         }),
@@ -630,9 +636,8 @@ fn apply_chat_action(state: &Value, action: &Map<String, Value>) -> Value {
             next
         }
         "chat/workingDirectorySet" => {
-            let directory = match action.get("directory").and_then(Value::as_str) {
-                Some(d) => d,
-                None => return state.clone(),
+            let Some(directory) = action.get("directory").and_then(Value::as_str) else {
+                return state.clone();
             };
             let mut next = clone_json(state);
             if let Some(obj) = next.as_object_mut() {
@@ -649,9 +654,8 @@ fn apply_chat_action(state: &Value, action: &Map<String, Value>) -> Value {
             next
         }
         "chat/workingDirectoryRemoved" => {
-            let directory = match action.get("directory").and_then(Value::as_str) {
-                Some(d) => d,
-                None => return state.clone(),
+            let Some(directory) = action.get("directory").and_then(Value::as_str) else {
+                return state.clone();
             };
             let mut next = clone_json(state);
             if let Some(obj) = next.as_object_mut() {
@@ -667,7 +671,6 @@ fn apply_chat_action(state: &Value, action: &Map<String, Value>) -> Value {
             }
             next
         }
-        "chat/inputRequested" | "chat/inputAnswerChanged" | "chat/inputCompleted" => state.clone(),
         _ => state.clone(),
     }
 }
@@ -684,9 +687,8 @@ fn is_truthy(v: &Value) -> bool {
 }
 
 fn turn_started(state: &Value, action: &Map<String, Value>) -> Value {
-    let turn_id = match action.get("turnId").and_then(Value::as_str) {
-        Some(id) => id,
-        None => return state.clone(),
+    let Some(turn_id) = action.get("turnId").and_then(Value::as_str) else {
+        return state.clone();
     };
     let mut next = clone_json(state);
     let message = action
@@ -716,8 +718,7 @@ fn turn_started(state: &Value, action: &Map<String, Value>) -> Value {
             .get("activity")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| "generating".into());
+            .map_or_else(|| "generating".into(), str::to_string);
         obj.insert("activity".into(), Value::String(activity));
     }
     next
@@ -725,9 +726,8 @@ fn turn_started(state: &Value, action: &Map<String, Value>) -> Value {
 
 fn response_part(state: &Value, action: &Map<String, Value>) -> Value {
     let turn_id = action.get("turnId");
-    let part = match action.get("part").filter(|p| p.is_object()) {
-        Some(p) => p,
-        None => return state.clone(),
+    let Some(part) = action.get("part").filter(|p| p.is_object()) else {
+        return state.clone();
     };
     let active = match active_turn(state) {
         Some(a) if a.get("id") == turn_id => a,
@@ -748,21 +748,18 @@ fn response_part(state: &Value, action: &Map<String, Value>) -> Value {
 
 fn delta(state: &Value, action: &Map<String, Value>, part_kinds: &[&str]) -> Value {
     let turn_id = action.get("turnId");
-    let part_id = match action.get("partId").and_then(Value::as_str) {
-        Some(id) => id,
-        None => return state.clone(),
+    let Some(part_id) = action.get("partId").and_then(Value::as_str) else {
+        return state.clone();
     };
-    let chunk = match action.get("content").and_then(Value::as_str) {
-        Some(c) => c,
-        None => return state.clone(),
+    let Some(chunk) = action.get("content").and_then(Value::as_str) else {
+        return state.clone();
     };
     let active = match active_turn(state) {
         Some(a) if a.get("id") == turn_id => a,
         _ => return state.clone(),
     };
-    let parts = match active.get("responseParts").and_then(Value::as_array) {
-        Some(p) => p,
-        None => return state.clone(),
+    let Some(parts) = active.get("responseParts").and_then(Value::as_array) else {
+        return state.clone();
     };
     let mut updated = false;
     let mut new_parts = Vec::new();
@@ -795,9 +792,8 @@ fn delta(state: &Value, action: &Map<String, Value>, part_kinds: &[&str]) -> Val
 
 fn tool_call_start(state: &Value, action: &Map<String, Value>) -> Value {
     let turn_id = action.get("turnId");
-    let tool_call_id = match action.get("toolCallId").and_then(Value::as_str) {
-        Some(id) => id,
-        None => return state.clone(),
+    let Some(tool_call_id) = action.get("toolCallId").and_then(Value::as_str) else {
+        return state.clone();
     };
     match active_turn(state) {
         Some(a) if a.get("id") == turn_id => {}
@@ -838,9 +834,8 @@ fn update_tool(
     mut updater: impl FnMut(&mut Map<String, Value>),
 ) -> Value {
     let turn_id = action.get("turnId");
-    let tool_call_id = match action.get("toolCallId").and_then(Value::as_str) {
-        Some(id) => id,
-        None => return state.clone(),
+    let Some(tool_call_id) = action.get("toolCallId").and_then(Value::as_str) else {
+        return state.clone();
     };
     match active_turn(state) {
         Some(a) if a.get("id") == turn_id => {}
@@ -850,13 +845,12 @@ fn update_tool(
     let Some(active_mut) = next.get_mut("activeTurn").and_then(Value::as_object_mut) else {
         return state.clone();
     };
-    let parts = match active_mut
+    let Some(parts) = active_mut
         .get("responseParts")
         .and_then(Value::as_array)
         .cloned()
-    {
-        Some(p) => p,
-        None => return state.clone(),
+    else {
+        return state.clone();
     };
     let mut found = false;
     let mut new_parts = Vec::new();
@@ -896,9 +890,12 @@ fn end_turn(state: &Value, action: &Map<String, Value>, turn_state: &str) -> Val
     };
     let duration = match action.get("duration") {
         Some(Value::Number(n)) => {
-            let v = n.as_f64().map(|f| f.max(0.0)).unwrap_or(0.0);
+            let v = n.as_f64().map_or(0.0, |f| f.max(0.0));
             if v.fract() == 0.0 {
-                Value::from(v as i64)
+                #[allow(clippy::cast_possible_truncation)]
+                {
+                    Value::from(v as i64)
+                }
             } else {
                 json!(v)
             }

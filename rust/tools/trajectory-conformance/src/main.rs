@@ -195,8 +195,7 @@ fn run() -> Result<Value, String> {
         let steps_ok = manifest
             .steps
             .as_ref()
-            .map(|steps| !steps.is_empty())
-            .unwrap_or(false);
+            .is_some_and(|steps| !steps.is_empty());
         if !steps_ok {
             return Err(format!(
                 "Stream operation '{}' requires a streaming case with steps[].",
@@ -298,6 +297,7 @@ fn run() -> Result<Value, String> {
 }
 
 enum StreamEngineError {
+    #[allow(dead_code)]
     Unsupported(String),
     Protocol(String),
     Fatal(TrajectoryError),
@@ -408,7 +408,8 @@ fn parse_stream_cursor(raw: Option<&Value>) -> Result<Option<StreamCursor>, Stre
         .to_string();
     let generation = match map.get("generation") {
         None | Some(Value::Null) => 0,
-        Some(v) => json_safe_from_value(v, true).map_err(StreamEngineError::Fatal)? as u64,
+        Some(v) => u64::try_from(json_safe_from_value(v, true).map_err(StreamEngineError::Fatal)?)
+            .unwrap_or(u64::MAX),
     };
     let position_obj = map
         .get("position")
@@ -506,9 +507,10 @@ fn apply_stream_step(
                 .to_string();
             let generation = match reset.get("generation") {
                 None | Some(Value::Null) => None,
-                Some(v) => {
-                    Some(json_safe_from_value(v, true).map_err(StreamEngineError::Fatal)? as u64)
-                }
+                Some(v) => Some(
+                    u64::try_from(json_safe_from_value(v, true).map_err(StreamEngineError::Fatal)?)
+                        .unwrap_or(u64::MAX),
+                ),
             };
             let rev = reset
                 .get("source_revision")
@@ -767,8 +769,8 @@ fn oracle_snapshots_match(
     oracle_cursor: &StreamCursor,
 ) -> bool {
     // Missing snapshot (never updated — pure pending) ≡ empty incomplete snapshot.
-    let a_len = append_snap.map(|s| s.records.len()).unwrap_or(0);
-    let o_len = oracle_snap.map(|s| s.records.len()).unwrap_or(0);
+    let a_len = append_snap.map_or(0, |s| s.records.len());
+    let o_len = oracle_snap.map_or(0, |s| s.records.len());
     if a_len != o_len {
         return false;
     }
@@ -802,14 +804,14 @@ fn oracle_snapshots_match(
         return false;
     } else {
         // Both empty (one or both missing): diagnostics must also be empty.
-        let a_d = append_snap.map(|s| s.diagnostics.len()).unwrap_or(0);
-        let o_d = oracle_snap.map(|s| s.diagnostics.len()).unwrap_or(0);
+        let a_d = append_snap.map_or(0, |s| s.diagnostics.len());
+        let o_d = oracle_snap.map_or(0, |s| s.diagnostics.len());
         if a_d != 0 || o_d != 0 {
             return false;
         }
     }
-    let a_complete = append_snap.map(|s| s.complete).unwrap_or(false);
-    let o_complete = oracle_snap.map(|s| s.complete).unwrap_or(false);
+    let a_complete = append_snap.is_some_and(|s| s.complete);
+    let o_complete = oracle_snap.is_some_and(|s| s.complete);
     if a_complete != o_complete {
         return false;
     }

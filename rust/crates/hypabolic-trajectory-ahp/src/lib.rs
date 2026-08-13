@@ -56,6 +56,9 @@ pub fn safe_error_message(code: &str) -> &'static str {
     }
 }
 
+/// Inbound JSON-RPC text frame handler.
+pub type AhpFrameHandler = Box<dyn Fn(&str)>;
+
 /// Bidirectional text-frame transport for AHP JSON-RPC.
 pub trait AhpTransport {
     /// Send one complete JSON-RPC text frame.
@@ -64,7 +67,7 @@ pub trait AhpTransport {
     /// Returns an error when the transport is closed.
     fn send(&self, message: &str) -> Result<(), String>;
     /// Register inbound frame handler.
-    fn set_handler(&self, handler: Option<Box<dyn Fn(&str)>>);
+    fn set_handler(&self, handler: Option<AhpFrameHandler>);
     /// Close the duplex.
     fn close(&self);
 }
@@ -72,7 +75,7 @@ pub trait AhpTransport {
 #[derive(Default)]
 struct MemoryInner {
     peer: Option<Rc<RefCell<MemoryInner>>>,
-    handler: Option<Box<dyn Fn(&str)>>,
+    handler: Option<AhpFrameHandler>,
     closed: bool,
     sent: Vec<String>,
     /// Frames queued while a delivery is already in progress on this end.
@@ -178,7 +181,7 @@ impl AhpTransport for MemoryAhpTransport {
         Ok(())
     }
 
-    fn set_handler(&self, handler: Option<Box<dyn Fn(&str)>>) {
+    fn set_handler(&self, handler: Option<AhpFrameHandler>) {
         self.inner.borrow_mut().handler = handler;
     }
 
@@ -252,7 +255,7 @@ pub enum AhpClientEventKind {
 pub struct AhpClientEvent {
     /// Event kind.
     pub kind: AhpClientEventKind,
-    /// Stream update when kind is StreamUpdate / ResyncRequired.
+    /// Stream update when kind is `StreamUpdate` / `ResyncRequired`.
     pub update: Option<StreamUpdate>,
     /// Fixed error code.
     pub code: Option<String>,
@@ -504,12 +507,9 @@ impl ClientCore {
         if self.cancelled {
             return;
         }
-        let msg: Value = match serde_json::from_str(raw) {
-            Ok(v) => v,
-            Err(_) => {
-                self.emit_error(ERR_PROTOCOL);
-                return;
-            }
+        let Ok(msg) = serde_json::from_str::<Value>(raw) else {
+            self.emit_error(ERR_PROTOCOL);
+            return;
         };
         let Some(obj) = msg.as_object() else {
             self.emit_error(ERR_PROTOCOL);
@@ -863,9 +863,12 @@ impl ClientCore {
 }
 
 fn json_obj(entries: &[(&str, Value)]) -> Value {
-    Value::Object(Map::from_iter(
-        entries.iter().map(|(k, v)| ((*k).to_owned(), v.clone())),
-    ))
+    Value::Object(
+        entries
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), v.clone()))
+            .collect(),
+    )
 }
 
 /// Declarative host behaviour for a single chat channel.
@@ -908,6 +911,7 @@ pub struct FakeAhpHost {
 
 impl FakeAhpHost {
     /// Attach host logic to a memory transport.
+    #[must_use]
     pub fn new(
         transport: MemoryAhpTransport,
         script: FakeAhpHostScript,
@@ -1297,8 +1301,7 @@ mod tests {
         let last_kind = updates_after
             .last()
             .and_then(|e| e.update.as_ref())
-            .map(|u| u.kind.as_str())
-            .unwrap_or("");
+            .map_or("", |u| u.kind.as_str());
         assert!(
             last_kind == "updated" || last_kind == "unchanged",
             "expected post-resync stream-update, got {last_kind}"
@@ -1436,7 +1439,7 @@ mod tests {
                 .collect();
             assert!(!updates.is_empty());
             for e in &updates {
-                let kind = e.update.as_ref().map(|u| u.kind.as_str()).unwrap_or("");
+                let kind = e.update.as_ref().map_or("", |u| u.kind.as_str());
                 assert!(
                     kind == "updated"
                         || kind == "unchanged"
@@ -1514,11 +1517,10 @@ mod tests {
             "foreign-channel action must not produce stream updates"
         );
         assert_eq!(client.cursor().generation, cur_before.generation);
-        match (&client.cursor().position, &cur_before.position) {
-            (StreamPosition::AhpServerSeq(a), StreamPosition::AhpServerSeq(b)) => {
-                assert_eq!(a.last_server_seq, b.last_server_seq);
-            }
-            _ => {}
+        if let (StreamPosition::AhpServerSeq(a), StreamPosition::AhpServerSeq(b)) =
+            (&client.cursor().position, &cur_before.position)
+        {
+            assert_eq!(a.last_server_seq, b.last_server_seq);
         }
         client.cancel();
     }
