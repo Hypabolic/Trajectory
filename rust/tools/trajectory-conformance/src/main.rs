@@ -353,6 +353,12 @@ fn stream_options_from_manifest(manifest: &Manifest) -> Result<StreamOptions, St
         if let Some(Value::String(v)) = map.get("ahp_protocol_version") {
             opts.ahp_protocol_version = Some(v.clone());
         }
+        if let Some(Value::String(v)) = map.get("reset_policy") {
+            opts.reset_policy = match v.as_str() {
+                "auto-reset" => hypabolic_trajectory::StreamResetPolicy::AutoReset,
+                _ => hypabolic_trajectory::StreamResetPolicy::ReturnResetRequired,
+            };
+        }
     }
     Ok(opts)
 }

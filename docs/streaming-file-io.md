@@ -53,19 +53,13 @@ open(options):
   first = true
 
 poll():
-  size = stat(path)                    # host I/O errors → HostError
+  (size, identity) = stat(path)        # size + inode/dev + mtime/generation
   if size < file_offset:               # shrink / rewrite observed
-    material = read(0..size)
-    (complete, host_pending) = split_complete_lines(material)
-    file_offset = size
-    first = false
-    return core.apply_snapshot(complete, source_revision=...)
+    return apply_snapshot(0..size)
   if first:
-    material = read(0..size)
-    (complete, host_pending) = split_complete_lines(material)
-    file_offset = size
-    first = false
-    return core.apply_snapshot(complete, source_revision=...)
+    return apply_snapshot(0..size)
+  if identity changed (inode/dev) or same-size mtime/generation change:
+    return apply_snapshot(0..size)     # default reconcileEvery=0 must not miss replace
   if size > file_offset:
     chunk = read(file_offset..size)
     file_offset = size
@@ -92,7 +86,11 @@ When `size < file_offset`, the helper re-reads the full file and calls
 `apply_snapshot`. Core may return `kind=reset-required` (`source-truncated`,
 `source-compacted`, `source-replaced`, …). The I/O package surfaces that
 `StreamUpdate` unchanged; it does not auto-reset unless the caller configures
-a higher-level policy later.
+`reset_policy=auto-reset` on the core stream options.
+
+Same-size replacement (in-place rewrite or atomic rename) is detected from
+platform file identity (inode/device) and generation metadata (mtime). Default
+`reconcile_every=0` must not miss a same-size replace.
 
 ### Watchers
 

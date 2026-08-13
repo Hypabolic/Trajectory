@@ -28,6 +28,7 @@ public sealed class FileTrajectoryStream : IAsyncDisposable, IDisposable
     private bool _first = true;
     private int _polls;
     private bool _closed;
+    private FileIdentity? _identity;
 
     private FileTrajectoryStream(
         string root,
@@ -102,28 +103,34 @@ public sealed class FileTrajectoryStream : IAsyncDisposable, IDisposable
             return null;
         }
 
-        var size = StatSize();
+        var (size, identity) = StatIdentity();
         if (size < _fileOffset)
         {
-            return SnapshotFull(size);
+            return SnapshotFull(size, identity);
         }
 
         if (_first)
         {
-            return SnapshotFull(size);
+            return SnapshotFull(size, identity);
+        }
+
+        if (IdentityChanged(identity, size))
+        {
+            return SnapshotFull(size, identity);
         }
 
         if (size > _fileOffset)
         {
-            return AppendGrowth(size);
+            return AppendGrowth(size, identity);
         }
 
         _polls++;
         if (_reconcileEvery > 0 && _polls % _reconcileEvery == 0)
         {
-            return ReconcileSnapshot(size);
+            return ReconcileSnapshot(size, identity);
         }
 
+        _identity = identity;
         return null;
     }
 
@@ -192,7 +199,7 @@ public sealed class FileTrajectoryStream : IAsyncDisposable, IDisposable
         return ValueTask.CompletedTask;
     }
 
-    private StreamUpdate SnapshotFull(long size)
+    private StreamUpdate SnapshotFull(long size, FileIdentity identity)
     {
         var material = ReadRange(0, size);
         _fileOffset = size;
@@ -200,20 +207,22 @@ public sealed class FileTrajectoryStream : IAsyncDisposable, IDisposable
         _hostPending = pending;
         _first = false;
         _polls++;
+        _identity = identity;
         return _session.ApplySnapshot(complete, _sourceRevision);
     }
 
-    private StreamUpdate? ReconcileSnapshot(long size)
+    private StreamUpdate? ReconcileSnapshot(long size, FileIdentity identity)
     {
         var material = ReadRange(0, size);
         var (complete, pending) = TrajectoryStream.SplitCompleteLines(material);
         _hostPending = pending;
         _fileOffset = size;
+        _identity = identity;
         var update = _session.ApplySnapshot(complete, _sourceRevision);
         return update.Kind == "unchanged" ? null : update;
     }
 
-    private StreamUpdate? AppendGrowth(long size)
+    private StreamUpdate? AppendGrowth(long size, FileIdentity identity)
     {
         var chunk = ReadRange(_fileOffset, size);
         _fileOffset = size;
@@ -221,6 +230,7 @@ public sealed class FileTrajectoryStream : IAsyncDisposable, IDisposable
         var (complete, pending) = TrajectoryStream.SplitCompleteLines(buf);
         _hostPending = pending;
         _polls++;
+        _identity = identity;
         if (complete.Length == 0)
         {
             return null;
@@ -230,11 +240,32 @@ public sealed class FileTrajectoryStream : IAsyncDisposable, IDisposable
         return update.Kind == "unchanged" ? null : update;
     }
 
-    private long StatSize()
+    private bool IdentityChanged(FileIdentity identity, long size)
+    {
+        if (_identity is null)
+        {
+            return false;
+        }
+
+        if (identity.VolumeSerial != _identity.Value.VolumeSerial ||
+            identity.FileIndex != _identity.Value.FileIndex)
+        {
+            return true;
+        }
+
+        return size == _fileOffset && identity.LastWriteTicks != _identity.Value.LastWriteTicks;
+    }
+
+    private readonly record struct FileIdentity(ulong VolumeSerial, ulong FileIndex, long LastWriteTicks);
+
+    private (long Size, FileIdentity Identity) StatIdentity()
     {
         try
         {
-            return new FileInfo(_path).Length;
+            var info = new FileInfo(_path);
+            info.Refresh();
+            var identity = new FileIdentity(0, 0, info.LastWriteTimeUtc.Ticks);
+            return (info.Length, identity);
         }
         catch (FileNotFoundException ex)
         {

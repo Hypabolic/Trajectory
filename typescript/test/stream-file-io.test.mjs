@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -235,6 +235,61 @@ test("finish failed pending flush retains host buffer (H4)", async () => {
   assert.equal(again.kind, "error");
   assert.equal(again.error?.code, "stream_buffer_limit");
   assert.equal(stream.state.finished, false);
+  stream.close();
+});
+
+test("same-size in-place replace is detected with default reconcileEvery=0", async () => {
+  const root = await tempRoot();
+  const path = join(root, "session.jsonl");
+  const original = SESSION_LINE + USER_LINE;
+  const replaced = SESSION_LINE + USER_LINE.replace('"hello"', '"hallo"');
+  assert.equal(original.length, replaced.length);
+  await writeFile(path, original);
+
+  const stream = FileTrajectoryStream.open({
+    root,
+    path,
+    source: "pi",
+    groupId: "stream-file-io-ts",
+  });
+  const first = await stream.poll();
+  assert.ok(first);
+  assert.equal(first.kind, "updated");
+
+  await writeFile(path, replaced);
+  const update = await stream.poll();
+  assert.ok(update);
+  assert.ok(update.kind === "updated" || update.kind === "reset-required");
+  if (update.kind === "updated") {
+    const texts = (update.snapshot?.records ?? []).map((r) => r.record?.content);
+    assert.ok(texts.some((t) => typeof t === "string" && t.includes("hallo")));
+    assert.ok(!texts.some((t) => typeof t === "string" && t.includes("hello")));
+  }
+  stream.close();
+});
+
+test("same-size atomic replace is detected", async () => {
+  const root = await tempRoot();
+  const path = join(root, "session.jsonl");
+  const original = SESSION_LINE + USER_LINE;
+  const replaced = SESSION_LINE + USER_LINE.replace('"hello"', '"hallo"');
+  assert.equal(original.length, replaced.length);
+  await writeFile(path, original);
+
+  const stream = FileTrajectoryStream.open({
+    root,
+    path,
+    source: "pi",
+    groupId: "stream-file-io-ts",
+  });
+  assert.ok(await stream.poll());
+
+  const tmp = join(root, "session.jsonl.tmp");
+  await writeFile(tmp, replaced);
+  await rename(tmp, path);
+  const update = await stream.poll();
+  assert.ok(update);
+  assert.ok(update.kind === "updated" || update.kind === "reset-required");
   stream.close();
 });
 

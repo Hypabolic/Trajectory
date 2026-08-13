@@ -5,6 +5,15 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **Streaming M1–M4 (all four runtimes):** `reset_policy=auto-reset` atomically
+  installs a new generation when the same call supplies replacement material
+  (default remains `return-reset-required`). File hosts detect same-size
+  replacement via inode/device and mtime even when `reconcile_every=0`.
+  Delta apply rejects unknown operations with `invalid_input` and leaves prior
+  snapshot state unchanged. Stream wire integers are constrained to the JSON
+  safe-integer domain (`±9007199254740991`); out-of-range values are
+  `invalid_input` (no decimal-string fallback).
+
 - **Streaming H1/H3 fixes (all four runtimes):** AHP reducers enforce
   `reorder=reject` — reject non-monotonic / duplicate `serverSeq` and mixed
   sequenced+unsequenced batches without advancing the cursor (no silent

@@ -20,6 +20,8 @@ import {
   createStream,
   cursorToDict,
   finishStream,
+  JSON_SAFE_INTEGER_MAX,
+  TrajectoryNormalizationError,
   int64ToJson,
   resetStream,
   snapshotToDict,
@@ -183,11 +185,14 @@ test("anyLineTooLong detects oversize complete lines", () => {
   assert.equal(anyLineTooLong(data, 5n), false);
 });
 
-test("int64ToJson preserves values outside MAX_SAFE_INTEGER", () => {
-  const big = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
-  assert.equal(typeof int64ToJson(big), "string");
-  assert.equal(int64ToJson(big), big.toString());
+test("int64ToJson uses JSON safe integer domain and overflows", () => {
   assert.equal(int64ToJson(42n), 42);
+  assert.equal(int64ToJson(JSON_SAFE_INTEGER_MAX), Number(JSON_SAFE_INTEGER_MAX));
+  const big = JSON_SAFE_INTEGER_MAX + 1n;
+  assert.throws(
+    () => int64ToJson(big),
+    (err) => err instanceof TrajectoryNormalizationError && err.code === "invalid_input",
+  );
   const cursor = {
     cursorVersion: 1,
     source: "pi",
@@ -201,9 +206,10 @@ test("int64ToJson preserves values outside MAX_SAFE_INTEGER", () => {
     sourceRevision: null,
     prefixSha256: null,
   };
-  const dict = cursorToDict(cursor);
-  assert.equal(dict.position.next_byte_offset, big.toString());
-  assert.equal(dict.position.pending_byte_length, 0);
+  assert.throws(
+    () => cursorToDict(cursor),
+    (err) => err instanceof TrajectoryNormalizationError && err.code === "invalid_input",
+  );
 });
 
 test("truncation compare uses bigint (not Number coercion)", () => {
@@ -866,6 +872,95 @@ test("stream diagnostics content-safe sentinels (H2)", () => {
   assert.ok(r.update.error);
   assert.ok(!r.update.error.message.includes(secretAhp));
   assert.ok(!JSON.stringify(r.update.error).includes(secretAhp));
+});
+
+test("default reset policy returns reset-required on truncate", async () => {
+  const longBytes = await readCase("file-truncate-reset", "step-long.jsonl");
+  const shortBytes = await readCase("file-truncate-reset", "step-truncated.jsonl");
+  let state = createStream({
+    source: "pi",
+    groupId: "stream-file-truncate-reset",
+  });
+  let result = applySnapshot(state, longBytes, "gen-0");
+  state = result.state;
+  const priorGen = state.cursor.generation;
+  result = applySnapshot(state, shortBytes, "gen-1");
+  assert.equal(result.update.kind, "reset-required");
+  assert.equal(result.update.reset?.reason, "source-truncated");
+  assert.equal(result.state.cursor.generation, priorGen);
+});
+
+test("auto-reset with replacement material installs a new generation", async () => {
+  const longBytes = await readCase("file-truncate-reset", "step-long.jsonl");
+  const shortBytes = await readCase("file-truncate-reset", "step-truncated.jsonl");
+  let state = createStream({
+    source: "pi",
+    groupId: "stream-file-truncate-reset",
+    resetPolicy: "auto-reset",
+  });
+  let result = applySnapshot(state, longBytes, "gen-0");
+  state = result.state;
+  result = applySnapshot(state, shortBytes, "gen-1");
+  assert.equal(result.update.kind, "updated");
+  assert.equal(result.state.generation, 1n);
+  assert.equal(result.state.cursor.generation, 1n);
+  assert.equal(result.update.reset?.reason, "source-truncated");
+  assert.equal(result.update.reset?.requiresSnapshot, false);
+  assert.equal(result.state.cursor.sourceRevision, "gen-1");
+  assert.equal(result.state.cursor.position.nextByteOffset, BigInt(shortBytes.length));
+});
+
+test("auto-reset without replacement material still returns reset-required", async () => {
+  const chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c1";
+  let state = createStream({
+    source: "ahp",
+    groupId: chat,
+    resetPolicy: "auto-reset",
+  });
+  let result = applyAhpActions(
+    state,
+    await readCase("ahp-action-turn-flow", "step-actions.jsonl"),
+  );
+  assert.equal(result.update.kind, "updated");
+  state = result.state;
+  const priorGen = state.cursor.generation;
+  result = applyAhpActions(
+    state,
+    await readCase("ahp-action-sequence-gap", "step-gap.jsonl"),
+  );
+  assert.equal(result.update.kind, "reset-required");
+  assert.equal(result.update.reset?.reason, "sequence-gap");
+  assert.equal(result.state.cursor.generation, priorGen);
+});
+
+test("unknown delta op is invalid_input and leaves prior snapshot unchanged", () => {
+  const prior = {
+    schema_id: "trajectory-stream-v1",
+    source: "pi",
+    group_id: "g",
+    revision: {
+      revision: 1,
+      revision_id: "rev-1",
+      parent_revision_id: null,
+      complete: false,
+      generation: 0,
+    },
+    records: [],
+    diagnostics: [],
+    complete: false,
+  };
+  const before = JSON.stringify(prior);
+  const delta = {
+    schema_id: "trajectory-stream-v1",
+    base_revision_id: "rev-1",
+    revision: prior.revision,
+    operations: [{ op: "merge", record_id: "x" }],
+  };
+  assert.throws(
+    () => applyDeltaToSnapshot(prior, delta),
+    (err) => err instanceof TrajectoryNormalizationError && err.code === "invalid_input",
+  );
+  assert.equal(JSON.stringify(prior), before);
 });
 
 function concatBytes(...parts) {

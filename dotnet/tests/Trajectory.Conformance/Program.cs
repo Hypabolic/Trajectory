@@ -713,6 +713,13 @@ internal static class ConformanceProgram
             opts = opts with { AhpProtocolVersion = apv.GetString() };
         }
 
+        if (options.TryGetProperty("reset_policy", out var rp) &&
+            rp.ValueKind == JsonValueKind.String &&
+            rp.GetString() == "auto-reset")
+        {
+            opts = opts with { ResetPolicy = StreamResetPolicy.AutoReset };
+        }
+
         return opts;
     }
 

@@ -40,6 +40,21 @@ pub enum StreamDelivery {
     Delta,
 }
 
+/// Reset policy (default return-reset-required).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StreamResetPolicy {
+    /// Return `kind=reset-required` without advancing the cursor.
+    #[default]
+    ReturnResetRequired,
+    /// Atomically reset and apply replacement material supplied in the same call.
+    AutoReset,
+}
+
+/// IEEE-754 binary64 safe integer domain (stream wire contract).
+pub const JSON_SAFE_INTEGER_MAX: i64 = 9_007_199_254_740_991;
+/// Minimum JSON-safe signed integer.
+pub const JSON_SAFE_INTEGER_MIN: i64 = -9_007_199_254_740_991;
+
 /// Public stream options.
 #[derive(Debug, Clone)]
 pub struct StreamOptions {
@@ -63,6 +78,8 @@ pub struct StreamOptions {
     pub max_line_bytes: Option<i64>,
     /// Optional AHP protocol version pin (default 0.7.0 when unset).
     pub ahp_protocol_version: Option<String>,
+    /// Reset policy (default return-reset-required).
+    pub reset_policy: StreamResetPolicy,
 }
 
 impl StreamOptions {
@@ -80,6 +97,7 @@ impl StreamOptions {
             max_pending_bytes: None,
             max_line_bytes: None,
             ahp_protocol_version: None,
+            reset_policy: StreamResetPolicy::ReturnResetRequired,
         }
     }
 
@@ -1060,7 +1078,12 @@ pub fn apply_delta_to_snapshot(
                 records.clear();
                 diagnostics.clear();
             }
-            _ => {}
+            other => {
+                return Err(TrajectoryError::new(
+                    "invalid_input",
+                    format!("Unknown stream delta operation '{other}'."),
+                ));
+            }
         }
     }
 
@@ -1658,6 +1681,9 @@ pub fn apply_snapshot(
 
     if state.snapshot.is_some() && committed_len < state.cursor.position.next_byte_offset() {
         let (reason, message) = shrink_reset_reason(state, &committed);
+        if let Some(auto) = try_auto_reset(state, reason, Some(material), Some(source_revision))? {
+            return Ok(auto);
+        }
         return Ok((
             state.clone(),
             reset_required(state, reason, "stream_source_reset", message),
@@ -2818,6 +2844,31 @@ pub fn finish_stream(
     Ok((new_state, update))
 }
 
+fn try_auto_reset(
+    state: &StreamState,
+    reason: &str,
+    material: Option<&[u8]>,
+    source_revision: Option<&str>,
+) -> Result<Option<(StreamState, StreamUpdate)>, TrajectoryError> {
+    if state.options.reset_policy != StreamResetPolicy::AutoReset {
+        return Ok(None);
+    }
+    let Some(material) = material else {
+        return Ok(None);
+    };
+    Ok(Some(reset_stream(
+        state,
+        &StreamResetRequest {
+            reason: reason.into(),
+            generation: None,
+            source_revision: source_revision.map(str::to_string),
+            prior_cursor: None,
+            material: Some(material.to_vec()),
+            change_token: None,
+        },
+    )?))
+}
+
 /// Install a new generation after reset-required or manual restart.
 pub fn reset_stream(
     state: &StreamState,
@@ -3122,6 +3173,14 @@ pub fn apply_hermes_export(
             && !p.database_generation.is_empty()
             && p.database_generation != db_gen
         {
+            if let Some(auto) = try_auto_reset(
+                state,
+                "source-replaced",
+                Some(material),
+                Some(source_revision.unwrap_or(db_gen.as_str())),
+            )? {
+                return Ok(auto);
+            }
             return Ok((
                 state.clone(),
                 reset_required(
@@ -3138,6 +3197,14 @@ pub fn apply_hermes_export(
         if state.snapshot.is_some() {
             let n = prior.len();
             if row_fps.len() < n || row_fps[..n] != prior[..] {
+                if let Some(auto) = try_auto_reset(
+                    state,
+                    "source-replaced",
+                    Some(material),
+                    Some(source_revision.unwrap_or(db_gen.as_str())),
+                )? {
+                    return Ok(auto);
+                }
                 return Ok((
                     state.clone(),
                     reset_required(
@@ -4204,5 +4271,76 @@ mod tests {
         assert_eq!(u3.kind, "error");
         let err_msg = u3.error.as_ref().map(|(_, m)| m.as_str()).unwrap_or("");
         assert!(!err_msg.contains(secret_ahp));
+    }
+
+    #[test]
+    fn auto_reset_with_material_installs_generation() {
+        let long = read_case("file-truncate-reset", "step-long.jsonl");
+        let short = read_case("file-truncate-reset", "step-truncated.jsonl");
+        let mut opts = StreamOptions::new(TrajectorySource::Pi)
+            .with_group_id("stream-file-truncate-reset");
+        opts.reset_policy = StreamResetPolicy::AutoReset;
+        let state = create_stream(opts);
+        let (state, _) = apply_snapshot(&state, &long, "gen-0", None).unwrap();
+        let (state2, u2) = apply_snapshot(&state, &short, "gen-1", None).unwrap();
+        assert_eq!(u2.kind, "updated");
+        assert_eq!(state2.generation, 1);
+        assert_eq!(state2.cursor.generation, 1);
+        assert_eq!(u2.reset.as_ref().unwrap().reason, "source-truncated");
+        assert!(!u2.reset.as_ref().unwrap().requires_snapshot);
+        assert_eq!(state2.cursor.position.next_byte_offset(), short.len() as i64);
+    }
+
+    #[test]
+    fn auto_reset_without_material_still_reset_required() {
+        let baseline = read_case("ahp-action-sequence-gap", "step-baseline.jsonl");
+        let gap = read_case("ahp-action-sequence-gap", "step-gap.jsonl");
+        let mut opts = StreamOptions::new(TrajectorySource::Ahp)
+            .with_group_id("ahp-chat:/00000000-0000-4000-8000-0000000000c1");
+        opts.ahp_protocol_version = Some("0.7.0".into());
+        opts.reset_policy = StreamResetPolicy::AutoReset;
+        let state = create_stream(opts);
+        let (state, u1) = apply_ahp_actions(&state, &baseline, None).unwrap();
+        assert_eq!(u1.kind, "updated");
+        let prior_gen = state.cursor.generation;
+        let (state2, u2) = apply_ahp_actions(&state, &gap, None).unwrap();
+        assert_eq!(u2.kind, "reset-required");
+        assert_eq!(u2.reset.as_ref().unwrap().reason, "sequence-gap");
+        assert_eq!(state2.cursor.generation, prior_gen);
+    }
+
+    #[test]
+    fn unknown_delta_op_is_invalid_input_and_leaves_state_unchanged() {
+        let prior = serde_json::json!({
+            "schema_id": "trajectory-stream-v1",
+            "source": "pi",
+            "group_id": "g",
+            "revision": {
+                "revision": 1,
+                "revision_id": "rev-1",
+                "parent_revision_id": null,
+                "complete": false,
+                "generation": 0
+            },
+            "records": [],
+            "diagnostics": [],
+            "complete": false
+        });
+        let before = prior.clone();
+        let delta = serde_json::json!({
+            "schema_id": "trajectory-stream-v1",
+            "base_revision_id": "rev-1",
+            "revision": prior["revision"],
+            "operations": [{ "op": "merge", "record_id": "x" }]
+        });
+        let err = apply_delta_to_snapshot(Some(&prior), &delta).unwrap_err();
+        assert_eq!(err.code, "invalid_input");
+        assert_eq!(prior, before);
+    }
+
+    #[test]
+    fn json_safe_integer_domain_constants() {
+        assert_eq!(JSON_SAFE_INTEGER_MAX, 9_007_199_254_740_991);
+        assert_eq!(JSON_SAFE_INTEGER_MIN, -9_007_199_254_740_991);
     }
 }

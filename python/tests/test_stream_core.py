@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -678,3 +679,124 @@ def test_stream_diagnostics_content_safe_sentinels() -> None:
     assert secret_ahp not in wire3
     assert secret_ahp not in u3.error.message
     assert secret_ahp not in str(u3.error)
+
+
+def test_default_reset_policy_returns_reset_required() -> None:
+    long = _read("file-truncate-reset", "step-long.jsonl")
+    short = _read("file-truncate-reset", "step-truncated.jsonl")
+    state = create_stream(
+        StreamOptions(source="pi", group_id="stream-file-truncate-reset")
+    )
+    state, _ = apply_snapshot(state, long, source_revision="gen-0")
+    prior_gen = state.cursor.generation
+    state2, u2 = apply_snapshot(state, short, source_revision="gen-1")
+    assert u2.kind == "reset-required"
+    assert u2.reset is not None
+    assert u2.reset.reason == "source-truncated"
+    assert state2.cursor.generation == prior_gen
+    assert state2.cursor.prefix_sha256 == state.cursor.prefix_sha256
+
+
+def test_auto_reset_with_replacement_material_installs_generation() -> None:
+    long = _read("file-truncate-reset", "step-long.jsonl")
+    short = _read("file-truncate-reset", "step-truncated.jsonl")
+    state = create_stream(
+        StreamOptions(
+            source="pi",
+            group_id="stream-file-truncate-reset",
+            reset_policy="auto-reset",
+        )
+    )
+    state, _ = apply_snapshot(state, long, source_revision="gen-0")
+    state2, u2 = apply_snapshot(state, short, source_revision="gen-1")
+    assert u2.kind == "updated"
+    assert state2.generation == 1
+    assert state2.cursor.generation == 1
+    assert u2.reset is not None
+    assert u2.reset.reason == "source-truncated"
+    assert u2.reset.requires_snapshot is False
+    assert state2.cursor.source_revision == "gen-1"
+    assert isinstance(state2.cursor.position, BytePosition)
+    assert state2.cursor.position.next_byte_offset == len(short)
+
+
+def test_auto_reset_without_material_still_reset_required() -> None:
+    """AHP sequence-gap has no replacement snapshot in the same call."""
+    from hypabolic_trajectory import apply_ahp_actions
+    from hypabolic_trajectory.streaming.types import AhpServerSeqPosition
+
+    chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c1"
+    state = create_stream(
+        StreamOptions(source="ahp", group_id=chat, reset_policy="auto-reset")
+    )
+    state, u1 = apply_ahp_actions(
+        state, _read("ahp-action-turn-flow", "step-actions.jsonl")
+    )
+    assert u1.kind == "updated"
+    assert isinstance(state.cursor.position, AhpServerSeqPosition)
+    prior_gen = state.cursor.generation
+    prior_pos = state.cursor.position
+    state2, ug = apply_ahp_actions(
+        state, _read("ahp-action-sequence-gap", "step-gap.jsonl")
+    )
+    assert ug.kind == "reset-required"
+    assert ug.reset is not None
+    assert ug.reset.reason == "sequence-gap"
+    assert state2.cursor.generation == prior_gen
+    assert state2.cursor.position == prior_pos
+
+
+def test_unknown_delta_op_is_invalid_input() -> None:
+    from hypabolic_trajectory.errors import TrajectoryError
+
+    prior = {
+        "schema_id": "trajectory-stream-v1",
+        "source": "pi",
+        "group_id": "g",
+        "revision": {
+            "revision": 1,
+            "revision_id": "rev-1",
+            "parent_revision_id": None,
+            "complete": False,
+            "generation": 0,
+        },
+        "records": [],
+        "diagnostics": [],
+        "complete": False,
+    }
+    delta = {
+        "schema_id": "trajectory-stream-v1",
+        "base_revision_id": "rev-1",
+        "revision": prior["revision"],
+        "operations": [{"op": "merge", "record_id": "x"}],
+    }
+    snapshot_before = json.dumps(prior, sort_keys=True)
+    with pytest.raises(TrajectoryError, match="invalid_input") as ei:
+        apply_delta_to_snapshot(prior, delta)
+    assert ei.value.code == "invalid_input"
+    assert json.dumps(prior, sort_keys=True) == snapshot_before
+
+
+def test_json_safe_integer_overflow_on_wire() -> None:
+    from hypabolic_trajectory.errors import TrajectoryError
+    from hypabolic_trajectory.streaming.types import (
+        JSON_SAFE_INTEGER_MAX,
+        json_safe_int,
+    )
+
+    assert json_safe_int(JSON_SAFE_INTEGER_MAX, non_negative=True) == JSON_SAFE_INTEGER_MAX
+    with pytest.raises(TrajectoryError) as ei:
+        json_safe_int(JSON_SAFE_INTEGER_MAX + 1, non_negative=True)
+    assert ei.value.code == "invalid_input"
+    with pytest.raises(TrajectoryError) as ei2:
+        json_safe_int(-1, non_negative=True)
+    assert ei2.value.code == "invalid_input"
+    cursor = StreamCursor(
+        source="pi",
+        group_id="g",
+        generation=JSON_SAFE_INTEGER_MAX + 1,
+        position=BytePosition(next_byte_offset=0, pending_byte_length=0),
+    )
+    with pytest.raises(TrajectoryError) as ei3:
+        cursor.to_dict()
+    assert ei3.value.code == "invalid_input"

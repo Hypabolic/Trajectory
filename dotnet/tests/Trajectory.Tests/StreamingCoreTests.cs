@@ -586,4 +586,107 @@ public sealed class StreamingCoreTests
         Assert.NotNull(u3.Error);
         Assert.DoesNotContain(secretAhp, u3.Error!.Value.Message);
     }
+
+    [Fact]
+    public void DefaultResetPolicy_ReturnsResetRequiredOnTruncate()
+    {
+        var longBytes = ReadFixture("file-truncate-reset", "step-long.jsonl");
+        var shortBytes = ReadFixture("file-truncate-reset", "step-truncated.jsonl");
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-truncate-reset",
+        });
+        var (state1, _) = TrajectoryStream.ApplySnapshot(state, longBytes, "gen-0");
+        var priorGen = state1.Cursor.Generation;
+        var (state2, u2) = TrajectoryStream.ApplySnapshot(state1, shortBytes, "gen-1");
+        Assert.Equal("reset-required", u2.Kind);
+        Assert.Equal("source-truncated", u2.Reset!.Reason);
+        Assert.Equal(priorGen, state2.Cursor.Generation);
+    }
+
+    [Fact]
+    public void AutoReset_WithReplacementMaterial_InstallsGeneration()
+    {
+        var longBytes = ReadFixture("file-truncate-reset", "step-long.jsonl");
+        var shortBytes = ReadFixture("file-truncate-reset", "step-truncated.jsonl");
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-truncate-reset",
+            ResetPolicy = StreamResetPolicy.AutoReset,
+        });
+        var (state1, _) = TrajectoryStream.ApplySnapshot(state, longBytes, "gen-0");
+        var (state2, u2) = TrajectoryStream.ApplySnapshot(state1, shortBytes, "gen-1");
+        Assert.Equal("updated", u2.Kind);
+        Assert.Equal(1ul, state2.Generation);
+        Assert.Equal(1ul, state2.Cursor.Generation);
+        Assert.Equal("source-truncated", u2.Reset!.Reason);
+        Assert.False(u2.Reset.RequiresSnapshot);
+        Assert.Equal("gen-1", state2.Cursor.SourceRevision);
+        Assert.Equal(shortBytes.LongLength, BytePos(state2.Cursor).NextByteOffset);
+    }
+
+    [Fact]
+    public void AutoReset_WithoutMaterial_StillResetRequired()
+    {
+        const string chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c1";
+        var state = TrajectoryStream.Create(new StreamOptions
+        {
+            Source = TrajectorySource.Ahp,
+            GroupId = chat,
+            ResetPolicy = StreamResetPolicy.AutoReset,
+        });
+        var (state1, u1) = TrajectoryStream.ApplyAhpActions(
+            state,
+            ReadFixture("ahp-action-turn-flow", "step-actions.jsonl"));
+        Assert.Equal("updated", u1.Kind);
+        var priorGen = state1.Cursor.Generation;
+        var (state2, ug) = TrajectoryStream.ApplyAhpActions(
+            state1,
+            ReadFixture("ahp-action-sequence-gap", "step-gap.jsonl"));
+        Assert.Equal("reset-required", ug.Kind);
+        Assert.Equal("sequence-gap", ug.Reset!.Reason);
+        Assert.Equal(priorGen, state2.Cursor.Generation);
+    }
+
+    [Fact]
+    public void UnknownDeltaOp_IsInvalidInput_AndLeavesPriorUnchanged()
+    {
+        var prior = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["schema_id"] = "trajectory-stream-v1",
+            ["source"] = "pi",
+            ["group_id"] = "g",
+            ["revision"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["revision"] = 1ul,
+                ["revision_id"] = "rev-1",
+                ["parent_revision_id"] = null,
+                ["complete"] = false,
+                ["generation"] = 0ul,
+            },
+            ["records"] = new List<object?>(),
+            ["diagnostics"] = new List<object?>(),
+            ["complete"] = false,
+        };
+        var delta = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["schema_id"] = "trajectory-stream-v1",
+            ["base_revision_id"] = "rev-1",
+            ["revision"] = prior["revision"],
+            ["operations"] = new List<object?>
+            {
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["op"] = "merge",
+                    ["record_id"] = "x",
+                },
+            },
+        };
+        var ex = Assert.Throws<TrajectoryNormalizationException>(
+            () => TrajectoryStream.ApplyDeltaToSnapshot(prior, delta));
+        Assert.Equal(NormalizationErrorCode.InvalidInput, ex.Code);
+        Assert.Empty((List<object?>)prior["records"]!);
+    }
 }

@@ -221,9 +221,18 @@ def apply_snapshot(
         and state.snapshot is not None
         and len(committed) < prior_pos.next_byte_offset
     ):
+        reason = _shrink_reset_reason(state, committed)
+        auto = _maybe_auto_reset(
+            state,
+            reason=reason,
+            material=material,
+            source_revision=source_revision,
+        )
+        if auto is not None:
+            return auto
         return state, _reset_required(
             state,
-            reason=_shrink_reset_reason(state, committed),
+            reason=reason,
             diagnostic_code=_STREAM_SOURCE_RESET,
         )
 
@@ -594,6 +603,8 @@ def apply_ahp_actions(
         target_channel=target,
     )
     if gap is not None:
+        # Action batches are not replacement snapshots; auto-reset still
+        # requires snapshot material in the same call.
         return state, _reset_required(
             state,
             reason="sequence-gap",
@@ -819,6 +830,14 @@ def apply_hermes_export(
         and state.cursor.position.database_generation
         and state.cursor.position.database_generation != gen
     ):
+        auto = _maybe_auto_reset(
+            state,
+            reason="source-replaced",
+            material=material,
+            source_revision=source_revision,
+        )
+        if auto is not None:
+            return auto
         return state, _reset_required(
             state,
             reason="source-replaced",
@@ -831,6 +850,14 @@ def apply_hermes_export(
     if state.snapshot is not None and prior_fps is not None:
         n = len(prior_fps)
         if len(row_fps) < n or row_fps[:n] != prior_fps:
+            auto = _maybe_auto_reset(
+                state,
+                reason="source-replaced",
+                material=material,
+                source_revision=source_revision,
+            )
+            if auto is not None:
+                return auto
             return state, _reset_required(
                 state,
                 reason="source-replaced",
@@ -1519,6 +1546,28 @@ def _clone_state(state: StreamState) -> StreamState:
 _INT64_MIN = -(2**63)
 _INT64_MAX = 2**63 - 1
 _MSG_BUFFER_LIMIT_DOMAIN = "Stream buffer limits must be non-negative int64 values."
+
+
+def _maybe_auto_reset(
+    state: StreamState,
+    *,
+    reason: str,
+    material: bytes | None,
+    source_revision: str | None,
+) -> tuple[StreamState, StreamUpdate] | None:
+    """Opt-in atomic reset+apply when replacement material is in this call."""
+    if state.options.reset_policy != "auto-reset":
+        return None
+    if material is None:
+        return None
+    return reset_stream(
+        state,
+        StreamResetRequest(
+            reason=reason,  # type: ignore[arg-type]
+            source_revision=source_revision,
+            material=material,
+        ),
+    )
 
 
 def _is_non_negative_int64(value: object) -> bool:

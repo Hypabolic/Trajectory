@@ -228,6 +228,8 @@ const ALLOWED_FIXED_ERROR_MESSAGES = new Set<string>([
   "reset input requires a StreamResetRequest.",
   "Stream material length exceeds non-negative int64 domain.",
   "Stream cursor serverSeq positions must be non-negative int64 values.",
+  "Stream integer exceeds JSON safe integer domain.",
+  "Unknown stream delta operation.",
 ]);
 
 export function streamDiagnosticMessage(
@@ -406,9 +408,14 @@ export interface StreamResetRequest {
 const LF = 0x0a;
 /** Signed non-negative int64 upper bound (streaming-cursor-v1 / buffer limits). */
 const INT64_MAX = 0x7fffffffffffffffn;
+/** IEEE-754 binary64 safe integer domain (stream wire contract). */
+export const JSON_SAFE_INTEGER_MAX = 9007199254740991n;
+export const JSON_SAFE_INTEGER_MIN = -9007199254740991n;
 const MSG_BUFFER_LIMIT_DOMAIN = "Stream buffer limits must be non-negative int64 values.";
 const MSG_CURSOR_DOMAIN = "Stream cursor byte positions must be non-negative int64 values.";
 const MSG_MATERIAL_DOMAIN = "Stream material length exceeds non-negative int64 domain.";
+const MSG_JSON_SAFE_INTEGER = "Stream integer exceeds JSON safe integer domain.";
+const MSG_UNKNOWN_DELTA_OP = "Unknown stream delta operation.";
 const MSG_AHP_SOURCE_REQUIRED = "AHP stream apply requires source ahp.";
 const MSG_HERMES_SOURCE_REQUIRED = "Hermes export stream apply requires source hermes.";
 const MSG_INVALID_HERMES_EXPORT = "Hermes export material is not valid session-export JSON.";
@@ -480,12 +487,12 @@ export function diagnosticKey(d: StreamDiagnostic | JsonObject): string {
   return `${code}|${linePart}|${indexPart}`;
 }
 
-/** Serialize int64/bigint for wire JSON without precision loss. */
-export function int64ToJson(value: bigint): number | string {
-  if (value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)) {
-    return Number(value);
+/** Serialize int64/bigint as a JSON number in the safe-integer domain. */
+export function int64ToJson(value: bigint): number {
+  if (value < JSON_SAFE_INTEGER_MIN || value > JSON_SAFE_INTEGER_MAX) {
+    throw new TrajectoryNormalizationError("invalid_input", MSG_JSON_SAFE_INTEGER);
   }
-  return value.toString();
+  return Number(value);
 }
 
 function stripBigInt(value: unknown): JsonValue {
@@ -749,6 +756,8 @@ export function applyDeltaToSnapshot(
     } else if (kind === "reset") {
       records = [];
       diagnostics = [];
+    } else {
+      throw new TrajectoryNormalizationError("invalid_input", MSG_UNKNOWN_DELTA_OP);
     }
   }
 
@@ -1174,6 +1183,8 @@ export function applySnapshot(
     BigInt(committed.length) < byteNextOffset(state.cursor.position)
   ) {
     const { reason, message } = shrinkResetReason(state, committed);
+    const auto = tryAutoReset(state, reason, material, sourceRevision);
+    if (auto) return auto;
     return {
       state,
       update: resetRequired(state, reason, "stream_source_reset", message),
@@ -2028,6 +2039,8 @@ export function applyHermesExport(
     state.cursor.position.databaseGeneration &&
     state.cursor.position.databaseGeneration !== gen
   ) {
+    const auto = tryAutoReset(state, "source-replaced", material, sourceRevision ?? gen);
+    if (auto) return auto;
     return {
       state,
       update: resetRequired(
@@ -2046,6 +2059,8 @@ export function applyHermesExport(
       rowFingerprints.length < n ||
       !priorFps.every((fp, i) => fp === rowFingerprints[i])
     ) {
+      const auto = tryAutoReset(state, "source-replaced", material, sourceRevision ?? gen);
+      if (auto) return auto;
       return {
         state,
         update: resetRequired(
@@ -2341,6 +2356,21 @@ export function finishStream(state: StreamState): { state: StreamState; update: 
     },
   };
   return { state: newState, update };
+}
+
+function tryAutoReset(
+  state: StreamState,
+  reason: StreamResetReason,
+  material: Uint8Array | undefined,
+  sourceRevision?: string | null,
+): { state: StreamState; update: StreamUpdate } | null {
+  if (state.options.resetPolicy !== "auto-reset") return null;
+  if (material === undefined) return null;
+  return resetStream(state, {
+    reason,
+    ...(sourceRevision === undefined ? {} : { sourceRevision }),
+    material,
+  });
 }
 
 export function resetStream(

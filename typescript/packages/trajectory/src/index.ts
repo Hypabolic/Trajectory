@@ -148,6 +148,8 @@ export {
   diagnosticKey,
   diffSnapshots,
   finishStream,
+  JSON_SAFE_INTEGER_MAX,
+  JSON_SAFE_INTEGER_MIN,
   int64ToJson,
   matchKey,
   projectStreamDiagnostic,

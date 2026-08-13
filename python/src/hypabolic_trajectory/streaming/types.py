@@ -14,6 +14,19 @@ from hypabolic_trajectory.dto import NormalizeOptions
 
 STREAM_SCHEMA_ID: str = "trajectory-stream-v1"
 STREAM_CURSOR_VERSION: int = 1
+JSON_SAFE_INTEGER_MAX: int = 9007199254740991
+JSON_SAFE_INTEGER_MIN: int = -9007199254740991
+_MSG_JSON_SAFE_INTEGER = "Stream integer exceeds JSON safe integer domain."
+
+
+def json_safe_int(value: int, *, non_negative: bool = False) -> int:
+    """Require a JSON-safe integer for stream wire fields."""
+    from hypabolic_trajectory.errors import TrajectoryError
+
+    lo = 0 if non_negative else JSON_SAFE_INTEGER_MIN
+    if type(value) is not int or value < lo or value > JSON_SAFE_INTEGER_MAX:
+        raise TrajectoryError("invalid_input", _MSG_JSON_SAFE_INTEGER)
+    return value
 
 StreamDelivery = Literal["both", "snapshot", "delta"]
 StreamResetPolicy = Literal["return-reset-required", "auto-reset"]
@@ -93,17 +106,21 @@ class StreamCursor:
         if isinstance(pos, BytePosition):
             position: dict[str, Any] = {
                 "kind": "byte",
-                "next_byte_offset": pos.next_byte_offset,
-                "pending_byte_length": pos.pending_byte_length,
+                "next_byte_offset": json_safe_int(pos.next_byte_offset, non_negative=True),
+                "pending_byte_length": json_safe_int(
+                    pos.pending_byte_length, non_negative=True
+                ),
             }
         elif isinstance(pos, AhpServerSeqPosition):
             position = {
                 "kind": "ahp-server-seq",
-                "next_server_seq": pos.next_server_seq,
-                "last_server_seq": pos.last_server_seq,
+                "next_server_seq": json_safe_int(pos.next_server_seq),
+                "last_server_seq": json_safe_int(pos.last_server_seq),
             }
             if pos.next_byte_offset is not None:
-                position["next_byte_offset"] = pos.next_byte_offset
+                position["next_byte_offset"] = json_safe_int(
+                    pos.next_byte_offset, non_negative=True
+                )
         elif isinstance(pos, SnapshotRevisionPosition):
             position = {"kind": "snapshot-revision", "revision": pos.revision}
             if pos.content_sha256 is not None:
@@ -114,14 +131,14 @@ class StreamCursor:
                 "database_generation": pos.database_generation,
             }
             if pos.last_row_id is not None:
-                position["last_row_id"] = pos.last_row_id
+                position["last_row_id"] = json_safe_int(pos.last_row_id)
             if pos.change_token is not None:
                 position["change_token"] = pos.change_token
         return {
             "cursor_version": self.cursor_version,
             "source": self.source,
             "group_id": self.group_id,
-            "generation": self.generation,
+            "generation": json_safe_int(self.generation, non_negative=True),
             "position": position,
             "source_revision": self.source_revision,
             "prefix_sha256": self.prefix_sha256,
@@ -154,11 +171,11 @@ class StreamRevision:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "revision": self.revision,
+            "revision": json_safe_int(self.revision, non_negative=True),
             "revision_id": self.revision_id,
             "parent_revision_id": self.parent_revision_id,
             "complete": self.complete,
-            "generation": self.generation,
+            "generation": json_safe_int(self.generation, non_negative=True),
         }
 
 
@@ -312,13 +329,13 @@ class StreamConsumed:
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
-            "complete_records": self.complete_records,
-            "bytes": self.bytes,
+            "complete_records": json_safe_int(self.complete_records, non_negative=True),
+            "bytes": json_safe_int(self.bytes, non_negative=True),
         }
         if self.first_source_position is not None:
-            out["first_source_position"] = self.first_source_position
+            out["first_source_position"] = json_safe_int(self.first_source_position)
         if self.last_source_position is not None:
-            out["last_source_position"] = self.last_source_position
+            out["last_source_position"] = json_safe_int(self.last_source_position)
         return out
 
 

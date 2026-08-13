@@ -105,6 +105,7 @@ export class FileTrajectoryStream {
   #first = true;
   #polls = 0;
   #closed = false;
+  #identity: { dev: number; ino: number; mtimeNs: bigint } | null = null;
   #reconcileEvery: number;
   #sourceRevision: string;
   #pollInterval: number;
@@ -168,20 +169,24 @@ export class FileTrajectoryStream {
 
   async poll(): Promise<StreamUpdate | null> {
     if (this.#closed) return null;
-    const size = await this.#statSize();
+    const { size, identity } = await this.#statIdentity();
     if (size < this.#fileOffset) {
-      return this.#snapshotFull(size);
+      return this.#snapshotFull(size, identity);
     }
     if (this.#first) {
-      return this.#snapshotFull(size);
+      return this.#snapshotFull(size, identity);
+    }
+    if (this.#identityChanged(identity, size)) {
+      return this.#snapshotFull(size, identity);
     }
     if (size > this.#fileOffset) {
-      return this.#appendGrowth(size);
+      return this.#appendGrowth(size, identity);
     }
     this.#polls += 1;
     if (this.#reconcileEvery > 0 && this.#polls % this.#reconcileEvery === 0) {
-      return this.#reconcileSnapshot(size);
+      return this.#reconcileSnapshot(size, identity);
     }
+    this.#identity = identity;
     return null;
   }
 
@@ -233,36 +238,48 @@ export class FileTrajectoryStream {
     this.#closed = true;
   }
 
-  async #snapshotFull(size: number): Promise<StreamUpdate> {
+  async #snapshotFull(
+    size: number,
+    identity: { dev: number; ino: number; mtimeNs: bigint },
+  ): Promise<StreamUpdate> {
     const material = await this.#readRange(0, size);
     this.#fileOffset = size;
     const { complete, pending } = splitCompleteLines(material);
     this.#hostPending = copyBytes(pending);
     this.#first = false;
     this.#polls += 1;
+    this.#identity = identity;
     const result = applySnapshot(this.#state, complete, this.#sourceRevision);
     this.#state = result.state;
     return result.update;
   }
 
-  async #reconcileSnapshot(size: number): Promise<StreamUpdate | null> {
+  async #reconcileSnapshot(
+    size: number,
+    identity: { dev: number; ino: number; mtimeNs: bigint },
+  ): Promise<StreamUpdate | null> {
     const material = await this.#readRange(0, size);
     const { complete, pending } = splitCompleteLines(material);
     this.#hostPending = copyBytes(pending);
     this.#fileOffset = size;
+    this.#identity = identity;
     const result = applySnapshot(this.#state, complete, this.#sourceRevision);
     this.#state = result.state;
     if (result.update.kind === "unchanged") return null;
     return result.update;
   }
 
-  async #appendGrowth(size: number): Promise<StreamUpdate | null> {
+  async #appendGrowth(
+    size: number,
+    identity: { dev: number; ino: number; mtimeNs: bigint },
+  ): Promise<StreamUpdate | null> {
     const chunk = await this.#readRange(this.#fileOffset, size);
     this.#fileOffset = size;
     const buf = concatBytes(this.#hostPending, chunk);
     const { complete, pending } = splitCompleteLines(buf);
     this.#hostPending = copyBytes(pending);
     this.#polls += 1;
+    this.#identity = identity;
     if (complete.length === 0) return null;
     const result = applyAppend(this.#state, complete, undefined, this.#sourceRevision);
     this.#state = result.state;
@@ -270,10 +287,30 @@ export class FileTrajectoryStream {
     return result.update;
   }
 
-  async #statSize(): Promise<number> {
+  #identityChanged(
+    identity: { dev: number; ino: number; mtimeNs: bigint },
+    size: number,
+  ): boolean {
+    if (this.#identity === null) return false;
+    if (identity.dev !== this.#identity.dev || identity.ino !== this.#identity.ino) {
+      return true;
+    }
+    return size === this.#fileOffset && identity.mtimeNs !== this.#identity.mtimeNs;
+  }
+
+  async #statIdentity(): Promise<{
+    size: number;
+    identity: { dev: number; ino: number; mtimeNs: bigint };
+  }> {
     try {
       const info = await stat(this.path);
-      return info.size;
+      const ns = (info as { mtimeNs?: bigint }).mtimeNs;
+      const mtimeNs =
+        typeof ns === "bigint" ? ns : BigInt(Math.round(info.mtimeMs * 1e6));
+      return {
+        size: info.size,
+        identity: { dev: info.dev, ino: info.ino, mtimeNs },
+      };
     } catch (error) {
       throw mapIoError(error, this.path);
     }

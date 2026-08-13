@@ -77,6 +77,7 @@ class FileTrajectoryStream:
         self._first = True
         self._polls = 0
         self._closed = False
+        self._identity: tuple[int, int, int] | None = None
 
     @classmethod
     def open(cls, options: FileStreamOptions) -> FileTrajectoryStream:
@@ -144,20 +145,24 @@ class FileTrajectoryStream:
         """Read growth once; return a core StreamUpdate or None if unchanged."""
         if self._closed:
             return None
-        size = self._stat_size()
+        size, identity = self._stat_identity()
         if size < self._file_offset:
-            return self._snapshot_full(size)
+            return self._snapshot_full(size, identity)
         if self._first:
-            return self._snapshot_full(size)
+            return self._snapshot_full(size, identity)
+        if self._identity_changed(identity, size=size):
+            # Inode/dev change or same-size rewrite (mtime) → full prefix.
+            return self._snapshot_full(size, identity)
         if size > self._file_offset:
-            return self._append_growth(size)
+            return self._append_growth(size, identity)
         self._polls += 1
         if (
             self._reconcile_every > 0
             and self._polls % self._reconcile_every == 0
             and size >= 0
         ):
-            return self._reconcile_snapshot(size)
+            return self._reconcile_snapshot(size, identity)
+        self._identity = identity
         return None
 
     def follow(self, *, interval: float | None = None) -> Iterator[StreamUpdate]:
@@ -203,23 +208,29 @@ class FileTrajectoryStream:
     def __exit__(self, *args: object) -> None:
         self.close()
 
-    def _snapshot_full(self, size: int) -> StreamUpdate:
+    def _snapshot_full(
+        self, size: int, identity: tuple[int, int, int]
+    ) -> StreamUpdate:
         material = self._read_range(0, size)
         self._file_offset = size
         complete, pending = split_complete_lines(material)
         self._host_pending = pending
         self._first = False
         self._polls += 1
+        self._identity = identity
         return self._stream.apply_snapshot(
             complete, source_revision=self._source_revision
         )
 
-    def _reconcile_snapshot(self, size: int) -> StreamUpdate | None:
+    def _reconcile_snapshot(
+        self, size: int, identity: tuple[int, int, int]
+    ) -> StreamUpdate | None:
         material = self._read_range(0, size)
         complete, pending = split_complete_lines(material)
         # Reconcile only when committed complete prefix is stable under host framing.
         self._host_pending = pending
         self._file_offset = size
+        self._identity = identity
         update = self._stream.apply_snapshot(
             complete, source_revision=self._source_revision
         )
@@ -227,13 +238,16 @@ class FileTrajectoryStream:
             return None
         return update
 
-    def _append_growth(self, size: int) -> StreamUpdate | None:
+    def _append_growth(
+        self, size: int, identity: tuple[int, int, int]
+    ) -> StreamUpdate | None:
         chunk = self._read_range(self._file_offset, size)
         self._file_offset = size
         buf = self._host_pending + chunk
         complete, pending = split_complete_lines(buf)
         self._host_pending = pending
         self._polls += 1
+        self._identity = identity
         if not complete:
             return None
         update = self._stream.apply_append(
@@ -243,9 +257,22 @@ class FileTrajectoryStream:
             return None
         return update
 
-    def _stat_size(self) -> int:
+    def _identity_changed(self, identity: tuple[int, int, int], *, size: int) -> bool:
+        if self._identity is None:
+            return False
+        # Inode/device change is authoritative (atomic replace). Same-size
+        # in-place rewrite typically keeps the inode but updates mtime_ns.
+        prev_dev, prev_ino, prev_mtime = self._identity
+        dev, ino, mtime_ns = identity
+        if (dev, ino) != (prev_dev, prev_ino):
+            return True
+        return size == self._file_offset and mtime_ns != prev_mtime
+
+    def _stat_identity(self) -> tuple[int, tuple[int, int, int]]:
         try:
-            return os.stat(self._path).st_size
+            st = os.stat(self._path)
+            mtime_ns = getattr(st, "st_mtime_ns", int(st.st_mtime * 1_000_000_000))
+            return int(st.st_size), (int(st.st_dev), int(st.st_ino), int(mtime_ns))
         except FileNotFoundError as exc:
             raise FileStreamHostError(
                 HOST_IO_NOT_FOUND, _MSG_IO_NOT_FOUND, path=str(self._path)

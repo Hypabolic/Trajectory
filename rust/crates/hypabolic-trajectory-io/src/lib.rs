@@ -105,6 +105,14 @@ pub struct FileTrajectoryStream {
     first: bool,
     polls: u32,
     closed: bool,
+    identity: Option<FileIdentity>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileIdentity {
+    dev: u64,
+    ino: u64,
+    mtime_ns: u128,
 }
 
 impl FileTrajectoryStream {
@@ -166,6 +174,7 @@ impl FileTrajectoryStream {
             first: true,
             polls: 0,
             closed: false,
+            identity: None,
         })
     }
 
@@ -195,20 +204,24 @@ impl FileTrajectoryStream {
         if self.closed {
             return Ok(None);
         }
-        let size = self.stat_size()?;
+        let (size, identity) = self.stat_identity()?;
         if size < self.file_offset {
-            return Ok(Some(self.snapshot_full(size)?));
+            return Ok(Some(self.snapshot_full(size, identity)?));
         }
         if self.first {
-            return Ok(Some(self.snapshot_full(size)?));
+            return Ok(Some(self.snapshot_full(size, identity)?));
+        }
+        if self.identity_changed(identity, size) {
+            return Ok(Some(self.snapshot_full(size, identity)?));
         }
         if size > self.file_offset {
-            return self.append_growth(size);
+            return self.append_growth(size, identity);
         }
         self.polls = self.polls.saturating_add(1);
         if self.reconcile_every > 0 && self.polls % self.reconcile_every == 0 {
-            return self.reconcile_snapshot(size);
+            return self.reconcile_snapshot(size, identity);
         }
+        self.identity = Some(identity);
         Ok(None)
     }
 
@@ -255,13 +268,14 @@ impl FileTrajectoryStream {
         self.closed = true;
     }
 
-    fn snapshot_full(&mut self, size: u64) -> Result<StreamUpdate, HostError> {
+    fn snapshot_full(&mut self, size: u64, identity: FileIdentity) -> Result<StreamUpdate, HostError> {
         let material = self.read_range(0, size)?;
         self.file_offset = size;
         let (complete, pending) = split_complete_lines(&material);
         self.host_pending = pending;
         self.first = false;
         self.polls = self.polls.saturating_add(1);
+        self.identity = Some(identity);
         let result = self
             .stream
             .apply_snapshot(&complete, &self.source_revision, None);
@@ -271,11 +285,16 @@ impl FileTrajectoryStream {
         })
     }
 
-    fn reconcile_snapshot(&mut self, size: u64) -> Result<Option<StreamUpdate>, HostError> {
+    fn reconcile_snapshot(
+        &mut self,
+        size: u64,
+        identity: FileIdentity,
+    ) -> Result<Option<StreamUpdate>, HostError> {
         let material = self.read_range(0, size)?;
         let (complete, pending) = split_complete_lines(&material);
         self.host_pending = pending;
         self.file_offset = size;
+        self.identity = Some(identity);
         let result = self
             .stream
             .apply_snapshot(&complete, &self.source_revision, None);
@@ -290,7 +309,11 @@ impl FileTrajectoryStream {
         }
     }
 
-    fn append_growth(&mut self, size: u64) -> Result<Option<StreamUpdate>, HostError> {
+    fn append_growth(
+        &mut self,
+        size: u64,
+        identity: FileIdentity,
+    ) -> Result<Option<StreamUpdate>, HostError> {
         let chunk = self.read_range(self.file_offset, size)?;
         self.file_offset = size;
         let mut buf = std::mem::take(&mut self.host_pending);
@@ -298,6 +321,7 @@ impl FileTrajectoryStream {
         let (complete, pending) = split_complete_lines(&buf);
         self.host_pending = pending;
         self.polls = self.polls.saturating_add(1);
+        self.identity = Some(identity);
         if complete.is_empty() {
             return Ok(None);
         }
@@ -315,9 +339,19 @@ impl FileTrajectoryStream {
         }
     }
 
-    fn stat_size(&self) -> Result<u64, HostError> {
+    fn identity_changed(&self, identity: FileIdentity, size: u64) -> bool {
+        let Some(prev) = self.identity else {
+            return false;
+        };
+        if identity.dev != prev.dev || identity.ino != prev.ino {
+            return true;
+        }
+        size == self.file_offset && identity.mtime_ns != prev.mtime_ns
+    }
+
+    fn stat_identity(&self) -> Result<(u64, FileIdentity), HostError> {
         match fs::metadata(&self.path) {
-            Ok(meta) => Ok(meta.len()),
+            Ok(meta) => Ok((meta.len(), file_identity(&meta))),
             Err(err) => Err(map_io_error(err, &self.path)),
         }
     }
@@ -481,6 +515,41 @@ fn normalize_lexically(path: &Path) -> PathBuf {
 fn is_under_root(root: &Path, path: &Path) -> bool {
     // Both inputs must already be absolute + lexically normalized (or canonicalized).
     path.starts_with(root)
+}
+
+fn file_identity(meta: &fs::Metadata) -> FileIdentity {
+    let mtime_ns = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        return FileIdentity {
+            dev: meta.dev(),
+            ino: meta.ino(),
+            mtime_ns,
+        };
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        return FileIdentity {
+            dev: 0,
+            ino: meta.file_index().unwrap_or(0),
+            mtime_ns,
+        };
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        FileIdentity {
+            dev: 0,
+            ino: 0,
+            mtime_ns,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -811,6 +880,49 @@ mod tests {
     }
 
     #[test]
+    fn same_size_in_place_replace_is_detected() {
+        let root = temp_root();
+        let path = root.join("session.jsonl");
+        let mut original = SESSION_LINE.to_vec();
+        original.extend_from_slice(USER_LINE);
+        let mut replaced = SESSION_LINE.to_vec();
+        let hallo = USER_LINE
+            .iter()
+            .copied()
+            .collect::<Vec<u8>>();
+        let hallo = String::from_utf8(hallo)
+            .unwrap()
+            .replace("\"hello\"", "\"hallo\"");
+        replaced.extend_from_slice(hallo.as_bytes());
+        assert_eq!(original.len(), replaced.len());
+        fs::write(&path, &original).unwrap();
+
+        let mut stream = FileTrajectoryStream::open(FileStreamOptions {
+            root: root.clone(),
+            path: path.clone(),
+            source: TrajectorySource::Pi,
+            group_id: Some("stream-file-io-rs".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(stream.poll().unwrap().unwrap().kind, "updated");
+
+        fs::write(&path, &replaced).unwrap();
+        let update = stream.poll().unwrap().expect("same-size replace");
+        assert!(update.kind == "updated" || update.kind == "reset-required");
+        if update.kind == "updated" {
+            let texts: Vec<String> = update
+                .snapshot
+                .as_ref()
+                .unwrap()
+                .records
+                .iter()
+                .filter_map(|r| r.record.get("content").and_then(|v| v.as_str()).map(str::to_string))
+                .collect();
+            assert!(texts.iter().any(|t| t.contains("hallo")));
+        }
+    }
+
     fn unused_write_import_silenced() {
         // Ensure File is usable for shared-read open path in integration style.
         let root = temp_root();

@@ -138,9 +138,11 @@ Rules:
    `pending_byte_length` for diagnostics without embedding content.
 3. Failed/cancelled apply leaves the prior cursor unchanged.
 4. Replay of already-committed input is idempotent (`unchanged`).
-5. Offsets and sequences are lossless signed 64-bit integers on the wire
-   (JSON numbers that fit `int64`). Generations and stream-local revisions are
-   non-negative integers (uint64 domain; JSON number when lossless).
+5. Offsets, sequences, generations, revisions, and other stream integers are
+   JSON-safe integers on the wire: JSON numbers in the IEEE-754 binary64
+   safe-integer domain (`±9007199254740991`). Generations and stream-local
+   revisions are non-negative. Values outside this domain are `invalid_input`
+   (implementations must not emit decimal strings or lose precision).
 
 Wire schema: [`streaming-cursor-v1.schema.json`](../schemas/streaming-cursor-v1.schema.json).
 

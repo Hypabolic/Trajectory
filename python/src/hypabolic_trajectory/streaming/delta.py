@@ -259,7 +259,12 @@ def apply_delta_to_snapshot(
             records = []
             diagnostics = []
         else:
-            raise ValueError(f"unknown delta op: {kind}")
+            from hypabolic_trajectory.errors import TrajectoryError
+
+            raise TrajectoryError(
+                "invalid_input",
+                f"Unknown stream delta operation {kind!r}.",
+            )
 
     revision = delta.get("revision") or {}
     base["records"] = records

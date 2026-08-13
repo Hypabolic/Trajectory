@@ -10,6 +10,13 @@ public enum StreamDelivery
     Delta = 2,
 }
 
+/// <summary>Reset policy. Default is return-reset-required.</summary>
+public enum StreamResetPolicy
+{
+    ReturnResetRequired = 0,
+    AutoReset = 1,
+}
+
 /// <summary>Public stream options (pure core; no I/O).</summary>
 public sealed record StreamOptions
 {
@@ -24,6 +31,7 @@ public sealed record StreamOptions
     public long? MaxLineBytes { get; init; }
     /// <summary>Pinned AHP protocol version for Shape B → Shape A materialization (default 0.7.0).</summary>
     public string? AhpProtocolVersion { get; init; }
+    public StreamResetPolicy ResetPolicy { get; init; } = StreamResetPolicy.ReturnResetRequired;
 }
 
 /// <summary>Discriminated stream cursor position (cursor_version 1).</summary>

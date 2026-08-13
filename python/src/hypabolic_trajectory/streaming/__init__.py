@@ -26,6 +26,8 @@ from hypabolic_trajectory.streaming.delta import (
 )
 from hypabolic_trajectory.streaming.framing import split_complete_lines
 from hypabolic_trajectory.streaming.types import (
+    JSON_SAFE_INTEGER_MAX,
+    JSON_SAFE_INTEGER_MIN,
     STREAM_SCHEMA_ID,
     AhpServerSeqPosition,
     BytePosition,
@@ -50,6 +52,8 @@ from hypabolic_trajectory.streaming.types import (
 )
 
 __all__ = [
+    "JSON_SAFE_INTEGER_MAX",
+    "JSON_SAFE_INTEGER_MIN",
     "STREAM_SCHEMA_ID",
     "AhpServerSeqPosition",
     "BytePosition",

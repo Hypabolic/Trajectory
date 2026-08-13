@@ -187,6 +187,11 @@ public static class TrajectoryStream
             committed.LongLength < priorByte.NextByteOffset)
         {
             var (reason, message) = ShrinkResetReason(state, committed);
+            if (TryAutoReset(state, reason, material, sourceRevision) is { } auto)
+            {
+                return auto;
+            }
+
             return (state, ResetRequired(
                 state,
                 reason,
@@ -580,6 +585,30 @@ public static class TrajectoryStream
         return (newState, update);
     }
 
+    private static (StreamState State, StreamUpdate Update)? TryAutoReset(
+        StreamState state,
+        string reason,
+        ReadOnlyMemory<byte>? material,
+        string? sourceRevision)
+    {
+        if (state.Options.ResetPolicy != StreamResetPolicy.AutoReset)
+        {
+            return null;
+        }
+
+        if (material is null)
+        {
+            return null;
+        }
+
+        return Reset(state, new StreamResetRequest
+        {
+            Reason = reason,
+            SourceRevision = sourceRevision,
+            Material = material,
+        });
+    }
+
     /// <summary>Install a new generation after reset-required or manual restart.</summary>
     public static (StreamState State, StreamUpdate Update) Reset(
         StreamState state,
@@ -838,6 +867,11 @@ public static class TrajectoryStream
             !string.IsNullOrEmpty(genPos.DatabaseGeneration) &&
             genPos.DatabaseGeneration != gen)
         {
+            if (TryAutoReset(state, "source-replaced", material, sourceRevision ?? gen) is { } auto)
+            {
+                return auto;
+            }
+
             return (state, ResetRequired(state, "source-replaced", "stream_source_reset",
                 "Source material was replaced relative to the committed cursor."));
         }
@@ -848,6 +882,11 @@ public static class TrajectoryStream
             var n = priorFps.Count;
             if (rowFps.Count < n || !priorFps.SequenceEqual(rowFps.Take(n)))
             {
+                if (TryAutoReset(state, "source-replaced", material, sourceRevision ?? gen) is { } auto)
+                {
+                    return auto;
+                }
+
                 return (state, ResetRequired(state, "source-replaced", "stream_source_reset",
                     "Source material was replaced relative to the committed cursor."));
             }
@@ -1558,6 +1597,12 @@ public static class TrajectoryStream
             {
                 records.Clear();
                 diagnostics.Clear();
+            }
+            else
+            {
+                throw new TrajectoryNormalizationException(
+                    NormalizationErrorCode.InvalidInput,
+                    "Unknown stream delta operation.");
             }
         }
 

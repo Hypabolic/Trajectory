@@ -1,3 +1,4 @@
+using System.Text;
 using Hypabolic.Trajectory.IO;
 using Hypabolic.Trajectory.Streaming;
 using Xunit;
@@ -299,6 +300,70 @@ public sealed class StreamingFileIoTests
         Assert.Equal("error", again.Kind);
         Assert.Equal("stream_buffer_limit", again.Error!.Value.Code);
         Assert.False(stream.Session.State.Finished);
+    }
+
+    [Fact]
+    public void SameSizeInPlaceReplace_IsDetected()
+    {
+        var root = CreateTempRoot();
+        var path = Path.Combine(root, "session.jsonl");
+        var original = SessionLine.Concat(UserLine).ToArray();
+        var replacedUser = Encoding.UTF8.GetBytes(
+            Encoding.UTF8.GetString(UserLine).Replace("\"hello\"", "\"hallo\"", StringComparison.Ordinal));
+        var replaced = SessionLine.Concat(replacedUser).ToArray();
+        Assert.Equal(original.Length, replaced.Length);
+        File.WriteAllBytes(path, original);
+
+        using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+        {
+            Root = root,
+            Path = path,
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-io-dotnet",
+        });
+        var first = stream.Poll();
+        Assert.NotNull(first);
+        Assert.Equal("updated", first!.Kind);
+
+        File.WriteAllBytes(path, replaced);
+        var update = stream.Poll();
+        Assert.NotNull(update);
+        Assert.True(update!.Kind is "updated" or "reset-required");
+        if (update.Kind == "updated")
+        {
+            Assert.Contains(update.Snapshot!.Records, r =>
+                r.Record.TryGetValue("content", out var c) &&
+                c?.ToString()?.Contains("hallo", StringComparison.Ordinal) == true);
+        }
+    }
+
+    [Fact]
+    public void SameSizeAtomicReplace_IsDetected()
+    {
+        var root = CreateTempRoot();
+        var path = Path.Combine(root, "session.jsonl");
+        var original = SessionLine.Concat(UserLine).ToArray();
+        var replacedUser = Encoding.UTF8.GetBytes(
+            Encoding.UTF8.GetString(UserLine).Replace("\"hello\"", "\"hallo\"", StringComparison.Ordinal));
+        var replaced = SessionLine.Concat(replacedUser).ToArray();
+        Assert.Equal(original.Length, replaced.Length);
+        File.WriteAllBytes(path, original);
+
+        using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+        {
+            Root = root,
+            Path = path,
+            Source = TrajectorySource.Pi,
+            GroupId = "stream-file-io-dotnet",
+        });
+        Assert.NotNull(stream.Poll());
+
+        var tmp = path + ".tmp";
+        File.WriteAllBytes(tmp, replaced);
+        File.Move(tmp, path, overwrite: true);
+        var update = stream.Poll();
+        Assert.NotNull(update);
+        Assert.True(update!.Kind is "updated" or "reset-required");
     }
 
     private static string CreateTempRoot()

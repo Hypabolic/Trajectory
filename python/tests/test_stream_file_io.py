@@ -256,6 +256,74 @@ def test_finish_failed_pending_flush_retains_host_buffer(tmp_path: Path) -> None
     assert fs.cursor.position == cursor_before.position
 
 
+def test_same_size_in_place_replace_is_detected(tmp_path: Path) -> None:
+    """M2: default reconcile_every=0 must not miss same-size replacement."""
+    root = tmp_path / "store"
+    root.mkdir()
+    path = root / "session.jsonl"
+    original = SESSION_LINE + USER_LINE
+    replaced_user = USER_LINE.replace(b'"hello"', b'"hallo"')
+    replaced = SESSION_LINE + replaced_user
+    assert len(original) == len(replaced)
+    assert original != replaced
+    path.write_bytes(original)
+
+    fs = FileTrajectoryStream.open(
+        FileStreamOptions(
+            root=root,
+            path=path,
+            source="pi",
+            group_id="stream-file-io-py",
+        )
+    )
+    first = fs.poll()
+    assert first is not None
+    assert first.kind == "updated"
+    assert first.snapshot is not None
+    assert any(r.record.get("role") == "user" for r in first.snapshot.records)
+
+    path.write_bytes(replaced)
+    update = fs.poll()
+    assert update is not None
+    assert update.kind in {"updated", "reset-required"}
+    if update.kind == "updated":
+        assert update.snapshot is not None
+        texts = [r.record.get("content") for r in update.snapshot.records]
+        assert any(isinstance(t, str) and "hallo" in t for t in texts)
+        assert not any(isinstance(t, str) and "hello" in t for t in texts)
+    else:
+        assert update.reset is not None
+        assert update.reset.reason in {
+            "source-replaced",
+            "source-truncated",
+            "source-compacted",
+            "prefix-hash-mismatch",
+        }
+
+
+def test_same_size_atomic_replace_is_detected(tmp_path: Path) -> None:
+    """Atomic rename with identical byte length must force a full-prefix check."""
+    root = tmp_path / "store"
+    root.mkdir()
+    path = root / "session.jsonl"
+    original = SESSION_LINE + USER_LINE
+    replaced = SESSION_LINE + USER_LINE.replace(b'"hello"', b'"hallo"')
+    assert len(original) == len(replaced)
+    path.write_bytes(original)
+
+    fs = FileTrajectoryStream.open(
+        FileStreamOptions(root=root, path=path, source="pi", group_id="stream-file-io-py")
+    )
+    assert fs.poll() is not None
+
+    tmp = root / "session.jsonl.tmp"
+    tmp.write_bytes(replaced)
+    tmp.replace(path)
+    update = fs.poll()
+    assert update is not None
+    assert update.kind in {"updated", "reset-required"}
+
+
 def test_core_streaming_has_no_io_package_import() -> None:
     """Core stream modules must not import the optional io package."""
     import hypabolic_trajectory.streaming.apply as apply_mod

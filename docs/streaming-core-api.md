@@ -57,6 +57,7 @@ Options (defaults):
 | `include_provisional` | `true` |
 | `require_complete_lines` | `true` |
 | `finalize_on_close` | `true` |
+| `reset_policy` | `"return-reset-required"`; opt-in `"auto-reset"` applies replacement material in the same call |
 | `normalize` | batch normalize defaults |
 | `ahp_protocol_version` | optional; Shape B → Shape A pin (default `"0.7.0"`) |
 
@@ -78,7 +79,8 @@ Options (defaults):
 | --- | --- |
 | `updated` | Visible snapshot changed (or first revision) |
 | `unchanged` | Same `source_revision` + prefix fingerprint (+ pending) |
-| `reset-required` | Truncation, group conflict, cursor mismatch (cursor unchanged) |
+| `reset-required` | Truncation, group conflict, cursor mismatch (cursor unchanged). Default policy. |
+| `updated` (auto-reset) | When `reset_policy=auto-reset` and the same call supplies replacement material |
 | `error` | Typed failure (e.g. buffer limit); cursor unchanged |
 
 ### Reset reasons (LS-04 / LS-05)
