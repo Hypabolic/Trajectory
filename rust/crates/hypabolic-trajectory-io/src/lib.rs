@@ -105,13 +105,24 @@ pub struct FileTrajectoryStream {
     first: bool,
     polls: u32,
     closed: bool,
-    identity: Option<FileIdentity>,
+    last_stat: Option<FileStat>,
 }
 
+/// Stable file key. Must not include mtime or size — growth rewrites change
+/// those and would be misread as replace (`reset-required` / snapshot).
+///
+/// Unix: `st_dev` + `st_ino`. Windows: `creation_time` only (stable across
+/// writes). `last_write_time` / size are generation signals, not identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FileIdentity {
     dev: u64,
     ino: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileStat {
+    size: u64,
+    identity: FileIdentity,
     mtime_ns: u128,
 }
 
@@ -171,7 +182,7 @@ impl FileTrajectoryStream {
             first: true,
             polls: 0,
             closed: false,
-            identity: None,
+            last_stat: None,
         })
     }
 
@@ -206,24 +217,32 @@ impl FileTrajectoryStream {
         if self.closed {
             return Ok(None);
         }
-        let (size, identity) = self.stat_identity()?;
-        if size < self.file_offset {
-            return Ok(Some(self.snapshot_full(size, identity)?));
+        let stat = self.stat_file()?;
+        // Truncate / shrink is authoritative regardless of inode/creation.
+        if stat.size < self.file_offset {
+            return Ok(Some(self.snapshot_full(stat)?));
         }
         if self.first {
-            return Ok(Some(self.snapshot_full(size, identity)?));
+            return Ok(Some(self.snapshot_full(stat)?));
         }
-        if self.identity_changed(identity, size) {
-            return Ok(Some(self.snapshot_full(size, identity)?));
+        // New file at the path (inode / creation_time). Growth of the *same*
+        // file must not take this path — identity is a stable key only.
+        if self.file_key_changed(stat.identity) {
+            return Ok(Some(self.snapshot_full(stat)?));
         }
-        if size > self.file_offset {
-            return self.append_growth(size, identity);
+        if stat.size > self.file_offset {
+            return self.append_growth(stat);
+        }
+        // Same file, same size: mtime/generation detects in-place replace (M2)
+        // without treating append growth as replace.
+        if self.generation_changed(stat.mtime_ns) {
+            return Ok(Some(self.snapshot_full(stat)?));
         }
         self.polls = self.polls.saturating_add(1);
         if self.reconcile_every > 0 && self.polls % self.reconcile_every == 0 {
-            return self.reconcile_snapshot(size, identity);
+            return self.reconcile_snapshot(stat);
         }
-        self.identity = Some(identity);
+        self.last_stat = Some(stat);
         Ok(None)
     }
 
@@ -270,18 +289,14 @@ impl FileTrajectoryStream {
         self.closed = true;
     }
 
-    fn snapshot_full(
-        &mut self,
-        size: u64,
-        identity: FileIdentity,
-    ) -> Result<StreamUpdate, HostError> {
-        let material = self.read_range(0, size)?;
-        self.file_offset = size;
+    fn snapshot_full(&mut self, stat: FileStat) -> Result<StreamUpdate, HostError> {
+        let material = self.read_range(0, stat.size)?;
+        self.file_offset = stat.size;
         let (complete, pending) = split_complete_lines(&material);
         self.host_pending = pending;
         self.first = false;
         self.polls = self.polls.saturating_add(1);
-        self.identity = Some(identity);
+        self.last_stat = Some(stat);
         let result = self
             .stream
             .apply_snapshot(&complete, &self.source_revision, None);
@@ -291,16 +306,12 @@ impl FileTrajectoryStream {
         })
     }
 
-    fn reconcile_snapshot(
-        &mut self,
-        size: u64,
-        identity: FileIdentity,
-    ) -> Result<Option<StreamUpdate>, HostError> {
-        let material = self.read_range(0, size)?;
+    fn reconcile_snapshot(&mut self, stat: FileStat) -> Result<Option<StreamUpdate>, HostError> {
+        let material = self.read_range(0, stat.size)?;
         let (complete, pending) = split_complete_lines(&material);
         self.host_pending = pending;
-        self.file_offset = size;
-        self.identity = Some(identity);
+        self.file_offset = stat.size;
+        self.last_stat = Some(stat);
         let result = self
             .stream
             .apply_snapshot(&complete, &self.source_revision, None);
@@ -315,19 +326,15 @@ impl FileTrajectoryStream {
         }
     }
 
-    fn append_growth(
-        &mut self,
-        size: u64,
-        identity: FileIdentity,
-    ) -> Result<Option<StreamUpdate>, HostError> {
-        let chunk = self.read_range(self.file_offset, size)?;
-        self.file_offset = size;
+    fn append_growth(&mut self, stat: FileStat) -> Result<Option<StreamUpdate>, HostError> {
+        let chunk = self.read_range(self.file_offset, stat.size)?;
+        self.file_offset = stat.size;
         let mut buf = std::mem::take(&mut self.host_pending);
         buf.extend_from_slice(&chunk);
         let (complete, pending) = split_complete_lines(&buf);
         self.host_pending = pending;
         self.polls = self.polls.saturating_add(1);
-        self.identity = Some(identity);
+        self.last_stat = Some(stat);
         if complete.is_empty() {
             return Ok(None);
         }
@@ -345,21 +352,28 @@ impl FileTrajectoryStream {
         }
     }
 
-    fn identity_changed(&self, identity: FileIdentity, size: u64) -> bool {
-        let Some(prev) = self.identity else {
-            return false;
-        };
-        if identity.dev != prev.dev || identity.ino != prev.ino {
-            return true;
-        }
-        size == self.file_offset && identity.mtime_ns != prev.mtime_ns
+    fn file_key_changed(&self, identity: FileIdentity) -> bool {
+        self.last_stat.is_some_and(|prev| prev.identity != identity)
     }
 
-    fn stat_identity(&self) -> Result<(u64, FileIdentity), HostError> {
+    fn generation_changed(&self, mtime_ns: u128) -> bool {
+        self.last_stat.is_some_and(|prev| prev.mtime_ns != mtime_ns)
+    }
+
+    fn stat_file(&self) -> Result<FileStat, HostError> {
         match fs::metadata(&self.path) {
-            Ok(meta) => Ok((meta.len(), file_identity(&meta))),
+            Ok(meta) => Ok(FileStat {
+                size: meta.len(),
+                identity: file_identity(&meta),
+                mtime_ns: file_mtime_ns(&meta),
+            }),
             Err(err) => Err(map_io_error(&err, &self.path)),
         }
+    }
+
+    #[cfg(test)]
+    fn host_pending_bytes(&self) -> &[u8] {
+        &self.host_pending
     }
 
     fn read_range(&self, start: u64, end: u64) -> Result<Vec<u8>, HostError> {
@@ -522,53 +536,55 @@ fn is_under_root(root: &Path, path: &Path) -> bool {
     path.starts_with(root)
 }
 
-fn file_identity(meta: &fs::Metadata) -> FileIdentity {
-    let mtime_ns = meta
-        .modified()
+fn file_mtime_ns(meta: &fs::Metadata) -> u128 {
+    meta.modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |d| d.as_nanos());
+        .map_or(0, |d| d.as_nanos())
+}
+
+fn file_identity(meta: &fs::Metadata) -> FileIdentity {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         FileIdentity {
             dev: meta.dev(),
             ino: meta.ino(),
-            mtime_ns,
         }
     }
     #[cfg(windows)]
     {
         // file_index()/volume_serial_number() require unstable windows_by_handle.
-        // Stable identity: size + creation + write timestamps (M2 same-size replace).
+        // creation_time is stable across writes. last_write_time and size must
+        // not be the identity key — growth would look like a replace.
         use std::os::windows::fs::MetadataExt;
         FileIdentity {
             dev: meta.creation_time(),
-            ino: meta.file_size() ^ meta.last_write_time(),
-            mtime_ns,
+            ino: 0,
         }
     }
     #[cfg(not(any(unix, windows)))]
     {
-        FileIdentity {
-            dev: 0,
-            ino: 0,
-            mtime_ns,
-        }
+        let _ = meta;
+        FileIdentity { dev: 0, ino: 0 }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
     fn temp_root() -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let root = std::env::temp_dir().join(format!("traj-io-rs-{nanos}"));
+        let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("traj-io-rs-{nanos}-{seq}"));
         fs::create_dir_all(&root).expect("mkdir");
         root
     }
@@ -702,7 +718,10 @@ mod tests {
             "y".repeat(80)
         );
         fs::write(&path, incomplete.as_bytes()).unwrap();
+        // Same-file incomplete growth must stay host-pending (poll = None).
+        // Identity must not treat mtime/size change as replace → snapshot_full.
         assert!(stream.poll().unwrap().is_none());
+        assert_eq!(stream.host_pending_bytes(), incomplete.as_bytes());
 
         let finished = stream.finish().expect("finish returns update");
         assert_eq!(finished.kind, "error");
@@ -720,6 +739,7 @@ mod tests {
             Some("stream_buffer_limit")
         );
         assert!(!stream.stream().state().finished);
+        assert_eq!(stream.host_pending_bytes(), incomplete.as_bytes());
     }
 
     #[test]
@@ -743,7 +763,35 @@ mod tests {
         fs::write(&path, &full).unwrap();
         let update = stream.poll().unwrap().expect("growth");
         assert_eq!(update.kind, "updated");
+        // Append path: only the new tail is consumed. snapshot_full of the
+        // rewritten prefix would consume the whole file from byte 0.
+        assert_eq!(
+            update.consumed.bytes,
+            u64::try_from(USER_LINE.len()).unwrap()
+        );
+        assert_eq!(
+            update.consumed.first_source_position,
+            Some(i64::try_from(SESSION_LINE.len()).unwrap())
+        );
         assert!(!update.snapshot.as_ref().unwrap().records.is_empty());
+    }
+
+    #[test]
+    fn file_identity_is_stable_across_same_file_growth() {
+        let root = temp_root();
+        let path = root.join("session.jsonl");
+        fs::write(&path, SESSION_LINE).unwrap();
+        let before = file_identity(&fs::metadata(&path).unwrap());
+        let mut full = SESSION_LINE.to_vec();
+        full.extend_from_slice(USER_LINE);
+        fs::write(&path, &full).unwrap();
+        let after_meta = fs::metadata(&path).unwrap();
+        let after = file_identity(&after_meta);
+        assert_eq!(
+            before, after,
+            "same-file growth must keep the stable file key (unix dev+ino / windows creation_time)"
+        );
+        assert!(after_meta.len() > SESSION_LINE.len() as u64);
     }
 
     #[test]
@@ -926,6 +974,49 @@ mod tests {
                 })
                 .collect();
             assert!(texts.iter().any(|t| t.contains("hallo")));
+        }
+    }
+
+    #[test]
+    fn same_size_atomic_replace_is_detected() {
+        let root = temp_root();
+        let path = root.join("session.jsonl");
+        let mut original = SESSION_LINE.to_vec();
+        original.extend_from_slice(USER_LINE);
+        let hallo = String::from_utf8(USER_LINE.to_vec())
+            .unwrap()
+            .replace("\"hello\"", "\"hallo\"");
+        let mut replaced = SESSION_LINE.to_vec();
+        replaced.extend_from_slice(hallo.as_bytes());
+        assert_eq!(original.len(), replaced.len());
+        fs::write(&path, &original).unwrap();
+
+        let mut stream = FileTrajectoryStream::open(FileStreamOptions {
+            root: root.clone(),
+            path: path.clone(),
+            source: TrajectorySource::Pi,
+            group_id: Some("stream-file-io-rs".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(stream.poll().unwrap().is_some());
+
+        let tmp = root.join("session.jsonl.tmp");
+        fs::write(&tmp, &replaced).unwrap();
+        replace_file(&tmp, &path);
+        let update = stream.poll().unwrap().expect("atomic replace");
+        assert!(update.kind == "updated" || update.kind == "reset-required");
+    }
+
+    fn replace_file(from: &Path, to: &Path) {
+        #[cfg(unix)]
+        {
+            fs::rename(from, to).expect("rename over existing");
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = fs::remove_file(to);
+            fs::rename(from, to).expect("rename after remove");
         }
     }
 }
