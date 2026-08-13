@@ -53,7 +53,7 @@ python3 conformance/verify.py --repository-root . -- \
 
 `runtime-capabilities.json` is the machine-readable declaration of implemented
 sources and six outputs (slice `ML13`). On this tip the source set includes
-`ahp` and `grok-build`; published registry `0.1.0` stopped at Hermes. See
+`ahp`, `grok-build`, and `cursor`; published registry `0.1.0` stopped at Hermes. See
 [docs/release-readiness.md](../docs/release-readiness.md) and
 [docs/ahp-source-spec.md](../docs/ahp-source-spec.md). `write_schema` and
 `write_minimal_jsonl` provide `std::io::Write` surfaces; the latter emits one

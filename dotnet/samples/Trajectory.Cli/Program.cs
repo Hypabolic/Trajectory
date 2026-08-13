@@ -83,7 +83,7 @@ internal static class Sources
         "cursor" or "cursor-agent" => TrajectorySource.Cursor,
         _ => throw new TrajectoryNormalizationException(
             NormalizationErrorCode.UnknownSource,
-            $"Unknown source '{value}'. Expected one of: {string.Join(", ", Names)} (alias: grok)."),
+            $"Unknown source '{value}'. Expected one of: {string.Join(", ", Names)} (aliases: grok, cursor-agent)."),
     };
 
     public static string WireName(TrajectorySource source) => source switch
@@ -444,7 +444,7 @@ internal static class StreamCli
 
         AnsiConsole.WriteLine();
 
-        // Grok history lines do not embed the session id; listing id is the group.
+        // Grok history and Cursor transcript lines do not embed the session id; listing id is the group.
         // Other file sources lock group from the transcript.
         if (source is not (TrajectorySource.GrokBuild or TrajectorySource.Cursor))
         {

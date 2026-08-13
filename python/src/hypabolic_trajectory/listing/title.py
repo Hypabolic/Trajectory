@@ -157,9 +157,7 @@ def derive_cursor_title(path: str | Path) -> str | None:
             and _string(part.get("type")) == "text"
             and isinstance(part.get("text"), str)
         )
-        title = title_from_user_text(text)
-        if title is not None:
-            return title
+        return format_title(text)
     return None
 
 

@@ -50,7 +50,7 @@ def _discover(root: str | Path) -> list[TrajectoryListing]:
                 if not session.is_dir(follow_symlinks=True):
                     continue
                 transcript = Path(session.path) / f"{session.name}.jsonl"
-                if transcript.stem != session.name or not transcript.is_file():
+                if not transcript.is_file():
                     continue
                 stat = transcript.stat()
                 record_meta = meta.get(session.name, {})

@@ -488,6 +488,7 @@ def test_file_compaction_returns_source_compacted() -> None:
             "stream-grok-build-append-sequence",
             3,
         ),
+        ("cursor", "cursor-append-sequence", "stream-cursor-append-sequence", 3),
     ],
 )
 def test_per_source_append_oracle(

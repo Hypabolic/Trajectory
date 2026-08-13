@@ -226,8 +226,7 @@ internal static class ListingTitle
                 .Where(static part => part.ValueKind == JsonValueKind.Object && GetString(part, "type") == "text")
                 .Select(static part => GetString(part, "text"))
                 .Where(static value => value is not null));
-            var title = TitleFromUserText(text);
-            if (title is not null) return title;
+            return FormatTitle(text);
         }
 
         return null;

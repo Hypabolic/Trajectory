@@ -251,7 +251,7 @@ timestamps, identity formulas, OTEL import matrix, filtered conformance argv).
 | Hermes | Message array or `{ session, messages }` JSON | Export file; core listing is SQLite-free |
 | AHP | Shape A chat snapshot `{ chat, session? }` JSON | Export file only; listing is Phase 3 (empty stub) |
 | Grok Build | `chat_history.jsonl` (alias `grok`) | `$GROK_HOME/sessions` or `~/.grok/sessions` |
-| Cursor Agent | `cursor-agent-transcript-jsonl` (alias `cursor-agent`) | `$CURSOR_HOME` or `~/.cursor` |
+| Cursor Agent | `<session-id>.jsonl` (alias `cursor-agent`) | `$CURSOR_HOME` or `~/.cursor` |
 
 Override listing roots with `--root` / `TRAJECTORY_<SOURCE>_ROOT` in the sample
 CLIs, or pass an explicit root to listing APIs.

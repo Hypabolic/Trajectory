@@ -293,6 +293,7 @@ pub fn normalize_cursor(request: NormalizeRequest<'_>) -> Result<Trajectory, Tra
                                     Some("text") => if let Some(text) = string_value(part.get("text")) { texts.push(text.to_owned()); },
                                     Some("image" | "image_url" | "input_image" | "output_image") => diagnostics.push(Diagnostic { code: "image_content_dropped".into(), message: format!("Dropped image content on a Cursor record on line {line}."), input_line: Some(line), record_index: None, count: None }),
                                     Some("tool_use") if role == Some("assistant") => {},
+                                    Some("tool_use") => {},
                                     Some(_) => diagnostics.push(Diagnostic { code: "unknown_content_part".into(), message: format!("Skipped an unknown Cursor content part on line {line}."), input_line: Some(line), record_index: None, count: None }),
                                     None => {},
                                 }

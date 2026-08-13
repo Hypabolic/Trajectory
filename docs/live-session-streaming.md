@@ -433,6 +433,7 @@ StreamOptions = {
 | `codex` | snapshot-bytes, append-bytes | byte | truncate, replace (despite append-only contract) | open function calls | core |
 | `openclaw` | snapshot-bytes, append-bytes | byte | truncate, replace | delivery-mirror not provisional | core |
 | `grok-build` | snapshot-bytes, append-bytes | byte | **compaction**, truncate, replace | synthetic backend tool result | core |
+| `cursor` | snapshot-bytes, append-bytes | byte | truncate, replace | none / no provisional records | core |
 | `ahp` | ahp-snapshot, ahp-actions | snapshot-revision / ahp-server-seq | revision conflict, sequence gap, protocol change | `activeTurn`, incomplete tools | core reducer; optional client |
 | `hermes` | hermes-export via provider | hermes-row | soft-delete, db generation, change-token invalidation | none native | **optional provider**; core decode only |
 

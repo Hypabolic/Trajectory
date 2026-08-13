@@ -1841,8 +1841,10 @@ function decodeCursor(bytes: Uint8Array): DecodedSession {
         if (partType === "text") {
           const text = stringValue(value.text);
           if (text !== undefined) textParts.push(text);
-        } else if (role === "assistant" && partType === "tool_use") {
+        } else if (partType === "tool_use" && role === "assistant") {
           toolParts.push(value);
+        } else if (partType === "tool_use") {
+          // User-role tool_use parts are not calls and are ignored.
         } else if (partType === "image" || partType === "image_url" || partType === "input_image" || partType === "output_image") {
           diagnostics.push({ code: "image_content_dropped", message: `Dropped image content on a Cursor record on line ${inputLine}.`, inputLine });
         } else if (partType) {

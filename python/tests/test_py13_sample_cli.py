@@ -30,6 +30,7 @@ def test_parse_source_aliases() -> None:
     assert trajectory_cli.parse_source("pi") == "pi"
     assert trajectory_cli.parse_source("Claude") == "claude-code"
     assert trajectory_cli.parse_source("claudecode") == "claude-code"
+    assert trajectory_cli.parse_source("cursor-agent") == "cursor"
     with pytest.raises(Exception) as exc_info:
         trajectory_cli.parse_source("nope")
     assert getattr(exc_info.value, "code", None) == "unknown_source"

@@ -150,7 +150,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--source",
         dest="source",
         default=None,
-        help="Transcript source: pi, claude-code, codex, openclaw, hermes, ahp, grok-build, cursor.",
+        help="Transcript source: pi, claude-code, codex, openclaw, hermes, ahp, grok-build, cursor (aliases: grok, cursor-agent).",
     )
     parser.add_argument(
         "-r",
@@ -328,7 +328,7 @@ def parse_source(value: str) -> str:
         return "claude-code"
     if normalized in ("grok", "grokbuild"):
         return "grok-build"
-    if normalized in ("cursor-agent", "cursoragent"):
+    if normalized == "cursor-agent":
         return "cursor"
     raise TrajectoryError(
         "unknown_source",
@@ -571,7 +571,7 @@ def follow_file_session(
     show_content: bool,
 ) -> int:
     """Follow one JSONL file. Caller owns process lifetime (not a daemon)."""
-    # Grok history lines do not embed the session id; listing id is the group.
+    # Grok history and Cursor transcript lines do not embed the session id; listing id is the group.
     # Other file sources lock group from the transcript — a listing stem that
     # disagrees with the session record would reset instead of showing a tail.
     if source not in ("grok-build", "cursor"):
@@ -1402,7 +1402,7 @@ Default roots:
   hermes       ~/.hermes
   ahp          explicit export root only (use show --path)
   grok-build   $GROK_HOME/sessions or ~/.grok/sessions
-  cursor       $CURSOR_HOME or ~/.cursor
+  cursor       $CURSOR_HOME or ~/.cursor (alias: cursor-agent)
 
 Root overrides: --root or TRAJECTORY_<SOURCE>_ROOT (e.g. TRAJECTORY_PI_ROOT).
 OpenClaw also honors OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR.

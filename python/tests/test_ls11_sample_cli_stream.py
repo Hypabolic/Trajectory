@@ -16,6 +16,7 @@ SAMPLES_DIR = REPO_ROOT / "python" / "samples"
 FIXTURE_PI = REPO_ROOT / "conformance" / "cases" / "pi" / "tool-calls" / "input.jsonl"
 STREAM_CASES = REPO_ROOT / "conformance" / "cases" / "streaming"
 CHAT = "ahp-chat:/00000000-0000-4000-8000-0000000000c1"
+CURSOR_ID = "019f0000-0000-7000-8000-00000000c0a1"
 
 if str(SAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(SAMPLES_DIR))
@@ -30,6 +31,10 @@ USER_LINE = (
     b'{"type":"message","id":"m1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z",'
     b'"message":{"role":"user","content":[{"type":"text","text":"hello"}]},'
     b'"sessionId":"ls11-stream-py"}\n'
+)
+CURSOR_LINE = (
+    b'{"role":"user","message":{"content":[{"type":"text","text":"hello"}]}}\n'
+    b'{"role":"assistant","message":{"content":[{"type":"text","text":"done"}]}}\n'
 )
 
 
@@ -322,6 +327,61 @@ def test_browse_watch_listed_session(
     assert "delta" in out
     assert "live tail" in out
     assert "not a daemon" in out.lower()
+    assert "hello" not in out
+
+
+def test_cursor_cli_list_show_browse_watch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "cursor"
+    path = (
+        root
+        / "projects"
+        / "%2Fworkspace%2Fdemo"
+        / "agent-transcripts"
+        / CURSOR_ID
+        / f"{CURSOR_ID}.jsonl"
+    )
+    path.parent.mkdir(parents=True)
+    path.write_bytes(CURSOR_LINE)
+
+    code = trajectory_cli.main(
+        ["list", "--source", "cursor", "--root", str(root), "--limit", "5"]
+    )
+    assert code == 0
+    listed = capsys.readouterr().out
+    assert CURSOR_ID in listed
+
+    code = trajectory_cli.main(
+        ["show", "--source", "cursor", "--root", str(root), "--id", CURSOR_ID]
+    )
+    assert code == 0
+    shown = capsys.readouterr().out
+    assert CURSOR_ID in shown
+    assert "Content omitted" in shown
+
+    code = trajectory_cli.main(
+        [
+            "browse",
+            "--source",
+            "cursor-agent",
+            "--root",
+            str(root),
+            "--id",
+            CURSOR_ID,
+            "--watch",
+            "--emit",
+            "snapshot+delta",
+            "--max-updates",
+            "1",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "stream update" in out
+    assert "snapshot" in out
+    assert "delta" in out
+    assert "Content omitted" in out
     assert "hello" not in out
 
 

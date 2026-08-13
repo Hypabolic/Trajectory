@@ -267,6 +267,7 @@ fn is_stream_file_source(source: SourceArg) -> bool {
             | SourceArg::Codex
             | SourceArg::Openclaw
             | SourceArg::GrokBuild
+            | SourceArg::Cursor
     )
 }
 
@@ -307,7 +308,7 @@ fn follow_file_session(
     let interval = cli.interval;
     let max_updates = cli.max_updates;
     let delivery = emit.delivery();
-    // Grok history lines do not embed the session id; listing id is the group.
+    // Grok history and Cursor transcript lines do not embed the session id; listing id is the group.
     // Other file sources lock group from the transcript.
     let group_id = if matches!(source, SourceArg::GrokBuild | SourceArg::Cursor) {
         group_id

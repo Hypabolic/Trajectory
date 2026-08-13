@@ -12,6 +12,7 @@ namespace Hypabolic.Trajectory.Tests;
 public sealed class SampleCliStreamTests
 {
     private const string Chat = "ahp-chat:/00000000-0000-4000-8000-0000000000c1";
+    private const string CursorId = "019f0000-0000-7000-8000-00000000c0a1";
 
     private static readonly string SessionLine =
         """{"type":"session","version":3,"id":"ls11-stream-dotnet","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/workspace/demo"}"""
@@ -19,6 +20,12 @@ public sealed class SampleCliStreamTests
 
     private static readonly string UserLine =
         """{"type":"message","id":"m1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"hello"}]},"sessionId":"ls11-stream-dotnet"}"""
+        + "\n";
+
+    private const string CursorLine =
+        """{"role":"user","message":{"content":[{"type":"text","text":"hello"}]}}"""
+        + "\n"
+        + """{"role":"assistant","message":{"content":[{"type":"text","text":"done"}]}}"""
         + "\n";
 
     private static string RepositoryRoot
@@ -269,6 +276,75 @@ public sealed class SampleCliStreamTests
             Assert.Contains("live tail", stdout, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("not a daemon", stdout, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("hello", stdout, StringComparison.Ordinal);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // best-effort cleanup
+            }
+        }
+    }
+
+    [Fact]
+    public void CursorListShowAndBrowseWatchUseListedSessionId()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "traj-ls11-cursor-dotnet-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(
+            root,
+            "projects",
+            "%2Fworkspace%2Fdemo",
+            "agent-transcripts",
+            CursorId,
+            CursorId + ".jsonl");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        try
+        {
+            File.WriteAllText(path, CursorLine);
+
+            var (listCode, listStdout, listStderr) = RunCli(
+                "list",
+                "--source", "cursor",
+                "--root", root,
+                "--limit", "5");
+            Assert.True(listCode == 0, $"exit={listCode}\nstderr={listStderr}\nstdout={listStdout}");
+            // Spectre wraps the UUID column at the redirected-console width, so
+            // the contiguous listing id may not appear as one substring.
+            Assert.Contains("019f0000", listStdout, StringComparison.Ordinal);
+            Assert.Contains("00000000c0a1", listStdout, StringComparison.Ordinal);
+            Assert.DoesNotContain("No sessions found", listStdout, StringComparison.OrdinalIgnoreCase);
+
+            var (showCode, showStdout, showStderr) = RunCli(
+                "show",
+                "--source", "cursor",
+                "--root", root,
+                "--id", CursorId);
+            Assert.True(showCode == 0, $"exit={showCode}\nstderr={showStderr}\nstdout={showStdout}");
+            Assert.Contains(CursorId, showStdout, StringComparison.Ordinal);
+            Assert.Contains("Content omitted", showStdout, StringComparison.Ordinal);
+
+            var (browseCode, browseStdout, browseStderr) = RunCli(
+                "browse",
+                "--source", "cursor-agent",
+                "--root", root,
+                "--id", CursorId,
+                "--watch",
+                "--emit", "snapshot+delta",
+                "--max-updates", "1");
+            Assert.True(
+                browseCode == 0,
+                $"exit={browseCode}\nstderr={browseStderr}\nstdout={browseStdout}");
+            Assert.Contains("stream update", browseStdout, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("snapshot", browseStdout, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("delta", browseStdout, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Content omitted", browseStdout, StringComparison.Ordinal);
+            Assert.DoesNotContain("hello", browseStdout, StringComparison.Ordinal);
         }
         finally
         {

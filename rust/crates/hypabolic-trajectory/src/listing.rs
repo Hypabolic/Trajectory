@@ -768,7 +768,7 @@ fn derive_cursor_title(path: &Path) -> Option<String> {
         let text = parts.iter().filter_map(|part| {
             (part.get("type").and_then(serde_json::Value::as_str) == Some("text")).then(|| part.get("text").and_then(serde_json::Value::as_str)).flatten()
         }).collect::<Vec<_>>().join("\n");
-        if let Some(title) = title_from_user_text(&text) { return Some(title); }
+        return format_title(&text);
     }
     None
 }

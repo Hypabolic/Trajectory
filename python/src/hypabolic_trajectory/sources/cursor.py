@@ -89,6 +89,8 @@ def decode_cursor(
                             text_parts.append(text)
                     elif role == "assistant" and part_type == "tool_use":
                         tool_parts.append(part)
+                    elif part_type == "tool_use":
+                        pass
                     elif part_type in _IMAGE_TYPES:
                         diagnostics.append(Diagnostic(
                             code=DIAG_IMAGE_CONTENT_DROPPED,

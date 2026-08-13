@@ -1,5 +1,3 @@
-using System.Buffers;
-using System.Text;
 using System.Text.Json;
 using Hypabolic.Trajectory.Internal;
 
@@ -45,7 +43,8 @@ internal sealed class CursorJsonlSourceAdapter : ISourceAdapter
                             var text = GetString(part, "text");
                             if (text is not null) textParts.Add(text);
                         }
-                        else if (role == "assistant" && partType == "tool_use") tools.Add(part.Clone());
+                        else if (partType == "tool_use" && role == "assistant") tools.Add(part.Clone());
+                        else if (partType == "tool_use") { }
                         else if (partType is "image" or "image_url" or "input_image" or "output_image")
                         {
                             diagnostics.Add(new TrajectoryDiagnostic { Code = DiagnosticCodes.ImageContentDropped, Message = $"Dropped image content on a Cursor record on line {line.Line}.", InputLine = line.Line });
@@ -137,15 +136,7 @@ internal sealed class CursorJsonlSourceAdapter : ISourceAdapter
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     private static string CompactJson(JsonElement value)
-    {
-        var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            value.WriteTo(writer);
-        }
-
-        return Encoding.UTF8.GetString(buffer.WrittenSpan);
-    }
+        => CanonicalJson.Relaxed(value);
 
     private sealed record JsonLine(JsonDocument Document, int Line, long ByteOffset);
 }

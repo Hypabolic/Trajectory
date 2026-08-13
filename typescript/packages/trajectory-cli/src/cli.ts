@@ -257,7 +257,7 @@ function parseSource(value: string): SourceName {
   if (normalized === "cursor-agent") return "cursor";
   throw new TrajectoryNormalizationError(
     "unknown_source",
-    `Unknown source '${value}'. Expected one of: ${SOURCES.join(", ")} (alias: grok).`,
+    `Unknown source '${value}'. Expected one of: ${SOURCES.join(", ")} (aliases: grok, cursor-agent).`,
   );
 }
 

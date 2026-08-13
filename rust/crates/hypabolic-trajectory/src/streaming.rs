@@ -4187,6 +4187,12 @@ mod tests {
                 "stream-grok-build-append-sequence",
                 3,
             ),
+            (
+                "cursor-append-sequence",
+                TrajectorySource::Cursor,
+                "stream-cursor-append-sequence",
+                3,
+            ),
         ];
         for (case_id, source, group_id, steps) in cases {
             let mut chunks = Vec::new();

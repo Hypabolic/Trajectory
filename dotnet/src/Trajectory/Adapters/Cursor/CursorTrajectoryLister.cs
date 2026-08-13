@@ -20,8 +20,9 @@ internal sealed class CursorTrajectoryLister : ITrajectoryLister
                 try
                 {
                     using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(session, "meta.json")));
-                    if (document.RootElement.ValueKind == JsonValueKind.Object)
-                        metadata[Path.GetFileName(session)!] = document.RootElement.Clone();
+                    var sessionId = Path.GetFileName(session);
+                    if (document.RootElement.ValueKind == JsonValueKind.Object && sessionId is not null && !metadata.ContainsKey(sessionId))
+                        metadata[sessionId] = document.RootElement.Clone();
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
             }
@@ -52,7 +53,8 @@ internal sealed class CursorTrajectoryLister : ITrajectoryLister
                         ? DateTimeOffset.FromUnixTimeMilliseconds(milliseconds)
                         : info.LastWriteTimeUtc;
                     var title = meta.ValueKind == JsonValueKind.Object && meta.TryGetProperty("title", out var titleValue) && titleValue.ValueKind == JsonValueKind.String
-                        ? ListingTitle.FormatTitle(titleValue.GetString()) : ListingTitle.DeriveCursorTitle(path);
+                        ? ListingTitle.FormatTitle(titleValue.GetString()) : null;
+                    title ??= ListingTitle.DeriveCursorTitle(path);
                     items.Add(new TrajectoryListing { Id = id, Path = Path.GetFullPath(path), UpdatedAt = updated, Title = title, SizeBytes = info.Length });
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }

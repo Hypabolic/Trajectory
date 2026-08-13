@@ -226,7 +226,7 @@ async function discoverCursor(root: string): Promise<TrajectoryListing[]> {
         const updatedAtMs = entry?.updatedAtMs;
         const updatedAt = typeof updatedAtMs === "number" && Number.isSafeInteger(updatedAtMs) && updatedAtMs >= 0
           ? new Date(updatedAtMs).toISOString() : info.mtime.toISOString();
-        const title = typeof entry?.title === "string" ? formatTitle(entry.title) : await deriveCursorTitle(path);
+        const title = typeof entry?.title === "string" ? (formatTitle(entry.title) ?? await deriveCursorTitle(path)) : await deriveCursorTitle(path);
         items.push({ id: session.name, path, updatedAt, ...(title === undefined ? {} : { title }), sizeBytes: info.size });
       } catch (error) { if (!isMissingOrDenied(error)) throw error; }
     }
@@ -518,8 +518,7 @@ async function deriveCursorTitle(path: string): Promise<string | undefined> {
     const message = isRecord(row.message) ? row.message : undefined;
     const parts = Array.isArray(message?.content) ? message.content : [];
     const text = parts.filter(isRecord).filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text as string).join("\n");
-    const title = titleFromUserText(text);
-    if (title !== undefined) return title;
+    return formatTitle(text);
   }
   return undefined;
 }
