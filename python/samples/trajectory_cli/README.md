@@ -62,6 +62,8 @@ PYTHONPATH=python/samples python -m trajectory_cli browse
 PYTHONPATH=python/samples python -m trajectory_cli browse --source grok-build --watch --show-content
 
 # File stream (one-shot poll; default emit snapshot+delta)
+PYTHONPATH=python/samples python -m trajectory_cli browse \
+  --source grok-build --watch --show-content
 PYTHONPATH=python/samples python -m trajectory_cli stream \
   --source pi \
   --path conformance/cases/pi/tool-calls/input.jsonl \

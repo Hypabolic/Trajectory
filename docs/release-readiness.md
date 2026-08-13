@@ -31,8 +31,8 @@ Distinguish **published registry packages** from **this repository tip**.
 | AHP scope | Batch Shape A + core stream Shape A/B in-tree; optional AHP clients in-tree (fake-host tested); listing and real WebSocket transport still **not** shipped |
 | Next registry publish | A **new** synchronized tag **strictly after `0.1.2`** (for example `v0.1.3` or `v0.2.0`) for the live-session stream cut. **Do not tag or retag `v0.1.2`.** `skip-duplicate` / “already published” fallbacks must not treat a reused `0.1.2` as a successful stream ship. |
 
-AHP phase truth: [ahp-ingest-status.md](ahp-ingest-status.md). Design:
-[ahp-source-spec.md](ahp-source-spec.md).
+AHP design: [ahp-source-spec.md](ahp-source-spec.md) and
+[`contracts/spec/sources/ahp.md`](../contracts/spec/sources/ahp.md).
 
 Machine-readable surfaces (repository tip advertises `ahp`):
 
@@ -52,7 +52,7 @@ Machine-readable surfaces (repository tip advertises `ahp`):
 | Optional extra | `[otel]` — SDK sinks only; pure `project_otel_genai` + `otel` submodule always in core |
 | First-ship join (PY-17) | §11 DoD green on `feature/python-impl` (`test_py17_first_ship_join.py`); no tag/publish yet |
 | First public PyPI | Next synchronized multi-registry tag after `v0.1.0` (includes AHP Shape A; do **not** retag `0.1.0`) |
-| Status | [python-impl-status.md](python-impl-status.md) · package docs [python/README.md](../python/README.md) |
+| Status | Package docs [python/README.md](../python/README.md) |
 
 ## Provenance of release evidence
 
@@ -200,8 +200,6 @@ python3 conformance/verify.py --repository-root . --operation stream-sequence --
   <runtime-stream-capable-runner>
 ```
 
-Product + slice plan: [live-session-streaming.md](live-session-streaming.md),
-[live-session-streaming-plan.md](live-session-streaming-plan.md). Tip packaging
-status (shipped vs remaining):
-[live-session-streaming-status.md](live-session-streaming-status.md). Adapter
-authoring stream DoD: [adapter-authoring.md](adapter-authoring.md#live-session-streaming--definition-of-done).
+Product design: [live-session-streaming.md](live-session-streaming.md).
+Adapter authoring stream DoD:
+[adapter-authoring.md](adapter-authoring.md#live-session-streaming--definition-of-done).

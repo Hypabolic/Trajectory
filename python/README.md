@@ -344,9 +344,9 @@ python -m pip install -e './python[dev]'
 python -m pytest python/tests -q
 ```
 
-Implementation authority: [`docs/python-implementation-spec.md`](../docs/python-implementation-spec.md),
-`contracts/`, and `conformance/`. Status:
-[`docs/python-impl-status.md`](../docs/python-impl-status.md).
+Wire authority: `contracts/` and `conformance/`. Product docs:
+[`docs/architecture.md`](../docs/architecture.md),
+[`docs/live-session-streaming.md`](../docs/live-session-streaming.md).
 
 ## License
 

@@ -77,10 +77,8 @@ native transcript
 | Python | `hypabolic-trajectory` | `[otel]` SDK sinks only (pure OTEL project + `otel` submodule always in core) |
 
 Python is an independent native **3.11+** implementation under `python/`
-(import `hypabolic_trajectory`). First public PyPI ships on the next
-synchronized multi-registry tag after published `0.1.0` (tip sources include
-AHP Shape A). Package docs: [`python/README.md`](../python/README.md). Spec:
-[python-implementation-spec.md](python-implementation-spec.md).
+(import `hypabolic_trajectory`). Package docs:
+[`python/README.md`](../python/README.md).
 
 ## Source adapters
 
@@ -88,10 +86,10 @@ Built-in sources: **Pi**, **Claude Code**, **Codex**, **OpenClaw**,
 **Hermes**, **AHP** (Shape A offline ChatState snapshot; listing deferred),
 and **Grok Build** (`grok-build`).
 
-AHP export-directory listing, Shape B action-log reduce, multi-chat unpack,
-and live host clients are deferred. See
-[ahp-ingest-status.md](ahp-ingest-status.md) and
-[`contracts/spec/sources/ahp.md`](../contracts/spec/sources/ahp.md).
+AHP export-directory listing, multi-chat unpack, and a first-class live
+WebSocket host remain caller-owned. See
+[`contracts/spec/sources/ahp.md`](../contracts/spec/sources/ahp.md) and
+[ahp-source-spec.md](ahp-source-spec.md).
 
 Adapters decode only. Shared policy (tool linking, bounds, timestamps,
 diagnostics, identity) lives in the normalizer.
@@ -121,27 +119,24 @@ There is no shared native core, FFI bridge, or cross-language subprocess.
 
 ## Live session streaming (core + optional packages)
 
-One-shot normalize and listing remain the shipped batch path. A **library**
-streaming surface (not a Trajectory daemon) is complete on tip (LS-00–LS-12):
+One-shot normalize and listing remain the batch path. A **library** streaming
+surface (not a Trajectory daemon) is shipped:
 
 - pure stream state machine in each core package (cursor, apply, snapshot +
   delta, provisional records, reset, AHP Shape A/B reducer, Hermes export apply);
-- optional file I/O packages (LS-09; poll/follow only; explicit root);
-- optional AHP client packages (LS-10; transport + auth callback; fake-host tested);
-- optional Hermes provider packages (LS-07h; SQLite/query; core stays SQLite-free);
-- sample CLI `stream` / `ahp-stream` demos (LS-11; process-owned, not a daemon);
+- optional file I/O packages (poll/follow only; explicit root);
+- optional AHP client packages (transport + auth callback; fake-host tested);
+- optional Hermes provider packages (SQLite/query; core stays SQLite-free);
+- sample CLI `browse --watch` / `stream` / `ahp-stream` (process-owned);
 - shared `trajectory-stream-v1` contracts and multi-runtime conformance;
-- honest capability claims (LS-12): core `stream-*` on
-  `compatibility.json` + four `runtime-capabilities.json`; optional package
-  caps only on those packages’ `package-capabilities.json`.
+- core `stream-*` capabilities on `compatibility.json` + four
+  `runtime-capabilities.json`; optional package caps only on those packages.
 
 Normative design: [live-session-streaming.md](live-session-streaming.md).  
 Wire contract: [streaming.md](../contracts/spec/streaming.md).  
 File I/O: [streaming-file-io.md](streaming-file-io.md).  
 AHP client: [ahp-client.md](ahp-client.md).  
-Hermes provider: [streaming-hermes-provider.md](streaming-hermes-provider.md).  
-Delivery slices: [live-session-streaming-plan.md](live-session-streaming-plan.md).  
-Tip status: [live-session-streaming-status.md](live-session-streaming-status.md).
+Hermes provider: [streaming-hermes-provider.md](streaming-hermes-provider.md).
 
 ## Further reading
 
@@ -150,6 +145,4 @@ Tip status: [live-session-streaming-status.md](live-session-streaming-status.md)
 - [Diagnostics](../contracts/spec/diagnostics.md)
 - [Streaming contract](../contracts/spec/streaming.md)
 - [Live session streaming (product)](live-session-streaming.md)
-- [Live session streaming plan](live-session-streaming-plan.md)
-- [Live session streaming status](live-session-streaming-status.md)
 - [Publishing](publishing.md)

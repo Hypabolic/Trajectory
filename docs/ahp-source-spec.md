@@ -1,9 +1,8 @@
 # Spec: Agent Host Protocol (AHP) support in Trajectory
 
-Status: **Phase 0–1 complete** (offline Shape A); **LS-06/LS-07 streaming
-in-tree** (Shape A successive snapshots + Shape B action-log reducer in core).
-See [ahp-ingest-status.md](ahp-ingest-status.md) and
-[ahp-action-streaming.md](ahp-action-streaming.md).  
+Status: **Shape A offline snapshots shipped**; **streaming** covers successive
+Shape A snapshots plus a Shape B action-log reducer in core.
+See [ahp-action-streaming.md](ahp-action-streaming.md).  
 Target product slice: post-v1 source family  
 AHP reference: [microsoft.github.io/agent-host-protocol](https://microsoft.github.io/agent-host-protocol/)  
 AHP schemas: [github.com/microsoft/agent-host-protocol/schema](https://github.com/microsoft/agent-host-protocol/tree/main/schema)  

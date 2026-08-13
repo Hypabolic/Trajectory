@@ -1,24 +1,21 @@
 # Live session streaming — product and technical specification
 
-Status: **feature complete on tip (LS-00–LS-12)**; wire contracts (LS-01); core stream state + snapshot + append (LS-03–LS-05); AHP snapshot + action-log (LS-06–LS-07); **LS-07h Hermes optional provider** (core `apply_hermes_export` + optional SQLite/provider packages ×4); **LS-08 full stream matrix gate green** (shared goldens + oracle on all four runtimes); **LS-09 optional file I/O**, **LS-10 optional AHP clients**, **LS-11 sample CLI `stream` / `ahp-stream`**; **LS-12 honest capability claims** (core `stream-*` on compatibility + four runtime manifests; optional package caps only on I/O / AHP / Hermes packages)  
-
-Contract family: `trajectory-stream-v1` under `contracts/`  
-Scope: full feature across all four runtimes — not an MVP cut  
+Status: **shipped** (library stream engines, optional I/O / AHP / Hermes
+packages, sample CLI follow). Contract family: `trajectory-stream-v1`.
 
 Related:
 
 - [Architecture](architecture.md)
-- [Multi-language plan](multi-language-plan.md)
 - [Adapter authoring](adapter-authoring.md)
 - [Normative streaming contract](../contracts/spec/streaming.md)
 - [Normative normalization](../contracts/spec/normalization.md)
 - [Identity](../contracts/spec/identity.md)
 - [Diagnostics](../contracts/spec/diagnostics.md)
 - [Listing](../contracts/spec/listing.md)
-- [AHP source](ahp-source-spec.md) / [AHP status](ahp-ingest-status.md)
+- [AHP source](ahp-source-spec.md)
 - [Grok Build source](grok-build-source-spec.md)
-- [Delivery work plan](live-session-streaming-plan.md)
-- [Implementation status (shipped vs remaining)](live-session-streaming-status.md)
+- [Streaming core API](streaming-core-api.md)
+- [File I/O](streaming-file-io.md)
 
 ---
 
@@ -709,8 +706,8 @@ This specification **schedules** work previously listed as deferred:
 | Action-log partial fixtures | Streaming conformance |
 | Export-directory listing | Still listing contract; may ship with AHP client |
 
-Until implemented, `docs/ahp-ingest-status.md` remains accurate for **shipped**
-code. Status docs must be updated per delivery slice, not prematurely.
+Export-directory listing and a first-class live WebSocket host remain
+caller-owned (optional AHP client packages take an injected transport).
 
 ---
 
@@ -741,7 +738,5 @@ The feature is complete when:
 9. Privacy gates pass; no secrets in diagnostics/fixtures.
 10. Batch normalize/list conformance remains unchanged and green.
 
-See [live-session-streaming-plan.md](live-session-streaming-plan.md) for
-sequenced slices LS-00 … LS-12 and
-[live-session-streaming-status.md](live-session-streaming-status.md) for
-shipped vs post-LS-12 remaining work.
+See [streaming-core-api.md](streaming-core-api.md) for the apply surface and
+[streaming-file-io.md](streaming-file-io.md) for optional path follow.

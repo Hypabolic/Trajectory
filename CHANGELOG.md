@@ -5,6 +5,12 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **Docs:** removed delivery-plan / status trackers
+  (`implementation-plan`, `multi-language-plan`, `live-session-streaming-plan`,
+  `live-session-streaming-status`, `python-implementation-spec`,
+  `python-impl-status`, `ahp-ingest-status`). Root README now documents how to
+  follow a live session from the sample CLIs and optional I/O packages.
+
 ## 0.1.3 — 2026-08-13
 
 Live session streaming cut. Pure library engines on all four runtimes, optional

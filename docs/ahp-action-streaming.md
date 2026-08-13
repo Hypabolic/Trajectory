@@ -162,5 +162,5 @@ Under `conformance/cases/streaming/`:
 
 - [`streaming-core-api.md`](streaming-core-api.md) — snapshot/append file path
 - [`ahp-source-spec.md`](ahp-source-spec.md) — offline Shape A mapping
-- [`ahp-ingest-status.md`](ahp-ingest-status.md) — shipped vs planned status
+- [`ahp-client.md`](ahp-client.md) — optional live-host client
 - Protocol pin: `conformance/vendor/ahp/PROTOCOL_VERSION` (`0.7.0`)

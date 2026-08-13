@@ -204,10 +204,9 @@ def test_verify_stream_contents_unknown_package_fails_closed() -> None:
     assert "unknown package" in failures[0]
 
 
-def test_ls07h_plan_does_not_defer_shared_hermes_provider_corpus() -> None:
-    plan = (ROOT / "docs" / "live-session-streaming-plan.md").read_text(
-        encoding="utf-8"
-    )
-    assert "hermes-provider-* stream-sequence corpus still deferred" not in plan
-    assert "shared `hermes-provider-*` cases cover core `apply_hermes_export`" in plan
-    assert "only optional" in plan and "SQLite/query I/O remains package-test-gated" in plan
+def test_hermes_provider_docs_do_not_defer_shared_export_apply_corpus() -> None:
+    docs = (ROOT / "docs" / "streaming-hermes-provider.md").read_text(encoding="utf-8")
+    assert "hermes-provider-* stream-sequence corpus still deferred" not in docs
+    assert "apply_hermes_export" in docs
+    assert "package-test-gated" in docs
+    assert "hermes-provider-append" in docs

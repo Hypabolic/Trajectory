@@ -24,12 +24,9 @@ Cross-ecosystem package map (core vs optional):
 
 ## Create a release (normal path)
 
-`v0.1.0` is **already published** on NuGet / npm / crates (sources through
-`hermes` only). Checked-in `VERSION` is **`0.1.2`** (Grok Build + AHP tip;
-**do not retag `v0.1.2`**). The live-session stream cut and first PyPI upload
-require a **new** synchronized tag **strictly after `0.1.2`** (`v0.1.3`,
-`v0.2.0`, …). skip-duplicate / OIDC re-runs will not replace existing package
-contents with stream APIs.
+`v0.1.3` is the live-session streaming cut (core stream APIs + optional I/O /
+AHP / Hermes packages). Do **not** retag `v0.1.0` or `v0.1.2`. Further
+releases use a new synchronized tag (`v0.1.4`, `v0.2.0`, …).
 
 ```bash
 git checkout main

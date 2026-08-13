@@ -20,25 +20,21 @@ Optional OpenTelemetry: `Hypabolic.Trajectory.OpenTelemetry`,
 `@hypabolic/trajectory-otel`, `hypabolic-trajectory-opentelemetry`, and Python
 extra `hypabolic-trajectory[otel]` (SDK sinks only — pure OTEL project is in core).
 
-Optional live-session stream packages (**tip / Unreleased**; not yet on a
-registry tag): `Hypabolic.Trajectory.IO` / `.Ahp` / `.Hermes`,
-`@hypabolic/trajectory-node` (file I/O) / `trajectory-ahp` / `trajectory-hermes`,
-`hypabolic-trajectory-io` / `-ahp` / `-hermes`, and Python extras
-`hypabolic-trajectory[io]` / `[ahp]` / `[hermes]`.
+Optional live-session stream packages (`0.1.3+`): `Hypabolic.Trajectory.IO` /
+`.Ahp` / `.Hermes`, `@hypabolic/trajectory-node` (file I/O) / `trajectory-ahp` /
+`trajectory-hermes`, `hypabolic-trajectory-io` / `-ahp` / `-hermes`, and Python
+extras `hypabolic-trajectory[io]` / `[ahp]` / `[hermes]`.
 
 Releases use the **git tag as the version** (same model as Hypa): push
 `vX.Y.Z` and CI stamps packages, publishes NuGet/npm/crates/PyPI, and creates a
 GitHub Release. See [docs/publishing.md](docs/publishing.md).
 
-> **Published vs this tree:** Latest synchronized registry cut is **`0.1.2`**
-> (NuGet / npm / crates / PyPI): Pi, Claude Code, Codex, OpenClaw, Hermes, **AHP**
-> Shape A offline snapshots, **Grok Build**, and the **Python** runtime. Historical
-> **`0.1.0`** stopped at Hermes (no AHP, no PyPI); **`0.1.1`** added Python + AHP
-> Shape A. **Tip-only (Unreleased / this branch):** live-session streaming core
-> APIs + capability claims, optional I/O / AHP client / Hermes provider packages,
-> and sample `stream` / `ahp-stream` CLIs — see CHANGELOG `[Unreleased]`. Install
-> commands **without a version pin** resolve to the latest *published* tag, which
-> is **not** necessarily this tip.
+> **Published vs this tree:** Latest synchronized registry cut is **`0.1.3`**
+> (NuGet / npm / crates / PyPI): prior sources plus **live session streaming**
+> (core apply APIs, optional file I/O / AHP client / Hermes provider packages,
+> sample CLI follow). **`0.1.2`** was Grok Build + AHP Shape A without stream
+> engines. Install commands **without a version pin** resolve to the latest
+> *published* tag.
 
 ## What you get
 
@@ -51,11 +47,9 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
   optional OpenTelemetry GenAI spans
 - **Local store listing** with explicit roots and pagination
 - **Partial / chunked input** where the source supports append-only sessions
-- **Live session streaming (library, not a daemon)** — pure core
-  `StreamState` / apply APIs with snapshot + delta envelopes, JSONL append,
-  AHP snapshot + action-log, optional file follow / AHP client / Hermes
-  provider packages, and sample `stream` / `ahp-stream` CLIs (tip;
-  capability-advertised as core `stream-*` plus optional package caps)
+- **Live session streaming (library, not a daemon)** — follow a growing
+  JSONL session or AHP chat and receive snapshot + delta updates. See
+  [How to stream](#live-session-streaming) below.
 - **Native AOT–friendly .NET**, ESM TypeScript (Node 22+), Rust 2024 (MSRV 1.85),
   Python 3.11+
 
@@ -65,7 +59,7 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
 # .NET
 dotnet add package Hypabolic.Trajectory
 # optional: dotnet add package Hypabolic.Trajectory.OpenTelemetry
-# optional stream packages (tip / Unreleased — not yet on a registry tag):
+# optional stream packages (0.1.3+):
 #   dotnet add package Hypabolic.Trajectory.IO
 #   dotnet add package Hypabolic.Trajectory.Ahp
 #   dotnet add package Hypabolic.Trajectory.Hermes
@@ -74,14 +68,14 @@ dotnet add package Hypabolic.Trajectory
 npm install @hypabolic/trajectory
 npm install @hypabolic/trajectory-node   # local listing + stream file I/O
 # optional: npm install @hypabolic/trajectory-otel
-# optional stream packages (tip / Unreleased — not yet on a registry tag):
+# optional stream packages (0.1.3+):
 #   npm install @hypabolic/trajectory-ahp
 #   npm install @hypabolic/trajectory-hermes
 
 # Rust
 cargo add hypabolic-trajectory
 # optional: cargo add hypabolic-trajectory-opentelemetry
-# optional stream packages (tip / Unreleased — not yet on a registry tag):
+# optional stream packages (0.1.3+):
 #   cargo add hypabolic-trajectory-io
 #   cargo add hypabolic-trajectory-ahp
 #   cargo add hypabolic-trajectory-hermes
@@ -90,7 +84,7 @@ cargo add hypabolic-trajectory
 pip install hypabolic-trajectory
 # optional SDK sinks only:
 pip install 'hypabolic-trajectory[otel]'
-# optional stream extras (same wheel; tip surface under Unreleased):
+# optional stream extras (same wheel; 0.1.3+):
 #   pip install 'hypabolic-trajectory[io]'
 #   pip install 'hypabolic-trajectory[ahp]'
 #   pip install 'hypabolic-trajectory[hermes]'
@@ -260,6 +254,126 @@ timestamps, identity formulas, OTEL import matrix, filtered conformance argv).
 
 Override listing roots with `--root` / `TRAJECTORY_<SOURCE>_ROOT` in the sample
 CLIs, or pass an explicit root to listing APIs.
+
+## Live session streaming
+
+Trajectory is a **library**, not a daemon. Your process owns lifetime, paths,
+and (for AHP) transport. The core applies complete JSONL lines or AHP
+snapshots/actions and emits a `StreamUpdate` with a snapshot, a record delta,
+and a cursor you can persist.
+
+Product model: [docs/live-session-streaming.md](docs/live-session-streaming.md).  
+Wire contract: [contracts/spec/streaming.md](contracts/spec/streaming.md).  
+Apply API: [docs/streaming-core-api.md](docs/streaming-core-api.md).  
+File follow: [docs/streaming-file-io.md](docs/streaming-file-io.md).
+
+### Watch a local session (sample CLIs)
+
+Unpublished monorepo samples — pick a session from the local store and follow
+it as complete lines are committed.
+
+```bash
+# .NET
+dotnet run --project dotnet/samples/Trajectory.Cli -- \
+  browse --source grok-build --watch --show-content
+
+# Rust
+cargo run -p trajectory-cli --manifest-path rust/Cargo.toml -- \
+  browse --source grok-build --watch --show-content
+```
+
+What you get:
+
+1. Sessions sorted by last-active time (`just now`, `5m ago`, …).
+2. A **live tail** of the latest records (not the start of the transcript).
+3. A ticking `watching` line until the JSONL grows by a complete line.
+
+`--watch` skips the Watch live / Show snapshot prompt. `--show-content` prints
+text snippets (private). Ctrl-C stops follow.
+
+**Grok Build:** the stream tails `chat_history.jsonl`. Items appear when Grok
+commits a finished conversation item — not token-by-token `updates.jsonl`.
+
+Other file sources work the same: `pi`, `claude-code`, `codex`, `openclaw`.
+
+```bash
+# Follow a known path (one poll unless --follow)
+dotnet run --project dotnet/samples/Trajectory.Cli -- stream \
+  --source pi --path path/to/session.jsonl --follow --show-content
+```
+
+### Follow a file from your app
+
+Install the optional I/O package and poll or iterate. Only **LF-terminated**
+lines become records; a partial last line stays pending.
+
+```csharp
+using Hypabolic.Trajectory;
+using Hypabolic.Trajectory.IO;
+using Hypabolic.Trajectory.Streaming;
+
+await using var stream = FileTrajectoryStream.Open(new FileTrajectoryStreamOptions
+{
+    Root = root,          // store root that contains Path
+    Path = sessionPath,   // e.g. chat_history.jsonl
+    Source = TrajectorySource.GrokBuild,
+    GroupId = sessionId,  // Grok listing id (session UUID)
+});
+
+await foreach (var update in stream.FollowAsync(ct))
+{
+    // update.Kind: updated | unchanged | reset-required | error
+    // update.Snapshot.Records — full current view
+    // update.Delta.Operations — upserts / removes since last revision
+    // update.Cursor — persist this to resume
+}
+```
+
+```python
+from hypabolic_trajectory.io import FileStreamOptions, FileTrajectoryStream
+
+fs = FileTrajectoryStream.open(FileStreamOptions(
+    root=root, path=session_path, source="grok-build", group_id=session_id,
+))
+try:
+    for update in fs.follow(interval=0.05):
+        print(update.kind, len(update.snapshot.records) if update.snapshot else 0)
+finally:
+    fs.close()
+```
+
+```ts
+import { openFileStream } from "@hypabolic/trajectory-node";
+
+const stream = openFileStream({
+  root, path, source: "grok-build", groupId: sessionId,
+});
+for (;;) {
+  const update = await stream.poll();
+  if (update && update.kind !== "unchanged") { /* … */ }
+}
+```
+
+```rust
+use hypabolic_trajectory::TrajectorySource;
+use hypabolic_trajectory_io::{FileStreamOptions, FileTrajectoryStream};
+
+let mut stream = FileTrajectoryStream::open(FileStreamOptions {
+    root, path, source: TrajectorySource::GrokBuild,
+    group_id: Some(session_id),
+    ..Default::default()
+})?;
+if let Some(update) = stream.poll()? { /* … */ }
+```
+
+If you already own I/O, skip the file package and call core `apply_snapshot` /
+`apply_append` (or `apply_ahp_*`) yourself. Portable resume is **cursor +
+re-apply source material**, not serialized IR.
+
+AHP live hosts: inject your own WebSocket `AhpTransport` into
+`Hypabolic.Trajectory.Ahp` / `@hypabolic/trajectory-ahp` /
+`hypabolic-trajectory-ahp` / `hypabolic_trajectory.ahp_client`. Samples only
+demo `fake://`. See [docs/ahp-client.md](docs/ahp-client.md).
 
 ## Sample CLIs (try your local sessions)
 
@@ -472,7 +586,7 @@ We welcome issues and PRs that improve adapters, fixtures, docs, and packaging.
 | [OpenTelemetry GenAI](docs/otel-genai-output.md) | Span projection and privacy |
 | [Publishing](docs/publishing.md) | NuGet / npm / crates release |
 | [Release readiness](docs/release-readiness.md) | Privacy, packaging, 1.0 gates |
-| [AHP ingest status](docs/ahp-ingest-status.md) | AHP Phase 0–1 vs deferred work |
+| [Live session streaming](docs/live-session-streaming.md) | Library stream model, cursor, snapshot + delta |
 | [AHP source design](docs/ahp-source-spec.md) | Agent Host Protocol ingest design |
 | [Normative specs](contracts/spec/normalization.md) | Identity, timestamps, diagnostics |
 | [Conformance](conformance/README.md) | Shared cases and runners |

@@ -55,7 +55,7 @@ python3 conformance/verify.py --repository-root . -- \
 sources and six outputs (slice `ML13`). On this tip the source set includes
 `ahp` and `grok-build`; published registry `0.1.0` stopped at Hermes. See
 [docs/release-readiness.md](../docs/release-readiness.md) and
-[docs/ahp-ingest-status.md](../docs/ahp-ingest-status.md). `write_schema` and
+[docs/ahp-source-spec.md](../docs/ahp-source-spec.md). `write_schema` and
 `write_minimal_jsonl` provide `std::io::Write` surfaces; the latter emits one
 
 Run the dependency-free representative benchmark:

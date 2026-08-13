@@ -38,7 +38,6 @@ IDENTITY_BASELINE = ROOT / "conformance" / "identity-baseline.sha256"
 VALIDATOR = TOOLS / "validate_release_metadata.py"
 PACK_SMOKE = TOOLS / "python_package_smoke.py"
 PRODUCT_README = ROOT / "python" / "README.md"
-STATUS_DOC = ROOT / "docs" / "python-impl-status.md"
 PUBLISHING_MD = ROOT / "docs" / "publishing.md"
 RELEASE_READY = ROOT / "docs" / "release-readiness.md"
 
@@ -590,9 +589,6 @@ def test_dod_10_docs_ship_surface() -> None:
     ):
         assert needle in readme, f"python/README.md missing {needle!r}"
 
-    status = STATUS_DOC.read_text(encoding="utf-8")
-    assert "PY-17" in status
-
     publishing = PUBLISHING_MD.read_text(encoding="utf-8")
     assert "hypabolic-trajectory" in publishing
     assert "Trusted Publishing" in publishing or "OIDC" in publishing
@@ -629,30 +625,13 @@ def test_dod_11_no_false_claims() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_join_status_marks_py17_and_deps_done() -> None:
-    """Status doc is the human join checklist; must mark PY-17 Done when green."""
-    text = STATUS_DOC.read_text(encoding="utf-8")
-    # Dependencies of PY-17 must already be Done.
-    for issue in (
-        "PY-11",
-        "PY-12",
-        "PY-14a",
-        "PY-14b",
-        "PY-15b",
-        "PY-16",
-        "PY-17",
+def test_join_product_readme_documents_shipped_surface() -> None:
+    """Product README is the public ship surface after status docs were removed."""
+    text = PRODUCT_README.read_text(encoding="utf-8")
+    for needle in (
+        "hypabolic-trajectory",
+        "list_trajectories",
+        "TrajectoryEngine",
+        "stream",
     ):
-        # Match table rows like "| PY-17 first-ship join | **Done**"
-        rows = [
-            line
-            for line in text.splitlines()
-            if issue in line and line.strip().startswith("|")
-        ]
-        assert rows, f"no status row for {issue}"
-        # At least one row for the issue should say Done (not Not ready).
-        assert any("Done" in r or "**Done**" in r for r in rows), (
-            f"{issue} not marked Done in status rows: {rows}"
-        )
-        assert not any("Not ready" in r for r in rows), (
-            f"{issue} still Not ready: {rows}"
-        )
+        assert needle in text, f"python/README.md missing {needle!r}"

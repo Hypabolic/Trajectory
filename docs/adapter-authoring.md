@@ -12,13 +12,12 @@ Related:
 - [Listing](../contracts/spec/listing.md)
 - [Streaming](../contracts/spec/streaming.md) — live session stream wire
   contract (`trajectory-stream-v1`); product design
-  [live-session-streaming.md](live-session-streaming.md) and slices
-  [live-session-streaming-plan.md](live-session-streaming-plan.md)
+  [live-session-streaming.md](live-session-streaming.md)
 - [Conformance case authoring](../conformance/README.md)
 - [Contributing](contributing.md)
 - [AHP source design](ahp-source-spec.md) — Agent Host Protocol Shape A offline
-  snapshot source (`ahp`); action-log reduce, listing, and live host are later
-  phases. Phase status: [ahp-ingest-status.md](ahp-ingest-status.md).
+  snapshot source (`ahp`); Shape B reduce is in core stream apply; listing and
+  live WebSocket remain caller-owned.
 - [Grok Build source](grok-build-source-spec.md) — Grok Build (`grok-build`) session history
 
 ## Architecture reminder
@@ -169,10 +168,9 @@ Only after goldens pass on all claiming runtimes:
 Streaming is a **separate** surface from one-shot normalize/list. Normative
 wire: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md). Product
 locks and package boundaries:
-[live-session-streaming.md](live-session-streaming.md). Delivery slices:
-[live-session-streaming-plan.md](live-session-streaming-plan.md).
+[live-session-streaming.md](live-session-streaming.md).
 
-### Core algorithm DoD (LS-08 matrix gate)
+### Core algorithm DoD (shared stream matrix)
 
 A stream engine change is **done** for the core packages only when:
 
