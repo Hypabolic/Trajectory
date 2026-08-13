@@ -15,17 +15,17 @@ internal sealed class CursorTrajectoryLister : ITrajectoryLister
         try
         {
             foreach (var hash in Directory.EnumerateDirectories(Path.Combine(cursorRoot, "chats")))
-            foreach (var session in Directory.EnumerateDirectories(hash))
-            {
-                try
+                foreach (var session in Directory.EnumerateDirectories(hash))
                 {
-                    using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(session, "meta.json")));
-                    var sessionId = Path.GetFileName(session);
-                    if (document.RootElement.ValueKind == JsonValueKind.Object && sessionId is not null && !metadata.ContainsKey(sessionId))
-                        metadata[sessionId] = document.RootElement.Clone();
+                    try
+                    {
+                        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(session, "meta.json")));
+                        var sessionId = Path.GetFileName(session);
+                        if (document.RootElement.ValueKind == JsonValueKind.Object && sessionId is not null && !metadata.ContainsKey(sessionId))
+                            metadata[sessionId] = document.RootElement.Clone();
+                    }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
                 }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
-            }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
 

@@ -22,12 +22,11 @@ const USER_LINE: &str = concat!(
     r#"{"type":"message","id":"m1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"hello"}]},"sessionId":"ls11-stream-rs"}"#,
     "\n"
 );
-const CURSOR_LINE: &str =
-    concat!(
-        r#"{"role":"user","message":{"content":[{"type":"text","text":"hello"}]}}"#,
-        "\n",
-        r#"{"role":"assistant","message":{"content":[{"type":"text","text":"done"}]}}"#
-    );
+const CURSOR_LINE: &str = concat!(
+    r#"{"role":"user","message":{"content":[{"type":"text","text":"hello"}]}}"#,
+    "\n",
+    r#"{"role":"assistant","message":{"content":[{"type":"text","text":"done"}]}}"#
+);
 
 fn trajectory_bin() -> PathBuf {
     if let Some(path) = env::var_os("CARGO_BIN_EXE_trajectory") {
@@ -358,7 +357,11 @@ fn cursor_list_show_and_browse_watch_use_listed_session_id() {
     let listed = run_cli(&[
         "list", "--source", "cursor", "--root", root_text, "--limit", "5",
     ]);
-    assert_eq!(listed.code, 0, "stderr={}\nstdout={}", listed.stderr, listed.stdout);
+    assert_eq!(
+        listed.code, 0,
+        "stderr={}\nstdout={}",
+        listed.stderr, listed.stdout
+    );
     assert!(
         listed.stdout.contains(CURSOR_ID),
         "session id missing:\n{}",
@@ -368,7 +371,11 @@ fn cursor_list_show_and_browse_watch_use_listed_session_id() {
     let shown = run_cli(&[
         "show", "--source", "cursor", "--root", root_text, "--id", CURSOR_ID,
     ]);
-    assert_eq!(shown.code, 0, "stderr={}\nstdout={}", shown.stderr, shown.stdout);
+    assert_eq!(
+        shown.code, 0,
+        "stderr={}\nstdout={}",
+        shown.stderr, shown.stdout
+    );
     assert!(
         shown.stdout.contains(CURSOR_ID),
         "session id missing:\n{}",
@@ -398,8 +405,7 @@ fn cursor_list_show_and_browse_watch_use_listed_session_id() {
     assert_eq!(
         browsed.code, 0,
         "stderr={}\nstdout={}",
-        browsed.stderr,
-        browsed.stdout
+        browsed.stderr, browsed.stdout
     );
     assert!(
         browsed.stdout.contains("stream update"),

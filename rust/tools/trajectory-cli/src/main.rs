@@ -21,10 +21,10 @@ use hypabolic_trajectory::{
     ListingOptions, NormalizeOptions, NormalizeRequest, RecordKind, SourceContext, StreamDelivery,
     StreamOptions, StreamUpdate, Trajectory, TrajectoryError, TrajectoryListing, TrajectorySource,
     list_ahp_trajectories, list_claude_code_trajectories, list_codex_trajectories,
-    list_cursor_trajectories, list_grok_build_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
-    list_pi_trajectories, normalize_ahp, normalize_claude_code, normalize_codex,
-    normalize_cursor, normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi, project_hypabolic,
-    project_letta,
+    list_cursor_trajectories, list_grok_build_trajectories, list_hermes_trajectories,
+    list_openclaw_trajectories, list_pi_trajectories, normalize_ahp, normalize_claude_code,
+    normalize_codex, normalize_cursor, normalize_grok_build, normalize_hermes, normalize_openclaw,
+    normalize_pi, project_hypabolic, project_letta,
 };
 use hypabolic_trajectory_ahp::{
     AhpClientEvent, AhpClientEventKind, AhpClientOptions, AhpStreamClient, FakeAhpHost,
@@ -1271,7 +1271,13 @@ fn resolve_root(source: SourceArg, root_override: Option<&Path>) -> PathBuf {
             }
             home.join(".grok").join("sessions")
         }
-        SourceArg::Cursor => env::var("CURSOR_HOME").ok().filter(|value| !value.trim().is_empty()).map(|value| PathBuf::from(expand_home(value.trim()))).unwrap_or_else(|| home.join(".cursor")),
+        SourceArg::Cursor => env::var("CURSOR_HOME")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map_or_else(
+                || home.join(".cursor"),
+                |value| PathBuf::from(expand_home(value.trim())),
+            ),
     }
 }
 

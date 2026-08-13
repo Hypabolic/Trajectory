@@ -253,7 +253,9 @@ pub fn normalize_grok_build(request: NormalizeRequest<'_>) -> Result<Trajectory,
 pub struct CursorSourceAdapter;
 
 impl SourceAdapter for CursorSourceAdapter {
-    fn source(&self) -> &'static str { "cursor" }
+    fn source(&self) -> &'static str {
+        "cursor"
+    }
 
     fn normalize(&self, request: NormalizeRequest<'_>) -> Result<Trajectory, TrajectoryError> {
         normalize_cursor(request)
@@ -268,68 +270,184 @@ pub fn normalize_cursor(request: NormalizeRequest<'_>) -> Result<Trajectory, Tra
     let mut offset = 0_usize;
     let mut line = 1_usize;
     loop {
-        let relative_end = request.transcript[offset..].iter().position(|value| *value == b'\n');
+        let relative_end = request.transcript[offset..]
+            .iter()
+            .position(|value| *value == b'\n');
         let end = relative_end.map_or(request.transcript.len(), |value| offset + value);
-        let line_end = if end > offset && request.transcript[end - 1] == b'\r' { end - 1 } else { end };
+        let line_end = if end > offset && request.transcript[end - 1] == b'\r' {
+            end - 1
+        } else {
+            end
+        };
         let slice = &request.transcript[offset..line_end];
-        if !slice.iter().all(|value| matches!(*value, b' ' | b'\t' | b'\r')) {
-            let source_offset = i64::try_from(offset).map_err(|_| TrajectoryError::new("invalid_input", "Transcript byte offset exceeds signed 64-bit range."))?;
-            match std::str::from_utf8(slice).ok().and_then(|text| serde_json::from_str::<Value>(text).ok()) {
+        if !slice
+            .iter()
+            .all(|value| matches!(*value, b' ' | b'\t' | b'\r'))
+        {
+            let source_offset = i64::try_from(offset).map_err(|_| {
+                TrajectoryError::new(
+                    "invalid_input",
+                    "Transcript byte offset exceeds signed 64-bit range.",
+                )
+            })?;
+            match std::str::from_utf8(slice)
+                .ok()
+                .and_then(|text| serde_json::from_str::<Value>(text).ok())
+            {
                 Some(Value::Object(row)) => {
                     let role = string_value(row.get("role"));
                     let row_type = string_value(row.get("type"));
                     let mut component_index = 0_usize;
-                    let mut emit = |kind: EventKind, role_value: Role, content: Option<String>, tool_name: Option<String>, arguments_json: Option<String>| {
-                        events.push(DecodedEvent { kind, role: role_value, content, tool_call_id: None, tool_name, arguments_json, is_error: None, native_id: None, producer_version: None, source_sequence: None, source_offset, input_line: Some(line), timestamp_ms: None, timestamp_precise: None, component_index, model: None });
-                        component_index += 1;
-                    };
+                    let mut emit =
+                        |kind: EventKind,
+                         role_value: Role,
+                         content: Option<String>,
+                         tool_name: Option<String>,
+                         arguments_json: Option<String>| {
+                            events.push(DecodedEvent {
+                                kind,
+                                role: role_value,
+                                content,
+                                tool_call_id: None,
+                                tool_name,
+                                arguments_json,
+                                is_error: None,
+                                native_id: None,
+                                producer_version: None,
+                                source_sequence: None,
+                                source_offset,
+                                input_line: Some(line),
+                                timestamp_ms: None,
+                                timestamp_precise: None,
+                                component_index,
+                                model: None,
+                            });
+                            component_index += 1;
+                        };
                     if matches!(role, Some("user" | "assistant")) {
-                        let content = row.get("message").and_then(Value::as_object).and_then(|message| message.get("content")).and_then(Value::as_array);
+                        let content = row
+                            .get("message")
+                            .and_then(Value::as_object)
+                            .and_then(|message| message.get("content"))
+                            .and_then(Value::as_array);
                         let mut texts = Vec::new();
                         if let Some(parts) = content {
                             for part in parts {
-                                let Some(part) = part.as_object() else { continue };
+                                let Some(part) = part.as_object() else {
+                                    continue;
+                                };
                                 match string_value(part.get("type")) {
                                     Some("text") => if let Some(text) = string_value(part.get("text")) { texts.push(text.to_owned()); },
                                     Some("image" | "image_url" | "input_image" | "output_image") => diagnostics.push(Diagnostic { code: "image_content_dropped".into(), message: format!("Dropped image content on a Cursor record on line {line}."), input_line: Some(line), record_index: None, count: None }),
-                                    Some("tool_use") if role == Some("assistant") => {},
-                                    Some("tool_use") => {},
+                                    Some("tool_use") | None => {}
                                     Some(_) => diagnostics.push(Diagnostic { code: "unknown_content_part".into(), message: format!("Skipped an unknown Cursor content part on line {line}."), input_line: Some(line), record_index: None, count: None }),
-                                    None => {},
                                 }
                             }
                         }
                         let text = texts.join("\n");
-                        if !text.trim().is_empty() { emit(EventKind::Message, if role == Some("user") { Role::User } else { Role::Assistant }, Some(text), None, None); }
+                        if !text.trim().is_empty() {
+                            emit(
+                                EventKind::Message,
+                                if role == Some("user") {
+                                    Role::User
+                                } else {
+                                    Role::Assistant
+                                },
+                                Some(text),
+                                None,
+                                None,
+                            );
+                        }
                         if role == Some("assistant") {
                             if let Some(parts) = content {
                                 for part in parts {
-                                    let Some(part) = part.as_object() else { continue };
-                                    if string_value(part.get("type")) != Some("tool_use") { continue; }
-                                    let Some(name) = string_value(part.get("name")).filter(|value| !value.trim().is_empty()) else {
+                                    let Some(part) = part.as_object() else {
+                                        continue;
+                                    };
+                                    if string_value(part.get("type")) != Some("tool_use") {
+                                        continue;
+                                    }
+                                    let Some(name) = string_value(part.get("name"))
+                                        .filter(|value| !value.trim().is_empty())
+                                    else {
                                         diagnostics.push(Diagnostic { code: "tool_use_missing_name".into(), message: format!("Skipped a Cursor tool_use part without a name on line {line}."), input_line: Some(line), record_index: None, count: None });
                                         continue;
                                     };
-                                    let arguments = match part.get("input").filter(|value| value.is_object()) { Some(value) => relaxed_json(value)?, None => "{}".into() };
-                                    emit(EventKind::ToolCall, Role::Assistant, None, Some(name.into()), Some(arguments));
+                                    let arguments =
+                                        match part.get("input").filter(|value| value.is_object()) {
+                                            Some(value) => relaxed_json(value)?,
+                                            None => "{}".into(),
+                                        };
+                                    emit(
+                                        EventKind::ToolCall,
+                                        Role::Assistant,
+                                        None,
+                                        Some(name.into()),
+                                        Some(arguments),
+                                    );
                                 }
                             }
                         }
                     } else if row_type == Some("turn_ended") {
-                        if string_value(row.get("status")) == Some("error") { diagnostics.push(Diagnostic { code: "turn_ended_error".into(), message: "A Cursor turn ended with an error.".into(), input_line: Some(line), record_index: None, count: None }); }
+                        if string_value(row.get("status")) == Some("error") {
+                            diagnostics.push(Diagnostic {
+                                code: "turn_ended_error".into(),
+                                message: "A Cursor turn ended with an error.".into(),
+                                input_line: Some(line),
+                                record_index: None,
+                                count: None,
+                            });
+                        }
                     } else if role.is_some() || row_type.is_some() {
-                        diagnostics.push(Diagnostic { code: "unknown_semantic_record".into(), message: format!("Skipped an unknown Cursor semantic record on line {line}."), input_line: Some(line), record_index: None, count: None });
+                        diagnostics.push(Diagnostic {
+                            code: "unknown_semantic_record".into(),
+                            message: format!(
+                                "Skipped an unknown Cursor semantic record on line {line}."
+                            ),
+                            input_line: Some(line),
+                            record_index: None,
+                            count: None,
+                        });
                     }
                 }
-                Some(_) => diagnostics.push(Diagnostic { code: "non_object_json_line".into(), message: format!("Skipped non-object JSON on line {line}."), input_line: Some(line), record_index: None, count: None }),
-                None => diagnostics.push(Diagnostic { code: "invalid_json_line".into(), message: format!("Skipped invalid JSON on line {line}."), input_line: Some(line), record_index: None, count: None }),
+                Some(_) => diagnostics.push(Diagnostic {
+                    code: "non_object_json_line".into(),
+                    message: format!("Skipped non-object JSON on line {line}."),
+                    input_line: Some(line),
+                    record_index: None,
+                    count: None,
+                }),
+                None => diagnostics.push(Diagnostic {
+                    code: "invalid_json_line".into(),
+                    message: format!("Skipped invalid JSON on line {line}."),
+                    input_line: Some(line),
+                    record_index: None,
+                    count: None,
+                }),
             }
         }
-        if end == request.transcript.len() { break; }
+        if end == request.transcript.len() {
+            break;
+        }
         offset = end + 1;
         line += 1;
     }
-    normalize_decoded(config, DecodedSession { source: TrajectorySource::Cursor, source_name: "cursor", group_id: None, cwd: None, git_branch: None, model: None, producer_version: None, created_at_ms: None, events, model_invocations: Vec::new(), diagnostics })
+    normalize_decoded(
+        config,
+        DecodedSession {
+            source: TrajectorySource::Cursor,
+            source_name: "cursor",
+            group_id: None,
+            cwd: None,
+            git_branch: None,
+            model: None,
+            producer_version: None,
+            created_at_ms: None,
+            events,
+            model_invocations: Vec::new(),
+            diagnostics,
+        },
+    )
 }
 
 fn decode_grok_build(

@@ -11,8 +11,8 @@ use crate::model::{
     NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError, TrajectorySource,
 };
 use crate::normalize::{
-    normalize_ahp, normalize_claude_code, normalize_codex, normalize_cursor, normalize_grok_build, normalize_hermes,
-    normalize_openclaw, normalize_pi,
+    normalize_ahp, normalize_claude_code, normalize_codex, normalize_cursor, normalize_grok_build,
+    normalize_hermes, normalize_openclaw, normalize_pi,
 };
 use crate::projection::{hypabolic_value, sha256};
 
