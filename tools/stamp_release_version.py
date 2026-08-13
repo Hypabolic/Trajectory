@@ -38,9 +38,12 @@ def main() -> None:
     lock = root / "rust/Cargo.lock"
     if lock.is_file():
         text = lock.read_text(encoding="utf-8")
-        # Update name = "hypabolic-trajectory" / version = "..." pairs coarsely
+        # Keep Cargo.lock in sync with stamped workspace.package.version so
+        # `cargo package --locked` does not try to rewrite the lockfile.
+        # Includes tools (trajectory-cli / trajectory-conformance), not just
+        # published hypabolic-trajectory* crates.
         text2 = re.sub(
-            r'(name = "hypabolic-trajectory(?:-opentelemetry|-io|-ahp|-hermes)?"\nversion = ")[^"]+(")',
+            r'(name = "(?:hypabolic-trajectory(?:-opentelemetry|-io|-ahp|-hermes)?|trajectory-cli|trajectory-conformance)"\nversion = ")[^"]+(")',
             rf"\g<1>{version}\g<2>",
             text,
         )

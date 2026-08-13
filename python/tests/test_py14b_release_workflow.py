@@ -75,6 +75,13 @@ def test_publish_pypi_skipped_on_dry_run() -> None:
     assert "needs.validate.result == 'success'" in job
 
 
+def test_stamp_rewrites_all_workspace_lock_packages() -> None:
+    stamp = (ROOT / "tools" / "stamp_release_version.py").read_text(encoding="utf-8")
+    assert "trajectory-cli" in stamp
+    assert "trajectory-conformance" in stamp
+    assert "hypabolic-trajectory" in stamp
+
+
 def test_release_yml_stream_cut_examples_are_after_0_1_2() -> None:
     text = RELEASE_YML.read_text(encoding="utf-8")
     header = text.split("on:", 1)[0]
