@@ -255,9 +255,9 @@ def test_filtered_verify_full_protocol_v1_tip_surface_green() -> None:
     )
     summary = json.loads(completed.stdout)
     assert summary["status"] == "success"
-    # Current tip case inventory: 39 batch cases / 66 operations (all declared pairs).
+    # Current tip case inventory: 45 batch cases / 76 operations (all declared pairs).
     assert summary["cases"] == 45
-    assert summary["operations"] == 66
+    assert summary["operations"] == 76
 
 
 def test_stream_verify_matrix_green() -> None:
