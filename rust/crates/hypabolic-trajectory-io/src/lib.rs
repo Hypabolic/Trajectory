@@ -5,7 +5,9 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::hash_map::DefaultHasher;
 use std::fs::{self, File};
+use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -125,6 +127,9 @@ struct FileStat {
     size: u64,
     identity: FileIdentity,
     mtime_ns: u128,
+    /// Cheap head/tail fingerprint so same-size in-place rewrite is visible
+    /// when Windows last-write timestamps share a coarse tick.
+    sample: u64,
 }
 
 impl FileTrajectoryStream {
@@ -236,7 +241,7 @@ impl FileTrajectoryStream {
         }
         // Same file, same size: mtime/generation detects in-place replace (M2)
         // without treating append growth as replace.
-        if self.generation_changed(stat.mtime_ns) {
+        if self.generation_changed(&stat) {
             return Ok(Some(self.snapshot_full(stat)?));
         }
         self.polls = self.polls.saturating_add(1);
@@ -357,17 +362,22 @@ impl FileTrajectoryStream {
         self.last_stat.is_some_and(|prev| prev.identity != identity)
     }
 
-    fn generation_changed(&self, mtime_ns: u128) -> bool {
-        self.last_stat.is_some_and(|prev| prev.mtime_ns != mtime_ns)
+    fn generation_changed(&self, stat: &FileStat) -> bool {
+        self.last_stat
+            .is_some_and(|prev| prev.mtime_ns != stat.mtime_ns || prev.sample != stat.sample)
     }
 
     fn stat_file(&self) -> Result<FileStat, HostError> {
         match fs::metadata(&self.path) {
-            Ok(meta) => Ok(FileStat {
-                size: meta.len(),
-                identity: file_identity(&meta),
-                mtime_ns: file_mtime_ns(&meta),
-            }),
+            Ok(meta) => {
+                let size = meta.len();
+                Ok(FileStat {
+                    size,
+                    identity: file_identity(&meta),
+                    mtime_ns: file_mtime_ns(&meta),
+                    sample: file_content_sample(&self.path, size)?,
+                })
+            }
             Err(err) => Err(map_io_error(&err, &self.path)),
         }
     }
@@ -535,6 +545,29 @@ fn normalize_lexically(path: &Path) -> PathBuf {
 fn is_under_root(root: &Path, path: &Path) -> bool {
     // Both inputs must already be absolute + lexically normalized (or canonicalized).
     path.starts_with(root)
+}
+
+fn file_content_sample(path: &Path, size: u64) -> Result<u64, HostError> {
+    if size == 0 {
+        return Ok(0);
+    }
+    let mut file = File::open(path).map_err(|err| map_io_error(&err, path))?;
+    let head_len = usize::try_from(size.min(64)).unwrap_or(64);
+    let mut head = vec![0_u8; head_len];
+    file.read_exact(&mut head)
+        .map_err(|err| map_io_error(&err, path))?;
+    let mut hasher = DefaultHasher::new();
+    head.hash(&mut hasher);
+    if size > 64 {
+        let tail_len = usize::try_from(size.min(64)).unwrap_or(64);
+        file.seek(SeekFrom::End(-i64::try_from(tail_len).unwrap_or(64)))
+            .map_err(|err| map_io_error(&err, path))?;
+        let mut tail = vec![0_u8; tail_len];
+        file.read_exact(&mut tail)
+            .map_err(|err| map_io_error(&err, path))?;
+        tail.hash(&mut hasher);
+    }
+    Ok(hasher.finish())
 }
 
 fn file_mtime_ns(meta: &fs::Metadata) -> u128 {
