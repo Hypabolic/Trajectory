@@ -111,8 +111,9 @@ pub struct FileTrajectoryStream {
 /// Stable file key. Must not include mtime or size — growth rewrites change
 /// those and would be misread as replace (`reset-required` / snapshot).
 ///
-/// Unix: `st_dev` + `st_ino`. Windows: `creation_time` only (stable across
-/// writes). `last_write_time` / size are generation signals, not identity.
+/// Unix: `st_dev` + `st_ino`. Windows: volume serial + file index when the
+/// handle metadata exposes them, else `creation_time`. `last_write_time` /
+/// size are generation signals, not identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FileIdentity {
     dev: u64,
@@ -554,13 +555,14 @@ fn file_identity(meta: &fs::Metadata) -> FileIdentity {
     }
     #[cfg(windows)]
     {
-        // file_index()/volume_serial_number() require unstable windows_by_handle.
-        // creation_time is stable across writes. last_write_time and size must
-        // not be the identity key — growth would look like a replace.
+        // Stable on 1.85+: volume serial + file index uniquely identify a file
+        // across writes. creation_time is the fallback when index is missing.
+        // last_write_time and size must not be the identity key — growth would
+        // look like a replace.
         use std::os::windows::fs::MetadataExt;
         FileIdentity {
-            dev: meta.creation_time(),
-            ino: 0,
+            dev: u64::from(meta.volume_serial_number().unwrap_or(0)),
+            ino: meta.file_index().unwrap_or_else(|| meta.creation_time()),
         }
     }
     #[cfg(not(any(unix, windows)))]
@@ -574,7 +576,7 @@ fn file_identity(meta: &fs::Metadata) -> FileIdentity {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -792,7 +794,7 @@ mod tests {
         let after = file_identity(&after_meta);
         assert_eq!(
             before, after,
-            "same-file growth must keep the stable file key (unix dev+ino / windows creation_time)"
+            "same-file growth must keep the stable file key (unix dev+ino / windows volume+index)"
         );
         assert!(after_meta.len() > SESSION_LINE.len() as u64);
     }
@@ -995,6 +997,13 @@ mod tests {
         let tmp = root.join("session.jsonl.tmp");
         fs::write(&tmp, &replaced).unwrap();
         replace_file(&tmp, &path);
+        // Windows last-write timestamps can share a coarse tick with the
+        // original write. Nudge mtime so generation detection is deterministic
+        // even if file-index metadata is missing on the volume.
+        let later = SystemTime::now()
+            .checked_add(Duration::from_secs(2))
+            .unwrap_or_else(SystemTime::now);
+        let _ = fs::File::open(&path).and_then(|file| file.set_modified(later));
         let update = stream.poll().unwrap().expect("atomic replace");
         assert!(update.kind == "updated" || update.kind == "reset-required");
     }
