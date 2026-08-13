@@ -22,8 +22,7 @@ const MSG_SEQUENCE_GAP: &str = "AHP action-log serverSeq gap requires snapshot r
 const MSG_INVALID_AHP_ACTIONS: &str = "AHP action batch could not be parsed.";
 const MSG_INVALID_AHP_SNAPSHOT: &str = "AHP snapshot material is not valid Shape A JSON.";
 const MSG_HERMES_SOURCE_REQUIRED: &str = "Hermes export stream apply requires source hermes.";
-const MSG_INVALID_HERMES_EXPORT: &str =
-    "Hermes export material is not valid session-export JSON.";
+const MSG_INVALID_HERMES_EXPORT: &str = "Hermes export material is not valid session-export JSON.";
 
 /// Wire schema id for stream snapshots and deltas.
 pub const STREAM_SCHEMA_ID: &str = "trajectory-stream-v1";
@@ -58,7 +57,11 @@ const MSG_JSON_SAFE_INTEGER: &str = "Stream integer exceeds JSON safe integer do
 
 /// Require a JSON-safe integer for stream wire fields.
 pub fn json_safe_int(value: i64, non_negative: bool) -> Result<i64, TrajectoryError> {
-    let lo = if non_negative { 0 } else { JSON_SAFE_INTEGER_MIN };
+    let lo = if non_negative {
+        0
+    } else {
+        JSON_SAFE_INTEGER_MIN
+    };
     if value < lo || value > JSON_SAFE_INTEGER_MAX {
         return Err(TrajectoryError::new("invalid_input", MSG_JSON_SAFE_INTEGER));
     }
@@ -77,9 +80,9 @@ pub fn json_safe_u64(value: u64) -> Result<i64, TrajectoryError> {
 pub fn json_safe_from_value(value: &Value, non_negative: bool) -> Result<i64, TrajectoryError> {
     match value {
         Value::Number(n) => {
-            let parsed = n.as_i64().ok_or_else(|| {
-                TrajectoryError::new("invalid_input", MSG_JSON_SAFE_INTEGER)
-            })?;
+            let parsed = n
+                .as_i64()
+                .ok_or_else(|| TrajectoryError::new("invalid_input", MSG_JSON_SAFE_INTEGER))?;
             json_safe_int(parsed, non_negative)
         }
         _ => Err(TrajectoryError::new("invalid_input", MSG_JSON_SAFE_INTEGER)),
@@ -285,7 +288,11 @@ pub struct StreamDiagnostic {
 ///
 /// Safe structural fields (line/count) may appear; source IDs and content never do.
 #[must_use]
-pub fn stream_diagnostic_message(code: &str, input_line: Option<i64>, count: Option<i64>) -> String {
+pub fn stream_diagnostic_message(
+    code: &str,
+    input_line: Option<i64>,
+    count: Option<i64>,
+) -> String {
     match (code, input_line, count) {
         ("invalid_json_line", Some(line), _) => format!("Skipped invalid JSON on line {line}."),
         ("non_object_json_line", Some(line), _) => {
@@ -324,9 +331,7 @@ fn stream_diagnostic_catalog(code: &str) -> &'static str {
         "timestamps_synthesized" => "Synthesized timestamps for normalized records.",
         "timestamps_interpolated" => "Interpolated timestamps for normalized records.",
         "ahp_version_missing" => "Snapshot lacks ahpProtocolVersion; assumed pinned 0.7.x.",
-        "ahp_active_turn_omitted" => {
-            "Omitted incomplete activeTurn (snapshot whole-mode policy)."
-        }
+        "ahp_active_turn_omitted" => "Omitted incomplete activeTurn (snapshot whole-mode policy).",
         "ahp_unknown_message_origin" => "Dropped a message with an unknown origin kind.",
         "ahp_input_request_skipped" => "Skipped an inputRequest response part.",
         "ahp_reasoning_omitted" => "Omitted reasoning content.",
@@ -337,9 +342,7 @@ fn stream_diagnostic_catalog(code: &str) -> &'static str {
         "ahp_unknown_action" => "Ignored an unknown AHP action type.",
         "ahp_foreign_channel" => "Ignored an AHP action for a non-target channel.",
         "image_content_dropped" => "Dropped image content.",
-        "backend_tool_result_synthesized" => {
-            "Synthesized a tool result for a backend tool call."
-        }
+        "backend_tool_result_synthesized" => "Synthesized a tool result for a backend tool call.",
         "encrypted_reasoning_included" => "Included encrypted reasoning content.",
         "model_span_omitted" => {
             "Model span omitted because source-native timing or provider/model metadata is incomplete."
@@ -366,24 +369,16 @@ pub fn stream_error_message(code: &str, candidate: Option<&str>) -> String {
         "unknown_source" => "Unknown or invalid stream source.".into(),
         "unknown_output_schema" => "Unknown output schema.".into(),
         "missing_user_records" => "Normalized transcript is missing user records.".into(),
-        "missing_assistant_records" => {
-            "Normalized transcript is missing assistant records.".into()
-        }
+        "missing_assistant_records" => "Normalized transcript is missing assistant records.".into(),
         "invalid_normalized_transcript" => "Normalized transcript is invalid.".into(),
         "listing_unavailable" => "Listing is unavailable.".into(),
         "source_group_conflict" => "Source group changed relative to the active stream.".into(),
         "source_group_required" => "Source group is required.".into(),
         "stream_buffer_limit" => "Stream buffer limit exceeded.".into(),
-        "stream_cursor_conflict" => {
-            "Supplied stream cursor does not match stream state.".into()
-        }
-        "stream_source_reset" => {
-            "Source material changed relative to the active stream.".into()
-        }
+        "stream_cursor_conflict" => "Supplied stream cursor does not match stream state.".into(),
+        "stream_source_reset" => "Source material changed relative to the active stream.".into(),
         "stream_resync_required" => "Stream requires resync.".into(),
-        "stream_sequence_gap" => {
-            "AHP action-log serverSeq gap requires snapshot resync.".into()
-        }
+        "stream_sequence_gap" => "AHP action-log serverSeq gap requires snapshot resync.".into(),
         _ => "Stream error.".into(),
     }
 }
@@ -871,10 +866,12 @@ pub fn diff_snapshots(
     let mut prior_keys: Vec<(String, &StreamRecord)> = prior_records
         .iter()
         .filter_map(|r| {
-            r.record
-                .get("id")
-                .and_then(Value::as_str)
-                .map(|id| (r.provisional_id.clone().unwrap_or_else(|| id.to_string()), r))
+            r.record.get("id").and_then(Value::as_str).map(|id| {
+                (
+                    r.provisional_id.clone().unwrap_or_else(|| id.to_string()),
+                    r,
+                )
+            })
         })
         .collect();
     prior_keys.sort_by(|a, b| a.0.cmp(&b.0));
@@ -882,10 +879,12 @@ pub fn diff_snapshots(
         .records
         .iter()
         .filter_map(|r| {
-            r.record
-                .get("id")
-                .and_then(Value::as_str)
-                .map(|id| (r.provisional_id.clone().unwrap_or_else(|| id.to_string()), r))
+            r.record.get("id").and_then(Value::as_str).map(|id| {
+                (
+                    r.provisional_id.clone().unwrap_or_else(|| id.to_string()),
+                    r,
+                )
+            })
         })
         .collect();
 
@@ -937,22 +936,12 @@ pub fn diff_snapshots(
         .map(|s| s.diagnostics.as_slice())
         .unwrap_or(&[])
         .iter()
-        .map(|d| {
-            (
-                diagnostic_key(&d.code, d.input_line, d.record_index),
-                d,
-            )
-        })
+        .map(|d| (diagnostic_key(&d.code, d.input_line, d.record_index), d))
         .collect();
     let curr_diags: std::collections::BTreeMap<String, &StreamDiagnostic> = current
         .diagnostics
         .iter()
-        .map(|d| {
-            (
-                diagnostic_key(&d.code, d.input_line, d.record_index),
-                d,
-            )
-        })
+        .map(|d| (diagnostic_key(&d.code, d.input_line, d.record_index), d))
         .collect();
     for key in prior_diags.keys() {
         if !curr_diags.contains_key(key) {
@@ -1021,10 +1010,9 @@ pub fn apply_delta_to_snapshot(
             .ok_or_else(|| TrajectoryError::new("invalid_input", "operation.op required"))?;
         match kind {
             "upsert" => {
-                let entry = op
-                    .get("record")
-                    .cloned()
-                    .ok_or_else(|| TrajectoryError::new("invalid_input", "upsert requires record"))?;
+                let entry = op.get("record").cloned().ok_or_else(|| {
+                    TrajectoryError::new("invalid_input", "upsert requires record")
+                })?;
                 let key = match_key_value(&entry)?;
                 if let Some(slot) = records
                     .iter_mut()
@@ -1039,23 +1027,19 @@ pub fn apply_delta_to_snapshot(
                 let rid = op
                     .get("record_id")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| TrajectoryError::new("invalid_input", "remove requires record_id"))?
+                    .ok_or_else(|| {
+                        TrajectoryError::new("invalid_input", "remove requires record_id")
+                    })?
                     .to_string();
                 records.retain(|r| match_key_value(r).ok().as_deref() != Some(rid.as_str()));
             }
             "state_change" => {
-                let rid = op
-                    .get("record_id")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        TrajectoryError::new("invalid_input", "state_change requires record_id")
-                    })?;
-                let status = op
-                    .get("status")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        TrajectoryError::new("invalid_input", "state_change requires status")
-                    })?;
+                let rid = op.get("record_id").and_then(Value::as_str).ok_or_else(|| {
+                    TrajectoryError::new("invalid_input", "state_change requires record_id")
+                })?;
+                let status = op.get("status").and_then(Value::as_str).ok_or_else(|| {
+                    TrajectoryError::new("invalid_input", "state_change requires status")
+                })?;
                 if let Some(slot) = records
                     .iter_mut()
                     .find(|r| match_key_value(r).ok().as_deref() == Some(rid))
@@ -1143,10 +1127,7 @@ pub fn apply_delta_to_snapshot(
 /// Create a new stream state.
 #[must_use]
 pub fn create_stream(options: StreamOptions) -> StreamState {
-    let group_id = options
-        .group_id
-        .clone()
-        .unwrap_or_else(|| "default".into());
+    let group_id = options.group_id.clone().unwrap_or_else(|| "default".into());
     let source = options.source.wire_name().to_string();
     let position = match options.source {
         TrajectorySource::Ahp => StreamPosition::SnapshotRevision(SnapshotRevisionPosition {
@@ -1286,7 +1267,12 @@ fn reset_required(state: &StreamState, reason: &str, code: &str, message: &str) 
         .map(|s| {
             s.records
                 .iter()
-                .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+                .filter_map(|r| {
+                    r.record
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -1413,8 +1399,14 @@ pub fn cursor_to_value(c: &StreamCursor) -> Result<Value, TrajectoryError> {
         StreamPosition::AhpServerSeq(p) => {
             let mut pos = Map::new();
             pos.insert("kind".into(), Value::String("ahp-server-seq".into()));
-            pos.insert("next_server_seq".into(), json_num(p.next_server_seq, false)?);
-            pos.insert("last_server_seq".into(), json_num(p.last_server_seq, false)?);
+            pos.insert(
+                "next_server_seq".into(),
+                json_num(p.next_server_seq, false)?,
+            );
+            pos.insert(
+                "last_server_seq".into(),
+                json_num(p.last_server_seq, false)?,
+            );
             if let Some(off) = p.next_byte_offset {
                 pos.insert("next_byte_offset".into(), json_num(off, true)?);
             }
@@ -1606,7 +1598,11 @@ pub fn apply_snapshot(
         if pending_len > max {
             return Ok((
                 state.clone(),
-                error_update(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
+                error_update(
+                    state,
+                    "stream_buffer_limit",
+                    "Stream buffer limit exceeded.",
+                ),
             ));
         }
     }
@@ -1625,7 +1621,11 @@ pub fn apply_snapshot(
         if any_line_too_long(&committed, max) || pending_len > max {
             return Ok((
                 state.clone(),
-                error_update(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
+                error_update(
+                    state,
+                    "stream_buffer_limit",
+                    "Stream buffer limit exceeded.",
+                ),
             ));
         }
     }
@@ -1690,10 +1690,7 @@ pub fn apply_snapshot(
                 let mut provisional_id = None;
                 if mark_provisional && is_synthetic_backend_tool_result(&record) {
                     status = "provisional".into();
-                    provisional_id = record
-                        .get("id")
-                        .and_then(Value::as_str)
-                        .map(str::to_string);
+                    provisional_id = record.get("id").and_then(Value::as_str).map(str::to_string);
                 }
                 StreamRecord {
                     status,
@@ -1759,7 +1756,12 @@ pub fn apply_snapshot(
     let revision_num = new_state.next_revision;
     let record_ids: Vec<String> = records
         .iter()
-        .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+        .filter_map(|r| {
+            r.record
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
         .collect();
     let rev_id = revision_id(
         generation,
@@ -1928,7 +1930,11 @@ pub fn apply_append(
         if pending_len > max {
             return Ok((
                 state.clone(),
-                error_update(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
+                error_update(
+                    state,
+                    "stream_buffer_limit",
+                    "Stream buffer limit exceeded.",
+                ),
             ));
         }
     }
@@ -1942,7 +1948,11 @@ pub fn apply_append(
         if any_line_too_long(&complete, max) || pending_len > max {
             return Ok((
                 state.clone(),
-                error_update(state, "stream_buffer_limit", "Stream buffer limit exceeded."),
+                error_update(
+                    state,
+                    "stream_buffer_limit",
+                    "Stream buffer limit exceeded.",
+                ),
             ));
         }
     }
@@ -2111,7 +2121,12 @@ pub fn apply_ahp_snapshot(
     let revision_num = new_state.next_revision;
     let record_ids: Vec<String> = records
         .iter()
-        .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+        .filter_map(|r| {
+            r.record
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
         .collect();
     let rev_id = revision_id(
         generation,
@@ -2145,10 +2160,8 @@ pub fn apply_ahp_snapshot(
     };
 
     // Preserve server-seq authority when actions established it.
-    let position = if matches!(
-        new_state.cursor.position,
-        StreamPosition::AhpServerSeq(_)
-    ) || new_state.ahp_last_server_seq.is_some()
+    let position = if matches!(new_state.cursor.position, StreamPosition::AhpServerSeq(_))
+        || new_state.ahp_last_server_seq.is_some()
     {
         let last_seq = new_state.ahp_last_server_seq.unwrap_or(-1);
         StreamPosition::AhpServerSeq(AhpServerSeqPosition {
@@ -2208,11 +2221,7 @@ pub fn apply_ahp_snapshot(
         consumed: StreamConsumed {
             complete_records: records.len() as u64,
             bytes: material.len() as u64,
-            first_source_position: if material.is_empty() {
-                None
-            } else {
-                Some(0)
-            },
+            first_source_position: if material.is_empty() { None } else { Some(0) },
             last_source_position: if material.is_empty() {
                 None
             } else {
@@ -2336,13 +2345,7 @@ pub fn apply_ahp_actions(
         ));
     }
 
-    if detect_sequence_gap(
-        &envelopes,
-        state.ahp_last_server_seq,
-        target.as_deref(),
-    )
-    .is_some()
-    {
+    if detect_sequence_gap(&envelopes, state.ahp_last_server_seq, target.as_deref()).is_some() {
         return Ok((
             state.clone(),
             reset_required(
@@ -2370,11 +2373,7 @@ pub fn apply_ahp_actions(
         .clone()
         .or_else(|| state.options.ahp_protocol_version.clone())
         .unwrap_or_else(|| "0.7.0".into());
-    let material = shape_a_bytes(
-        &reduced.chat,
-        &protocol,
-        state.ahp_session.as_ref(),
-    );
+    let material = shape_a_bytes(&reduced.chat, &protocol, state.ahp_session.as_ref());
     let rev = if let Some(seq) = reduced.last_server_seq {
         format!("seq:{seq}")
     } else {
@@ -2403,12 +2402,7 @@ pub fn apply_ahp_actions(
     let mut seen = std::collections::BTreeSet::new();
     let mut diagnostics: Vec<StreamDiagnostic> = Vec::new();
     for d in &update.diagnostics {
-        let projected = project_stream_diagnostic(
-            &d.code,
-            d.input_line,
-            d.record_index,
-            d.count,
-        );
+        let projected = project_stream_diagnostic(&d.code, d.input_line, d.record_index, d.count);
         let key = diagnostic_key(
             &projected.code,
             projected.input_line,
@@ -2430,8 +2424,11 @@ pub fn apply_ahp_actions(
         }
     }
     diagnostics.sort_by(|a, b| {
-        diagnostic_key(&a.code, a.input_line, a.record_index)
-            .cmp(&diagnostic_key(&b.code, b.input_line, b.record_index))
+        diagnostic_key(&a.code, a.input_line, a.record_index).cmp(&diagnostic_key(
+            &b.code,
+            b.input_line,
+            b.record_index,
+        ))
     });
     let extra_count = reduced.diagnostics.len();
 
@@ -2527,10 +2524,7 @@ struct AhpBuilt {
     provisional_map: std::collections::BTreeMap<String, String>,
 }
 
-fn build_ahp_records(
-    state: &StreamState,
-    material: &[u8],
-) -> Result<AhpBuilt, StreamUpdate> {
+fn build_ahp_records(state: &StreamState, material: &[u8]) -> Result<AhpBuilt, StreamUpdate> {
     let root: Value = match serde_json::from_slice(material) {
         Ok(v) => v,
         Err(_) => {
@@ -2552,10 +2546,7 @@ fn build_ahp_records(
         }
     };
     let chat = root_obj.get("chat").cloned().unwrap_or(Value::Null);
-    let session = root_obj
-        .get("session")
-        .filter(|s| s.is_object())
-        .cloned();
+    let session = root_obj.get("session").filter(|s| s.is_object()).cloned();
     let protocol_version = root_obj
         .get("ahpProtocolVersion")
         .and_then(Value::as_str)
@@ -2715,11 +2706,7 @@ fn stable_provisional_id(
     active_ids: &std::collections::BTreeSet<String>,
     mut provisional_map: std::collections::BTreeMap<String, String>,
     mut fallback_n: usize,
-) -> (
-    String,
-    std::collections::BTreeMap<String, String>,
-    usize,
-) {
+) -> (String, std::collections::BTreeMap<String, String>, usize) {
     let native_key = match active_native_key(record, active_ids) {
         Some(k) => k,
         None => {
@@ -2736,9 +2723,7 @@ fn stable_provisional_id(
 }
 
 /// End-of-stream: optionally commit final unterminated line; finalize records.
-pub fn finish_stream(
-    state: &StreamState,
-) -> Result<(StreamState, StreamUpdate), TrajectoryError> {
+pub fn finish_stream(state: &StreamState) -> Result<(StreamState, StreamUpdate), TrajectoryError> {
     if state.finished {
         return Ok((state.clone(), unchanged(state)));
     }
@@ -2801,7 +2786,12 @@ pub fn finish_stream(
         .unwrap_or_else(|| sha256_bytes(&[]));
     let record_ids: Vec<String> = finalized
         .iter()
-        .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+        .filter_map(|r| {
+            r.record
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
         .collect();
     let rev_id = revision_id(
         generation,
@@ -2977,7 +2967,12 @@ pub fn reset_stream(
         .map(|s| {
             s.records
                 .iter()
-                .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+                .filter_map(|r| {
+                    r.record
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -3347,7 +3342,12 @@ pub fn apply_hermes_export(
     let revision_num = new_state.next_revision;
     let record_ids: Vec<String> = records
         .iter()
-        .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+        .filter_map(|r| {
+            r.record
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
         .collect();
     let rev_id = revision_id(
         generation,
@@ -3456,7 +3456,9 @@ fn hermes_export_meta(material: &[u8]) -> Option<(Vec<String>, Option<i64>)> {
         })
         .collect();
     let last_row_id = if !active.is_empty()
-        && active.iter().all(|m| m.get("id").and_then(Value::as_i64).is_some())
+        && active
+            .iter()
+            .all(|m| m.get("id").and_then(Value::as_i64).is_some())
     {
         active.sort_by_key(|m| m.get("id").and_then(Value::as_i64).unwrap_or(0));
         active
@@ -3510,6 +3512,11 @@ impl TrajectoryStream {
     #[must_use]
     pub fn state(&self) -> &StreamState {
         &self.state
+    }
+
+    /// Mutable options (host tests / policy).
+    pub fn options_mut(&mut self) -> &mut StreamOptions {
+        &mut self.state.options
     }
 
     /// Apply a full snapshot of source material.
@@ -3595,8 +3602,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn cases_root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../conformance/cases/streaming")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../conformance/cases/streaming")
     }
 
     fn read_case(case: &str, name: &str) -> Vec<u8> {
@@ -3639,17 +3645,13 @@ mod tests {
     fn group_conflict_and_truncate() {
         let m1 = read_case("source-group-conflict", "step-matching.jsonl");
         let m2 = read_case("source-group-conflict", "step-foreign-group.jsonl");
-        let opts =
-            StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-expected-group");
+        let opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-expected-group");
         let state = create_stream(opts);
         let (state, u1) = apply_snapshot(&state, &m1, "gen-0", None).unwrap();
         assert_eq!(u1.kind, "updated");
         let (state2, u2) = apply_snapshot(&state, &m2, "gen-0", None).unwrap();
         assert_eq!(u2.kind, "reset-required");
-        assert_eq!(
-            u2.reset.as_ref().unwrap().reason,
-            "group-changed"
-        );
+        assert_eq!(u2.reset.as_ref().unwrap().reason, "group-changed");
         assert_eq!(
             state2.cursor.position.next_byte_offset(),
             state.cursor.position.next_byte_offset()
@@ -3657,8 +3659,8 @@ mod tests {
 
         let long = read_case("file-truncate-reset", "step-long.jsonl");
         let short = read_case("file-truncate-reset", "step-truncated.jsonl");
-        let opts = StreamOptions::new(TrajectorySource::Pi)
-            .with_group_id("stream-file-truncate-reset");
+        let opts =
+            StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-file-truncate-reset");
         let state = create_stream(opts);
         let (state, _) = apply_snapshot(&state, &long, "gen-0", None).unwrap();
         let (_, u) = apply_snapshot(&state, &short, "gen-0", None).unwrap();
@@ -3726,8 +3728,8 @@ mod tests {
     fn reset_with_material_attaches_reset_envelope() {
         let long = read_case("file-truncate-reset", "step-long.jsonl");
         let short = read_case("file-truncate-reset", "step-truncated.jsonl");
-        let opts = StreamOptions::new(TrajectorySource::Pi)
-            .with_group_id("stream-file-truncate-reset");
+        let opts =
+            StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-file-truncate-reset");
         let state = create_stream(opts);
         let (state, _) = apply_snapshot(&state, &long, "gen-0", None).unwrap();
         let request = StreamResetRequest {
@@ -3836,7 +3838,12 @@ mod tests {
             .unwrap()
             .records
             .iter()
-            .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+            .filter_map(|r| {
+                r.record
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
             .collect();
 
         let mut full = c1.clone();
@@ -3851,7 +3858,12 @@ mod tests {
             .unwrap()
             .records
             .iter()
-            .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+            .filter_map(|r| {
+                r.record
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
             .collect();
         assert_eq!(append_ids, snap_ids);
         assert_eq!(
@@ -3891,8 +3903,7 @@ mod tests {
         assert_eq!(u1.kind, "updated");
         let prior = state.cursor.position.next_byte_offset();
         // True replay requires the pre-apply cursor; content alone is not enough.
-        let (state2, u2) =
-            apply_append(&state, &line, Some(&pre_cursor), Some("gen-0")).unwrap();
+        let (state2, u2) = apply_append(&state, &line, Some(&pre_cursor), Some("gen-0")).unwrap();
         assert_eq!(u2.kind, "unchanged");
         assert_eq!(state2.cursor.position.next_byte_offset(), prior);
     }
@@ -3960,11 +3971,12 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(u1
-            .provisional
-            .provisional_ids
-            .iter()
-            .any(|id| id == "prov-active:part-md-multi-1"));
+        assert!(
+            u1.provisional
+                .provisional_ids
+                .iter()
+                .any(|id| id == "prov-active:part-md-multi-1")
+        );
         let (state, u2) = apply_ahp_snapshot(
             &state,
             &read_case("ahp-snapshot-active-turn-multipart", "step-2.json"),
@@ -3972,16 +3984,18 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(u2
-            .provisional
-            .provisional_ids
-            .iter()
-            .any(|id| id == "prov-active:part-md-multi-1"));
-        assert!(u2
-            .provisional
-            .provisional_ids
-            .iter()
-            .any(|id| id == "prov-active:tool-call-multi-1"));
+        assert!(
+            u2.provisional
+                .provisional_ids
+                .iter()
+                .any(|id| id == "prov-active:part-md-multi-1")
+        );
+        assert!(
+            u2.provisional
+                .provisional_ids
+                .iter()
+                .any(|id| id == "prov-active:tool-call-multi-1")
+        );
         let (_, u3) = apply_ahp_snapshot(
             &state,
             &read_case("ahp-snapshot-active-turn-multipart", "step-3.json"),
@@ -3989,16 +4003,18 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(u3
-            .provisional
-            .finalized_ids
-            .iter()
-            .any(|id| id == "prov-active:part-md-multi-1"));
-        assert!(u3
-            .provisional
-            .finalized_ids
-            .iter()
-            .any(|id| id == "prov-active:tool-call-multi-1"));
+        assert!(
+            u3.provisional
+                .finalized_ids
+                .iter()
+                .any(|id| id == "prov-active:part-md-multi-1")
+        );
+        assert!(
+            u3.provisional
+                .finalized_ids
+                .iter()
+                .any(|id| id == "prov-active:tool-call-multi-1")
+        );
     }
 
     #[test]
@@ -4012,8 +4028,7 @@ mod tests {
             state.cursor.position,
             StreamPosition::SnapshotRevision(_)
         ));
-        let (state, update) =
-            apply_ahp_snapshot(&state, &material, "ahp-rev-1", None).unwrap();
+        let (state, update) = apply_ahp_snapshot(&state, &material, "ahp-rev-1", None).unwrap();
         assert_eq!(update.kind, "updated");
         let snap = update.snapshot.as_ref().unwrap();
         let provisional: Vec<_> = snap
@@ -4089,7 +4104,11 @@ mod tests {
             .iter()
             .map(|r| {
                 (
-                    r.record.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    r.record
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     r.status.clone(),
                 )
             })
@@ -4099,7 +4118,11 @@ mod tests {
             .iter()
             .map(|r| {
                 (
-                    r.record.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    r.record
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     r.status.clone(),
                 )
             })
@@ -4128,14 +4151,24 @@ mod tests {
     #[test]
     fn per_source_append_oracle_parity() {
         let cases: &[(&str, TrajectorySource, &str, usize)] = &[
-            ("pi-append-sequence", TrajectorySource::Pi, "stream-pi-append-sequence", 3),
+            (
+                "pi-append-sequence",
+                TrajectorySource::Pi,
+                "stream-pi-append-sequence",
+                3,
+            ),
             (
                 "claude-code-append-sequence",
                 TrajectorySource::ClaudeCode,
                 "stream-claude-code-append-sequence",
                 2,
             ),
-            ("codex-append-sequence", TrajectorySource::Codex, "stream-codex-append", 3),
+            (
+                "codex-append-sequence",
+                TrajectorySource::Codex,
+                "stream-codex-append",
+                3,
+            ),
             (
                 "openclaw-append-sequence",
                 TrajectorySource::OpenClaw,
@@ -4167,7 +4200,12 @@ mod tests {
                 .unwrap()
                 .records
                 .iter()
-                .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+                .filter_map(|r| {
+                    r.record
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
                 .collect();
             let mut full = Vec::new();
             for c in &chunks {
@@ -4182,7 +4220,12 @@ mod tests {
                 .unwrap()
                 .records
                 .iter()
-                .filter_map(|r| r.record.get("id").and_then(Value::as_str).map(str::to_string))
+                .filter_map(|r| {
+                    r.record
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
                 .collect();
             assert_eq!(append_ids, snap_ids, "{case_id} oracle mismatch");
         }
@@ -4214,13 +4257,14 @@ mod tests {
         assert!(content.starts_with("[backend "));
         let (state, u2) = apply_append(&state, &step2, None, Some("gen-0")).unwrap();
         assert_eq!(u2.kind, "updated");
-        assert!(u2
-            .snapshot
-            .as_ref()
-            .unwrap()
-            .records
-            .iter()
-            .all(|r| r.status == "stable"));
+        assert!(
+            u2.snapshot
+                .as_ref()
+                .unwrap()
+                .records
+                .iter()
+                .all(|r| r.status == "stable")
+        );
         let _ = state;
     }
 
@@ -4258,10 +4302,7 @@ mod tests {
             if let Some(delta) = &update.delta {
                 for op in &delta.operations {
                     if let Some(Value::Object(diag)) = op.payload.get("diagnostic") {
-                        let msg = diag
-                            .get("message")
-                            .and_then(Value::as_str)
-                            .unwrap_or("");
+                        let msg = diag.get("message").and_then(Value::as_str).unwrap_or("");
                         for s in sentinels {
                             assert!(!msg.contains(s), "delta diag {msg}");
                         }
@@ -4283,10 +4324,11 @@ mod tests {
         let state = create_stream(opts);
         let (_, u1) = apply_snapshot(&state, &material, "gen-0", None).unwrap();
         assert_eq!(u1.kind, "updated");
-        assert!(u1
-            .diagnostics
-            .iter()
-            .any(|d| d.code == "duplicate_tool_call_id"));
+        assert!(
+            u1.diagnostics
+                .iter()
+                .any(|d| d.code == "duplicate_tool_call_id")
+        );
         assert_diag_safe(&u1, &[secret_tool]);
 
         let mut bad = session.to_vec();
@@ -4298,10 +4340,7 @@ mod tests {
         let state = create_stream(opts);
         let (_, u2) = apply_snapshot(&state, &bad, "gen-0", None).unwrap();
         assert_eq!(u2.kind, "updated");
-        assert!(u2
-            .diagnostics
-            .iter()
-            .any(|d| d.code == "invalid_json_line"));
+        assert!(u2.diagnostics.iter().any(|d| d.code == "invalid_json_line"));
         for d in &u2.snapshot.as_ref().unwrap().diagnostics {
             assert!(!d.message.contains(secret_path));
             assert!(!d.message.contains(secret_tool));
@@ -4321,8 +4360,8 @@ mod tests {
     fn auto_reset_with_material_installs_generation() {
         let long = read_case("file-truncate-reset", "step-long.jsonl");
         let short = read_case("file-truncate-reset", "step-truncated.jsonl");
-        let mut opts = StreamOptions::new(TrajectorySource::Pi)
-            .with_group_id("stream-file-truncate-reset");
+        let mut opts =
+            StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-file-truncate-reset");
         opts.reset_policy = StreamResetPolicy::AutoReset;
         let state = create_stream(opts);
         let (state, _) = apply_snapshot(&state, &long, "gen-0", None).unwrap();
@@ -4332,7 +4371,10 @@ mod tests {
         assert_eq!(state2.cursor.generation, 1);
         assert_eq!(u2.reset.as_ref().unwrap().reason, "source-truncated");
         assert!(!u2.reset.as_ref().unwrap().requires_snapshot);
-        assert_eq!(state2.cursor.position.next_byte_offset(), short.len() as i64);
+        assert_eq!(
+            state2.cursor.position.next_byte_offset(),
+            short.len() as i64
+        );
     }
 
     #[test]
@@ -4408,9 +4450,12 @@ mod tests {
             "invalid_input"
         );
         assert_eq!(
-            json_safe_from_value(&Value::String((JSON_SAFE_INTEGER_MAX + 1).to_string()), true)
-                .unwrap_err()
-                .code,
+            json_safe_from_value(
+                &Value::String((JSON_SAFE_INTEGER_MAX + 1).to_string()),
+                true
+            )
+            .unwrap_err()
+            .code,
             "invalid_input"
         );
 

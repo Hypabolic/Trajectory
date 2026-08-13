@@ -175,6 +175,8 @@ def apply_version(root: Path, version: str) -> list[str]:
         root / "dotnet/src/Trajectory.Hermes/Trajectory.Hermes.csproj",
     ]
     for path in csprojs:
+        if not path.is_file():
+            continue
         replace_csproj_version(path, version)
         changed.append(str(path.relative_to(root)))
 
@@ -189,6 +191,8 @@ def apply_version(root: Path, version: str) -> list[str]:
         root / "typescript/packages/trajectory-cli/package.json",
     ]
     for path in npm_packages:
+        if not path.is_file():
+            continue
         replace_json_version(path, version, also_deps=True)
         changed.append(str(path.relative_to(root)))
 

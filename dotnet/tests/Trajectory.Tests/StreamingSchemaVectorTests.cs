@@ -316,37 +316,37 @@ public sealed class StreamingSchemaVectorTests
         switch (node)
         {
             case JsonObject obj:
-            {
-                var copy = new JsonObject();
-                foreach (var prop in obj)
                 {
-                    if (prop.Key is "description" or "title" or "$comment" or "comment")
+                    var copy = new JsonObject();
+                    foreach (var prop in obj)
                     {
-                        continue;
+                        if (prop.Key is "description" or "title" or "$comment" or "comment")
+                        {
+                            continue;
+                        }
+
+                        if (prop.Value is not null)
+                        {
+                            copy[prop.Key] = StripDocs(prop.Value);
+                        }
+                        else
+                        {
+                            copy[prop.Key] = null;
+                        }
                     }
 
-                    if (prop.Value is not null)
-                    {
-                        copy[prop.Key] = StripDocs(prop.Value);
-                    }
-                    else
-                    {
-                        copy[prop.Key] = null;
-                    }
+                    return copy;
                 }
-
-                return copy;
-            }
             case JsonArray arr:
-            {
-                var copy = new JsonArray();
-                foreach (var item in arr)
                 {
-                    copy.Add(item is null ? null : StripDocs(item));
-                }
+                    var copy = new JsonArray();
+                    foreach (var item in arr)
+                    {
+                        copy.Add(item is null ? null : StripDocs(item));
+                    }
 
-                return copy;
-            }
+                    return copy;
+                }
             default:
                 return node.DeepClone();
         }
@@ -373,18 +373,18 @@ public sealed class StreamingSchemaVectorTests
         switch (el.ValueKind)
         {
             case JsonValueKind.Object:
-            {
-                var parts = el.EnumerateObject()
-                    .OrderBy(static p => p.Name, StringComparer.Ordinal)
-                    .Select(static p =>
-                        $"{JsonSerializer.Serialize(p.Name)}:{CanonicalElement(p.Value)}");
-                return "{" + string.Join(",", parts) + "}";
-            }
+                {
+                    var parts = el.EnumerateObject()
+                        .OrderBy(static p => p.Name, StringComparer.Ordinal)
+                        .Select(static p =>
+                            $"{JsonSerializer.Serialize(p.Name)}:{CanonicalElement(p.Value)}");
+                    return "{" + string.Join(",", parts) + "}";
+                }
             case JsonValueKind.Array:
-            {
-                var parts = el.EnumerateArray().Select(CanonicalElement);
-                return "[" + string.Join(",", parts) + "]";
-            }
+                {
+                    var parts = el.EnumerateArray().Select(CanonicalElement);
+                    return "[" + string.Join(",", parts) + "]";
+                }
             case JsonValueKind.String:
                 return JsonSerializer.Serialize(el.GetString());
             case JsonValueKind.Number:

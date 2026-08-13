@@ -9,8 +9,7 @@ pub const MSG_UNKNOWN_ACTION: &str = "Ignored an unknown AHP action type.";
 pub const MSG_FOREIGN_CHANNEL: &str = "Ignored an AHP action for a non-target channel.";
 pub const MSG_INVALID_ACTIONS: &str = "AHP action batch must be JSONL envelopes or a JSON array.";
 /// Non-monotonic or duplicate serverSeq in original batch order.
-pub const MSG_BATCH_REORDER: &str =
-    "AHP action batch serverSeq order must be strictly increasing.";
+pub const MSG_BATCH_REORDER: &str = "AHP action batch serverSeq order must be strictly increasing.";
 /// Sequenced and unsequenced envelopes mixed in one batch.
 pub const MSG_BATCH_MIXED_SEQ: &str =
     "AHP action batch must not mix sequenced and unsequenced envelopes.";
@@ -70,10 +69,7 @@ pub fn parse_action_batch(data: &[u8]) -> Result<Vec<Map<String, Value>>, String
         return Ok(Vec::new());
     }
 
-    let non_empty_lines: Vec<&str> = text
-        .lines()
-        .filter(|ln| !ln.trim().is_empty())
-        .collect();
+    let non_empty_lines: Vec<&str> = text.lines().filter(|ln| !ln.trim().is_empty()).collect();
     if non_empty_lines.len() > 1 {
         let mut envelopes = Vec::with_capacity(non_empty_lines.len());
         for line in non_empty_lines {
@@ -296,14 +292,12 @@ pub fn reduce_ahp_actions(
     let mut diagnostics: Vec<(String, String)> = Vec::new();
     let mut applied: Vec<i64> = Vec::new();
     let mut last = last_server_seq;
-    let mut channel = target_channel
-        .map(str::to_string)
-        .or_else(|| {
-            state
-                .get("resource")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        });
+    let mut channel = target_channel.map(str::to_string).or_else(|| {
+        state
+            .get("resource")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    });
     if channel.is_some() && state.get("resource").map_or(true, Value::is_null) {
         if let Some(ch) = &channel {
             if let Some(obj) = state.as_object_mut() {
@@ -318,10 +312,7 @@ pub fn reduce_ahp_actions(
         match normalize_envelope(raw) {
             Some(env) => normalized.push(env),
             None => {
-                diagnostics.push((
-                    "ahp_unknown_action".into(),
-                    MSG_UNKNOWN_ACTION.into(),
-                ));
+                diagnostics.push(("ahp_unknown_action".into(), MSG_UNKNOWN_ACTION.into()));
             }
         }
     }
@@ -333,10 +324,7 @@ pub fn reduce_ahp_actions(
             .and_then(Value::as_str)
             .map(str::to_string);
         let Some(action_type) = action_type else {
-            diagnostics.push((
-                "ahp_unknown_action".into(),
-                MSG_UNKNOWN_ACTION.into(),
-            ));
+            diagnostics.push(("ahp_unknown_action".into(), MSG_UNKNOWN_ACTION.into()));
             continue;
         };
 
@@ -355,28 +343,19 @@ pub fn reduce_ahp_actions(
         if let Some(ch) = env_channel {
             if let Some(target) = channel.as_deref() {
                 if ch != target {
-                    diagnostics.push((
-                        "ahp_foreign_channel".into(),
-                        MSG_FOREIGN_CHANNEL.into(),
-                    ));
+                    diagnostics.push(("ahp_foreign_channel".into(), MSG_FOREIGN_CHANNEL.into()));
                     continue;
                 }
             }
             if !ch.starts_with("ahp-chat:") {
-                diagnostics.push((
-                    "ahp_foreign_channel".into(),
-                    MSG_FOREIGN_CHANNEL.into(),
-                ));
+                diagnostics.push(("ahp_foreign_channel".into(), MSG_FOREIGN_CHANNEL.into()));
                 continue;
             }
         }
 
         if env.server_seq.is_none() {
             if !is_known_chat(&action_type) {
-                diagnostics.push((
-                    "ahp_unknown_action".into(),
-                    MSG_UNKNOWN_ACTION.into(),
-                ));
+                diagnostics.push(("ahp_unknown_action".into(), MSG_UNKNOWN_ACTION.into()));
                 continue;
             }
             state = apply_chat_action(&state, &env.action);
@@ -391,10 +370,7 @@ pub fn reduce_ahp_actions(
         }
 
         if !is_known_chat(&action_type) {
-            diagnostics.push((
-                "ahp_unknown_action".into(),
-                MSG_UNKNOWN_ACTION.into(),
-            ));
+            diagnostics.push(("ahp_unknown_action".into(), MSG_UNKNOWN_ACTION.into()));
             last = Some(seq);
             applied.push(seq);
             continue;
@@ -421,11 +397,7 @@ pub fn reduce_ahp_actions(
 
 /// Serialize reduced ChatState as Shape A export bytes.
 #[must_use]
-pub fn shape_a_bytes(
-    chat: &Value,
-    protocol_version: &str,
-    session: Option<&Value>,
-) -> Vec<u8> {
+pub fn shape_a_bytes(chat: &Value, protocol_version: &str, session: Option<&Value>) -> Vec<u8> {
     let mut envelope = Map::new();
     envelope.insert(
         "ahpProtocolVersion".into(),
@@ -460,10 +432,7 @@ fn apply_chat_action(state: &Value, action: &Map<String, Value>) -> Value {
                 return;
             }
             if let Some(content) = action.get("content").and_then(Value::as_str) {
-                let prev = tc
-                    .get("partialInput")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let prev = tc.get("partialInput").and_then(Value::as_str).unwrap_or("");
                 tc.insert(
                     "partialInput".into(),
                     Value::String(format!("{prev}{content}")),
@@ -578,15 +547,13 @@ fn apply_chat_action(state: &Value, action: &Map<String, Value>) -> Value {
                     "completed".into()
                 }),
             );
-            if tc.get("confirmed").map_or(true, Value::is_null)
-                && status == "pending-confirmation"
+            if tc.get("confirmed").map_or(true, Value::is_null) && status == "pending-confirmation"
             {
                 tc.insert("confirmed".into(), Value::String("not-needed".into()));
             }
         }),
         "chat/toolCallResultConfirmed" => update_tool(state, action, |tc| {
-            if tc.get("status").and_then(Value::as_str) != Some("pending-result-confirmation")
-            {
+            if tc.get("status").and_then(Value::as_str) != Some("pending-result-confirmation") {
                 return;
             }
             if action.get("approved").is_some_and(is_truthy) {
@@ -645,10 +612,7 @@ fn apply_chat_action(state: &Value, action: &Map<String, Value>) -> Value {
             if !ok {
                 return state.clone();
             }
-            if let Some(active) = next
-                .get_mut("activeTurn")
-                .and_then(Value::as_object_mut)
-            {
+            if let Some(active) = next.get_mut("activeTurn").and_then(Value::as_object_mut) {
                 active.insert("usage".into(), usage.cloned().unwrap_or(Value::Null));
             }
             next
@@ -660,10 +624,7 @@ fn apply_chat_action(state: &Value, action: &Map<String, Value>) -> Value {
         "chat/activityChanged" => {
             let mut next = clone_json(state);
             if let Some(obj) = next.as_object_mut() {
-                let activity = action
-                    .get("activity")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let activity = action.get("activity").and_then(Value::as_str).unwrap_or("");
                 obj.insert("activity".into(), Value::String(activity.into()));
             }
             next
@@ -706,9 +667,7 @@ fn apply_chat_action(state: &Value, action: &Map<String, Value>) -> Value {
             }
             next
         }
-        "chat/inputRequested" | "chat/inputAnswerChanged" | "chat/inputCompleted" => {
-            state.clone()
-        }
+        "chat/inputRequested" | "chat/inputAnswerChanged" | "chat/inputCompleted" => state.clone(),
         _ => state.clone(),
     }
 }
@@ -775,10 +734,7 @@ fn response_part(state: &Value, action: &Map<String, Value>) -> Value {
         _ => return state.clone(),
     };
     let mut next = clone_json(state);
-    if let Some(active_mut) = next
-        .get_mut("activeTurn")
-        .and_then(Value::as_object_mut)
-    {
+    if let Some(active_mut) = next.get_mut("activeTurn").and_then(Value::as_object_mut) {
         let mut parts = active
             .get("responseParts")
             .and_then(Value::as_array)
@@ -818,10 +774,7 @@ fn delta(state: &Value, action: &Map<String, Value>, part_kinds: &[&str]) -> Val
                 if part_kinds.contains(&kind) && id == Some(part_id) {
                     let mut p = obj.clone();
                     let prev = p.get("content").and_then(Value::as_str).unwrap_or("");
-                    p.insert(
-                        "content".into(),
-                        Value::String(format!("{prev}{chunk}")),
-                    );
+                    p.insert("content".into(), Value::String(format!("{prev}{chunk}")));
                     new_parts.push(Value::Object(p));
                     updated = true;
                     continue;
@@ -834,10 +787,7 @@ fn delta(state: &Value, action: &Map<String, Value>, part_kinds: &[&str]) -> Val
         return state.clone();
     }
     let mut next = clone_json(state);
-    if let Some(active_mut) = next
-        .get_mut("activeTurn")
-        .and_then(Value::as_object_mut)
-    {
+    if let Some(active_mut) = next.get_mut("activeTurn").and_then(Value::as_object_mut) {
         active_mut.insert("responseParts".into(), Value::Array(new_parts));
     }
     next
@@ -854,10 +804,7 @@ fn tool_call_start(state: &Value, action: &Map<String, Value>) -> Value {
         _ => return state.clone(),
     }
     let mut next = clone_json(state);
-    if let Some(active_mut) = next
-        .get_mut("activeTurn")
-        .and_then(Value::as_object_mut)
-    {
+    if let Some(active_mut) = next.get_mut("activeTurn").and_then(Value::as_object_mut) {
         let mut parts = active_mut
             .get("responseParts")
             .and_then(Value::as_array)
@@ -900,10 +847,7 @@ fn update_tool(
         _ => return state.clone(),
     }
     let mut next = clone_json(state);
-    let Some(active_mut) = next
-        .get_mut("activeTurn")
-        .and_then(Value::as_object_mut)
-    else {
+    let Some(active_mut) = next.get_mut("activeTurn").and_then(Value::as_object_mut) else {
         return state.clone();
     };
     let parts = match active_mut
@@ -952,10 +896,7 @@ fn end_turn(state: &Value, action: &Map<String, Value>, turn_state: &str) -> Val
     };
     let duration = match action.get("duration") {
         Some(Value::Number(n)) => {
-            let v = n
-                .as_f64()
-                .map(|f| f.max(0.0))
-                .unwrap_or(0.0);
+            let v = n.as_f64().map(|f| f.max(0.0)).unwrap_or(0.0);
             if v.fract() == 0.0 {
                 Value::from(v as i64)
             } else {
@@ -976,10 +917,7 @@ fn end_turn(state: &Value, action: &Map<String, Value>, turn_state: &str) -> Val
                 if obj.get("kind").and_then(Value::as_str) == Some("toolCall") {
                     if let Some(tc) = obj.get("toolCall").and_then(Value::as_object) {
                         let mut tc_mut = tc.clone();
-                        let st = tc_mut
-                            .get("status")
-                            .and_then(Value::as_str)
-                            .unwrap_or("");
+                        let st = tc_mut.get("status").and_then(Value::as_str).unwrap_or("");
                         if st != "completed" && st != "cancelled" {
                             tc_mut.insert("status".into(), Value::String("cancelled".into()));
                             tc_mut.insert("success".into(), Value::Bool(false));

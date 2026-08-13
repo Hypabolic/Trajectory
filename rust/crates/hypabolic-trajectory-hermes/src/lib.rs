@@ -184,7 +184,11 @@ impl MemoryHermesStore {
         Ok(row)
     }
 
-    pub fn soft_delete_message(&mut self, session_id: &str, message_id: i64) -> Result<(), HostError> {
+    pub fn soft_delete_message(
+        &mut self,
+        session_id: &str,
+        message_id: i64,
+    ) -> Result<(), HostError> {
         let list = self.messages.get_mut(session_id).ok_or(HostError {
             code: HOST_SESSION_NOT_FOUND,
             message: "Hermes session was not found in the provider store.",
@@ -308,13 +312,10 @@ impl SqliteHermesProvider {
 
     pub fn insert_session(&self, session: &Value) -> Result<(), HostError> {
         self.initialize_schema()?;
-        let sid = session
-            .get("id")
-            .and_then(Value::as_str)
-            .ok_or(HostError {
-                code: HOST_DB_ERROR,
-                message: "Hermes provider could not query the store.",
-            })?;
+        let sid = session.get("id").and_then(Value::as_str).ok_or(HostError {
+            code: HOST_DB_ERROR,
+            message: "Hermes provider could not query the store.",
+        })?;
         let conn = rusqlite::Connection::open(&self.path).map_err(|_| HostError {
             code: HOST_DB_ERROR,
             message: "Hermes provider could not query the store.",
@@ -555,9 +556,9 @@ impl HermesProviderStream {
             .group_id
             .clone()
             .unwrap_or_else(|| options.session_id.clone());
-        let stream_opts = options.stream.unwrap_or_else(|| {
-            StreamOptions::new(TrajectorySource::Hermes).with_group_id(group)
-        });
+        let stream_opts = options
+            .stream
+            .unwrap_or_else(|| StreamOptions::new(TrajectorySource::Hermes).with_group_id(group));
         let state = create_stream(stream_opts);
         Self {
             store: options.store,
@@ -608,7 +609,8 @@ impl HermesProviderStream {
         let token = compute_change_token(&messages);
 
         if self.state.snapshot.is_some() {
-            if let hypabolic_trajectory::StreamPosition::HermesRow(p) = &self.state.cursor.position {
+            if let hypabolic_trajectory::StreamPosition::HermesRow(p) = &self.state.cursor.position
+            {
                 if !p.database_generation.is_empty() && p.database_generation != db_gen {
                     let request = StreamResetRequest {
                         reason: "source-replaced".into(),
@@ -706,9 +708,8 @@ mod tests {
         // Clone-like access via re-export path: apply through provider with Rc not available.
         // Use store methods then core apply for unit path.
         let export = store.export_session("sess-mem").unwrap();
-        let state = create_stream(
-            StreamOptions::new(TrajectorySource::Hermes).with_group_id("sess-mem"),
-        );
+        let state =
+            create_stream(StreamOptions::new(TrajectorySource::Hermes).with_group_id("sess-mem"));
         let token = compute_change_token(
             &serde_json::from_slice::<Value>(&export)
                 .unwrap()
@@ -718,11 +719,20 @@ mod tests {
                 .unwrap()
                 .clone(),
         );
-        let (state, u) =
-            apply_hermes_export(&state, &export, Some(&token), Some("mem-1"), Some("mem-1"), None)
-                .unwrap();
+        let (state, u) = apply_hermes_export(
+            &state,
+            &export,
+            Some(&token),
+            Some("mem-1"),
+            Some("mem-1"),
+            None,
+        )
+        .unwrap();
         assert_eq!(u.kind, "updated");
-        assert!(matches!(state.cursor.position, StreamPosition::HermesRow(_)));
+        assert!(matches!(
+            state.cursor.position,
+            StreamPosition::HermesRow(_)
+        ));
 
         store
             .append_message(

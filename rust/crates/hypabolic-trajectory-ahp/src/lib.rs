@@ -147,11 +147,7 @@ fn deliver_to_peer(peer: &Rc<RefCell<MemoryInner>>, message: &str) {
         };
         let handler = {
             let mut p = peer.borrow_mut();
-            if p.closed {
-                None
-            } else {
-                p.handler.take()
-            }
+            if p.closed { None } else { p.handler.take() }
         };
         if let Some(h) = handler {
             h(&raw);
@@ -821,10 +817,7 @@ impl ClientCore {
         }
         self.resync_inflight = true;
         self.action_buffer.clear();
-        let params = json_obj(&[(
-            "channel",
-            Value::String(self.options.chat_channel.clone()),
-        )]);
+        let params = json_obj(&[("channel", Value::String(self.options.chat_channel.clone()))]);
         self.enqueue_request("resync", params);
     }
 
@@ -1013,10 +1006,7 @@ impl FakeAhpHost {
                     let n = resync_h.get();
                     let snap = script.initial_snapshot.clone().unwrap_or_else(|| {
                         json_obj(&[
-                            (
-                                "ahpProtocolVersion",
-                                Value::String(PROTOCOL_VERSION.into()),
-                            ),
+                            ("ahpProtocolVersion", Value::String(PROTOCOL_VERSION.into())),
                             (
                                 "chat",
                                 json_obj(&[
@@ -1142,10 +1132,7 @@ mod tests {
 
     fn empty_snapshot() -> Value {
         json_obj(&[
-            (
-                "ahpProtocolVersion",
-                Value::String(PROTOCOL_VERSION.into()),
-            ),
+            ("ahpProtocolVersion", Value::String(PROTOCOL_VERSION.into())),
             (
                 "chat",
                 json_obj(&[
@@ -1251,7 +1238,10 @@ mod tests {
         {
             let events = events.borrow();
             assert!(events.iter().any(|e| e.kind == AhpClientEventKind::Ready));
-            for e in events.iter().filter(|e| e.kind == AhpClientEventKind::StreamUpdate) {
+            for e in events
+                .iter()
+                .filter(|e| e.kind == AhpClientEventKind::StreamUpdate)
+            {
                 if let Some(ref update) = e.update {
                     let blob = update_to_value(update)
                         .expect("json-safe stream integers")
@@ -1558,4 +1548,3 @@ mod tests {
         host.close();
     }
 }
-

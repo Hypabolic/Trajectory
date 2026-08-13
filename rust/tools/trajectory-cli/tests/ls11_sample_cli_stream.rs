@@ -122,7 +122,11 @@ fn help_mentions_stream_and_not_a_daemon() {
     let out = run_cli(&["--help"]);
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     let text = format!("{}\n{}", out.stdout, out.stderr).to_ascii_lowercase();
-    assert!(text.contains("stream"), "help missing stream:\n{}", out.stdout);
+    assert!(
+        text.contains("stream"),
+        "help missing stream:\n{}",
+        out.stdout
+    );
     assert!(
         text.contains("ahp-stream"),
         "help missing ahp-stream:\n{}",
@@ -165,7 +169,11 @@ fn stream_temp_file_emits_snapshot_delta_privacy_default() {
         "missing stream update:\n{}",
         out.stdout
     );
-    assert!(lower.contains("snapshot"), "missing snapshot:\n{}", out.stdout);
+    assert!(
+        lower.contains("snapshot"),
+        "missing snapshot:\n{}",
+        out.stdout
+    );
     assert!(lower.contains("delta"), "missing delta:\n{}", out.stdout);
     assert!(
         out.stdout.contains("Content omitted")
@@ -199,9 +207,8 @@ fn stream_rejects_ahp_source() {
 
 #[test]
 fn ahp_stream_fake_host_actions() {
-    let actions = repository_root().join(
-        "conformance/cases/streaming/ahp-action-turn-flow/step-actions.jsonl",
-    );
+    let actions = repository_root()
+        .join("conformance/cases/streaming/ahp-action-turn-flow/step-actions.jsonl");
     assert!(actions.is_file(), "fixture missing: {}", actions.display());
 
     let out = run_cli(&[
@@ -251,13 +258,7 @@ fn ahp_stream_fake_host_actions() {
 
 #[test]
 fn ahp_stream_rejects_ws_url() {
-    let out = run_cli(&[
-        "ahp-stream",
-        "--url",
-        "ws://localhost:9999",
-        "--chat",
-        CHAT,
-    ]);
+    let out = run_cli(&["ahp-stream", "--url", "ws://localhost:9999", "--chat", CHAT]);
     assert_eq!(out.code, 2, "stdout={}\nstderr={}", out.stdout, out.stderr);
     let combined = format!("{}\n{}", out.stdout, out.stderr);
     assert!(

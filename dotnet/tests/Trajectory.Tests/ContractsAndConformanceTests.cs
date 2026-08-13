@@ -41,6 +41,7 @@ public sealed class ContractsAndConformanceTests
                 OutputSchemaIds.LettaTrajectoryV1,
                 OutputSchemaIds.OpenAiChatMessages,
                 OutputSchemaIds.OtelGenAiSpansV1,
+                OutputSchemaIds.TrajectoryStreamV1,
             }.Order(StringComparer.Ordinal),
             schemaIds.Order(StringComparer.Ordinal));
 

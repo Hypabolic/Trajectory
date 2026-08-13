@@ -190,10 +190,15 @@ impl FileTrajectoryStream {
         &self.path
     }
 
-    /// Underlying mutable stream façade.
+    /// Underlying stream façade.
     #[must_use]
     pub fn stream(&self) -> &TrajectoryStream {
         &self.stream
+    }
+
+    /// Mutable access to the core stream (tests / advanced host policy).
+    pub fn stream_mut(&mut self) -> &mut TrajectoryStream {
+        &mut self.stream
     }
 
     /// Read growth once. Returns `Ok(None)` when unchanged at the host edge.
@@ -268,7 +273,11 @@ impl FileTrajectoryStream {
         self.closed = true;
     }
 
-    fn snapshot_full(&mut self, size: u64, identity: FileIdentity) -> Result<StreamUpdate, HostError> {
+    fn snapshot_full(
+        &mut self,
+        size: u64,
+        identity: FileIdentity,
+    ) -> Result<StreamUpdate, HostError> {
         let material = self.read_range(0, size)?;
         self.file_offset = size;
         let (complete, pending) = split_complete_lines(&material);
@@ -535,10 +544,12 @@ fn file_identity(meta: &fs::Metadata) -> FileIdentity {
     }
     #[cfg(windows)]
     {
+        // file_index()/volume_serial_number() require unstable windows_by_handle.
+        // Stable identity: size + creation + write timestamps (M2 same-size replace).
         use std::os::windows::fs::MetadataExt;
         return FileIdentity {
-            dev: 0,
-            ino: meta.file_index().unwrap_or(0),
+            dev: meta.creation_time(),
+            ino: meta.file_size() ^ meta.last_write_time(),
             mtime_ns,
         };
     }
@@ -555,7 +566,6 @@ fn file_identity(meta: &fs::Metadata) -> FileIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root() -> PathBuf {
@@ -600,13 +610,13 @@ mod tests {
         // Session meta committed; incomplete user line held at host — not materialized.
         let records_after_partial = u1.snapshot.as_ref().unwrap().records.len();
         assert!(records_after_partial >= 1);
-        assert!(!u1
-            .snapshot
-            .as_ref()
-            .unwrap()
-            .records
-            .iter()
-            .any(|r| r.record.get("role").and_then(|v| v.as_str()) == Some("user")));
+        assert!(
+            !u1.snapshot.as_ref().unwrap().records.iter().any(|r| r
+                .record
+                .get("role")
+                .and_then(|v| v.as_str())
+                == Some("user"))
+        );
 
         let mut full = SESSION_LINE.to_vec();
         full.extend_from_slice(USER_LINE);
@@ -614,13 +624,13 @@ mod tests {
         let u2 = stream.poll().unwrap().expect("user line");
         assert_eq!(u2.kind, "updated");
         assert!(u2.snapshot.as_ref().unwrap().records.len() > records_after_partial);
-        assert!(u2
-            .snapshot
-            .as_ref()
-            .unwrap()
-            .records
-            .iter()
-            .any(|r| r.record.get("role").and_then(|v| v.as_str()) == Some("user")));
+        assert!(
+            u2.snapshot.as_ref().unwrap().records.iter().any(|r| r
+                .record
+                .get("role")
+                .and_then(|v| v.as_str())
+                == Some("user"))
+        );
         for d in &u2.diagnostics {
             assert!(!d.message.contains(path.to_string_lossy().as_ref()));
         }
@@ -646,26 +656,26 @@ mod tests {
 
         let u0 = stream.poll().unwrap().expect("first");
         assert_eq!(u0.kind, "updated");
-        assert!(!u0
-            .snapshot
-            .as_ref()
-            .unwrap()
-            .records
-            .iter()
-            .any(|r| r.record.get("role").and_then(|v| v.as_str()) == Some("user")));
+        assert!(
+            !u0.snapshot.as_ref().unwrap().records.iter().any(|r| r
+                .record
+                .get("role")
+                .and_then(|v| v.as_str())
+                == Some("user"))
+        );
         let records_before = u0.snapshot.as_ref().unwrap().records.len();
 
         let finished = stream.finish().expect("finish");
         assert!(finished.kind == "updated" || finished.kind == "unchanged");
         assert!(stream.stream().state().finished);
         assert!(finished.snapshot.as_ref().unwrap().records.len() > records_before);
-        assert!(finished
-            .snapshot
-            .as_ref()
-            .unwrap()
-            .records
-            .iter()
-            .any(|r| r.record.get("role").and_then(|v| v.as_str()) == Some("user")));
+        assert!(
+            finished.snapshot.as_ref().unwrap().records.iter().any(|r| r
+                .record
+                .get("role")
+                .and_then(|v| v.as_str())
+                == Some("user"))
+        );
     }
 
     #[test]
@@ -674,22 +684,21 @@ mod tests {
         let path = root.join("session.jsonl");
         fs::write(&path, b"").unwrap();
 
-        let mut opts = StreamOptions::new(TrajectorySource::Pi).with_group_id("stream-file-io-rs");
-        opts.max_pending_bytes = Some(16);
-        opts.max_line_bytes = Some(16);
-
+        // Open without tight limits so the empty prefix snapshot can succeed;
+        // apply the H4 limits only for the oversized pending flush.
         let mut stream = FileTrajectoryStream::open(FileStreamOptions {
             root: root.clone(),
             path: path.clone(),
             source: TrajectorySource::Pi,
             group_id: Some("stream-file-io-rs".into()),
-            stream: Some(opts),
             ..Default::default()
         })
         .unwrap();
 
         let u0 = stream.poll().unwrap().expect("empty");
         assert_eq!(u0.kind, "updated");
+        stream.stream_mut().options_mut().max_pending_bytes = Some(16);
+        stream.stream_mut().options_mut().max_line_bytes = Some(16);
         let gen_before = stream.stream().state().cursor.generation;
         assert!(!stream.stream().state().finished);
 
@@ -886,10 +895,7 @@ mod tests {
         let mut original = SESSION_LINE.to_vec();
         original.extend_from_slice(USER_LINE);
         let mut replaced = SESSION_LINE.to_vec();
-        let hallo = USER_LINE
-            .iter()
-            .copied()
-            .collect::<Vec<u8>>();
+        let hallo = USER_LINE.iter().copied().collect::<Vec<u8>>();
         let hallo = String::from_utf8(hallo)
             .unwrap()
             .replace("\"hello\"", "\"hallo\"");
@@ -917,17 +923,14 @@ mod tests {
                 .unwrap()
                 .records
                 .iter()
-                .filter_map(|r| r.record.get("content").and_then(|v| v.as_str()).map(str::to_string))
+                .filter_map(|r| {
+                    r.record
+                        .get("content")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                })
                 .collect();
             assert!(texts.iter().any(|t| t.contains("hallo")));
         }
-    }
-
-    fn unused_write_import_silenced() {
-        // Ensure File is usable for shared-read open path in integration style.
-        let root = temp_root();
-        let path = root.join("t.jsonl");
-        let mut f = File::create(&path).unwrap();
-        f.write_all(b"\n").unwrap();
     }
 }

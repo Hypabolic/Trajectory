@@ -79,68 +79,68 @@ public sealed class FakeAhpHost
         switch (method)
         {
             case "initialize":
-            {
-                var result = new JsonObject
                 {
-                    ["channel"] = AhpProtocol.RootChannel,
-                    ["protocolVersion"] = "0.7.0",
-                };
-                if (_script.RequireAuth)
-                    result["authRequired"] = true;
-                _transport.Send(AhpProtocol.EncodeResult(reqId, result));
-                break;
-            }
-            case "authenticate":
-            {
-                AuthAttempts++;
-                var token = parameters["token"]?.GetValue<string>();
-                if (_script.AcceptToken is not null && token == _script.AcceptToken)
-                    _transport.Send(AhpProtocol.EncodeResult(reqId, new JsonObject { ["ok"] = true }));
-                else
-                    _transport.Send(AhpProtocol.EncodeError(reqId, -32001, "authentication failed"));
-                break;
-            }
-            case "subscribe":
-            {
-                SubscribeCount++;
-                var channel = parameters["channel"]?.GetValue<string>() ?? _chatChannel;
-                var result = new JsonObject { ["channel"] = channel };
-                if (_script.InitialSnapshot is not null)
-                {
-                    result["revision"] = _script.InitialRevision;
-                    result["snapshot"] = _script.InitialSnapshot.DeepClone();
-                }
-                if (_script.InitialActions.Count > 0)
-                {
-                    var arr = new JsonArray();
-                    foreach (var a in _script.InitialActions)
-                        arr.Add(a.DeepClone());
-                    result["actions"] = arr;
-                }
-                _transport.Send(AhpProtocol.EncodeResult(reqId, result));
-                break;
-            }
-            case "resync":
-            {
-                ResyncCount++;
-                var snap = _script.InitialSnapshot ?? new JsonObject
-                {
-                    ["ahpProtocolVersion"] = "0.7.0",
-                    ["chat"] = new JsonObject
+                    var result = new JsonObject
                     {
-                        ["id"] = _chatChannel,
-                        ["turns"] = new JsonArray(),
-                        ["activeTurn"] = null,
-                    },
-                };
-                _transport.Send(AhpProtocol.EncodeResult(reqId, new JsonObject
+                        ["channel"] = AhpProtocol.RootChannel,
+                        ["protocolVersion"] = "0.7.0",
+                    };
+                    if (_script.RequireAuth)
+                        result["authRequired"] = true;
+                    _transport.Send(AhpProtocol.EncodeResult(reqId, result));
+                    break;
+                }
+            case "authenticate":
                 {
-                    ["channel"] = _chatChannel,
-                    ["revision"] = $"resync-{ResyncCount}",
-                    ["snapshot"] = snap.DeepClone(),
-                }));
-                break;
-            }
+                    AuthAttempts++;
+                    var token = parameters["token"]?.GetValue<string>();
+                    if (_script.AcceptToken is not null && token == _script.AcceptToken)
+                        _transport.Send(AhpProtocol.EncodeResult(reqId, new JsonObject { ["ok"] = true }));
+                    else
+                        _transport.Send(AhpProtocol.EncodeError(reqId, -32001, "authentication failed"));
+                    break;
+                }
+            case "subscribe":
+                {
+                    SubscribeCount++;
+                    var channel = parameters["channel"]?.GetValue<string>() ?? _chatChannel;
+                    var result = new JsonObject { ["channel"] = channel };
+                    if (_script.InitialSnapshot is not null)
+                    {
+                        result["revision"] = _script.InitialRevision;
+                        result["snapshot"] = _script.InitialSnapshot.DeepClone();
+                    }
+                    if (_script.InitialActions.Count > 0)
+                    {
+                        var arr = new JsonArray();
+                        foreach (var a in _script.InitialActions)
+                            arr.Add(a.DeepClone());
+                        result["actions"] = arr;
+                    }
+                    _transport.Send(AhpProtocol.EncodeResult(reqId, result));
+                    break;
+                }
+            case "resync":
+                {
+                    ResyncCount++;
+                    var snap = _script.InitialSnapshot ?? new JsonObject
+                    {
+                        ["ahpProtocolVersion"] = "0.7.0",
+                        ["chat"] = new JsonObject
+                        {
+                            ["id"] = _chatChannel,
+                            ["turns"] = new JsonArray(),
+                            ["activeTurn"] = null,
+                        },
+                    };
+                    _transport.Send(AhpProtocol.EncodeResult(reqId, new JsonObject
+                    {
+                        ["channel"] = _chatChannel,
+                        ["revision"] = $"resync-{ResyncCount}",
+                        ["snapshot"] = snap.DeepClone(),
+                    }));
+                    break;
+                }
             default:
                 _transport.Send(AhpProtocol.EncodeError(reqId, -32601, "method not found"));
                 break;

@@ -359,10 +359,9 @@ fn resolve_stream_target(
         let path = expand_home_path(&path);
         let root = match cli.root.as_ref() {
             Some(r) => expand_home_path(r),
-            None => path
-                .parent()
-                .map(Path::to_path_buf)
-                .ok_or_else(|| TrajectoryError::new("invalid_input", "Could not derive root from path."))?,
+            None => path.parent().map(Path::to_path_buf).ok_or_else(|| {
+                TrajectoryError::new("invalid_input", "Could not derive root from path.")
+            })?,
         };
         return Ok((root, path, id));
     }
@@ -434,10 +433,9 @@ fn run_ahp_stream(
         let text = fs::read_to_string(&path).map_err(|e| {
             TrajectoryError::new("invalid_input", format!("Could not read snapshot: {e}"))
         })?;
-        script.initial_snapshot = Some(
-            serde_json::from_str(&text)
-                .map_err(|e| TrajectoryError::new("invalid_input", format!("Invalid snapshot JSON: {e}")))?,
-        );
+        script.initial_snapshot = Some(serde_json::from_str(&text).map_err(|e| {
+            TrajectoryError::new("invalid_input", format!("Invalid snapshot JSON: {e}"))
+        })?);
     }
     if let Some(path) = actions_path {
         let text = fs::read_to_string(&path).map_err(|e| {
@@ -528,9 +526,7 @@ fn run_ahp_stream(
     if seen == 0 && !ready.get() {
         println!("No AHP ready/update events. Check --url / --chat / fixtures.");
     } else {
-        println!(
-            "Emitted {seen} stream update(s). Cancel leaves last cursor valid; not a daemon."
-        );
+        println!("Emitted {seen} stream update(s). Cancel leaves last cursor valid; not a daemon.");
     }
     client.cancel();
     Ok(ExitCode::SUCCESS)

@@ -225,6 +225,9 @@ def test_license_expression_exact_mit() -> None:
         "hypabolic_trajectory/contracts/schemas/a.schema.json",
         "hypabolic_trajectory/runtime-capabilities.json",
         "hypabolic_trajectory/py.typed",
+        "hypabolic_trajectory/io/package-capabilities.json",
+        "hypabolic_trajectory/ahp_client/package-capabilities.json",
+        "hypabolic_trajectory/hermes_provider/package-capabilities.json",
         "hypabolic_trajectory-0.1.0.dist-info/licenses/LICENSE",
         "hypabolic_trajectory-0.1.0.dist-info/METADATA",
     }
@@ -280,6 +283,9 @@ def test_apply_version_lists_python_pyproject(tmp_path: Path) -> None:
         "dotnet/src/Trajectory/Trajectory.csproj",
         "dotnet/src/Trajectory.OpenTelemetry/Trajectory.OpenTelemetry.csproj",
         "dotnet/src/Trajectory.Testing/Trajectory.Testing.csproj",
+        "dotnet/src/Trajectory.IO/Trajectory.IO.csproj",
+        "dotnet/src/Trajectory.Ahp/Trajectory.Ahp.csproj",
+        "dotnet/src/Trajectory.Hermes/Trajectory.Hermes.csproj",
     ):
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -292,6 +298,8 @@ def test_apply_version_lists_python_pyproject(tmp_path: Path) -> None:
         "typescript/packages/trajectory/package.json",
         "typescript/packages/trajectory-node/package.json",
         "typescript/packages/trajectory-otel/package.json",
+        "typescript/packages/trajectory-ahp/package.json",
+        "typescript/packages/trajectory-hermes/package.json",
         "typescript/packages/trajectory-testing/package.json",
         "typescript/packages/trajectory-cli/package.json",
     ):

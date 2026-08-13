@@ -12,13 +12,13 @@ use hypabolic_trajectory::{
     SnapshotRevisionPosition, SourceContext, StreamCursor, StreamDelivery, StreamOptions,
     StreamPosition, StreamResetRequest, StreamSnapshot, StreamState, StreamUpdate, TrajectoryError,
     TrajectorySource, TruncationStrategy, apply_ahp_actions, apply_ahp_snapshot, apply_append,
-    apply_hermes_export, apply_snapshot, create_stream, finish_stream, list_ahp_trajectories,
-    list_claude_code_trajectories, list_codex_trajectories, list_grok_build_trajectories,
-    list_hermes_trajectories, list_openclaw_trajectories, list_pi_trajectories, normalize_ahp,
-    normalize_claude_code, normalize_codex, normalize_grok_build, normalize_hermes,
-    normalize_openclaw, normalize_pi, project_canonical, project_hypabolic, project_letta,
-    json_safe_from_value, project_minimal_jsonl, project_openai, project_opentelemetry, reset_stream,
-    update_to_value,
+    apply_hermes_export, apply_snapshot, create_stream, finish_stream, json_safe_from_value,
+    list_ahp_trajectories, list_claude_code_trajectories, list_codex_trajectories,
+    list_grok_build_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
+    list_pi_trajectories, normalize_ahp, normalize_claude_code, normalize_codex,
+    normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi, project_canonical,
+    project_hypabolic, project_letta, project_minimal_jsonl, project_openai, project_opentelemetry,
+    reset_stream, update_to_value,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -364,10 +364,7 @@ fn stream_options_from_manifest(manifest: &Manifest) -> Result<StreamOptions, St
     Ok(opts)
 }
 
-fn load_step_bytes(
-    case_directory: &Path,
-    input: &Value,
-) -> Result<Vec<u8>, StreamEngineError> {
+fn load_step_bytes(case_directory: &Path, input: &Value) -> Result<Vec<u8>, StreamEngineError> {
     if let Some(Value::String(text)) = input.get("inline_utf8") {
         return Ok(text.as_bytes().to_vec());
     }
@@ -377,11 +374,9 @@ fn load_step_bytes(
         .ok_or_else(|| {
             StreamEngineError::Protocol("Step input requires material or inline_utf8.".into())
         })?;
-    let path = safe_join(case_directory, material)
-        .map_err(StreamEngineError::Protocol)?;
-    fs::read(&path).map_err(|_| {
-        StreamEngineError::Protocol("Failed to read step material bytes.".into())
-    })
+    let path = safe_join(case_directory, material).map_err(StreamEngineError::Protocol)?;
+    fs::read(&path)
+        .map_err(|_| StreamEngineError::Protocol("Failed to read step material bytes.".into()))
 }
 
 fn parse_optional_json_safe(
@@ -483,9 +478,7 @@ fn apply_stream_step(
         .get("kind")
         .and_then(Value::as_str)
         .ok_or_else(|| StreamEngineError::Protocol("Step input.kind required.".into()))?;
-    let source_revision = step_input
-        .get("source_revision")
-        .and_then(Value::as_str);
+    let source_revision = step_input.get("source_revision").and_then(Value::as_str);
     let cursor = parse_stream_cursor(step_input.get("cursor"))?;
     match kind {
         "append-bytes" => {
@@ -495,13 +488,8 @@ fn apply_stream_step(
         }
         "snapshot-bytes" => {
             let data = load_step_bytes(case_directory, step_input)?;
-            apply_snapshot(
-                state,
-                &data,
-                source_revision.unwrap_or(""),
-                cursor.as_ref(),
-            )
-            .map_err(StreamEngineError::Fatal)
+            apply_snapshot(state, &data, source_revision.unwrap_or(""), cursor.as_ref())
+                .map_err(StreamEngineError::Fatal)
         }
         "finish" => finish_stream(state).map_err(StreamEngineError::Fatal),
         "reset" => {
@@ -518,15 +506,18 @@ fn apply_stream_step(
                 .to_string();
             let generation = match reset.get("generation") {
                 None | Some(Value::Null) => None,
-                Some(v) => Some(
-                    json_safe_from_value(v, true).map_err(StreamEngineError::Fatal)? as u64,
-                ),
+                Some(v) => {
+                    Some(json_safe_from_value(v, true).map_err(StreamEngineError::Fatal)? as u64)
+                }
             };
             let rev = reset
                 .get("source_revision")
                 .and_then(|v| v.as_str().map(str::to_string));
             let material = if reset.contains_key("material") || reset.contains_key("inline_utf8") {
-                Some(load_step_bytes(case_directory, &Value::Object(reset.clone()))?)
+                Some(load_step_bytes(
+                    case_directory,
+                    &Value::Object(reset.clone()),
+                )?)
             } else {
                 None
             };
@@ -546,13 +537,8 @@ fn apply_stream_step(
         }
         "ahp-snapshot" => {
             let data = load_step_bytes(case_directory, step_input)?;
-            apply_ahp_snapshot(
-                state,
-                &data,
-                source_revision.unwrap_or(""),
-                cursor.as_ref(),
-            )
-            .map_err(StreamEngineError::Fatal)
+            apply_ahp_snapshot(state, &data, source_revision.unwrap_or(""), cursor.as_ref())
+                .map_err(StreamEngineError::Fatal)
         }
         "ahp-actions" => {
             let data = load_step_bytes(case_directory, step_input)?;
@@ -560,9 +546,7 @@ fn apply_stream_step(
         }
         "hermes-export" => {
             let data = load_step_bytes(case_directory, step_input)?;
-            let change_token = step_input
-                .get("change_token")
-                .and_then(Value::as_str);
+            let change_token = step_input.get("change_token").and_then(Value::as_str);
             let database_generation = step_input
                 .get("database_generation")
                 .and_then(Value::as_str)
@@ -632,8 +616,8 @@ fn execute_stream_sequence(
                 && (update.kind == "updated" || update.kind == "unchanged")
             {
                 // True append replay: re-supply with the cursor that governed the first apply.
-                let replay_cursor = parse_stream_cursor(step_input.get("cursor"))?
-                    .unwrap_or(pre_cursor);
+                let replay_cursor =
+                    parse_stream_cursor(step_input.get("cursor"))?.unwrap_or(pre_cursor);
                 let data = load_step_bytes(case_directory, step_input)?;
                 let source_revision = step_input.get("source_revision").and_then(Value::as_str);
                 apply_append(&state, &data, Some(&replay_cursor), source_revision)
@@ -713,25 +697,23 @@ fn execute_stream_sequence(
                     .get("snapshot_source_revision")
                     .and_then(Value::as_str)
                     .unwrap_or("ahp-equiv-1");
-                let ok = match load_step_bytes(
-                    case_directory,
-                    &json!({ "material": material_name }),
-                ) {
-                    Ok(material) => {
-                        let snap_state = create_stream(stream_options_from_manifest(manifest)?);
-                        match apply_ahp_snapshot(&snap_state, &material, snap_rev, None) {
-                            Ok((_, snap)) => {
-                                (snap.kind == "updated" || snap.kind == "unchanged")
-                                    && action_snapshot_parity(
-                                        state.snapshot.as_ref(),
-                                        snap.snapshot.as_ref(),
-                                    )
+                let ok =
+                    match load_step_bytes(case_directory, &json!({ "material": material_name })) {
+                        Ok(material) => {
+                            let snap_state = create_stream(stream_options_from_manifest(manifest)?);
+                            match apply_ahp_snapshot(&snap_state, &material, snap_rev, None) {
+                                Ok((_, snap)) => {
+                                    (snap.kind == "updated" || snap.kind == "unchanged")
+                                        && action_snapshot_parity(
+                                            state.snapshot.as_ref(),
+                                            snap.snapshot.as_ref(),
+                                        )
+                                }
+                                Err(_) => false,
                             }
-                            Err(_) => false,
                         }
-                    }
-                    Err(_) => false,
-                };
+                        Err(_) => false,
+                    };
                 section.insert("action_equals_snapshot".into(), Value::Bool(ok));
             }
             payload
