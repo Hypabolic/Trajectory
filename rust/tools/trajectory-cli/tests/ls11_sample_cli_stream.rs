@@ -31,22 +31,24 @@ fn trajectory_bin() -> PathBuf {
     }
 
     // Binary-only packages do not always export CARGO_BIN_EXE_* for integration
-    // tests. Fall back to the workspace target dir (debug first, then release).
+    // tests (notably cargo 1.85 on Windows). Fall back to the workspace target
+    // dir (debug first, then release), including the platform EXE suffix.
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     // rust/tools/trajectory-cli → rust/
     let rust_root = manifest_dir
         .parent()
         .and_then(Path::parent)
         .expect("rust root from CARGO_MANIFEST_DIR");
+    let exe_name = format!("trajectory{}", env::consts::EXE_SUFFIX);
     for profile in ["debug", "release"] {
-        let candidate = rust_root.join("target").join(profile).join("trajectory");
+        let candidate = rust_root.join("target").join(profile).join(&exe_name);
         if candidate.is_file() {
             return candidate;
         }
     }
 
     panic!(
-        "trajectory binary not found (CARGO_BIN_EXE_trajectory unset and no target/{{debug,release}}/trajectory). \
+        "trajectory binary not found (CARGO_BIN_EXE_trajectory unset and no target/{{debug,release}}/{exe_name}). \
          Build with: cargo build -p trajectory-cli --bin trajectory"
     );
 }

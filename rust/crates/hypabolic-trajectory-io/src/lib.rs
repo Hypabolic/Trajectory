@@ -578,11 +578,14 @@ mod tests {
 
     static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
-    fn temp_root() -> PathBuf {
-        let nanos = SystemTime::now()
+    fn now_nanos() -> u128 {
+        SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_nanos())
+    }
+
+    fn temp_root() -> PathBuf {
+        let nanos = now_nanos();
         let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
         let root = std::env::temp_dir().join(format!("traj-io-rs-{nanos}-{seq}"));
         fs::create_dir_all(&root).expect("mkdir");
@@ -821,13 +824,7 @@ mod tests {
     #[test]
     fn path_outside_root_is_host_error() {
         let root = temp_root();
-        let other = std::env::temp_dir().join(format!(
-            "traj-io-out-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
+        let other = std::env::temp_dir().join(format!("traj-io-out-{}", now_nanos()));
         fs::create_dir_all(&other).unwrap();
         let outside = other.join("x.jsonl");
         fs::write(&outside, b"\n").unwrap();
@@ -852,13 +849,7 @@ mod tests {
             .join("does-not-exist")
             .join("..")
             .join("..")
-            .join(format!(
-                "traj-io-escape-{}.jsonl",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map(|d| d.as_nanos())
-                    .unwrap_or(0)
-            ));
+            .join(format!("traj-io-escape-{}.jsonl", now_nanos()));
         let err = FileTrajectoryStream::open(FileStreamOptions {
             root,
             path: outside,
