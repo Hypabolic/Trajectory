@@ -38,6 +38,7 @@ TIP_SOURCE_ORDER = [
     "hermes",
     "ahp",
     "grok-build",
+    "cursor",
 ]
 CLAIMED_OPS = ["normalize-letta", "normalize-canonical"]
 

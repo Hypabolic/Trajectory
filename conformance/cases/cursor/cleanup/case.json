@@ -1,0 +1,8 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1, "id": "cursor/cleanup",
+  "operation": {"normalize-letta": {"expected": "expected.letta.json", "comparison": "json-exact"}},
+  "source": "cursor", "transcript": "input.jsonl", "native_container": "cursor-agent-transcript-jsonl",
+  "source_context": {"group_id": "019f0000-0000-7000-8000-00000000c003"}, "bounds": {}, "filters": {}, "projection_options": {}, "mode": "whole",
+  "required_capabilities": ["normalize", "typed-diagnostics", "deterministic-rerun"], "expected": {"result": "diagnostics", "diagnostic_codes": ["invalid_json_line", "non_object_json_line", "unknown_semantic_record", "unknown_semantic_record", "image_content_dropped", "unknown_content_part", "tool_use_missing_name", "turn_ended_error", "timestamps_synthesized"]}, "comparison": "json-exact"
+}

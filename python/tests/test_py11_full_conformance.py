@@ -68,6 +68,7 @@ TIP_SOURCES: list[str] = [
     "hermes",
     "ahp",
     "grok-build",
+    "cursor",
 ]
 TIP_OUTPUTS: list[str] = [
     "letta-trajectory-v1",
@@ -102,9 +103,9 @@ TIP_SLICE = "ML13"
 NORMALIZER_CONTRACT_VERSION = "0.2.0"
 
 # Current tip case inventory under unfiltered verify (all declared pairs).
-# 39 batch + 41 stream cases (LS-08 matrix + H1/H3 + hermes-provider-* export apply).
-EXPECTED_TIP_CASES = 80
-EXPECTED_TIP_OPERATIONS = 107
+# 45 batch + 42 stream cases (LS-08 matrix + H1/H3 + hermes-provider-* export apply + Cursor).
+EXPECTED_TIP_CASES = 87
+EXPECTED_TIP_OPERATIONS = 118
 
 
 def _load_json(path: Path) -> dict:
@@ -221,5 +222,5 @@ def test_identity_baseline_goldens_unchanged() -> None:
 
     assert not failures, "identity baseline mismatches:\n" + "\n".join(failures)
     assert checked >= 1, "identity baseline checked zero files"
-    # Tip identity set currently pins 37 identity-bearing goldens.
-    assert checked == 37, f"expected 37 identity goldens, checked {checked}"
+    # Tip identity set currently pins 45 identity-bearing goldens.
+    assert checked == 45, f"expected 45 identity goldens, checked {checked}"

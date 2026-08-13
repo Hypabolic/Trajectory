@@ -3,7 +3,7 @@
  * adapters derive byte anchors from this UTF-8 encoding, never UTF-16 indices.
  */
 export type TranscriptInput = Uint8Array | string;
-export type TrajectorySource = "pi" | "claude-code" | "codex" | "openclaw" | "hermes" | "ahp" | "grok-build";
+export type TrajectorySource = "pi" | "claude-code" | "codex" | "openclaw" | "hermes" | "ahp" | "grok-build" | "cursor";
 
 export interface SourceContext {
   readonly groupId?: string;
@@ -41,7 +41,7 @@ export interface TrajectoryDiagnostic {
 }
 
 export const NORMALIZER_CONTRACT_VERSION = "0.2.0";
-export const ImplementedSources = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"] as const;
+export const ImplementedSources = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build", "cursor"] as const;
 export const OutputSchemaIds = {
   lettaTrajectoryV1: "letta-trajectory-v1",
   lettaCanonicalV1: "letta-canonical-v1",
@@ -62,6 +62,7 @@ import {
   normalizeClaudeCode,
   normalizeCodex,
   normalizeGrokBuild,
+  normalizeCursor,
   normalizeHermes,
   normalizeOpenClaw,
   normalizePi,
@@ -102,6 +103,7 @@ export function normalizeToIR(request: NormalizeRequest): TrajectoryIR {
   if (request.source === "hermes") return normalizeHermes(normalized);
   if (request.source === "ahp") return normalizeAhp(normalized);
   if (request.source === "grok-build") return normalizeGrokBuild(normalized);
+  if (request.source === "cursor") return normalizeCursor(normalized);
   throw new TrajectoryNormalizationError("unknown_source", `No source adapter is registered for '${String(request.source)}'.`);
 }
 

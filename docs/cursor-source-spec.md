@@ -306,10 +306,10 @@ A Cursor source is complete when:
 
 ## 11. Implementation checklist
 
-- [ ] Vocabulary in conformance + compatibility schemas
-- [ ] Listing rules in `contracts/spec/listing.md`
-- [ ] Shared cases + store fixture + stream append sequence
-- [ ] .NET / TypeScript / Rust / Python decode + list
-- [ ] CLI aliases and default roots; file-stream allow-list
-- [ ] `compatibility.json` + runtime capability manifests only when all claiming runtimes pass
-- [ ] README source list + Unreleased changelog
+- [x] Vocabulary in conformance + compatibility schemas
+- [x] Listing rules in `contracts/spec/listing.md`
+- [x] Shared cases + store fixture + stream append sequence
+- [x] .NET / TypeScript / Rust / Python decode + list
+- [x] CLI aliases and default roots; file-stream allow-list
+- [x] `compatibility.json` + runtime capability manifests only when all claiming runtimes pass
+- [x] README source list + Unreleased changelog

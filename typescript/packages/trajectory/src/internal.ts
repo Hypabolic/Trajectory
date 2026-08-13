@@ -207,6 +207,10 @@ export function normalizeGrokBuild(request: NormalizeRequest & { transcriptBytes
   return normalizeDecoded(request, decodeGrokBuild(request.transcriptBytes, request.sourceContext));
 }
 
+export function normalizeCursor(request: NormalizeRequest & { transcriptBytes: Uint8Array }): TrajectoryIR {
+  return normalizeDecoded(request, decodeCursor(request.transcriptBytes));
+}
+
 function normalizeDecoded(
   request: NormalizeRequest & { transcriptBytes: Uint8Array },
   decoded: DecodedSession,
@@ -1813,6 +1817,60 @@ function decodeGrokBuild(
     diagnostics,
     ...(model === undefined ? {} : { model }),
   };
+}
+
+function decodeCursor(bytes: Uint8Array): DecodedSession {
+  const diagnostics: TrajectoryDiagnostic[] = [];
+  const events: DecodedEvent[] = [];
+  forEachJsonLine(bytes, diagnostics, (row, inputLine, sourceOffset) => {
+    const role = stringValue(row.role);
+    const type = stringValue(row.type);
+    let componentIndex = 0;
+    const emit = (kind: EventKind, eventRole: Role, values: DecodedEventValues): void => {
+      const defined = Object.fromEntries(Object.entries(values).filter((entry) => entry[1] !== undefined)) as Partial<DecodedEvent>;
+      events.push({ kind, role: eventRole, sourceOffset, inputLine, componentIndex: componentIndex++, ...defined });
+    };
+    if (role === "user" || role === "assistant") {
+      const message = isObject(row.message) ? row.message : undefined;
+      const content = message && Array.isArray(message.content) ? message.content : [];
+      const toolParts: JsonObject[] = [];
+      const textParts: string[] = [];
+      for (const value of content) {
+        if (!isObject(value)) continue;
+        const partType = stringValue(value.type);
+        if (partType === "text") {
+          const text = stringValue(value.text);
+          if (text !== undefined) textParts.push(text);
+        } else if (role === "assistant" && partType === "tool_use") {
+          toolParts.push(value);
+        } else if (partType === "image" || partType === "image_url" || partType === "input_image" || partType === "output_image") {
+          diagnostics.push({ code: "image_content_dropped", message: `Dropped image content on a Cursor record on line ${inputLine}.`, inputLine });
+        } else if (partType) {
+          diagnostics.push({ code: "unknown_content_part", message: `Skipped an unknown Cursor content part on line ${inputLine}.`, inputLine });
+        }
+      }
+      const text = textParts.join("\n");
+      if (text.trim()) emit("message", role, { content: text });
+      if (role === "assistant") {
+        for (const part of toolParts) {
+          const name = nonEmpty(stringValue(part.name));
+          if (!name) {
+            diagnostics.push({ code: "tool_use_missing_name", message: `Skipped a Cursor tool_use part without a name on line ${inputLine}.`, inputLine });
+            continue;
+          }
+          const input = isObject(part.input) ? compactJson(part.input) : "{}";
+          emit("tool-call", "assistant", { toolName: name, argumentsJson: input });
+        }
+      }
+      return;
+    }
+    if (type === "turn_ended") {
+      if (stringValue(row.status) === "error") diagnostics.push({ code: "turn_ended_error", message: "A Cursor turn ended with an error.", inputLine });
+      return;
+    }
+    if (role || type) diagnostics.push({ code: "unknown_semantic_record", message: `Skipped an unknown Cursor semantic record on line ${inputLine}.`, inputLine });
+  });
+  return { source: "cursor", sourceName: "cursor", groupResolved: false, events, modelInvocations: [], diagnostics };
 }
 
 function grokBuildContentText(

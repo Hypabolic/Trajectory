@@ -8,7 +8,7 @@ Local sample CLI/TUI for browsing agent sessions with
 
 ## What it does
 
-- Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes, Grok Build)
+- Lists sessions from local agent stores (Pi, Claude Code, Codex, OpenClaw, Hermes, Grok Build, Cursor Agent)
 - Normalizes AHP Shape A offline snapshots via `show --path` (no default store)
 - Interactive browse: pick source → pick session → Watch live or Show snapshot
 - Summary includes record counts, roles, tool calls, diagnostics, and message/Hypabolic projections
@@ -27,6 +27,7 @@ This sample is a **consumer process**, not a Trajectory daemon.
 | `hermes` | `~/.hermes` | `TRAJECTORY_HERMES_ROOT` |
 | `ahp` | _(none — export file only)_ | _(not applicable)_ |
 | `grok-build` (alias `grok`) | `$GROK_HOME/sessions` or `~/.grok/sessions` | `TRAJECTORY_GROK_BUILD_ROOT` or `GROK_HOME` |
+| `cursor` (alias `cursor-agent`) | `$CURSOR_HOME` or `~/.cursor` | `TRAJECTORY_CURSOR_ROOT` or `CURSOR_HOME` |
 
 Hermes listing in the core Node package is SQLite-free and returns empty pages.
 Export message JSON from Hermes and use `show --path`.
@@ -105,7 +106,7 @@ Shared flags: `--source`, `--root`, `--limit`, `--show-content`, `--format`.
 Stream flags: `--emit snapshot+delta|snapshot|delta` (default `snapshot+delta`),
 `--follow`, `--interval`, `--max-updates`, `--path` / `--id` (+ explicit `--root`
 for listing). File stream sources: `pi`, `claude-code`, `codex`, `openclaw`,
-`grok-build`.
+`grok-build`, `cursor`.
 
 AHP stream flags: `--url` (sample: `fake://…`), `--chat`, `--from-seq`,
 `--token` / `TRAJECTORY_AHP_TOKEN`, `--snapshot-path`, `--actions-path`.

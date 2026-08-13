@@ -38,7 +38,7 @@ I/O **only** calls core apply APIs. It never invents transcript diagnostics.
 | --- | --- |
 | `root` | **Required.** Absolute or resolvable directory that bounds the session file. No implicit `~` multi-session watch. |
 | `path` | **Required.** File to follow. After resolve, must be **under** `root` (same-root containment). |
-| `source` / stream options | JSONL file sources: `pi`, `claude-code`, `codex`, `openclaw`, `grok-build`. Passed through to core `StreamOptions`. |
+| `source` / stream options | JSONL file sources: `pi`, `claude-code`, `codex`, `openclaw`, `grok-build`, `cursor`. Passed through to core `StreamOptions`. |
 
 Missing root or path → **host error** (not a stream update).
 

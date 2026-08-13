@@ -51,6 +51,7 @@ IMPLEMENTED_SOURCES: Final[tuple[str, ...]] = (
     "hermes",
     "ahp",
     "grok-build",
+    "cursor",
 )
 
 # ---------------------------------------------------------------------------

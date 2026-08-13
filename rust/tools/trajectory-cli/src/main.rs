@@ -21,9 +21,9 @@ use hypabolic_trajectory::{
     ListingOptions, NormalizeOptions, NormalizeRequest, RecordKind, SourceContext, StreamDelivery,
     StreamOptions, StreamUpdate, Trajectory, TrajectoryError, TrajectoryListing, TrajectorySource,
     list_ahp_trajectories, list_claude_code_trajectories, list_codex_trajectories,
-    list_grok_build_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
+    list_cursor_trajectories, list_grok_build_trajectories, list_hermes_trajectories, list_openclaw_trajectories,
     list_pi_trajectories, normalize_ahp, normalize_claude_code, normalize_codex,
-    normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi, project_hypabolic,
+    normalize_cursor, normalize_grok_build, normalize_hermes, normalize_openclaw, normalize_pi, project_hypabolic,
     project_letta,
 };
 use hypabolic_trajectory_ahp::{
@@ -44,10 +44,12 @@ enum SourceArg {
     Ahp,
     #[value(name = "grok-build", alias = "grok")]
     GrokBuild,
+    #[value(name = "cursor", alias = "cursor-agent")]
+    Cursor,
 }
 
 impl SourceArg {
-    const ALL: [SourceArg; 7] = [
+    const ALL: [SourceArg; 8] = [
         SourceArg::Pi,
         SourceArg::ClaudeCode,
         SourceArg::Codex,
@@ -55,6 +57,7 @@ impl SourceArg {
         SourceArg::Hermes,
         SourceArg::Ahp,
         SourceArg::GrokBuild,
+        SourceArg::Cursor,
     ];
 
     fn wire_name(self) -> &'static str {
@@ -66,6 +69,7 @@ impl SourceArg {
             Self::Hermes => "hermes",
             Self::Ahp => "ahp",
             Self::GrokBuild => "grok-build",
+            Self::Cursor => "cursor",
         }
     }
 }
@@ -113,7 +117,7 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Transcript source: pi, claude-code, codex, openclaw, hermes, ahp, grok-build.
+    /// Transcript source: pi, claude-code, codex, openclaw, hermes, ahp, grok-build, cursor.
     #[arg(short, long, global = true, value_enum)]
     source: Option<SourceArg>,
 
@@ -251,6 +255,7 @@ fn source_to_trajectory(source: SourceArg) -> TrajectorySource {
         SourceArg::Hermes => TrajectorySource::Hermes,
         SourceArg::Ahp => TrajectorySource::Ahp,
         SourceArg::GrokBuild => TrajectorySource::GrokBuild,
+        SourceArg::Cursor => TrajectorySource::Cursor,
     }
 }
 
@@ -275,7 +280,7 @@ fn run_stream(
     if !is_stream_file_source(source) {
         return Err(TrajectoryError::new(
             "invalid_input",
-            "stream supports file JSONL sources only: pi, claude-code, codex, openclaw, grok-build. Use ahp-stream for AHP.",
+            "stream supports file JSONL sources only: pi, claude-code, codex, openclaw, grok-build, cursor. Use ahp-stream for AHP.",
         ));
     }
     let (root, path, group_id, follow) = if path.is_none() && id.is_none() {
@@ -304,7 +309,7 @@ fn follow_file_session(
     let delivery = emit.delivery();
     // Grok history lines do not embed the session id; listing id is the group.
     // Other file sources lock group from the transcript.
-    let group_id = if matches!(source, SourceArg::GrokBuild) {
+    let group_id = if matches!(source, SourceArg::GrokBuild | SourceArg::Cursor) {
         group_id
     } else {
         None
@@ -792,7 +797,7 @@ fn run_browse(cli: &Cli, id: Option<String>) -> Result<ExitCode, TrajectoryError
     if cli.watch && !is_stream_file_source(source) {
         return Err(TrajectoryError::new(
             "invalid_input",
-            "Watch live supports file JSONL sources only: pi, claude-code, codex, openclaw, grok-build. Use show for Hermes exports; ahp-stream for AHP.",
+            "Watch live supports file JSONL sources only: pi, claude-code, codex, openclaw, grok-build, cursor. Use show for Hermes exports; ahp-stream for AHP.",
         ));
     }
     let root = resolve_root(source, cli.root.as_deref());
@@ -913,7 +918,7 @@ fn view_selected_session(
         if !can_watch {
             return Err(TrajectoryError::new(
                 "invalid_input",
-                "Watch live supports file JSONL sources only: pi, claude-code, codex, openclaw, grok-build. Use show for Hermes exports; ahp-stream for AHP.",
+                "Watch live supports file JSONL sources only: pi, claude-code, codex, openclaw, grok-build, cursor. Use show for Hermes exports; ahp-stream for AHP.",
             ));
         }
         return follow_file_session(
@@ -1181,6 +1186,7 @@ fn normalize_bytes(
         SourceArg::Hermes => normalize_hermes(request),
         SourceArg::Ahp => normalize_ahp(request),
         SourceArg::GrokBuild => normalize_grok_build(request),
+        SourceArg::Cursor => normalize_cursor(request),
     }
 }
 
@@ -1202,6 +1208,7 @@ fn list_source(
         SourceArg::Hermes => list_hermes_trajectories(&options),
         SourceArg::Ahp => list_ahp_trajectories(&options),
         SourceArg::GrokBuild => list_grok_build_trajectories(&options),
+        SourceArg::Cursor => list_cursor_trajectories(&options),
     }
 }
 
@@ -1218,6 +1225,7 @@ fn resolve_root(source: SourceArg, root_override: Option<&Path>) -> PathBuf {
         SourceArg::Hermes => "TRAJECTORY_HERMES_ROOT",
         SourceArg::Ahp => "TRAJECTORY_AHP_ROOT",
         SourceArg::GrokBuild => "TRAJECTORY_GROK_BUILD_ROOT",
+        SourceArg::Cursor => "TRAJECTORY_CURSOR_ROOT",
     };
     if let Ok(value) = env::var(env_key) {
         if !value.trim().is_empty() {
@@ -1262,6 +1270,7 @@ fn resolve_root(source: SourceArg, root_override: Option<&Path>) -> PathBuf {
             }
             home.join(".grok").join("sessions")
         }
+        SourceArg::Cursor => env::var("CURSOR_HOME").ok().filter(|value| !value.trim().is_empty()).map(|value| PathBuf::from(expand_home(value.trim()))).unwrap_or_else(|| home.join(".cursor")),
     }
 }
 
@@ -1278,6 +1287,7 @@ fn describe_default(source: SourceArg) -> &'static str {
         SourceArg::GrokBuild => {
             "~/.grok/sessions (or $GROK_HOME/sessions / TRAJECTORY_GROK_BUILD_ROOT)"
         }
+        SourceArg::Cursor => "$CURSOR_HOME or ~/.cursor (or TRAJECTORY_CURSOR_ROOT)",
     }
 }
 

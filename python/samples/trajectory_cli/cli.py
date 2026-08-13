@@ -58,6 +58,7 @@ SOURCES: Final[tuple[str, ...]] = (
     "hermes",
     "ahp",
     "grok-build",
+    "cursor",
 )
 
 # File JSONL sources supported by optional stream file I/O (not hermes/ahp).
@@ -67,6 +68,7 @@ STREAM_FILE_SOURCES: Final[tuple[str, ...]] = (
     "codex",
     "openclaw",
     "grok-build",
+    "cursor",
 )
 
 EmitMode = Literal["snapshot+delta", "snapshot", "delta"]
@@ -88,6 +90,7 @@ _SOURCE_ENV: Final[dict[str, str]] = {
     "hermes": "TRAJECTORY_HERMES_ROOT",
     "ahp": "TRAJECTORY_AHP_ROOT",
     "grok-build": "TRAJECTORY_GROK_BUILD_ROOT",
+    "cursor": "TRAJECTORY_CURSOR_ROOT",
 }
 
 
@@ -147,7 +150,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--source",
         dest="source",
         default=None,
-        help="Transcript source: pi, claude-code, codex, openclaw, hermes, ahp, grok-build.",
+        help="Transcript source: pi, claude-code, codex, openclaw, hermes, ahp, grok-build, cursor.",
     )
     parser.add_argument(
         "-r",
@@ -325,6 +328,8 @@ def parse_source(value: str) -> str:
         return "claude-code"
     if normalized in ("grok", "grokbuild"):
         return "grok-build"
+    if normalized in ("cursor-agent", "cursoragent"):
+        return "cursor"
     raise TrajectoryError(
         "unknown_source",
         f"Unknown source '{value}'. Expected one of: {', '.join(SOURCES)}.",
@@ -404,6 +409,11 @@ def default_root(source: str) -> str:
         if grok_home:
             return str(Path(expand_home(grok_home)) / "sessions")
         return str(home / ".grok" / "sessions")
+    if source == "cursor":
+        cursor_env = os.environ.get("CURSOR_HOME", "").strip()
+        if cursor_env:
+            return expand_home(cursor_env)
+        return str(home / ".cursor")
     # ahp — no home default store; listing needs an explicit export root.
     return str(home)
 
@@ -420,6 +430,7 @@ def describe_default(source: str) -> str:
         "hermes": "~/.hermes/state.db",
         "ahp": "explicit export root only (no home default)",
         "grok-build": "$GROK_HOME/sessions or ~/.grok/sessions (or TRAJECTORY_GROK_BUILD_ROOT)",
+        "cursor": "$CURSOR_HOME or ~/.cursor (or TRAJECTORY_CURSOR_ROOT)",
     }[source]
 
 
@@ -563,7 +574,7 @@ def follow_file_session(
     # Grok history lines do not embed the session id; listing id is the group.
     # Other file sources lock group from the transcript — a listing stem that
     # disagrees with the session record would reset instead of showing a tail.
-    if source != "grok-build":
+    if source not in ("grok-build", "cursor"):
         group_id = None
     delivery = emit_to_delivery(emit)
     stream_opts = StreamOptions(source=source, group_id=group_id, delivery=delivery)
@@ -1391,6 +1402,7 @@ Default roots:
   hermes       ~/.hermes
   ahp          explicit export root only (use show --path)
   grok-build   $GROK_HOME/sessions or ~/.grok/sessions
+  cursor       $CURSOR_HOME or ~/.cursor
 
 Root overrides: --root or TRAJECTORY_<SOURCE>_ROOT (e.g. TRAJECTORY_PI_ROOT).
 OpenClaw also honors OPENCLAW_STATE_DIR / CLAWDBOT_STATE_DIR.

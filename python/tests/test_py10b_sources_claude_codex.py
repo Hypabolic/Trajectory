@@ -45,6 +45,7 @@ TIP_SOURCE_ORDER = (
     "hermes",
     "ahp",
     "grok-build",
+    "cursor",
 )
 
 

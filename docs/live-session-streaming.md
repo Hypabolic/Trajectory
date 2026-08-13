@@ -565,7 +565,7 @@ Stream inputs are **`bytes` only** (no str offsets). Optional `[io]` / `[ahp]` e
 | `stream-reset` | Reset-required / reset ops |
 | `stream-provisional-records` | Provisional lifecycle |
 | `stream-deterministic-replay` | Idempotent replay |
-| `stream-file-jsonl` | Pi, Claude Code, Codex, OpenClaw, Grok Build |
+| `stream-file-jsonl` | Pi, Claude Code, Codex, OpenClaw, Grok Build, Cursor Agent |
 | `stream-ahp-snapshot` | Shape A successive snapshots |
 | `stream-ahp-action-log` | Shape B reducer + apply |
 

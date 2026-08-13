@@ -1,7 +1,7 @@
 # Streaming file JSONL sources (LS-05)
 
 Pure-core `apply_append` for file-backed coding-agent transcripts:
-`pi`, `claude-code`, `codex`, `openclaw`, and `grok-build`.
+`pi`, `claude-code`, `codex`, `openclaw`, `grok-build`, and `cursor`.
 
 Normative contracts: [`contracts/spec/streaming.md`](../contracts/spec/streaming.md),
 product design: [`live-session-streaming.md`](live-session-streaming.md),
@@ -80,6 +80,7 @@ When a **snapshot** supplies committed material shorter than the prior
 | --- | --- |
 | New material is a pure byte-prefix of prior `committed_prefix` | `source-truncated` |
 | Non-prefix rewrite and source is `grok-build` | `source-compacted` |
+| Non-prefix rewrite and source is `cursor` | `source-replaced` |
 | Non-prefix rewrite and other JSONL sources | `source-replaced` |
 
 Default policy returns `kind = "reset-required"` **without** advancing the
@@ -122,6 +123,7 @@ across chunks (same as one-shot normalize of the joined prefix).
 | `codex` | byte | truncate, replace | Append-only contract; still detect shrink |
 | `openclaw` | byte | truncate, replace | Delivery-mirror not provisional |
 | `grok-build` | byte | **compaction**, truncate, replace | Synthetic backend tools provisional |
+| `cursor` | byte | truncate, replace | Cursor Agent transcript JSONL; no provisional records |
 
 ## Fixtures
 
@@ -136,7 +138,7 @@ Per-source append sequences:
 
 - `pi-append-sequence`, `claude-code-append-sequence`, `codex-append-sequence`,
   `openclaw-append-sequence`, `grok-build-append-sequence`,
-  `grok-build-backend-provisional`
+  `grok-build-backend-provisional`, `cursor-append-sequence`
 
 ## Privacy
 

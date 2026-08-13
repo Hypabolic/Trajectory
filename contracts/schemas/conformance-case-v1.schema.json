@@ -35,7 +35,7 @@
         }
       }
     },
-    "source": { "enum": ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"] },
+    "source": { "enum": ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build", "cursor"] },
     "transcript": { "type": "string", "minLength": 1 },
     "native_container": { "type": ["string", "null"] },
     "store": { "type": "string", "pattern": "^[a-z0-9][a-z0-9/-]*$" },

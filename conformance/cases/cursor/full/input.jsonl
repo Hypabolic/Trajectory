@@ -1,0 +1,5 @@
+{"role":"user","message":{"content":[{"type":"text","text":"List files in src."}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"I'll list src."},{"type":"tool_use","name":"run_terminal_command","input":{"command":"ls src"}}]}}
+{"type":"turn_ended","status":"success"}
+{"role":"assistant","message":{"content":[{"type":"text","text":"src has main.rs and lib.rs."}]}}
+{"type":"turn_ended","status":"success"}

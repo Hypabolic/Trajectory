@@ -1113,6 +1113,7 @@ internal static class ConformanceProgram
         "hermes" => TrajectorySource.Hermes,
         "ahp" => TrajectorySource.Ahp,
         "grok-build" => TrajectorySource.GrokBuild,
+        "cursor" => TrajectorySource.Cursor,
         _ => throw new ProtocolException($"Unsupported conformance source '{source}'."),
     };
 

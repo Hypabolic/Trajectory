@@ -141,6 +141,28 @@ def derive_generic_user_title(path: str | Path) -> str | None:
     return None
 
 
+def derive_cursor_title(path: str | Path) -> str | None:
+    """Return the first Cursor user turn's joined text as a bounded title."""
+    for row in _scan_json_lines(path):
+        if _string(row.get("role")) != "user":
+            continue
+        message = row.get("message") if isinstance(row.get("message"), dict) else None
+        content = message.get("content") if message else None
+        if not isinstance(content, list):
+            continue
+        text = "\n".join(
+            part.get("text", "")
+            for part in content
+            if isinstance(part, dict)
+            and _string(part.get("type")) == "text"
+            and isinstance(part.get("text"), str)
+        )
+        title = title_from_user_text(text)
+        if title is not None:
+            return title
+    return None
+
+
 def _scan_json_lines(path: str | Path) -> Iterator[dict[str, Any]]:
     try:
         with open(path, "rb") as handle:

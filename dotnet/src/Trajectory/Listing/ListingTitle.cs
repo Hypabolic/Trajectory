@@ -207,6 +207,32 @@ internal static class ListingTitle
         return null;
     }
 
+    internal static string? DeriveCursorTitle(string path)
+    {
+        foreach (var row in ScanJsonLines(path))
+        {
+            using var document = row;
+            var root = document.RootElement;
+            if (GetString(root, "role") != "user" ||
+                !root.TryGetProperty("message", out var message) ||
+                message.ValueKind != JsonValueKind.Object ||
+                !message.TryGetProperty("content", out var content) ||
+                content.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var text = string.Join("\n", content.EnumerateArray()
+                .Where(static part => part.ValueKind == JsonValueKind.Object && GetString(part, "type") == "text")
+                .Select(static part => GetString(part, "text"))
+                .Where(static value => value is not null));
+            var title = TitleFromUserText(text);
+            if (title is not null) return title;
+        }
+
+        return null;
+    }
+
     private static IEnumerable<JsonDocument> ScanJsonLines(string path)
     {
         FileStream stream;

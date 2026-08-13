@@ -52,7 +52,7 @@ RUNNER_ENV = {
     ),
 }
 
-TIP_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build"]
+TIP_SOURCES = ["pi", "claude-code", "codex", "openclaw", "hermes", "ahp", "grok-build", "cursor"]
 TIP_OUTPUTS = [
     "letta-trajectory-v1",
     "letta-canonical-v1",
@@ -84,10 +84,10 @@ TIP_CAPABILITIES = [
 ]
 TIP_SLICE = "ML13"
 NORMALIZER_CONTRACT_VERSION = "0.2.0"
-# 39 batch + 41 stream cases (LS-08 matrix + H1/H3 + hermes-provider-* export apply).
-EXPECTED_TIP_CASES = 80
-EXPECTED_TIP_OPERATIONS = 107
-EXPECTED_IDENTITY_GOLDENS = 37
+# 45 batch + 42 stream cases (LS-08 matrix + H1/H3 + hermes-provider-* export apply + Cursor).
+EXPECTED_TIP_CASES = 87
+EXPECTED_TIP_OPERATIONS = 118
+EXPECTED_IDENTITY_GOLDENS = 45
 
 # Exhaustive root __all__ (export owner PY-04a → PY-12 pin).
 _EXPECTED_ROOT_ALL = frozenset(

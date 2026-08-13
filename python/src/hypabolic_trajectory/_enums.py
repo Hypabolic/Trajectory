@@ -18,3 +18,4 @@ class TrajectorySource(StrEnum):
     HERMES = "hermes"
     AHP = "ahp"
     GROK_BUILD = "grok-build"
+    CURSOR = "cursor"

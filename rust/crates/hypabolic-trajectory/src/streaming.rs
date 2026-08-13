@@ -11,7 +11,7 @@ use crate::model::{
     NormalizeOptions, NormalizeRequest, SourceContext, TrajectoryError, TrajectorySource,
 };
 use crate::normalize::{
-    normalize_ahp, normalize_claude_code, normalize_codex, normalize_grok_build, normalize_hermes,
+    normalize_ahp, normalize_claude_code, normalize_codex, normalize_cursor, normalize_grok_build, normalize_hermes,
     normalize_openclaw, normalize_pi,
 };
 use crate::projection::{hypabolic_value, sha256};
@@ -1201,6 +1201,7 @@ fn normalize_source(
         TrajectorySource::Hermes => normalize_hermes(request),
         TrajectorySource::Ahp => normalize_ahp(request),
         TrajectorySource::GrokBuild => normalize_grok_build(request),
+        TrajectorySource::Cursor => normalize_cursor(request),
     }
 }
 

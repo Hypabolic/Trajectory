@@ -39,7 +39,7 @@ GitHub Release. See [docs/publishing.md](docs/publishing.md).
 ## What you get
 
 - **Multi-source ingest** — Pi, Claude Code, Codex, OpenClaw, Hermes, AHP
-  (Shape A offline ChatState snapshots), and Grok Build (`grok-build`)
+  (Shape A offline ChatState snapshots), Grok Build (`grok-build`), and Cursor Agent (`cursor`)
 - **Deterministic normalization** — stable IDs, ordering, hashes, content-safe
   diagnostics
 - **Multiple outputs** from one decode: Hypabolic trajectory, canonical
@@ -251,6 +251,7 @@ timestamps, identity formulas, OTEL import matrix, filtered conformance argv).
 | Hermes | Message array or `{ session, messages }` JSON | Export file; core listing is SQLite-free |
 | AHP | Shape A chat snapshot `{ chat, session? }` JSON | Export file only; listing is Phase 3 (empty stub) |
 | Grok Build | `chat_history.jsonl` (alias `grok`) | `$GROK_HOME/sessions` or `~/.grok/sessions` |
+| Cursor Agent | `cursor-agent-transcript-jsonl` (alias `cursor-agent`) | `$CURSOR_HOME` or `~/.cursor` |
 
 Override listing roots with `--root` / `TRAJECTORY_<SOURCE>_ROOT` in the sample
 CLIs, or pass an explicit root to listing APIs.
@@ -407,7 +408,7 @@ Shared flags:
 
 | Flag | Meaning |
 | --- | --- |
-| `--source <name>` | `pi`, `claude-code`, `codex`, `openclaw`, `hermes`, `ahp`, `grok-build` (alias `grok`) |
+| `--source <name>` | `pi`, `claude-code`, `codex`, `openclaw`, `hermes`, `ahp`, `grok-build`, `cursor` (aliases `grok`, `cursor-agent`) |
 | `--root <path>` | Override store root |
 | `--limit <n>` | Listing page size (default 50) |
 | `--format <f>` | `both` (default), `messages`, or `hypabolic` |

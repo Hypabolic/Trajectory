@@ -10,6 +10,7 @@ import {
   normalizeClaudeCode,
   normalizeCodex,
   normalizeGrokBuild,
+  normalizeCursor,
   normalizeHermes,
   normalizeOpenClaw,
   normalizePi,
@@ -47,6 +48,7 @@ function normalizeToIR(request: {
   if (request.source === "hermes") return normalizeHermes(normalized);
   if (request.source === "ahp") return normalizeAhp(normalized);
   if (request.source === "grok-build") return normalizeGrokBuild(normalized);
+  if (request.source === "cursor") return normalizeCursor(normalized);
   throw new TrajectoryNormalizationError(
     "unknown_source",
     `No source adapter is registered for '${String(request.source)}'.`,

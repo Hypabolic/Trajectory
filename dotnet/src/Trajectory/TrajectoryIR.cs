@@ -12,6 +12,7 @@ public enum TrajectorySource
     DeepAgents,
     Ahp,
     GrokBuild,
+    Cursor,
 }
 
 public enum TrajectoryRole

@@ -5,6 +5,8 @@ remain synchronized across NuGet, npm, and crates.io preview artifacts.
 
 ## [Unreleased]
 
+- **Source:** added Cursor Agent (`cursor`) transcript JSONL decoding, listing,
+  and file streaming across all four runtimes.
 - **Docs:** removed delivery-plan / status trackers
   (`implementation-plan`, `multi-language-plan`, `live-session-streaming-plan`,
   `live-session-streaming-status`, `python-implementation-spec`,

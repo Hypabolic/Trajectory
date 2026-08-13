@@ -108,6 +108,7 @@ _TIP_SOURCES: tuple[str, ...] = (
     "hermes",
     "ahp",
     "grok-build",
+    "cursor",
 )
 
 

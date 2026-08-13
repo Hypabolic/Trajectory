@@ -1,0 +1,8 @@
+{
+  "$schema": "../../../../contracts/schemas/conformance-case-v1.schema.json",
+  "case_version": 1, "id": "cursor/partial-chunk",
+  "operation": {"normalize-letta": {"expected": "expected.letta.json", "comparison": "json-exact"}, "normalize-canonical": {"expected": "expected.canonical.json", "comparison": "json-exact"}},
+  "source": "cursor", "transcript": "input.jsonl", "native_container": "cursor-agent-transcript-jsonl",
+  "source_context": {"group_id": "019f0000-0000-7000-8000-00000000c004", "partial": true, "base_byte_offset": 0}, "bounds": {}, "filters": {}, "projection_options": {}, "mode": "partial",
+  "required_capabilities": ["normalize", "normalize-partial", "typed-diagnostics", "deterministic-rerun"], "expected": {"result": "diagnostics", "diagnostic_codes": ["timestamps_synthesized"]}, "comparison": "json-exact"
+}

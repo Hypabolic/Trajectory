@@ -1,0 +1,13 @@
+{
+  "store_version": 1,
+  "files": [
+    {"path":"store/projects/%2Fworkspace%2Fold/agent-transcripts/019f0000-0000-7000-8000-00000000c001/019f0000-0000-7000-8000-00000000c001.jsonl","content":"{\"role\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Older Cursor session\"}]}}\n","updated_at":"2026-04-01T00:00:00.000Z"},
+    {"path":"store/projects/%2Fworkspace%2Fmid/agent-transcripts/019f0000-0000-7000-8000-00000000c003/019f0000-0000-7000-8000-00000000c003.jsonl","content":"{\"role\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Mid Cursor session\"}]}}\n","updated_at":"2026-04-02T00:00:00.000Z"},
+    {"path":"store/projects/%2Fworkspace%2Fnew/agent-transcripts/019f0000-0000-7000-8000-00000000c002/019f0000-0000-7000-8000-00000000c002.jsonl","content":"{\"role\":\"user\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Newest Cursor session\"}]}}\n","updated_at":"2026-04-03T00:00:00.000Z"},
+    {"path":"store/chats/hash/019f0000-0000-7000-8000-00000000c002/meta.json","content":"{\"title\":\"Meta title\",\"updatedAtMs\":1775174400000}\n","updated_at":"2026-04-04T00:00:00.000Z"},
+    {"path":"store/projects/%2Fworkspace%2Fnew/repo.json","content":"{}\n","updated_at":"2026-04-05T00:00:00.000Z"},
+    {"path":"store/projects/%2Fworkspace%2Fnew/worker.log","content":"secret noise\n","updated_at":"2026-04-05T00:00:00.000Z"},
+    {"path":"store/projects/%2Fworkspace%2Fnew/store.db","content":"encrypted\n","updated_at":"2026-04-05T00:00:00.000Z"},
+    {"path":"store/projects/%2Fworkspace%2Fnew/agent-transcripts/019f0000-0000-7000-8000-00000000c002/not-the-session.jsonl","content":"{}\n","updated_at":"2026-04-05T00:00:00.000Z"}
+  ]
+}
